@@ -1,0 +1,8 @@
+{
+  "name": "Craftora - Artisan Handmade Marketplace & Creator Studio",
+  "description": "Discover authentic handmade goods, connect with passionate local artisans, book hands-on craft workshops, and request bespoke custom commissions.",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ],
+  "permissions": []
+}

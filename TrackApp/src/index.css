@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-canvas: #121212;
+    --bg-surface: #1C1C1E;
+    --bg-subtle: #242426;
+    --bg-hover: #2A2A2D;
+    --border-hairline: #2C2C2E;
+    --border-strong: #3A3A3C;
+    --text-primary: #F5F5F7;
+    --text-secondary: #8E8E93;
+    --text-tertiary: #636366;
+    --accent-apple: #FA2D48;
+    --accent-hover: #E0283F;
+  }
+
+  body {
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    letter-spacing: -0.01em;
+    user-select: none;
+    overflow: hidden;
+  }
+
+  /* Strict anti-pill discipline & static sharp utility edges */
+  input, button, select, textarea {
+    font-family: inherit;
+  }
+
+  /* Monospace figures for timecodes, bitrates, file sizes */
+  .font-timecode {
+    font-family: "SF Mono", Monaco, Menlo, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom subtle dark scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: #161618;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2E2E32;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #424246;
+}
