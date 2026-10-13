@@ -164,8 +164,6 @@
   gap: var(--space-3);
   padding: 14px var(--space-5) 18px;
   border-top: 1px solid var(--line);
-  position: relative;
-  transition: box-shadow var(--dur) var(--ease-out);
 }
 
 /* Settings hidden below the fold: a visible, clickable edge pinned above the footer. */
