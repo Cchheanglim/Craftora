@@ -21,23 +21,19 @@ export function ExportPanel({ source, settings, plan, onChange, onAddToQueue, qu
   const [copied, setCopied] = useState(false);
   const [moreBelow, setMoreBelow] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
   const isVideo = settings.output === "video";
 
-  // Shadow the pinned footer while settings are hidden below it.
+  // Show the "More settings below" bar while the end of the settings is out of view.
+  // The marker sits before the bar, so showing the bar never moves it.
   useEffect(() => {
     const body = bodyRef.current;
-    if (!body) return;
-    const update = () => setMoreBelow(body.scrollTop + body.clientHeight < body.scrollHeight - 2);
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(body);
-    for (const child of Array.from(body.children)) observer.observe(child);
-    body.addEventListener("scroll", update, { passive: true });
-    return () => {
-      observer.disconnect();
-      body.removeEventListener("scroll", update);
-    };
-  }, [isVideo]);
+    const end = endRef.current;
+    if (!body || !end) return;
+    const observer = new IntersectionObserver(([entry]) => setMoreBelow(!entry.isIntersecting), { root: body });
+    observer.observe(end);
+    return () => observer.disconnect();
+  }, []);
   const streams = source.streams.filter((s) => s.kind === settings.output);
   const hasAudioStreams = source.streams.some((s) => s.kind === "audio");
 
@@ -178,6 +174,7 @@ export function ExportPanel({ source, settings, plan, onChange, onAddToQueue, qu
             </button>
           </div>
         </details>
+        <div ref={endRef} className="export__end" aria-hidden="true" />
 
         {moreBelow && (
           <button

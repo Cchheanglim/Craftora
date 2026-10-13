@@ -9,6 +9,7 @@
 }
 
 .export__body {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -92,7 +93,13 @@
 .export__command {
   border-top: 1px solid var(--line);
   padding-top: 12px;
-  margin-bottom: 18px;
+}
+
+/* Visibility marker for the end of the settings; also the bottom breathing room. */
+.export__end {
+  flex-shrink: 0;
+  height: 18px;
+  margin-top: -14px;
 }
 
 .export__command summary {
