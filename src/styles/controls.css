@@ -1,0 +1,165 @@
+/* Buttons, fields and segmented controls shared across the app. */
+
+.btn {
+  height: var(--control-h);
+  padding: 0 var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) linear, color var(--dur-fast) linear,
+    border-color var(--dur-fast) linear;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+}
+
+.btn--primary {
+  background: var(--accent-fill);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-fill-hover);
+}
+
+.btn--secondary {
+  background: var(--bg-hover);
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  background: var(--bg-selected);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--text-2);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.btn--icon {
+  width: var(--control-h);
+  padding: 0;
+  background: transparent;
+  color: var(--text-2);
+}
+
+.btn--icon:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.field {
+  height: var(--control-h);
+  padding: 0 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  color: var(--text);
+  transition: border-color var(--dur-fast) linear;
+}
+
+.field::placeholder {
+  color: var(--text-3);
+}
+
+.field:hover {
+  border-color: var(--line-hover);
+}
+
+.field:focus {
+  border-color: var(--text-3);
+  outline: none;
+}
+
+.field:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.field[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+select.field {
+  padding-right: 6px;
+  cursor: pointer;
+}
+
+.segmented {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  padding: 2px;
+  background: var(--bg-input);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.segmented button {
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  transition: background-color var(--dur-fast) linear, color var(--dur-fast) linear;
+}
+
+.segmented button:hover {
+  color: var(--text);
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--line-strong);
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* A selectable row: radio or checkbox with label and detail. */
+.option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) linear, background-color var(--dur-fast) linear;
+}
+
+.option:hover {
+  border-color: var(--line-hover);
+}
+
+.option:has(input:checked) {
+  border-color: var(--text-3);
+  background: var(--bg-selected);
+}
+
+.option:has(input:disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.option--top {
+  align-items: flex-start;
+}
+
+.option--top input {
+  margin-top: 2px;
+}
