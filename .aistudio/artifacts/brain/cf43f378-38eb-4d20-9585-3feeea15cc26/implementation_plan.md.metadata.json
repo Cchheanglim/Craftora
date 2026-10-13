@@ -1,6 +1,0 @@
-{
-  "summary": "Comprehensive UI/UX architectural implementation plan for the Tauri + React desktop media utility inspired by Apple Music. Covers the single-window split pane interface, URL stream inspector, integrated timeline trimmer with lossless clipping and video reverse/mirroring, batch download queue, and strict Apple Music-inspired visual design tokens.",
-  "updatedAt": "2026-10-13T07:08:02.598375216Z",
-  "requestFeedback": true,
-  "userFacing": true
-}
