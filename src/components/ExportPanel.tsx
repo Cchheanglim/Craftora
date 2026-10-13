@@ -188,7 +188,7 @@ export function ExportPanel({ source, settings, plan, onChange, onAddToQueue, qu
         )}
       </div>
 
-      <div className={moreBelow ? "export__foot has-more" : "export__foot"}>
+      <div className="export__foot">
         <dl className="export__summary">
           <dt>File</dt>
           <dd className="mono truncate" title={plan.fileName}>

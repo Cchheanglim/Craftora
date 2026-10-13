@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-14T00:00:00Z",
+  "title": "Design System: Craftora",
+  "extensions": {
+    "colorMeta": {
+      "bg-input": { "role": "neutral", "displayName": "Input Black", "canonical": "#0f0f10", "tonalRamp": ["#0f0f10", "#121213", "#161618", "#18181a", "#1e1e21", "#26262a", "#2c2c30", "#3a3a3c"] },
+      "bg-canvas": { "role": "neutral", "displayName": "Canvas Graphite", "canonical": "#121213", "tonalRamp": ["#0f0f10", "#121213", "#161618", "#18181a", "#1e1e21", "#26262a", "#2c2c30", "#3a3a3c"] },
+      "bg-rail": { "role": "neutral", "displayName": "Rail Graphite", "canonical": "#161618", "tonalRamp": ["#0f0f10", "#121213", "#161618", "#18181a", "#1e1e21", "#26262a", "#2c2c30", "#3a3a3c"] },
+      "bg-panel": { "role": "neutral", "displayName": "Panel Graphite", "canonical": "#18181a", "tonalRamp": ["#0f0f10", "#121213", "#161618", "#18181a", "#1e1e21", "#26262a", "#2c2c30", "#3a3a3c"] },
+      "bg-raised": { "role": "neutral", "displayName": "Raised Graphite", "canonical": "#1e1e21", "tonalRamp": ["#0f0f10", "#121213", "#161618", "#18181a", "#1e1e21", "#26262a", "#2c2c30", "#3a3a3c"] },
+      "bg-hover": { "role": "neutral", "displayName": "Hover Graphite", "canonical": "#26262a", "tonalRamp": ["#0f0f10", "#121213", "#161618", "#18181a", "#1e1e21", "#26262a", "#2c2c30", "#3a3a3c"] },
+      "bg-selected": { "role": "neutral", "displayName": "Selected Graphite", "canonical": "#2c2c30", "tonalRamp": ["#0f0f10", "#121213", "#161618", "#18181a", "#1e1e21", "#26262a", "#2c2c30", "#3a3a3c"] },
+      "preview-well": { "role": "neutral", "displayName": "Preview Black", "canonical": "#000000", "tonalRamp": ["#000000", "#0f0f10", "#121213", "#18181a", "#1e1e21", "#2c2c30", "#3a3a3c", "#4a4a4e"] },
+      "line-soft": { "role": "neutral", "displayName": "Soft Hairline", "canonical": "#222224", "tonalRamp": ["#1a1a1c", "#222224", "#2c2c2e", "#3a3a3c", "#4a4a4e", "#636366", "#8e8e93", "#aeaeb2"] },
+      "line": { "role": "neutral", "displayName": "Hairline", "canonical": "#2c2c2e", "tonalRamp": ["#1a1a1c", "#222224", "#2c2c2e", "#3a3a3c", "#4a4a4e", "#636366", "#8e8e93", "#aeaeb2"] },
+      "line-strong": { "role": "neutral", "displayName": "Strong Hairline", "canonical": "#3a3a3c", "tonalRamp": ["#1a1a1c", "#222224", "#2c2c2e", "#3a3a3c", "#4a4a4e", "#636366", "#8e8e93", "#aeaeb2"] },
+      "line-hover": { "role": "neutral", "displayName": "Hover Hairline", "canonical": "#4a4a4e", "tonalRamp": ["#1a1a1c", "#222224", "#2c2c2e", "#3a3a3c", "#4a4a4e", "#636366", "#8e8e93", "#aeaeb2"] },
+      "text": { "role": "neutral", "displayName": "Primary Text", "canonical": "#f5f5f7", "tonalRamp": ["#3a3a3c", "#636366", "#8e8e93", "#aeaeb2", "#c7c7cc", "#d1d1d6", "#e5e5ea", "#f5f5f7"] },
+      "text-2": { "role": "neutral", "displayName": "Secondary Text", "canonical": "#aeaeb2", "tonalRamp": ["#3a3a3c", "#636366", "#8e8e93", "#aeaeb2", "#c7c7cc", "#d1d1d6", "#e5e5ea", "#f5f5f7"] },
+      "text-3": { "role": "neutral", "displayName": "Tertiary Text", "canonical": "#8e8e93", "tonalRamp": ["#3a3a3c", "#636366", "#8e8e93", "#aeaeb2", "#c7c7cc", "#d1d1d6", "#e5e5ea", "#f5f5f7"] },
+      "text-on-accent": { "role": "neutral", "displayName": "On-Red White", "canonical": "#ffffff", "tonalRamp": ["#3a3a3c", "#636366", "#8e8e93", "#aeaeb2", "#c7c7cc", "#e5e5ea", "#f5f5f7", "#ffffff"] },
+      "accent": { "role": "primary", "displayName": "Cut Red", "canonical": "#fa2d48", "tonalRamp": ["#3d0810", "#6b0f1d", "#9a142a", "#c01733", "#d81e3a", "#fa2d48", "#fc7385", "#fec4cc"] },
+      "accent-fill": { "role": "primary", "displayName": "Commit Red", "canonical": "#d81e3a", "tonalRamp": ["#3d0810", "#6b0f1d", "#9a142a", "#c01733", "#d81e3a", "#fa2d48", "#fc7385", "#fec4cc"] },
+      "accent-fill-hover": { "role": "primary", "displayName": "Pressed Red", "canonical": "#c01733", "tonalRamp": ["#3d0810", "#6b0f1d", "#9a142a", "#c01733", "#d81e3a", "#fa2d48", "#fc7385", "#fec4cc"] },
+      "accent-wash": { "role": "primary", "displayName": "Cut Wash", "canonical": "rgb(250 45 72 / 0.12)", "tonalRamp": ["rgb(250 45 72 / 0.06)", "rgb(250 45 72 / 0.12)", "rgb(250 45 72 / 0.2)", "rgb(250 45 72 / 0.35)", "rgb(250 45 72 / 0.5)", "rgb(250 45 72 / 0.65)", "rgb(250 45 72 / 0.8)", "rgb(250 45 72 / 1)"] },
+      "ok": { "role": "status", "displayName": "Finished Green", "canonical": "#30d158", "tonalRamp": ["#0a2e14", "#114d22", "#186d30", "#20903f", "#28b34d", "#30d158", "#7be393", "#c6f4d1"] },
+      "warn": { "role": "status", "displayName": "Signal Amber", "canonical": "#ffb340", "tonalRamp": ["#3d2600", "#664000", "#8f5a00", "#b87400", "#e08f10", "#ffb340", "#ffcd80", "#ffe8c4"] },
+      "danger": { "role": "status", "displayName": "Error Coral", "canonical": "#ff6961", "tonalRamp": ["#420c09", "#6e1712", "#9c241d", "#c9342b", "#ef4b42", "#ff6961", "#ff9e98", "#ffd4d1"] }
+    },
+    "typographyMeta": {
+      "title": { "displayName": "Title", "purpose": "View headings: the source title in the editor, the Library heading." },
+      "headline": { "displayName": "Headline", "purpose": "Panel titles (Export) and the toolbar wordmark." },
+      "body": { "displayName": "Body", "purpose": "Default UI text, rail items, library rows, the Add to queue label." },
+      "control": { "displayName": "Control", "purpose": "Button, field and segmented option text." },
+      "caption": { "displayName": "Caption", "purpose": "Field labels, queue status, details, engine state, hints." },
+      "label": { "displayName": "Group Label", "purpose": "Uppercase fieldset legends and group headings that name the controls beneath; never a kicker above a title." },
+      "timecode": { "displayName": "Timecode", "purpose": "The transport clock; mono with tabular figures." },
+      "mono": { "displayName": "Mono Data", "purpose": "Every number, timecode, size, percentage, file name, container code and command, at the surrounding size." }
+    },
+    "shadows": [
+      { "name": "popover", "value": "0 6px 18px rgb(0 0 0 / 0.45)", "purpose": "Floating messages that overlap content, such as the URL error under the toolbar field." },
+      { "name": "overflow-edge", "value": "0 -8px 16px -6px rgb(0 0 0 / 0.6)", "purpose": "The sticky More settings below bar, signalling content scrolled beneath it." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "All authored transforms and the queue landing." },
+      { "name": "dur-fast", "value": "120ms", "purpose": "Colour and border state changes (linear) and timeline handle widening." },
+      { "name": "dur", "value": "220ms", "purpose": "Transforms: mirrored preview, chevron rotation, overall progress width." },
+      { "name": "land", "value": "900ms var(--ease-out)", "purpose": "The one authored moment: a queued row drops 6px into place while a Cut Wash fades out." },
+      { "name": "queued", "value": "600ms var(--ease-out)", "purpose": "Add to queue label rises 3px from 40% opacity, echoing the landing." },
+      { "name": "reduced-motion", "value": "transition-duration: 0ms; animation-duration: 0ms", "purpose": "Applied to every element under prefers-reduced-motion: reduce." }
+    ],
+    "breakpoints": [
+      { "name": "min-window", "value": "1100px" },
+      { "name": "compact-range", "value": "max-width: 1240px" },
+      { "name": "hide-key-legend", "value": "max-width: 1380px" },
+      { "name": "short-window", "value": "max-height: 780px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one red action per screen (Add to queue).",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Add to queue <kbd class=\"ds-kbd ds-kbd-on-accent\">Ctrl ↵</kbd></button>",
+      "css": ".ds-btn { height: 32px; padding: 0 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid transparent; border-radius: 4px; font-family: var(--font-ui, 'Geist Variable', 'Segoe UI', system-ui, sans-serif); font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color 120ms linear, color 120ms linear, border-color 120ms linear; } .ds-btn-primary { background: var(--accent-fill, #d81e3a); color: var(--text-on-accent, #fff); font-weight: 600; } .ds-btn-primary:hover { background: var(--accent-fill-hover, #c01733); } .ds-btn:focus-visible { outline: 2px solid var(--accent, #fa2d48); outline-offset: 2px; } .ds-btn:disabled { opacity: 0.45; cursor: not-allowed; } .ds-kbd { font-family: var(--font-mono, 'Geist Mono Variable', Consolas, monospace); font-size: 10.5px; line-height: 1; padding: 2px 5px; border: 1px solid #3a3a3c; border-bottom-width: 2px; border-radius: 3px; } .ds-kbd-on-accent { background: rgb(0 0 0 / 0.2); border-color: rgb(255 255 255 / 0.3); color: #fff; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Default action button: Fetch, Set In/Out, Whole video.",
+      "html": "<button class=\"ds-btn-secondary\">Set <kbd class=\"ds-kbd\">I</kbd></button>",
+      "css": ".ds-btn-secondary { height: 32px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; background: var(--bg-hover, #26262a); border: 1px solid var(--line-strong, #3a3a3c); border-radius: 4px; color: var(--text, #f5f5f7); font-family: var(--font-ui, 'Geist Variable', 'Segoe UI', system-ui, sans-serif); font-size: 12.5px; font-weight: 500; cursor: pointer; transition: background-color 120ms linear; } .ds-btn-secondary:hover { background: var(--bg-selected, #2c2c30); } .ds-btn-secondary:focus-visible { outline: 2px solid var(--accent, #fa2d48); outline-offset: 2px; } .ds-kbd { font-family: var(--font-mono, 'Geist Mono Variable', Consolas, monospace); font-size: 10.5px; line-height: 1; padding: 2px 5px; border: 1px solid #3a3a3c; border-bottom-width: 2px; border-radius: 3px; color: #aeaeb2; background: #1e1e21; }"
+    },
+    {
+      "name": "Ghost / Icon Button",
+      "kind": "button",
+      "refersTo": "button-icon",
+      "description": "Transparent tool buttons in the transport and queue rows.",
+      "html": "<button class=\"ds-btn-icon\" aria-label=\"Open folder\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2Z\"/></svg></button>",
+      "css": ".ds-btn-icon { width: 32px; height: 32px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text-2, #aeaeb2); cursor: pointer; transition: background-color 120ms linear, color 120ms linear; } .ds-btn-icon:hover { background: var(--bg-hover, #26262a); color: var(--text, #f5f5f7); } .ds-btn-icon:focus-visible { outline: 2px solid var(--accent, #fa2d48); outline-offset: 2px; }"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Input-black well for text and timecodes; mono for numeric values.",
+      "html": "<label class=\"ds-tf\"><span>In</span><input class=\"ds-field ds-mono\" value=\"00:01:12.400\"></label>",
+      "css": ".ds-tf { display: inline-flex; flex-direction: column; gap: 4px; } .ds-tf > span { font-family: var(--font-ui, 'Geist Variable', system-ui, sans-serif); font-size: 11.5px; color: var(--text-2, #aeaeb2); } .ds-field { width: 118px; height: 32px; padding: 0 10px; background: var(--bg-input, #0f0f10); border: 1px solid var(--line-strong, #3a3a3c); border-radius: 4px; color: var(--text, #f5f5f7); font-size: 12.5px; caret-color: var(--accent, #fa2d48); transition: border-color 120ms linear; } .ds-field:hover { border-color: var(--line-hover, #4a4a4e); } .ds-field:focus { border-color: var(--text-3, #8e8e93); outline: none; } .ds-field:focus-visible { outline: 2px solid var(--accent, #fa2d48); outline-offset: 1px; } .ds-field[aria-invalid='true'] { border-color: var(--danger, #ff6961); } .ds-mono { font-family: var(--font-mono, 'Geist Mono Variable', Consolas, monospace); font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "chip",
+      "refersTo": "segmented",
+      "description": "Equal-width exclusive choice; the pressed option is neutral grey, never red.",
+      "html": "<div class=\"ds-seg\" role=\"group\"><button aria-pressed=\"true\">Fast</button><button aria-pressed=\"false\">Precise</button></div>",
+      "css": ".ds-seg { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; width: 220px; padding: 2px; background: var(--bg-input, #0f0f10); border: 1px solid var(--line-strong, #3a3a3c); border-radius: 4px; } .ds-seg button { height: 26px; border: 0; border-radius: 3px; background: transparent; color: var(--text-2, #aeaeb2); font-family: var(--font-ui, 'Geist Variable', system-ui, sans-serif); font-size: 12.5px; cursor: pointer; transition: background-color 120ms linear, color 120ms linear; } .ds-seg button:hover { color: var(--text, #f5f5f7); } .ds-seg button[aria-pressed='true'] { background: var(--line-strong, #3a3a3c); color: var(--text, #f5f5f7); font-weight: 500; } .ds-seg button:focus-visible { outline: 2px solid var(--accent, #fa2d48); outline-offset: 2px; }"
+    },
+    {
+      "name": "Option Row",
+      "kind": "custom",
+      "refersTo": "option-row",
+      "description": "Bordered radio or checkbox row with label and mono detail; checked fills Selected Graphite.",
+      "html": "<label class=\"ds-option\"><input type=\"radio\" name=\"q\" checked><span>1080p</span><span class=\"ds-option-detail\">h264 · 30 fps</span><span class=\"ds-option-size\">~48 MB</span></label>",
+      "css": ".ds-option { display: flex; align-items: center; gap: 10px; width: 300px; padding: 7px 10px; border: 1px solid var(--line, #2c2c2e); border-radius: 4px; color: var(--text, #f5f5f7); font-family: var(--font-ui, 'Geist Variable', system-ui, sans-serif); font-size: 13px; cursor: pointer; transition: border-color 120ms linear, background-color 120ms linear; } .ds-option:hover { border-color: var(--line-hover, #4a4a4e); } .ds-option:has(input:checked) { border-color: var(--text-3, #8e8e93); background: var(--bg-selected, #2c2c30); } .ds-option input { accent-color: var(--text, #f5f5f7); width: 15px; height: 15px; margin: 0; } .ds-option-detail { flex: 1; font-family: var(--font-mono, 'Geist Mono Variable', monospace); font-size: 11.5px; color: var(--text-3, #8e8e93); } .ds-option-size { font-family: var(--font-mono, 'Geist Mono Variable', monospace); font-size: 12px; color: var(--text-2, #aeaeb2); }"
+    },
+    {
+      "name": "Rail Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Left rail items; current view is neutral Selected Graphite.",
+      "html": "<nav class=\"ds-rail\"><button class=\"ds-rail-item\" aria-current=\"page\">Workspace</button><button class=\"ds-rail-item\">Library <span class=\"ds-rail-count\">12</span></button></nav>",
+      "css": ".ds-rail { display: flex; flex-direction: column; gap: 2px; width: 192px; padding: 12px 8px; background: var(--bg-rail, #161618); } .ds-rail-item { height: 32px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--text-2, #aeaeb2); font-family: var(--font-ui, 'Geist Variable', system-ui, sans-serif); font-size: 13px; text-align: left; cursor: pointer; transition: background-color 120ms linear, color 120ms linear; } .ds-rail-item:hover { background: var(--bg-raised, #1e1e21); color: var(--text, #f5f5f7); } .ds-rail-item[aria-current='page'] { background: var(--bg-selected, #2c2c30); color: var(--text, #f5f5f7); font-weight: 500; } .ds-rail-item:focus-visible { outline: 2px solid var(--accent, #fa2d48); outline-offset: 2px; } .ds-rail-count { margin-left: auto; font-family: var(--font-mono, 'Geist Mono Variable', monospace); font-size: 11px; color: var(--text-3, #8e8e93); }"
+    },
+    {
+      "name": "Queue Row",
+      "kind": "custom",
+      "refersTo": "queue-row",
+      "description": "A job in the always-visible dock: name, neutral progress strip, mono size; lands with the one authored motion.",
+      "html": "<div class=\"ds-queue\"><div class=\"ds-qrow ds-fresh\"><span class=\"ds-qname\">big_buck_bunny_clip.mp4</span><span class=\"ds-qprog\"><span class=\"ds-qbar\"><span style=\"width:42%\"></span></span><span class=\"ds-qstatus\"><span>Downloading</span><span>42%</span></span></span><span class=\"ds-qsize\">48 MB</span></div></div>",
+      "css": ".ds-queue { background: var(--bg-rail, #161618); width: 640px; } .ds-qrow { display: grid; grid-template-columns: minmax(0, 1fr) 240px 64px; gap: 16px; align-items: center; height: 44px; padding: 0 12px 0 16px; border-top: 1px solid var(--line-soft, #222224); font-family: var(--font-ui, 'Geist Variable', system-ui, sans-serif); font-size: 13px; color: var(--text, #f5f5f7); } .ds-qname { font-family: var(--font-mono, 'Geist Mono Variable', monospace); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-qprog { display: flex; flex-direction: column; gap: 5px; } .ds-qbar { display: block; height: 4px; background: var(--line, #2c2c2e); } .ds-qbar > span { display: block; height: 100%; background: var(--text, #f5f5f7); transition: width 900ms linear; } .ds-qstatus { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-2, #aeaeb2); } .ds-qstatus span:last-child, .ds-qsize { font-family: var(--font-mono, 'Geist Mono Variable', monospace); font-variant-numeric: tabular-nums; } .ds-qsize { font-size: 12px; color: var(--text-2, #aeaeb2); text-align: right; } .ds-fresh { animation: ds-land 900ms cubic-bezier(0.16, 1, 0.3, 1); } @keyframes ds-land { 0% { background: rgb(250 45 72 / 0.12); transform: translateY(-6px); } 35% { transform: none; } 100% { background: transparent; } } @media (prefers-reduced-motion: reduce) { .ds-fresh { animation-duration: 0ms; } }"
+    },
+    {
+      "name": "Timeline",
+      "kind": "custom",
+      "refersTo": "timeline-track",
+      "description": "The signature: the cut range is the one region red owns.",
+      "html": "<div class=\"ds-tl\"><div class=\"ds-tl-shade\" style=\"left:0;width:25%\"></div><div class=\"ds-tl-range\" style=\"left:25%;width:40%\"></div><div class=\"ds-tl-shade\" style=\"left:65%;right:0\"></div><button class=\"ds-tl-handle\" style=\"left:25%\" aria-label=\"In\"></button><button class=\"ds-tl-handle\" style=\"left:65%\" aria-label=\"Out\"></button><div class=\"ds-tl-head\" style=\"left:40%\"></div></div>",
+      "css": ".ds-tl { position: relative; width: 520px; height: 56px; background: var(--bg-raised, #1e1e21); border: 1px solid var(--line, #2c2c2e); border-radius: 4px; } .ds-tl-shade { position: absolute; top: 0; bottom: 0; background: rgb(0 0 0 / 0.38); } .ds-tl-range { position: absolute; top: -1px; bottom: -1px; background: var(--accent-wash, rgb(250 45 72 / 0.12)); border-top: 2px solid var(--accent, #fa2d48); border-bottom: 2px solid var(--accent, #fa2d48); } .ds-tl-handle { position: absolute; top: -1px; bottom: -1px; width: 12px; margin-left: -6px; padding: 0; border: 0; background: var(--accent, #fa2d48); border-radius: 3px; cursor: ew-resize; z-index: 1; transition: width 120ms cubic-bezier(0.16, 1, 0.3, 1), margin-left 120ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-tl-handle::after { content: ''; position: absolute; top: 50%; left: 50%; width: 2px; height: 18px; transform: translate(-50%, -50%); background: rgb(255 255 255 / 0.8); } .ds-tl-handle:hover, .ds-tl-handle:focus-visible { width: 14px; margin-left: -7px; } .ds-tl-handle:focus-visible { outline: 2px solid var(--text, #f5f5f7); outline-offset: 1px; } .ds-tl-head { position: absolute; top: -6px; bottom: -1px; width: 2px; margin-left: -1px; background: var(--text, #f5f5f7); z-index: 2; } .ds-tl-head::before { content: ''; position: absolute; top: 0; left: -4px; width: 10px; height: 8px; background: var(--text, #f5f5f7); clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Graphite Cutting Bench",
+    "overview": "Craftora is a dark, dense desktop workbench where the cut is the hero. Everything that is not the cut is graphite: a tight ladder of near-black surfaces separated by hairline rules, with type in grey steps. Against that quiet field, red appears in exactly two jobs (the range being cut on the timeline, with its length readout, and the one primary action) so the eye always knows what is being kept and how to commit it. The dark frame is chosen by use: people judge a picture here, and a dark surround keeps the preview true.\n\nThe layout is a fixed, always-visible workspace rather than a set of tabs: toolbar across the top, a narrow rail, the editor in the centre, a fixed-width export panel on the right and the queue dock along the bottom, so running work is never hidden. Density is utility-grade: 32px controls, 12.5–13px UI text, 4px corners. Depth comes from tonal steps and 1px lines, not shadows. Motion is short and functional, with one authored moment: a queued job landing in the dock.\n\nConfirmed rejections from the owner's brand commitments: no pill-shaped buttons, no purple, no decorative gradients, no cursor animations or scroll effects.",
+    "keyCharacteristics": [
+      "Graphite surface ladder (seven steps, darkest to lightest) with hairline 1px rules.",
+      "Red is rationed: the cut range and the single primary action; the toolbar logo is an exempt brand mark.",
+      "Selection, radios, checkboxes, segmented choices and progress are neutral (white and grey), never red.",
+      "Geist for words, Geist Mono with tabular figures for every number, timecode, size and command.",
+      "Near-square corners (3–4px), no pills, no gradients.",
+      "One authored motion moment; everything else is a 120ms colour change."
+    ],
+    "rules": [
+      { "name": "The Two Reds Rule", "body": "Red does two jobs: mark the cut (range, handles, clip length) and fill the one primary action per screen. The toolbar logo is the brand mark and is exempt. Any other red is a defect.", "section": "colors" },
+      { "name": "The Neutral Choice Rule", "body": "A chosen state is never red. Selected rail items, checked option rows, pressed segments, radios and checkboxes (`accent-color` set to the text colour) and progress bars all use white and graphite.", "section": "colors" },
+      { "name": "The Status Only Rule", "body": "Green means finished, amber means warning or not connected, coral means invalid. None of them decorate.", "section": "colors" },
+      { "name": "The Mono Numbers Rule", "body": "Every number the user reads or types (timecodes, durations, sizes, percentages, counts, file names, container codes, the command) is set in Geist Mono with tabular figures. Words stay in Geist, even inside a mixed string.", "section": "typography" },
+      { "name": "The No Display Face Rule", "body": "There is no display size. The largest type is 16px; hierarchy comes from weight and grey steps.", "section": "typography" },
+      { "name": "The Flat Panel Rule", "body": "Panels, cards, rows and controls carry no shadow. If a surface needs separating, use a darker or lighter graphite step and a hairline.", "section": "elevation" },
+      { "name": "The Landing Rule", "body": "The one authored motion: a newly queued row arrives with a 900ms ease-out landing, dropping 6px into place within the first 35% while a Cut Wash fades out behind it; the Add to queue label echoes it with a 600ms rise. No other element animates on entry.", "section": "components" }
+    ],
+    "dos": [
+      "**Do** keep red to the cut (range, handles, clip length) and one primary button per screen; the toolbar logo is the only exempt red.",
+      "**Do** show chosen states in white and graphite: Selected Graphite fills, the strong line grey for pressed segments, text-coloured radios and checkboxes.",
+      "**Do** set every number, timecode, size, percentage and command in Geist Mono with tabular figures.",
+      "**Do** separate regions with graphite steps and 1px hairlines; use 4px corners on controls and 3px on their inner parts.",
+      "**Do** size controls at 32px and space on the 4px scale (4, 8, 12, 16, 20).",
+      "**Do** keep running work visible: the queue dock never collapses out of the layout.",
+      "**Do** make motion short and functional (120ms colour, 220ms ease-out transforms) and zero it under reduced motion."
+    ],
+    "donts": [
+      "**Don't** use red for chosen states (selected items, radios, pressed segments), progress, links, badges or decoration.",
+      "**Don't** use pill-shaped buttons or radii beyond 4px on rectangles.",
+      "**Don't** use purple or decorative gradients.",
+      "**Don't** add cursor animations or scroll effects.",
+      "**Don't** put shadows on panels, rows or controls; shadows are for popovers and the overflow edge only.",
+      "**Don't** use green, amber or coral for anything but finished, warning/not-connected and invalid.",
+      "**Don't** add a display type size; the largest text is 16px."
+    ]
+  }
+}
