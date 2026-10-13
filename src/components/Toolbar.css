@@ -1,0 +1,84 @@
+.toolbar {
+  grid-area: toolbar;
+  height: var(--toolbar-h);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+  position: relative;
+  z-index: 2;
+}
+
+.toolbar__brand {
+  width: calc(var(--rail-w) - var(--space-4) * 2);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.toolbar__logo {
+  color: var(--accent);
+}
+
+.toolbar__form {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  max-width: 760px;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.toolbar__form .btn {
+  height: 34px;
+}
+
+.toolbar__url {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.toolbar__url .field {
+  width: 100%;
+  height: 34px;
+  padding-left: 34px;
+  font-size: 12px;
+}
+
+.toolbar__url-icon {
+  position: absolute;
+  left: 11px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.toolbar__error {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.45);
+  color: var(--text);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.toolbar__error svg {
+  color: var(--danger);
+  flex-shrink: 0;
+}

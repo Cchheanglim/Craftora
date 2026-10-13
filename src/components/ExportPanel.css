@@ -1,0 +1,235 @@
+.export {
+  width: var(--panel-w);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--line);
+}
+
+.export__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px var(--space-5) 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.export__title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.export__output {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.export__output .segmented {
+  flex: 1;
+}
+
+.export__output select {
+  width: 88px;
+}
+
+.export__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.export__pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.export__stream {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.export__stream > span:first-child {
+  white-space: nowrap;
+}
+
+.export__detail {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.export__trade {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: var(--space-2);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.export__trade.is-forced {
+  color: var(--warn);
+}
+
+.export__trade svg {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.export__size {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.export__command {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  margin-bottom: 18px;
+}
+
+.export__command summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.export__command summary::-webkit-details-marker {
+  display: none;
+}
+
+.export__command summary:hover {
+  color: var(--text);
+}
+
+.export__chevron {
+  margin-left: auto;
+  transition: transform var(--dur) var(--ease-out);
+}
+
+.export__command[open] .export__chevron {
+  transform: rotate(180deg);
+}
+
+.export__code {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.export__code pre {
+  width: 100%;
+  margin: 0;
+  padding: 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: #d1d1d6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.export__code .btn {
+  height: 26px;
+  padding: 0 var(--space-2);
+  font-size: 12px;
+}
+
+.export__foot {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 14px var(--space-5) 18px;
+  border-top: 1px solid var(--line);
+  position: relative;
+  transition: box-shadow var(--dur) var(--ease-out);
+}
+
+/* Settings hidden below the fold: a visible, clickable edge pinned above the footer. */
+.export__more {
+  position: sticky;
+  bottom: 0;
+  margin: auto calc(var(--space-5) * -1) 0;
+  height: 34px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-top: 1px solid var(--line-strong);
+  background: var(--bg-raised);
+  color: var(--text-2);
+  font-size: 12px;
+  box-shadow: 0 -8px 16px -6px rgb(0 0 0 / 0.6);
+}
+
+.export__more:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+@media (max-height: 780px) {
+  .export__body {
+    gap: 10px;
+    padding-top: 14px;
+  }
+
+  .export .option {
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+}
+
+.export__summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  font-size: 12px;
+}
+
+.export__summary dt {
+  color: var(--text-3);
+}
+
+.export__add {
+  height: 38px;
+  font-size: var(--text-md);
+}
+
+.export__add kbd {
+  background: rgb(0 0 0 / 0.2);
+  border-color: rgb(255 255 255 / 0.3);
+  color: var(--text-on-accent);
+}
+
+.export__add-label.is-queued {
+  animation: queued 600ms var(--ease-out);
+}
+
+@keyframes queued {
+  0% {
+    opacity: 0.4;
+    transform: translateY(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}

@@ -1,0 +1,69 @@
+/*
+ * Craftora design tokens.
+ * Dark by use: people trim video at a desk, judging the picture; a dark frame
+ * keeps the preview true. Red marks the cut and the one primary action only.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces, darkest to lightest */
+  --bg-input: #0f0f10;
+  --bg-canvas: #121213;
+  --bg-rail: #161618;
+  --bg-panel: #18181a;
+  --bg-raised: #1e1e21;
+  --bg-hover: #26262a;
+  --bg-selected: #2c2c30;
+
+  /* Lines */
+  --line-soft: #222224;
+  --line: #2c2c2e;
+  --line-strong: #3a3a3c;
+  --line-hover: #4a4a4e;
+
+  /* Text (all ≥ 4.5:1 on --bg-panel) */
+  --text: #f5f5f7;
+  --text-2: #aeaeb2;
+  --text-3: #8e8e93;
+  --text-on-accent: #ffffff;
+
+  /* Accent: the cut and the primary action */
+  --accent: #fa2d48;
+  --accent-fill: #d81e3a;
+  --accent-fill-hover: #c01733;
+  --accent-wash: rgb(250 45 72 / 0.12);
+
+  /* State */
+  --ok: #30d158;
+  --warn: #ffb340;
+  --danger: #ff6961;
+
+  /* Type */
+  --font-ui: "Geist Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", "Cascadia Mono", Consolas, monospace;
+  --text-xs: 11.5px;
+  --text-sm: 12.5px;
+  --text-md: 13px;
+  --text-lg: 16px;
+  --text-tc: 14px;
+
+  /* Space and shape */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --radius: 4px;
+  --radius-sm: 3px;
+  --control-h: 32px;
+
+  /* Layout */
+  --toolbar-h: 52px;
+  --rail-w: 208px;
+  --panel-w: 340px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur: 220ms;
+}

@@ -1,0 +1,64 @@
+import type { Job } from "../types";
+import { formatSize } from "../lib/exportPlan";
+import { Icon } from "./Icon";
+import "./Library.css";
+
+interface LibraryProps {
+  jobs: Job[];
+  onOpenWorkspace: () => void;
+}
+
+const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+
+export function Library({ jobs, onOpenWorkspace }: LibraryProps) {
+  const finished = jobs.filter((j) => j.status === "finished");
+
+  return (
+    <section className="library" aria-labelledby="library-title">
+      <header className="library__head">
+        <h1 id="library-title">Library</h1>
+        <p>Files Craftora has finished this session.</p>
+      </header>
+
+      {finished.length === 0 ? (
+        <div className="library__empty">
+          <p>No finished files yet.</p>
+          <button type="button" className="btn btn--secondary" onClick={onOpenWorkspace}>
+            <Icon name="scissors" size={14} />
+            Go to Workspace
+          </button>
+        </div>
+      ) : (
+        <div className="library__table-wrap">
+          <table className="library__table">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Details</th>
+                <th scope="col" className="is-num">
+                  Size
+                </th>
+                <th scope="col">Finished</th>
+              </tr>
+            </thead>
+            <tbody>
+              {finished.map((job) => (
+                <tr key={job.id}>
+                  <td>
+                    <span className="library__name">
+                      <Icon name={job.kind === "audio" ? "music" : "film"} size={15} />
+                      <span className="mono truncate">{job.fileName}</span>
+                    </span>
+                  </td>
+                  <td className="library__detail">{job.summary}</td>
+                  <td className="mono is-num">{formatSize(job.sizeMb)}</td>
+                  <td className="library__detail">{job.finishedAt ? dateFormat.format(job.finishedAt) : ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
