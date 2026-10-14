@@ -29,6 +29,11 @@ export interface MediaSource {
   previewHasAudio?: boolean;
   /** Separate sound stream to play in sync with a video-only preview (common on YouTube). */
   previewAudioUrl?: string;
+  /**
+   * Files on this PC the preview player can't open as they are (AC-3 sound, AVI, HEVC…):
+   * which preview copy is still being made. Absent once the preview is ready.
+   */
+  previewProxy?: "audio" | "video" | "";
   streams: StreamOption[];
 }
 
@@ -87,9 +92,14 @@ export interface RenderClip {
   start: number;
   in: number;
   out: number;
+  speed: number;
   volume: number;
   mirror: boolean;
   reverse: boolean;
+  fadeIn: number;
+  fadeOut: number;
+  /** Fractions cut off each side: left, top, right, bottom. */
+  crop: [number, number, number, number];
   size: number;
   x: number;
   y: number;

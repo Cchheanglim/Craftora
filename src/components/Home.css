@@ -94,26 +94,87 @@
   color: var(--text-3);
 }
 
-.home__continue {
+.home__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.home__section-head .btn {
+  height: 26px;
+  margin-right: -10px;
+}
+
+/* Saved projects: rows like the Start actions, with a delete button at the end. */
+.home__projects {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+
+.home__projects li {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+
+.home__projects li:hover {
+  background: var(--bg-raised);
+}
+
+.home__project {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: 12px 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  background: var(--bg-raised);
+  padding: 10px;
+  border: 0;
+  background: transparent;
   color: var(--text);
   text-align: left;
 }
 
-.home__continue:hover {
-  border-color: var(--line-hover);
+.home__project > svg {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+
+.home__project-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.home__project-meta {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.home__projects li.is-current .home__project > svg {
+  color: var(--text);
 }
 
 .home__open {
-  margin-left: auto;
-  font-size: 12.5px;
+  flex-shrink: 0;
+  font-size: 12px;
   color: var(--text-2);
+}
+
+.home__delete {
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.home__delete.is-confirming {
+  height: 28px;
+  color: var(--danger);
 }
 
 .home__muted {

@@ -5,16 +5,42 @@ import {
   engineStatus,
   fetchMedia,
   inDesktopApp,
+  makePreview,
   onFileDrop,
   openLocal,
+  pickFolder,
   pickMediaFiles,
   type EngineStatus,
 } from "./lib/engine";
+import {
+  DEFAULT_OUTPUT_DIR,
+  deleteProject,
+  getOutputDir,
+  listProjects,
+  loadHistory,
+  loadProject,
+  saveHistory,
+  saveProject,
+  setOutputDir,
+  type ProjectEntry,
+} from "./lib/storage";
 import { useQueue } from "./state/useQueue";
 import { useProject } from "./project/useProject";
 import { usePlayback } from "./project/usePlayback";
 import { cutModeApplies, frameOf, planExport } from "./project/exportPlan";
-import { clipEnd, emptyProject, mainTrack, mediaFromSource, projectDuration, type Project } from "./project/model";
+import {
+  NO_CROP,
+  POSITIONS,
+  clipEnd,
+  emptyProject,
+  mainTrack,
+  mediaFromSource,
+  projectDuration,
+  projectName,
+  upgradeProject,
+  type MediaItem,
+  type Project,
+} from "./project/model";
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { Home } from "./components/Home";
@@ -27,11 +53,14 @@ import { Library } from "./components/Library";
 import "./App.css";
 
 const DEMO = DEMO_SOURCES[0];
+/** Quiet time after the last edit before the project is saved. */
+const AUTOSAVE_MS = 600;
 
 /** Browser preview: the sample film already on the timeline, trimmed. */
 function demoProject(): Project {
   const project = emptyProject();
   const item = mediaFromSource(DEMO);
+  const corner = POSITIONS["bottom-right"];
   return {
     ...project,
     media: [item],
@@ -43,11 +72,16 @@ function demoProject(): Project {
         start: 0,
         in: 84,
         out: 225.5,
+        speed: 1,
         volume: 1,
         mirror: false,
         reverse: false,
+        fadeIn: 0,
+        fadeOut: 0,
+        crop: NO_CROP,
         size: 0.4,
-        position: "bottom-right",
+        x: corner.x,
+        y: corner.y,
       },
     ],
   };
@@ -81,6 +115,11 @@ function remember(key: string, value: boolean) {
 const isTyping = (el: EventTarget | null) =>
   el instanceof HTMLElement && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
 
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/** Finished exports as kept in the history: without what only a running job needs. */
+const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined });
+
 export default function App() {
   const [view, setView] = useState<View>(inDesktopApp ? "home" : "editor");
   const [leftOpen, setLeftOpen] = useState(() => remembered("craftora.left", true));
@@ -94,6 +133,12 @@ export default function App() {
   const [queuedCount, setQueuedCount] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [engines, setEngines] = useState<EngineStatus | "checking" | "browser">(inDesktopApp ? "checking" : "browser");
+  const [projectId, setProjectId] = useState<string>(() => crypto.randomUUID());
+  const [projects, setProjects] = useState<ProjectEntry[]>([]);
+  const [history, setHistory] = useState<Job[] | null>(null);
+  const [outputDir, setOutputDirState] = useState(DEFAULT_OUTPUT_DIR);
+  /** Media whose preview copy is being made. */
+  const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const urlRef = useRef<HTMLInputElement>(null);
 
   const api = useProject(() => (inDesktopApp ? emptyProject() : demoProject()));
@@ -104,7 +149,39 @@ export default function App() {
 
   useEffect(() => {
     if (inDesktopApp) void engineStatus().then(setEngines);
+    void listProjects().then(setProjects).catch(() => setProjects([]));
+    void loadHistory().then(setHistory);
+    void getOutputDir().then(setOutputDirState).catch(() => {});
   }, []);
+
+  // Save the project a moment after each change. Empty projects aren't worth keeping.
+  useEffect(() => {
+    if (project.media.length === 0 && project.clips.length === 0) return;
+    const timer = window.setTimeout(() => {
+      const entry: ProjectEntry = {
+        id: projectId,
+        name: projectName(project),
+        savedAt: Date.now(),
+        duration: projectDuration(project),
+        clips: project.clips.length,
+      };
+      saveProject({ ...entry, version: 1, project })
+        .then(() => setProjects((list) => [entry, ...list.filter((p) => p.id !== entry.id)]))
+        .catch((err) => setError(`Couldn't save the project: ${errorText(err)}`));
+    }, AUTOSAVE_MS);
+    return () => window.clearTimeout(timer);
+  }, [project, projectId]);
+
+  // Keep every finished export in the history, saved across restarts.
+  useEffect(() => {
+    if (!history) return;
+    const known = new Set(history.map((j) => j.id));
+    const added = queue.jobs.filter((j) => j.status === "finished" && !known.has(j.id)).map(forHistory);
+    if (added.length === 0) return;
+    const next = [...added, ...history].slice(0, 500);
+    setHistory(next);
+    void saveHistory(next).catch(() => {});
+  }, [queue.jobs, history]);
 
   const toggleLeft = useCallback(() => setLeftOpen((o) => (remember("craftora.left", !o), !o)), []);
   const toggleRight = useCallback(() => setRightOpen((o) => (remember("craftora.right", !o), !o)), []);
@@ -115,15 +192,35 @@ export default function App() {
   const plan = useMemo(() => planExport(project, effective), [project, effective]);
   const selected = project.clips.find((c) => c.id === selectedId) ?? null;
 
+  /** Makes the preview copy for a file the player can't open, then swaps it in. */
+  const prepare = useCallback(
+    (mediaId: string, source: MediaSource) => {
+      if (!source.previewProxy) return;
+      setPreparing((s) => new Set(s).add(mediaId));
+      makePreview(source)
+        .then((ready) => api.refreshMedia(mediaId, { source: ready }))
+        .catch((err) => setError(errorText(err)))
+        .finally(() =>
+          setPreparing((s) => {
+            const next = new Set(s);
+            next.delete(mediaId);
+            return next;
+          }),
+        );
+    },
+    [api],
+  );
+
   /** Puts fetched or opened media in the library; with `place`, also on the timeline. */
   const importSource = useCallback(
     (source: MediaSource, place: boolean) => {
       const item = mediaFromSource(source);
       api.edit({ type: "importMedia", item });
       if (place) api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId: item.id });
+      prepare(item.id, source);
       setView("editor");
     },
-    [api],
+    [api, prepare],
   );
 
   const fetchSource = async (link: string) => {
@@ -142,7 +239,7 @@ export default function App() {
       }
       setUrl("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -162,7 +259,7 @@ export default function App() {
         importSource(await openLocal(path), place);
         place = false;
       } catch (err) {
-        failed.push(`${path.split(/[\\/]/).pop()}: ${err instanceof Error ? err.message : String(err)}`);
+        failed.push(`${path.split(/[\\/]/).pop()}: ${errorText(err)}`);
       }
     }
     if (failed.length) setError(failed.join("  "));
@@ -183,6 +280,76 @@ export default function App() {
     });
     return () => void unlisten.then((stop) => stop());
   }, []);
+
+  /**
+   * After opening a saved project: files on this PC are opened again (the app only reads
+   * files the user opened), and links are fetched again because their preview links expire.
+   */
+  const reconnect = (media: MediaItem[]) => {
+    if (!inDesktopApp) return;
+    for (const item of media) {
+      const source = item.source;
+      const refreshed = source.local ? openLocal(source.url) : fetchMedia(source.url);
+      refreshed
+        .then((fresh) => {
+          api.refreshMedia(item.id, { source: { ...fresh, duration: source.duration }, missing: false });
+          prepare(item.id, fresh);
+        })
+        .catch(() => {
+          // A link that can't be fetched now (offline) keeps its old details and can still export later.
+          if (source.local) api.refreshMedia(item.id, { missing: true });
+        });
+    }
+  };
+
+  const openProject = async (id: string) => {
+    try {
+      const saved = await loadProject(id);
+      const opened = upgradeProject(saved.project);
+      api.reset(opened);
+      setProjectId(id);
+      setSelectedId(null);
+      playback.pause();
+      playback.seek(0);
+      setView("editor");
+      reconnect(opened.media);
+    } catch (err) {
+      setError(`Couldn't open the project: ${errorText(err)}`);
+    }
+  };
+
+  const newProject = () => {
+    api.reset(emptyProject());
+    setProjectId(crypto.randomUUID());
+    setSelectedId(null);
+    playback.pause();
+    playback.seek(0);
+    setView("editor");
+  };
+
+  const removeProject = async (id: string) => {
+    try {
+      await deleteProject(id);
+      setProjects((list) => list.filter((p) => p.id !== id));
+      if (id === projectId) {
+        api.reset(emptyProject());
+        setProjectId(crypto.randomUUID());
+        setSelectedId(null);
+      }
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+
+  const chooseOutputDir = async () => {
+    const picked = await pickFolder("Choose where exports are saved");
+    if (!picked) return;
+    try {
+      setOutputDirState(await setOutputDir(picked));
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
 
   const addMedia = (mediaId: string) => {
     api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId, at: playback.time });
@@ -276,7 +443,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const finished = queue.jobs.filter((j) => j.status === "finished");
+  const exported = history ?? [];
   const usedMedia = new Set(project.clips.map((c) => c.mediaId).filter((id): id is string => Boolean(id)));
   const showPanel = view === "editor" && rightOpen;
   const selectedTrack = selected ? project.tracks.find((t) => t.id === selected.trackId) : undefined;
@@ -304,9 +471,10 @@ export default function App() {
         view={view}
         onViewChange={setView}
         collapsed={!leftOpen}
-        libraryCount={finished.length}
+        libraryCount={exported.length}
         engines={engines}
         media={project.media}
+        preparing={preparing}
         onImport={inDesktopApp ? () => void importFiles() : undefined}
         onAddMedia={addMedia}
         onRemoveMedia={(mediaId) => api.edit({ type: "removeMedia", mediaId })}
@@ -320,14 +488,27 @@ export default function App() {
             onPasteLink={() => urlRef.current?.focus()}
             onTrySample={() => void fetchSource(DEMO.url)}
             busy={busy}
-            current={project.clips.length ? { clips: project.clips.length, duration, onContinue: () => setView("editor") } : undefined}
-            recent={finished}
+            projects={projects}
+            currentId={project.clips.length || project.media.length ? projectId : null}
+            onOpenProject={(id) => (id === projectId ? setView("editor") : void openProject(id))}
+            onNewProject={newProject}
+            onDeleteProject={(id) => void removeProject(id)}
+            recent={exported}
+            outputDir={outputDir}
           />
         )}
-        {view === "library" && <Library jobs={queue.jobs} onOpenWorkspace={() => setView("editor")} />}
+        {view === "library" && <Library jobs={exported} outputDir={outputDir} onOpenWorkspace={() => setView("editor")} />}
         {view === "editor" && (
           <div className="app__editor">
-            <Preview project={project} playback={playback} frame={frameOf(effective)} duration={duration} />
+            <Preview
+              project={project}
+              api={api}
+              playback={playback}
+              frame={frameOf(effective)}
+              duration={duration}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+            />
             <TimelineEditor
               project={project}
               api={api}
@@ -352,6 +533,8 @@ export default function App() {
           hasPicture={hasPicture}
           onAddToQueue={addToQueue}
           queuedCount={queuedCount}
+          outputDir={outputDir}
+          onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
         >
           {selected && selectedTrack && (
             <Inspector
@@ -360,6 +543,7 @@ export default function App() {
               track={selectedTrack}
               media={project.media.find((m) => m.id === selected.mediaId)}
               onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
+              onSpeed={(speed) => api.edit({ type: "setSpeed", clipId: selected.id, speed })}
               onCheckpoint={api.checkpoint}
               onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
               onSplit={split}

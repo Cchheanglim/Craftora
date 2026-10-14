@@ -201,8 +201,11 @@ pub(crate) fn is_web_link(url: &str) -> bool {
     url.starts_with("https://") || url.starts_with("http://")
 }
 
-/// `Videos\Craftora`, created on first use.
+/// The save folder the user chose, or `Videos\Craftora` (created on first use).
 pub(crate) fn output_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Some(dir) = crate::store::chosen_output_dir(app) {
+        return Ok(dir);
+    }
     let dir = app
         .path()
         .video_dir()

@@ -86,6 +86,9 @@ pub struct MediaSource {
     pub(crate) preview_has_audio: bool,
     /// Separate sound stream played in sync with a video-only preview; empty when not needed.
     pub(crate) preview_audio_url: String,
+    /// Files on this PC: "audio" or "video" when a preview copy still has to be made
+    /// (`make_preview`), empty otherwise.
+    pub(crate) preview_proxy: &'static str,
     pub(crate) streams: Vec<Stream>,
 }
 
@@ -263,6 +266,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         preview_url,
         preview_has_audio,
         preview_audio_url,
+        preview_proxy: "",
         streams,
     })
 }

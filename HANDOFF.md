@@ -12,19 +12,21 @@ system).
   layers. Uses plain CSS, not Tailwind.
 - Plans to add an **AI editing assistant** later.
 
-## What's built (all committed, up to `1f5a62f`)
+## What's built (all committed, up to `1f5a62f`, plus the second session below)
 
 - **Toolchain** on this PC: Bun, Rust, MSVC Build Tools, WebView2. yt-dlp 2026.08.19 and
   FFmpeg 9.0.2 GPL are in `src-tauri/bin/`, fetched with `scripts/fetch-sidecars.ps1` and
   gitignored.
 - **CapCut-style editor:**
-  - Home screen.
+  - Home screen with a saved-projects list.
   - Media library: import files (also offline) or fetch links.
   - Timeline with Video 1 (main, clips back to back), Video 2+ (picture-in-picture), Audio
     and Text tracks.
-  - Move, trim, split, delete, undo/redo, snapping, zoom.
-  - Inspector: volume, mirror, reverse, size and position, text and colour, source quality.
-  - Synced live preview, with separate sound streams for YouTube.
+  - Move, trim, split, delete, undo/redo, snapping, zoom, a draggable playhead.
+  - Inspector: crop, speed, fades, volume, mirror, reverse, size and place, text and
+    colour, source quality.
+  - Synced live preview, with separate sound streams for YouTube. Picture-in-picture and
+    text are moved and resized directly on the preview.
   - Full-screen preview, collapsible side panels, export queue, keyboard shortcuts.
 - **Export:**
   - A single untouched clip takes the fast path in `src-tauri/src/jobs.rs`: a yt-dlp
@@ -34,49 +36,54 @@ system).
   applied through `useProject` with undo/redo. An AI assistant should dispatch these same
   actions.
 
-## Not verified yet (do this first)
+## Second session (2026-10-14), not committed yet
 
-- **The new editor has not been used in the real app window.** The checks so far:
-  - TypeScript and Rust compile cleanly, and the design detector is clean.
-  - The browser demo mode was screenshotted at 1440×900 and 1100×700.
-  - The FFmpeg filter graphs were tested by hand on generated files: join, overlay,
-    drawtext, amix, mirror, local cut and MP3.
-- **Not tested end to end:**
-  - `start_render` from the app.
-  - Rendering a timeline that uses a **link**, which goes through yt-dlp `DownloadTarget::Any`
-    with `--force-keyframes-at-cuts`.
-  - Dragging clips between tracks.
-  - Drag-and-drop import.
-  - Full-screen via `setWindowFullscreen`.
-  - `Ctrl+B` panel toggles.
-- **Owner's test list:**
-  1. Import two videos and a song.
-  2. Drop one video on Video 2 and set it to Small, Top right.
-  3. Press `T` for a title and change its text and colour.
-  4. Press `S` to split and `Delete` to remove, then `Ctrl+Z`.
-  5. Press `F`, then `Esc`.
-  6. Add to queue and open the result.
+The owner reported that Video 2 couldn't be moved or cropped and that the playhead couldn't
+be dragged. Fixed, along with the known issues and next steps 2–4:
 
-## Known limitations and bugs
+- **Preview editing** (`Preview.tsx`): select a picture-in-picture or text on the preview,
+  drag it to move it (snaps to centre and edges), and drag a corner to resize it. Positions
+  are now free `x`/`y` fractions of the free space; `POSITIONS` are presets.
+- **Crop** for any picture clip (four Inspector sliders), previewed and rendered alike.
+- **Playhead**: a wide grab strip, plus drag-to-scrub on the ruler and on empty track space.
+  Drags follow the pointer on `window`, so they survive clips changing track.
+- **Video 1 reorder without jumps**: the dragged clip follows the pointer and its neighbours
+  open a gap. The project changes only on release (`moveClip` with `mainSlot`).
+- **Speed** 0.25–4× (`setSpeed`; `setpts` and chained `atempo`) and **fades** in/out
+  (`fade`, `afade`, alpha fades for picture-in-picture, an alpha expression for text).
+  `clipLength` is now `(out − in) / speed`. Trim and split handle speed and reversed clips.
+- **Reverse preview**: steps backwards by seeking (choppy, silent). The export is smooth.
+- **Preview copies** (`local.rs` `make_preview`): AC-3/DTS sound gets an AAC copy. AVI,
+  HEVC and others get a 720p H.264 copy. They're made in the background and cached in the
+  app cache folder.
+- **Saving** (`store.rs`, `src/lib/storage.ts`): projects autosave to
+  `%APPDATA%\com.cchheanglim.craftora\projects\<id>.json`. Export history goes to
+  `history.json`, and the chosen save folder to `settings.json`. Reopening re-opens local
+  files (marking missing ones) and re-fetches links, whose preview URLs expire.
+  `upgradeProject` fills in fields older saves lack.
+- **Save folder**: "Change" next to Save to in the Export panel.
+- **Checked:** `tsc` and `cargo clippy` are clean. A render with crop, speed, reverse,
+  fades, alpha overlay and text fade was run by hand on generated files, and so were both
+  preview-copy commands. In the browser demo, these were driven: playhead drag,
+  picture-in-picture move, resize and crop, Video 1 reorder, text move, speed, fades, and
+  autosave with reopen. **Not yet run in the real app window.**
 
-- **Reverse** isn't previewed: it plays forward with a badge. The export is reversed.
-- Previews of local files whose audio is AC-3, E-AC-3 or DTS may be silent in WebView2. This
-  isn't handled yet; the export is unaffected.
-- **Not saved anywhere yet:** projects, export history (in memory only) and the
-  panel-collapse state (in localStorage).
-- **The output folder is fixed** at `Videos\Craftora`.
-- Main-track clips reorder by dragging, but the clip jumps as it passes its neighbours.
-- `DESIGN.md` doesn't yet document the timeline clip colours (`--clip-*` tokens) or the
-  Home layout. Run `/impeccable document` (or the documenter) to refresh it.
+## Known limitations
 
-## Next steps the owner asked for, or that are planned
+- The reverse preview is choppy and silent while playing (browsers can't play backwards).
+- Preview copies of long videos take a while; the clip shows nothing until its copy is ready.
+- No transitions between clips yet (fades only).
+- Text resizing on the preview scales the font roughly with the box.
+- `DESIGN.md` doesn't yet document the timeline clip colours (`--clip-*` tokens), the Home
+  layout or the preview selection handles. Run `/impeccable document` to refresh it.
 
-1. Have the owner test, then fix what they report.
-2. Save and reopen projects, and keep export history (Tauri store plugin).
-3. Let the owner choose the save folder (dialog plugin is already installed).
-4. Clip speed, fades and transitions.
-5. AI editing assistant, built on `actions.ts`.
-6. Before a public release: code signing, auto-updates, an FFmpeg licence decision
+## Next steps
+
+1. Owner tests the second-session work in the app (`bun tauri dev`), then fix what they report.
+2. Transitions between Video 1 clips (crossfade with `xfade`/`acrossfade`; overlaps the clips).
+3. AI editing assistant, built on `actions.ts`. Needs the owner's decisions: which model
+   or provider, and where the API key lives.
+4. Before a public release: code signing, auto-updates, an FFmpeg licence decision
    (GPL or LGPL), and user terms.
 
 ## Running it

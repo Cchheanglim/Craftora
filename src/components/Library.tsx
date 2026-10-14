@@ -5,20 +5,24 @@ import { Icon } from "./Icon";
 import "./Library.css";
 
 interface LibraryProps {
+  /** Finished exports, newest first. */
   jobs: Job[];
+  outputDir: string;
   onOpenWorkspace: () => void;
 }
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function Library({ jobs, onOpenWorkspace }: LibraryProps) {
-  const finished = jobs.filter((j) => j.status === "finished");
+export function Library({ jobs, outputDir, onOpenWorkspace }: LibraryProps) {
+  const finished = jobs;
 
   return (
     <section className="library" aria-labelledby="library-title">
       <header className="library__head">
         <h1 id="library-title">Library</h1>
-        <p>Files Craftora has finished this session, saved in Videos\Craftora.</p>
+        <p>
+          Everything Craftora has exported. New files are saved in <span className="mono">{outputDir}</span>.
+        </p>
       </header>
 
       {finished.length === 0 ? (

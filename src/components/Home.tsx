@@ -1,4 +1,6 @@
+import { useState } from "react";
 import type { Job } from "../types";
+import type { ProjectEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
 import { revealFile } from "../lib/engine";
 import { Icon } from "./Icon";
@@ -10,9 +12,16 @@ interface HomeProps {
   onPasteLink: () => void;
   onTrySample: () => void;
   busy: boolean;
-  /** Present when a project is in progress. */
-  current?: { clips: number; duration: number; onContinue: () => void };
+  /** Saved projects, most recent first. */
+  projects: ProjectEntry[];
+  /** The project open in the editor, if it has anything in it. */
+  currentId: string | null;
+  onOpenProject: (id: string) => void;
+  onNewProject: () => void;
+  onDeleteProject: (id: string) => void;
+  /** Finished exports, newest first. */
   recent: Job[];
+  outputDir: string;
 }
 
 const SHORTCUTS: [string, string][] = [
@@ -26,7 +35,31 @@ const SHORTCUTS: [string, string][] = [
   ["Ctrl ↵", "Add to queue"],
 ];
 
-export function Home({ onImport, onPasteLink, onTrySample, busy, current, recent }: HomeProps) {
+function ago(ms: number): string {
+  const minutes = Math.round((Date.now() - ms) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(ms);
+}
+
+export function Home({
+  onImport,
+  onPasteLink,
+  onTrySample,
+  busy,
+  projects,
+  currentId,
+  onOpenProject,
+  onNewProject,
+  onDeleteProject,
+  recent,
+  outputDir,
+}: HomeProps) {
+  // Deleting asks once more, inline, on the same button.
+  const [confirming, setConfirming] = useState<string | null>(null);
+
   return (
     <section className="home" aria-labelledby="home-title">
       <div className="home__inner">
@@ -70,24 +103,65 @@ export function Home({ onImport, onPasteLink, onTrySample, busy, current, recent
               </li>
             </ul>
 
-            {current && (
-              <>
-                <h2 className="section-label home__gap">Continue</h2>
-                <button type="button" className="home__continue" onClick={current.onContinue}>
-                  <Icon name="scissors" size={16} />
-                  <span>
-                    Your project · {current.clips} clip{current.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(current.duration)}</span>
-                  </span>
-                  <span className="home__open">Open editor</span>
-                </button>
-              </>
+            <div className="home__section-head home__gap">
+              <h2 className="section-label">Projects</h2>
+              <button type="button" className="btn btn--ghost" onClick={onNewProject}>
+                <Icon name="plus" size={13} />
+                New project
+              </button>
+            </div>
+            {projects.length === 0 ? (
+              <p className="home__muted">Your projects save themselves as you edit and show up here.</p>
+            ) : (
+              <ul className="home__projects">
+                {projects.map((p) => (
+                  <li key={p.id} className={p.id === currentId ? "is-current" : undefined}>
+                    <button type="button" className="home__project" onClick={() => onOpenProject(p.id)}>
+                      <Icon name="scissors" size={14} />
+                      <span className="home__project-text">
+                        <span className="truncate">{p.name}</span>
+                        <span className="home__project-meta">
+                          {p.clips} clip{p.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(p.duration)}</span> · {ago(p.savedAt)}
+                        </span>
+                      </span>
+                      {p.id === currentId && <span className="home__open">Open now</span>}
+                    </button>
+                    {confirming === p.id ? (
+                      <button
+                        type="button"
+                        className="btn btn--ghost home__delete is-confirming"
+                        onClick={() => {
+                          setConfirming(null);
+                          onDeleteProject(p.id);
+                        }}
+                        onBlur={() => setConfirming(null)}
+                        autoFocus
+                      >
+                        Delete?
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn--icon home__delete"
+                        aria-label={`Delete ${p.name}`}
+                        title="Delete project"
+                        onClick={() => setConfirming(p.id)}
+                      >
+                        <Icon name="trash" size={14} />
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
 
           <div className="home__col">
             <h2 className="section-label">Recent exports</h2>
             {recent.length === 0 ? (
-              <p className="home__muted">Nothing exported yet. Finished files land in Videos\Craftora.</p>
+              <p className="home__muted">
+                Nothing exported yet. Finished files land in <span className="mono">{outputDir}</span>.
+              </p>
             ) : (
               <ul className="home__recent">
                 {recent.slice(0, 5).map((job) => (
