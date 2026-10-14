@@ -26,8 +26,11 @@ function readAuto(): boolean {
   }
 }
 
+/** The Microsoft Store edition (`scripts/make-msix.ps1`): the Store installs its updates. */
+export const storeEdition = import.meta.env.VITE_STORE_BUILD === "1";
+
 /** Development runs (`bun tauri dev`) never check: they aren't installed copies. */
-const canUpdate = inDesktopApp && import.meta.env.PROD;
+const canUpdate = inDesktopApp && import.meta.env.PROD && !storeEdition;
 
 export function useUpdates() {
   const [status, setStatus] = useState<UpdateStatus>({ kind: "idle" });

@@ -87,30 +87,46 @@ be dragged. Fixed, along with the known issues and next steps 2–4:
     against the real Gemini API** (no key here); errors from Gemini are shown in the chat.
 - A "Loading video…" note while a preview video's first frame loads.
 
-## Fourth session (2026-10-14), not committed yet: releases
+## Fourth session (2026-10-14): releases
 
-The owner chose: **keep the GPL FFmpeg build**, and **release through GitHub with free
-SignPath Foundation signing**. They'll do the sign-ups themselves.
+The owner chose to **keep the GPL FFmpeg build** and release through GitHub. SignPath
+Foundation **rejected** the free-signing application, so installers are unsigned (SmartScreen
+"unknown publisher" warning). The options left are in `RELEASING.md` under "Code signing":
+the Microsoft Store (free; needs MSIX packaging) or a paid certificate (Certum open source,
+about $50 a year). Azure Artifact Signing is open only to individuals in the US and Canada.
 
-- `.github/workflows/release.yml`: on a `v*` tag, builds the NSIS installer from source and
-  signs it with SignPath. Signing runs only once the `SIGNPATH_*` variables exist; until then
-  the installer is unsigned. It then re-signs the update with `--app-version`
-  (`requireSignedVersion` is on) and writes `latest.json`. It attaches the exact FFmpeg source
-  and BtbN build scripts, and creates a **draft** release. Running it by hand makes a test
-  build only.
+- `.github/workflows/release.yml`: on a `v*` tag, builds the NSIS installer from source. It
+  re-signs the update with `--app-version` (`requireSignedVersion` is on), writes `latest.json`
+  (UTF-8 without a BOM), attaches the exact FFmpeg source and BtbN build scripts, and creates
+  a **draft** release. Running it by hand makes a test build only.
 - Auto-updates: `tauri-plugin-updater` and `tauri-plugin-process`. The endpoint is
   `releases/latest/download/latest.json`. `src/lib/updates.ts` checks once at startup
   (installed builds only; can be turned off on Home > About), and the toolbar shows
   "Update to vX".
-- The update key was generated in `C:/Users/chhea/.tauri/` (private key, password file,
-  public key). The public key is in `tauri.conf.json`. The owner must add two GitHub secrets
-  (see `RELEASING.md`).
-- GPL and SignPath paperwork: `THIRD_PARTY_NOTICES.md`; `CODE_SIGNING.md` (SignPath's
-  required line, team roles, privacy policy covering links, the assistant and update checks);
-  licence files bundled into the installer under `licenses/`. The README has a Download
-  section and an up-to-date roadmap.
-- `RELEASING.md`: one-time setup (secrets, two-factor authentication, the SignPath
-  application, the artifact configuration XML, variables) and the steps for each release.
+- The update key was generated in `C:/Users/chhea/.tauri/`. The public key is in
+  `tauri.conf.json`; the owner must add two GitHub secrets (see `RELEASING.md`).
+- GPL paperwork: `THIRD_PARTY_NOTICES.md`; licence files bundled into the installer under
+  `licenses/`. `PRIVACY.md` covers links, the assistant and update checks; Home links to it.
+- Verified on the owner's PC: the release build (109 MB installer with `licenses/`), the
+  version-bound update signature, and the release-prep PowerShell. **Not yet run on GitHub
+  Actions.**
+
+## Fifth session (2026-10-14): Microsoft Store
+
+The owner is registering a free Microsoft Store individual developer account. The Store signs
+MSIX packages for free; a plain `.exe` would need a paid certificate (policy 10.2.9).
+
+- `scripts/make-msix.ps1` builds the **Store edition** (`VITE_STORE_BUILD=1`, which turns off
+  the self-updater in `src/lib/updates.ts`). It lays out the exes, licences and logos with
+  `src-tauri/msix/AppxManifest.xml`, and packs them with the Windows SDK's `makeappx`. The
+  identity comes from `src-tauri/msix/store-identity.json` (still to be created from Partner
+  Center); `-Test` uses a placeholder. A test package was built (153 MB) and the Store flag
+  was verified in the bundle. **Not yet installed or run as MSIX.**
+- Risk: Store policy 11.2 (IP complaints). YouTube downloading may lead to rejection or
+  removal; the listing should present Craftora as an editor. Fallback: a Store edition
+  without link fetching.
+- `RELEASING.md` → "Microsoft Store": registration, the identity file, submission fields
+  (privacy URL, the `runFullTrust` justification) and local testing.
 
 ## Known limitations
 
@@ -127,8 +143,10 @@ SignPath Foundation signing**. They'll do the sign-ups themselves.
 
 1. Owner tests transitions and the assistant (needs a Gemini API key from Google AI Studio).
 2. Find why local imports are slow to appear in the preview.
-3. Owner: add the GitHub secrets, publish v0.1.0 (unsigned), apply to SignPath Foundation,
-   then set the SignPath variables (all in `RELEASING.md`).
+3. Owner: add the GitHub secrets, merge `Building` into `main`, publish v0.1.0 (see
+   `RELEASING.md`).
+4. Owner: register the Store account and send the three identity values. Then build the
+   real `.msix`, test it as an installed package, and submit.
 
 ## Running it
 

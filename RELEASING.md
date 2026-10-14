@@ -1,8 +1,8 @@
 # Releasing Craftora
 
 GitHub Actions builds the Windows installer from this repository
-([`.github/workflows/release.yml`](.github/workflows/release.yml)), signs it with SignPath
-once that's set up, and creates a **draft** release. Installed copies find new versions
+([`.github/workflows/release.yml`](.github/workflows/release.yml)) and creates a **draft**
+release. Installed copies find new versions
 through the `latest.json` file attached to the newest published release.
 
 ## One-time setup
@@ -29,53 +29,65 @@ New repository secret**:
 ### 2. Two-factor authentication
 
 Turn on two-factor authentication for your GitHub account (**Settings → Password and
-authentication**). SignPath requires it for everyone who can change the code or approve
-releases.
+authentication**). The update key is only as safe as the account that holds it.
 
-### 3. Code signing with SignPath Foundation (free for open source)
+## Code signing
 
-SignPath Foundation needs an existing release, so publish the first version unsigned (see
-**Publishing a version**), then:
+The installer isn't code-signed, so Windows SmartScreen warns that the publisher is unknown
+(users choose **More info → Run anyway**). The app's own update signature is separate and
+always on, so updates stay safe either way. Ways to remove the warning later:
 
-1. Apply at <https://signpath.org> (Apply for an open-source certificate). Give the repository
-   link and point to [CODE_SIGNING.md](CODE_SIGNING.md), which has the policy, team roles and
-   privacy statement they ask for.
-2. Once accepted, in the SignPath web app:
-   - Add the predefined **GitHub.com** trusted build system and link it to the Craftora
-     project.
-   - Create an **artifact configuration** with this content (the workflow uploads the
-     installer inside a ZIP):
+- **Microsoft Store** (free for individual developers): Microsoft signs and updates the app.
+  See "Microsoft Store" below.
+- **A code-signing certificate**, such as Certum's for open-source developers (about $50 a
+  year). Signing would go in `release.yml` just before "Sign the update".
 
-     ```xml
-     <?xml version="1.0" encoding="utf-8"?>
-     <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
-       <zip-file>
-         <pe-file path="*-setup.exe">
-           <authenticode-sign />
-         </pe-file>
-       </zip-file>
-     </artifact-configuration>
-     ```
+SignPath Foundation turned down the application in October 2026.
 
-   - Create a CI user with **submitter** rights on the project's release signing policy, and
-     an API token for it.
-3. In GitHub, add the secret `SIGNPATH_API_TOKEN` (the token), and under
-   **Secrets and variables → Actions → Variables** add:
+## Microsoft Store
 
-   | Variable | Value (from SignPath) |
-   |---|---|
-   | `SIGNPATH_ORGANIZATION_ID` | Your organization id |
-   | `SIGNPATH_PROJECT_SLUG` | The project's slug, e.g. `craftora` |
-   | `SIGNPATH_POLICY_SLUG` | The signing policy's slug, e.g. `release-signing` |
-   | `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG` | The artifact configuration's slug |
+The Store copy is an MSIX package that Microsoft signs and updates, so it has no SmartScreen
+warning and no self-updater. It's made by `scripts/make-msix.ps1`. Uploading a plain `.exe`
+installer would need a paid certificate (Store policy 10.2.9), so the Store gets the MSIX.
 
-From then on every release is signed. The workflow skips signing while
-`SIGNPATH_ORGANIZATION_ID` is empty.
+### Registering (once, by the owner)
 
-4. In `README.md`, replace the "applying for free code signing" paragraph under **Download**
-   with SignPath's required line: "Free code signing provided by
-   [SignPath.io](https://about.signpath.io), certificate by
-   [SignPath Foundation](https://signpath.org)".
+1. Go to <https://storedeveloper.microsoft.com> and sign up as an **individual developer** with
+   your personal Microsoft account. It's free. Microsoft checks your identity with a photo of
+   a government ID and a selfie.
+2. In Partner Center, open **Apps and games → New product → MSIX or PWA app**, and reserve
+   the name **Craftora**. If it's taken, try something like "Craftora Video Editor".
+3. Open the new app's **Product identity** page and copy three values into
+   `src-tauri/msix/store-identity.json`. They're public, so the file can be committed:
+
+   ```json
+   {
+     "name": "<Package/Identity/Name>",
+     "publisher": "<Package/Identity/Publisher, starts with CN=>",
+     "publisherDisplayName": "<Package/Properties/PublisherDisplayName>"
+   }
+   ```
+
+### Making and submitting a package
+
+1. Set the version as in **Publishing a version** below (the package uses it as `x.y.z.0`).
+2. Run `powershell -ExecutionPolicy Bypass -File scripts/make-msix.ps1`. The package is
+   `src-tauri/target/msix/Craftora_<version>_x64.msix`.
+3. In Partner Center, start a submission:
+   - **Packages:** upload the `.msix`.
+   - **Store listing:** description, at least one screenshot, category **Photo & video**.
+     Describe Craftora as a video editor first; link downloading is one feature among many.
+   - **Privacy policy URL:** <https://github.com/Cchheanglim/Craftora/blob/main/PRIVACY.md>
+   - **Age ratings:** answer the questionnaire.
+   - **Restricted capabilities** (`runFullTrust`), a suggested justification: "Craftora is a
+     desktop video editor. It runs the bundled FFmpeg and yt-dlp programs from its install
+     folder to cut, render and import media, which needs a full-trust desktop process."
+4. Submit. Certification usually takes a few days. A Store version is a separate upload from
+   the GitHub release; do both for each version.
+
+To try the package layout on this PC before you have the identity values, run the script with
+`-Test`. A test package can't be uploaded. To run it, turn on Developer Mode, then run
+`Add-AppxPackage -Register src-tauri/target/msix/layout/AppxManifest.xml` in PowerShell.
 
 ## Publishing a version
 
@@ -90,8 +102,7 @@ From then on every release is signed. The workflow skips signing while
    git push origin v0.2.0
    ```
 
-3. Watch **Actions → Release** on GitHub (about 15–25 minutes). With SignPath set up, approve
-   the signing request in SignPath when it arrives; the build waits up to an hour.
+3. Watch **Actions → Release** on GitHub (about 15–25 minutes).
 4. Open **Releases**, check the draft (installer, `.sig`, `latest.json`, FFmpeg source), edit
    the notes if you like, and **Publish**. Installed copies offer the update from then on.
 
