@@ -5,7 +5,7 @@
  */
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
-import { clipLength, isCropped, mainTrack, projectDuration, type Clip, type MediaItem, type Project } from "./model";
+import { clipLength, isCropped, mainOrder, mainTrack, projectDuration, transitionLength, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
   { id: "1080p", label: "16:9 · 1920 × 1080", width: 1920, height: 1080 },
@@ -125,7 +125,9 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   const frame = frameOf(settings);
   const main = mainTrack(project).id;
   const used = project.media.filter((m) => project.clips.some((c) => c.mediaId === m.id));
+  const order = mainOrder(project);
   const clips: RenderClip[] = project.clips.map((c) => {
+    const index = order.findIndex((o) => o.id === c.id);
     const track = project.tracks.find((t) => t.id === c.trackId);
     const role: RenderClip["role"] = !c.mediaId
       ? "text"
@@ -147,6 +149,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       fadeIn: c.fadeIn,
       fadeOut: c.fadeOut,
       crop: [c.crop.left, c.crop.top, c.crop.right, c.crop.bottom],
+      transition: index > 0 ? transitionLength(order[index - 1], c) : 0,
+      transitionKind: c.transition?.kind ?? "crossfade",
       size: c.size,
       x: c.x,
       y: c.y,
@@ -195,6 +199,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     project.clips.some((c) => isCropped(c.crop)) && "crop",
     project.clips.some((c) => c.speed !== 1) && "setpts, atempo",
     project.clips.some((c) => c.fadeIn || c.fadeOut) && "fade, afade",
+    clips.some((c) => c.transition > 0) && "xfade, acrossfade",
     clips.some((c) => c.role === "overlay") && "overlay",
     counts.texts && "drawtext",
     "amix",

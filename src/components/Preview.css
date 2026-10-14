@@ -46,6 +46,16 @@
   overflow: hidden;
 }
 
+.preview__loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  pointer-events: none;
+}
+
 .preview__video {
   position: absolute;
   display: block;

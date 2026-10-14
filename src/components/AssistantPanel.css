@@ -1,0 +1,187 @@
+.asst {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.asst__head {
+  display: flex;
+  gap: var(--space-2);
+  padding: 14px var(--space-5) var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.asst__head select {
+  flex: 1;
+  min-width: 0;
+}
+
+.asst__log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.asst__empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.asst__empty ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+/* Example requests: rows that fill the message box when clicked. */
+.asst__empty li button {
+  width: 100%;
+  padding: 8px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.asst__empty li button:hover {
+  background: var(--bg-raised);
+}
+
+.asst__fine {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+
+.asst__msg {
+  display: flex;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.asst__msg.is-user {
+  align-self: flex-end;
+  max-width: 88%;
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  background: var(--bg-selected);
+}
+
+.asst__msg.is-action {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.asst__msg.is-action svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--ok);
+}
+
+.asst__msg.is-error {
+  font-size: 12.5px;
+  color: var(--danger);
+}
+
+.asst__msg.is-error svg {
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.asst__msg.is-thinking {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.asst__compose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5) var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.asst__compose textarea {
+  height: auto;
+  padding: 8px 10px;
+  resize: none;
+  line-height: 1.45;
+  font-family: var(--font-ui);
+}
+
+.asst__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.asst__actions kbd {
+  margin-left: 2px;
+}
+
+.asst__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  color: var(--text-3);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.asst__link:hover {
+  color: var(--text);
+}
+
+.asst__setup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 18px var(--space-5);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.asst__setup h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.asst__setup label {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.asst__setup .btn {
+  align-self: flex-start;
+}
+
+.asst__error {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.asst__note {
+  padding: 18px var(--space-5);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}

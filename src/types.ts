@@ -100,6 +100,9 @@ export interface RenderClip {
   fadeOut: number;
   /** Fractions cut off each side: left, top, right, bottom. */
   crop: [number, number, number, number];
+  /** Main clips: seconds this clip overlaps the previous one (0 = straight cut), and how. */
+  transition: number;
+  transitionKind: "crossfade" | "dip";
   size: number;
   x: number;
   y: number;

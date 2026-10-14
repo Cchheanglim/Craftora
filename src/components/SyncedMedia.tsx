@@ -19,6 +19,8 @@ interface SyncedMediaProps {
   className?: string;
   style?: CSSProperties;
   onLoadedMetadata?: (e: SyntheticEvent<HTMLVideoElement>) => void;
+  /** The first frame is ready to show. */
+  onReady?: () => void;
 }
 
 /** Seconds of drift tolerated while playing before re-seeking (seeking itself stutters). */
@@ -31,7 +33,7 @@ const MAX_RATE = 16;
  * A video or audio element that follows the editor's playhead: a layer, or the separate
  * sound stream of a video-only preview.
  */
-export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, reverse, className, style, onLoadedMetadata }: SyncedMediaProps) {
+export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, reverse, className, style, onLoadedMetadata, onReady }: SyncedMediaProps) {
   const ref = useRef<HTMLVideoElement & HTMLAudioElement>(null);
   /** Where a reversed clip should be; caught up after each seek lands. */
   const target = useRef<number | null>(null);
@@ -84,6 +86,7 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
       playsInline
       aria-hidden="true"
       onLoadedMetadata={onLoadedMetadata}
+      onLoadedData={onReady}
       onSeeked={onSeeked}
     />
   ) : (

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { clipEnd, clipLength, mainTrack, type Clip, type Project, type Track } from "../project/model";
+import { TRANSITION_KINDS, clipEnd, clipLength, mainOrder, mainTrack, transitionLength, type Clip, type Project, type Track } from "../project/model";
 import { mainSlot, packedMain } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -263,6 +263,12 @@ export function TimelineEditor({
     }
   }
   const where = (c: Clip) => placed.get(c.id) ?? { start: c.start, trackId: c.trackId };
+  const order = mainOrder(project);
+  /** Seconds a Video 1 clip overlaps the one before it (its transition). */
+  const overlap = (c: Clip) => {
+    const i = order.findIndex((o) => o.id === c.id);
+    return i > 0 && !ghost ? transitionLength(order[i - 1], c) : 0;
+  };
 
   return (
     <section className={scrubbing ? "tl is-scrubbing" : "tl"} aria-label="Timeline">
@@ -348,6 +354,8 @@ export function TimelineEditor({
               >
                 {project.clips
                   .filter((c) => where(c).trackId === track.id)
+                  // Later clips on top, so a transition's overlap shows on the incoming clip.
+                  .sort((a, b) => where(a).start - where(b).start)
                   .map((clip) => {
                     const media = project.media.find((m) => m.id === clip.mediaId);
                     const label = clip.text ?? media?.name ?? "Clip";
@@ -381,6 +389,14 @@ export function TimelineEditor({
                       >
                         {clip.fadeIn > 0 && <span className="tl__fade is-in" style={{ width: clip.fadeIn * pps }} aria-hidden="true" />}
                         {clip.fadeOut > 0 && <span className="tl__fade is-out" style={{ width: clip.fadeOut * pps }} aria-hidden="true" />}
+                        {overlap(clip) > 0 && (
+                          <span
+                            className="tl__trans"
+                            style={{ width: overlap(clip) * pps }}
+                            title={TRANSITION_KINDS.find((t) => t.kind === clip.transition?.kind)?.label}
+                            aria-hidden="true"
+                          />
+                        )}
                         <span className="tl__trim is-start" onPointerDown={beginDrag(clip, "start")} aria-hidden="true" />
                         <span className="tl__label truncate">
                           {media?.missing && "Missing · "}

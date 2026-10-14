@@ -14,9 +14,11 @@ import {
   mainTrack,
   type Clip,
   type MediaItem,
+  transitionLength,
   type Project,
   type Track,
   type TrackKind,
+  type Transition,
 } from "./model";
 
 export type ClipPatch = Partial<
@@ -39,6 +41,8 @@ export type EditAction =
   | { type: "updateClip"; clipId: string; patch: ClipPatch }
   /** 0.25–4; the clip gets shorter or longer on the timeline. */
   | { type: "setSpeed"; clipId: string; speed: number }
+  /** Video 1: how the clip takes over from the one before it; null for a straight cut. */
+  | { type: "setTransition"; clipId: string; transition: Transition | null }
   /** Tidies up after a drag: no overlapping clips on a track. */
   | { type: "settle" };
 
@@ -71,18 +75,22 @@ function fitFades(c: Clip): Clip {
   return { ...c, fadeIn, fadeOut: Math.min(c.fadeOut, length - fadeIn) };
 }
 
+/** Lays `order` back to back from 0, each clip overlapping the previous by its transition. */
+function pack(order: Clip[]): { clip: Clip; start: number }[] {
+  let end = 0;
+  return order.map((clip, i) => {
+    const start = Math.max(0, end - transitionLength(order[i - 1], clip));
+    end = start + clipLength(clip);
+    return { clip, start };
+  });
+}
+
 /** Video 1's clips other than `except`, in order, laid back to back from 0. */
 export function packedMain(p: Project, except?: string): { clip: Clip; start: number }[] {
   const main = mainTrack(p).id;
-  let t = 0;
-  return p.clips
-    .filter((c) => c.trackId === main && c.id !== except)
-    .sort((a, b) => a.start - b.start)
-    .map((clip) => {
-      const start = t;
-      t += clipLength(clip);
-      return { clip, start };
-    });
+  return pack(
+    p.clips.filter((c) => c.trackId === main && c.id !== except).sort((a, b) => a.start - b.start),
+  );
 }
 
 /**
@@ -106,12 +114,8 @@ function insertMain(p: Project, clip: Clip, slot: number): Project {
   const main = mainTrack(p).id;
   const order = packedMain(p, clip.id).map(({ clip: c }) => c);
   order.splice(slot, 0, { ...clip, trackId: main });
-  let t = 0;
   const placed = new Map<string, Clip>();
-  for (const c of order) {
-    placed.set(c.id, { ...c, start: round(t) });
-    t += clipLength(c);
-  }
+  for (const { clip: c, start } of pack(order)) placed.set(c.id, { ...c, start: round(start) });
   const rest = p.clips.filter((c) => !placed.has(c.id) && c.id !== clip.id);
   return { ...p, clips: [...rest, ...placed.values()] };
 }
@@ -247,7 +251,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const track = target && current && target.kind === current.kind ? target : current;
       if (!track) return p;
       if (track.main) return insertMain(p, clip, mainSlot(p, clip.id, action.start));
-      const moved = { ...clip, trackId: track.id, start: round(Math.max(0, action.start)) };
+      const moved = { ...clip, trackId: track.id, start: round(Math.max(0, action.start)), transition: undefined };
       // Repack Video 1 in case the clip came off it.
       return packMain({ ...p, clips: p.clips.map((c) => (c.id === clip.id ? moved : c)) });
     }
@@ -283,7 +287,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
       }
       // The fade in stays with the first part, the fade out with the second.
       first = fitFades({ ...first, fadeOut: 0 });
-      second = fitFades({ ...second, fadeIn: 0 });
+      second = fitFades({ ...second, fadeIn: 0, transition: undefined });
       return { ...p, clips: p.clips.flatMap((c) => (c.id === clip.id ? [first, second] : [c])) };
     }
 
@@ -306,6 +310,13 @@ export function applyEdit(p: Project, action: EditAction): Project {
       if (!clip || !clip.mediaId) return p;
       const speed = clamp(action.speed, 0.25, 4);
       return settle({ ...p, clips: p.clips.map((c) => (c.id === clip.id ? fitFades({ ...c, speed }) : c)) });
+    }
+
+    case "setTransition": {
+      const clip = p.clips.find((c) => c.id === action.clipId);
+      if (!clip || clip.trackId !== mainTrack(p).id) return p;
+      const transition = action.transition ? { kind: action.transition.kind, duration: clamp(action.transition.duration, 0.1, 5) } : undefined;
+      return packMain({ ...p, clips: p.clips.map((c) => (c.id === clip.id ? { ...c, transition } : c)) });
     }
 
     case "settle":
