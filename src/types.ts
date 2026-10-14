@@ -25,6 +25,8 @@ export interface MediaSource {
   previewUrl: string;
   /** False when the preview is a silent video-only stream. Absent means it has sound. */
   previewHasAudio?: boolean;
+  /** Separate sound stream to play in sync with a video-only preview (common on YouTube). */
+  previewAudioUrl?: string;
   streams: StreamOption[];
 }
 
@@ -71,6 +73,45 @@ export interface JobSpec {
   fileName: string;
   /** url is a file opened from this PC. */
   local: boolean;
+  layers: LayerSpec[];
+  /** Loudness of the clip's own sound, 0–2 (1 = unchanged). */
+  mainVolume: number;
+}
+
+export type LayerKind = "video" | "audio";
+
+/** Where a video layer sits on the clip. */
+export type LayerPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center";
+
+/** A file from this PC stacked on the clip, CapCut-style. */
+export interface Layer {
+  id: string;
+  kind: LayerKind;
+  /** Absolute path on this PC. */
+  path: string;
+  name: string;
+  /** The layer file's own length in seconds. */
+  duration: number;
+  hasAudio: boolean;
+  previewUrl: string;
+  /** Seconds after the clip's In point when the layer begins. */
+  start: number;
+  /** 0–1. */
+  volume: number;
+  /** Video layers: width as a fraction of the clip's width. */
+  size: number;
+  position: LayerPosition;
+}
+
+/** What Rust receives for each layer (mirrors `LayerSpec` in src-tauri/src/jobs.rs). */
+export interface LayerSpec {
+  path: string;
+  kind: LayerKind;
+  start: number;
+  volume: number;
+  size: number;
+  x: number;
+  y: number;
 }
 
 export interface Job {

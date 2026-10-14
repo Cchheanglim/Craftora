@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { MediaSource, Range } from "../types";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import type { Layer, MediaSource, Range } from "../types";
 import { formatTimecode } from "../lib/timecode";
+import { POSITIONS } from "../lib/layers";
 import { Icon } from "./Icon";
+import { SyncedMedia } from "./SyncedMedia";
 import { MIN_CLIP, Timeline } from "./Timeline";
 import { TimeField } from "./TimeField";
 import "./Editor.css";
@@ -14,6 +16,9 @@ interface EditorProps {
   range: Range;
   onRangeChange: (range: Range) => void;
   mirrored: boolean;
+  layers: Layer[];
+  /** Loudness of the clip's own sound, 0–1 in the preview. */
+  mainVolume: number;
 }
 
 /** "none": the source has no playable preview (the editor is remounted per source). */
@@ -22,13 +27,37 @@ type LoadState = "loading" | "ready" | "error" | "none";
 const isTyping = (el: EventTarget | null) =>
   el instanceof HTMLElement && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
 
-export function Editor({ source, range, onRangeChange, mirrored }: EditorProps) {
+export function Editor({ source, range, onRangeChange, mirrored, layers, mainVolume }: EditorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [muted, setMuted] = useState(false);
   const [speed, setSpeed] = useState("1");
   const [load, setLoad] = useState<LoadState>(source.previewUrl ? "loading" : "none");
+  /** Width ÷ height of the clip's picture, so layers sit on the picture, not the letterbox. */
+  const [aspect, setAspect] = useState(16 / 9);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.volume = Math.min(1, mainVolume);
+  }, [mainVolume]);
+
+  // While playing, follow the video every frame so layers and separate sound stay in step.
+  useEffect(() => {
+    if (!playing) return;
+    let frame = 0;
+    const tick = () => {
+      if (videoRef.current) setTime(videoRef.current.currentTime);
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing]);
+
+  /** Where a layer's own timeline is now, or null while it isn't showing. */
+  const layerTime = (layer: Layer) => {
+    const t = time - range.start - layer.start;
+    return time >= range.start && time <= range.end && t >= 0 && t < layer.duration ? t : null;
+  };
 
   const duration = source.duration;
   const clamp = (t: number) => Math.min(duration, Math.max(0, t));
@@ -119,36 +148,83 @@ export function Editor({ source, range, onRangeChange, mirrored }: EditorProps) 
       </header>
 
       <div className="editor__preview">
-        {source.previewUrl && (
-        <video
-          ref={videoRef}
-          src={source.previewUrl}
-          className={mirrored ? "is-mirrored" : undefined}
-          preload="metadata"
-          playsInline
-          muted={muted}
-          onClick={togglePlay}
-          onLoadedMetadata={(e) => {
-            e.currentTarget.currentTime = range.start;
-            setTime(range.start);
-            setLoad("ready");
-          }}
-          onError={() => setLoad("error")}
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onTimeUpdate={(e) => {
-            const t = e.currentTarget.currentTime;
-            setTime(t);
-            if (t >= range.end && !e.currentTarget.paused) {
-              e.currentTarget.pause();
-              e.currentTarget.currentTime = range.end;
+        {/* The stage has the clip's own shape, so layers land where they will in the export. */}
+        <div className="editor__stage" style={{ "--aspect": aspect } as CSSProperties}>
+          {source.previewUrl && (
+            <video
+              ref={videoRef}
+              src={source.previewUrl}
+              className={mirrored ? "editor__video is-mirrored" : "editor__video"}
+              preload="metadata"
+              playsInline
+              // A separate sound stream plays instead (video-only previews such as YouTube's).
+              muted={muted || Boolean(source.previewAudioUrl)}
+              onClick={togglePlay}
+              onLoadedMetadata={(e) => {
+                const v = e.currentTarget;
+                if (v.videoWidth && v.videoHeight) setAspect(v.videoWidth / v.videoHeight);
+                v.volume = Math.min(1, mainVolume);
+                v.currentTime = range.start;
+                setTime(range.start);
+                setLoad("ready");
+              }}
+              onError={() => setLoad("error")}
+              onPlay={() => setPlaying(true)}
+              onPause={() => setPlaying(false)}
+              onTimeUpdate={(e) => {
+                const t = e.currentTarget.currentTime;
+                setTime(t);
+                if (t >= range.end && !e.currentTarget.paused) {
+                  e.currentTarget.pause();
+                  e.currentTarget.currentTime = range.end;
+                }
+              }}
+            />
+          )}
+          {source.previewAudioUrl && (
+            <SyncedMedia
+              kind="audio"
+              src={source.previewAudioUrl}
+              time={time}
+              playing={playing}
+              volume={mainVolume}
+              muted={muted}
+              speed={Number(speed)}
+            />
+          )}
+          {layers.map((layer) => {
+            const t = layerTime(layer);
+            if (layer.kind === "audio") {
+              return (
+                <SyncedMedia key={layer.id} kind="audio" src={layer.previewUrl} time={t} playing={playing} volume={layer.volume} muted={muted} speed={Number(speed)} />
+              );
             }
-          }}
-        />
-        )}
-        {load === "ready" && (mirrored || source.previewHasAudio === false) && (
+            const { x, y } = layer.size >= 1 ? POSITIONS.center : POSITIONS[layer.position];
+            return (
+              <SyncedMedia
+                key={layer.id}
+                kind="video"
+                src={layer.previewUrl}
+                time={t}
+                playing={playing}
+                volume={layer.hasAudio ? layer.volume : 0}
+                muted={muted}
+                speed={Number(speed)}
+                className="editor__layer"
+                style={{
+                  left: `${x * 100}%`,
+                  top: `${y * 100}%`,
+                  width: `${layer.size * 100}%`,
+                  transform: `translate(${-x * 100}%, ${-y * 100}%)`,
+                  visibility: t === null ? "hidden" : "visible",
+                }}
+              />
+            );
+          })}
+        </div>
+        {load === "ready" && (mirrored || (source.previewHasAudio === false && !source.previewAudioUrl)) && (
           <span className="editor__badge">
-            {[mirrored && "Mirrored preview", source.previewHasAudio === false && "Silent preview · the saved file keeps its sound"]
+            {[mirrored && "Mirrored preview", source.previewHasAudio === false && !source.previewAudioUrl && "Silent preview · the saved file keeps its sound"]
               .filter(Boolean)
               .join(" · ")}
           </span>

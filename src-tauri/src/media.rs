@@ -54,7 +54,7 @@ impl Format {
     }
     fn plays_in_webview(&self) -> bool {
         let direct = matches!(self.protocol.as_deref(), None | Some("https") | Some("http"));
-        direct && matches!(self.ext.as_deref(), Some("mp4") | Some("webm")) && self.url.is_some()
+        direct && matches!(self.ext.as_deref(), Some("mp4") | Some("webm") | Some("m4a")) && self.url.is_some()
     }
 }
 
@@ -84,6 +84,8 @@ pub struct MediaSource {
     pub(crate) preview_url: String,
     /// False when the only playable preview is a video-only stream (common on YouTube).
     pub(crate) preview_has_audio: bool,
+    /// Separate sound stream played in sync with a video-only preview; empty when not needed.
+    pub(crate) preview_audio_url: String,
     pub(crate) streams: Vec<Stream>,
 }
 
@@ -199,6 +201,20 @@ fn preview(formats: &[Format]) -> (String, bool) {
     }
 }
 
+/// The sound stream to play next to a video-only preview: AAC (m4a) first, which every
+/// WebView decodes, then the highest bitrate.
+fn preview_audio(formats: &[Format]) -> String {
+    let mut candidates: Vec<&Format> = formats
+        .iter()
+        .filter(|f| f.has_audio() && !f.has_video() && f.plays_in_webview())
+        .collect();
+    candidates.sort_by(|a, b| {
+        let aac = |f: &Format| f.ext.as_deref() == Some("m4a");
+        aac(b).cmp(&aac(a)).then(b.abr.unwrap_or(0.0).total_cmp(&a.abr.unwrap_or(0.0)))
+    });
+    candidates.first().and_then(|f| f.url.clone()).unwrap_or_default()
+}
+
 /// Runs `yt-dlp --dump-single-json` on a link and maps the result for the editor.
 #[tauri::command]
 pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, String> {
@@ -237,6 +253,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
     }
 
     let (preview_url, preview_has_audio) = preview(&info.formats);
+    let preview_audio_url = if preview_has_audio || preview_url.is_empty() { String::new() } else { preview_audio(&info.formats) };
     Ok(MediaSource {
         url,
         title: info.title.unwrap_or_else(|| "Untitled".into()),
@@ -245,6 +262,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         local: false,
         preview_url,
         preview_has_audio,
+        preview_audio_url,
         streams,
     })
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AudioContainer, ExportSettings, MediaSource, OutputKind, VideoContainer } from "../types";
 import { formatSize, type ExportPlan } from "../lib/exportPlan";
 import { Icon } from "./Icon";
+import { LayersSection, type LayersControl } from "./LayersSection";
 import "./ExportPanel.css";
 
 interface ExportPanelProps {
@@ -12,12 +13,14 @@ interface ExportPanelProps {
   onAddToQueue: () => void;
   /** Bumps each time a job is queued, to replay the confirmation. */
   queuedCount: number;
+  /** Absent in the browser preview, where there are no files to layer. */
+  layers?: LayersControl;
 }
 
 const VIDEO_CONTAINERS: VideoContainer[] = ["mp4", "mkv"];
 const AUDIO_CONTAINERS: AudioContainer[] = ["mp3", "wav", "flac"];
 
-export function ExportPanel({ source, settings, plan, onChange, onAddToQueue, queuedCount }: ExportPanelProps) {
+export function ExportPanel({ source, settings, plan, onChange, onAddToQueue, queuedCount, layers }: ExportPanelProps) {
   const [copied, setCopied] = useState(false);
   const [moreBelow, setMoreBelow] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -136,6 +139,8 @@ export function ExportPanel({ source, settings, plan, onChange, onAddToQueue, qu
           </fieldset>
         )}
 
+        {layers && <LayersSection layers={layers} />}
+
         <fieldset>
           <legend className="section-label">Cut mode</legend>
           <div className="segmented" role="group" aria-label="Cut mode" aria-describedby="cut-mode-detail">
@@ -153,8 +158,8 @@ export function ExportPanel({ source, settings, plan, onChange, onAddToQueue, qu
           </div>
           <p id="cut-mode-detail" className={plan.cutForced ? "export__trade is-forced" : "export__trade"}>
             {plan.cutForced && <Icon name="alert" size={13} />}
-            {plan.cutForced
-              ? "Mirror and reverse need re-encoding, so Precise is used: frame-accurate, slower."
+            {plan.forcedReason
+              ? plan.forcedReason
               : plan.cutMode === "fast"
                 ? "Keeps original quality, no re-encoding. The start snaps to the nearest keyframe and can shift a second or two."
                 : "Frame-accurate. Re-encodes the clip, so it's slower and compressed again."}

@@ -41,6 +41,7 @@ struct ProbeFormat {
 struct ProbeStream {
     codec_type: Option<String>,
     codec_name: Option<String>,
+    width: Option<u32>,
     height: Option<u32>,
     avg_frame_rate: Option<String>,
     bit_rate: Option<String>,
@@ -64,6 +65,47 @@ pub fn normalize(path: &Path) -> Result<PathBuf, String> {
     }
 }
 
+async fn run_probe(app: &AppHandle, path: &Path) -> Result<Probe, String> {
+    let path_text = path.to_string_lossy();
+    let output = run_to_end(
+        app,
+        FFPROBE,
+        &["-v", "error", "-print_format", "json", "-show_format", "-show_streams", &path_text],
+    )
+    .await?;
+    if !output.status.success() {
+        return Err("Craftora can't read this file. It may be damaged or not a video or audio file.".into());
+    }
+    serde_json::from_slice(&output.stdout).map_err(|e| format!("Unexpected answer from ffprobe: {e}"))
+}
+
+impl ProbeStream {
+    fn is_video(&self) -> bool {
+        // Cover art in music files shows up as a video stream; it isn't video.
+        self.codec_type.as_deref() == Some("video") && self.disposition.as_ref().is_none_or(|d| d.attached_pic == 0)
+    }
+    fn is_audio(&self) -> bool {
+        self.codec_type.as_deref() == Some("audio")
+    }
+}
+
+/// What the export step needs to know about an input file.
+pub struct ProbeInfo {
+    pub width: Option<u32>,
+    pub has_video: bool,
+    pub has_audio: bool,
+}
+
+pub async fn probe(app: &AppHandle, path: &Path) -> Result<ProbeInfo, String> {
+    let probe = run_probe(app, path).await?;
+    let video = probe.streams.iter().find(|s| s.is_video());
+    Ok(ProbeInfo {
+        width: video.and_then(|v| v.width),
+        has_video: video.is_some(),
+        has_audio: probe.streams.iter().any(|s| s.is_audio()),
+    })
+}
+
 /// "30000/1001" → 29.97
 fn frame_rate(text: &str) -> Option<f64> {
     let (num, den) = text.split_once('/')?;
@@ -80,18 +122,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
     }
     let path = normalize(&path)?;
     let path_text = path.to_string_lossy().into_owned();
-
-    let output = run_to_end(
-        &app,
-        FFPROBE,
-        &["-v", "error", "-print_format", "json", "-show_format", "-show_streams", &path_text],
-    )
-    .await?;
-    if !output.status.success() {
-        return Err("Craftora can't read this file. It may be damaged or not a video or audio file.".into());
-    }
-    let probe: Probe =
-        serde_json::from_slice(&output.stdout).map_err(|e| format!("Unexpected answer from ffprobe: {e}"))?;
+    let probe = run_probe(&app, &path).await?;
 
     let duration = probe
         .format
@@ -102,11 +133,8 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
         .ok_or("This file has no known length, so it can't be trimmed.")?;
     let total_mb = probe.format.size.as_deref().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0) / 1_000_000.0;
 
-    // Cover art in music files shows up as a video stream; it isn't video.
-    let video = probe.streams.iter().find(|s| {
-        s.codec_type.as_deref() == Some("video") && s.disposition.as_ref().is_none_or(|d| d.attached_pic == 0)
-    });
-    let audio = probe.streams.iter().find(|s| s.codec_type.as_deref() == Some("audio"));
+    let video = probe.streams.iter().find(|s| s.is_video());
+    let audio = probe.streams.iter().find(|s| s.is_audio());
     if video.is_none() && audio.is_none() {
         return Err("No video or audio was found in this file.".into());
     }
@@ -151,6 +179,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
         // The UI turns the path into a playable asset URL.
         preview_url: String::new(),
         preview_has_audio: audio.is_some(),
+        preview_audio_url: String::new(),
         streams,
         url: path_text,
     })

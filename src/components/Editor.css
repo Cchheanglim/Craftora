@@ -31,7 +31,21 @@
   overflow: hidden;
 }
 
-.editor__preview video {
+/* Sized to the clip's own shape inside the preview, so layers sit on the picture. */
+.editor__preview {
+  container-type: size;
+}
+
+.editor__stage {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: min(100cqw, calc(100cqh * var(--aspect)));
+  height: min(100cqh, calc(100cqw / var(--aspect)));
+  overflow: hidden;
+}
+
+.editor__video {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -41,8 +55,14 @@
   transition: transform var(--dur) var(--ease-out);
 }
 
-.editor__preview video.is-mirrored {
+.editor__video.is-mirrored {
   transform: scaleX(-1);
+}
+
+.editor__layer {
+  position: absolute;
+  height: auto;
+  pointer-events: none;
 }
 
 .editor__badge {

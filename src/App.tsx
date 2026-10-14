@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ExportSettings, Job, MediaSource, Range } from "./types";
+import type { ExportSettings, Job, Layer, LayerKind, MediaSource, Range } from "./types";
 import { DEMO_JOBS, DEMO_SOURCES } from "./data/demo";
 import { planExport } from "./lib/exportPlan";
+import { layerFromSource, layerSpec } from "./lib/layers";
 import {
   engineStatus,
   fetchMedia,
@@ -56,18 +57,26 @@ export default function App() {
   const [queuedCount, setQueuedCount] = useState(0);
   const [engines, setEngines] = useState<EngineStatus | "checking" | "browser">(inDesktopApp ? "checking" : "browser");
   const [dragging, setDragging] = useState(false);
+  const [layers, setLayers] = useState<Layer[]>([]);
+  const [mainVolume, setMainVolume] = useState(1);
+  const [addingLayer, setAddingLayer] = useState(false);
   const queue = useQueue(inDesktopApp ? [] : DEMO_JOBS, inDesktopApp);
 
   useEffect(() => {
     if (inDesktopApp) void engineStatus().then(setEngines);
   }, []);
 
-  const plan = useMemo(() => (source ? planExport(source, range, settings) : null), [source, range, settings]);
+  const plan = useMemo(
+    () => (source ? planExport(source, range, settings, layers, mainVolume) : null),
+    [source, range, settings, layers, mainVolume],
+  );
 
   const openSource = (next: MediaSource) => {
     setSource(next);
     setRange({ start: 0, end: next.duration });
     setSettings((prev) => defaultSettings(next, prev));
+    setLayers([]);
+    setMainVolume(1);
     setView("workspace");
   };
 
@@ -124,6 +133,26 @@ export default function App() {
     return () => void unlisten.then((stop) => stop());
   }, []);
 
+  /** Adds a file from this PC as a layer on the clip. */
+  const addLayer = async (kind: LayerKind) => {
+    const path = await pickMediaFile();
+    if (!path) return;
+    setAddingLayer(true);
+    setFetchError(null);
+    try {
+      const file = await openLocal(path);
+      const has = (k: LayerKind) => file.streams.some((s) => s.kind === k);
+      if (!has(kind)) {
+        throw new Error(kind === "video" ? "That file has no picture. Add it with Add audio instead." : "That file has no sound.");
+      }
+      setLayers((prev) => [...prev, layerFromSource(file, kind)]);
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAddingLayer(false);
+    }
+  };
+
   const addToQueue = useCallback(() => {
     if (!source || !plan) return;
     const id = crypto.randomUUID();
@@ -154,13 +183,15 @@ export default function App() {
             reverse: isVideo && settings.reverse,
             fileName: plan.fileName,
             local: source.local ?? false,
+            layers: layers.map(layerSpec),
+            mainVolume,
           }
         : undefined,
     };
     queue.add(job);
     setFreshId(job.id);
     setQueuedCount((n) => n + 1);
-  }, [source, plan, settings, range, queue]);
+  }, [source, plan, settings, range, queue, layers, mainVolume]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -202,6 +233,8 @@ export default function App() {
                 range={range}
                 onRangeChange={setRange}
                 mirrored={settings.output === "video" && settings.mirror}
+                layers={layers}
+                mainVolume={mainVolume}
               />
               <ExportPanel
                 source={source}
@@ -210,6 +243,21 @@ export default function App() {
                 onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
                 onAddToQueue={addToQueue}
                 queuedCount={queuedCount}
+                layers={
+                  inDesktopApp
+                    ? {
+                        items: layers,
+                        add: (kind) => void addLayer(kind),
+                        update: (id, patch) => setLayers((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l))),
+                        remove: (id) => setLayers((prev) => prev.filter((l) => l.id !== id)),
+                        mainVolume,
+                        setMainVolume,
+                        clipLength: range.end - range.start,
+                        videoOutput: settings.output === "video",
+                        adding: addingLayer,
+                      }
+                    : undefined
+                }
               />
             </>
           ) : (
