@@ -128,6 +128,23 @@ MSIX packages for free; a plain `.exe` would need a paid certificate (policy 10.
 - `RELEASING.md` → "Microsoft Store": registration, the identity file, submission fields
   (privacy URL, the `runFullTrust` justification) and local testing.
 
+## Sixth session (2026-10-14): first release and Store submission
+
+- **v0.1.0 built on GitHub Actions** (run 38584789641, third attempt, green). The draft has the
+  installer, `.sig`, `latest.json` and the FFmpeg source and build-scripts archives. The first
+  two attempts failed with `Missing comment in secret key`: the owner had put the wrong
+  content in `TAURI_SIGNING_PRIVATE_KEY`, then fixed it. `release.yml` now has a "Check the
+  update key secrets" step that fails in seconds with a plain message (lengths only, never
+  values).
+- **Microsoft Store:** the MSIX product is reserved as **Cchheanglim.Craftora**
+  (`src-tauri/msix/store-identity.json`). `Craftora_0.1.0_x64.msix` was built and submitted
+  for certification (a few business days). It was not run as an installed MSIX first.
+- `README.md` was rewritten for users (download, features, the AI assistant, privacy,
+  shortcuts; developer sections below). There's a new `CHANGELOG.md`, and `RELEASING.md` now
+  includes a changelog step.
+- Unauthenticated GitHub API polling is limited to 60 requests an hour; the run monitor hit
+  it. Use longer intervals or have the owner check the page.
+
 ## Known limitations
 
 - The reverse preview is choppy and silent while playing (browsers can't play backwards).
@@ -143,10 +160,9 @@ MSIX packages for free; a plain `.exe` would need a paid certificate (policy 10.
 
 1. Owner tests transitions and the assistant (needs a Gemini API key from Google AI Studio).
 2. Find why local imports are slow to appear in the preview.
-3. Owner: add the GitHub secrets, merge `Building` into `main`, publish v0.1.0 (see
-   `RELEASING.md`).
-4. Owner: register the Store account and send the three identity values. Then build the
-   real `.msix`, test it as an installed package, and submit.
+3. Check the published v0.1.0 updates correctly (install 0.1.0, release 0.1.1, see the
+   update offered).
+4. Wait for the Store's certification result and fix whatever it reports.
 
 ## Running it
 
