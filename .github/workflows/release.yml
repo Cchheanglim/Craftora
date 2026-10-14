@@ -153,7 +153,10 @@ jobs:
                 url = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$name"
               }
             }
-          } | ConvertTo-Json -Depth 5 | Set-Content release/latest.json -Encoding utf8
+          } | ConvertTo-Json -Depth 5 | ForEach-Object {
+            # UTF-8 without a byte-order mark, which the updater can't read.
+            [IO.File]::WriteAllText("$PWD/release/latest.json", $_)
+          }
 
           # GPL: the exact source of the bundled FFmpeg, and the scripts that built it.
           curl.exe -fsSL -o release/ffmpeg-source-${{ steps.ffmpeg.outputs.commit }}.tar.gz "https://github.com/FFmpeg/FFmpeg/archive/${{ steps.ffmpeg.outputs.commit }}.tar.gz"

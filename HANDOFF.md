@@ -87,7 +87,7 @@ be dragged. Fixed, along with the known issues and next steps 2–4:
     against the real Gemini API** (no key here); errors from Gemini are shown in the chat.
 - A "Loading video…" note while a preview video's first frame loads.
 
-## Fourth session (2026-10-14), not committed yet: releases
+## Fourth session (2026-10-14): releases
 
 The owner chose: **keep the GPL FFmpeg build**, and **release through GitHub with free
 SignPath Foundation signing**. They'll do the sign-ups themselves.
@@ -109,6 +109,10 @@ SignPath Foundation signing**. They'll do the sign-ups themselves.
   required line, team roles, privacy policy covering links, the assistant and update checks);
   licence files bundled into the installer under `licenses/`. The README has a Download
   section and an up-to-date roadmap.
+- Verified on the owner's PC: `bun tauri build --bundles nsis` with the update key makes the
+  installer (109 MB) with `licenses/` bundled. The `--app-version` re-sign gives a
+  `version:`-bound signature. The workflow's release-prep PowerShell runs and writes a
+  BOM-free `latest.json`. **Not yet run on GitHub Actions.**
 - `RELEASING.md`: one-time setup (secrets, two-factor authentication, the SignPath
   application, the artifact configuration XML, variables) and the steps for each release.
 
