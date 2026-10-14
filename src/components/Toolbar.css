@@ -39,6 +39,13 @@
   height: 34px;
 }
 
+.toolbar__or {
+  align-self: center;
+  padding: 0 2px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
 .toolbar__url {
   position: relative;
   flex: 1;

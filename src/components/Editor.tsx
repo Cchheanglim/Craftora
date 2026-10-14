@@ -16,7 +16,8 @@ interface EditorProps {
   mirrored: boolean;
 }
 
-type LoadState = "loading" | "ready" | "error";
+/** "none": the source has no playable preview (the editor is remounted per source). */
+type LoadState = "loading" | "ready" | "error" | "none";
 
 const isTyping = (el: EventTarget | null) =>
   el instanceof HTMLElement && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
@@ -27,7 +28,7 @@ export function Editor({ source, range, onRangeChange, mirrored }: EditorProps) 
   const [time, setTime] = useState(0);
   const [muted, setMuted] = useState(false);
   const [speed, setSpeed] = useState("1");
-  const [load, setLoad] = useState<LoadState>("loading");
+  const [load, setLoad] = useState<LoadState>(source.previewUrl ? "loading" : "none");
 
   const duration = source.duration;
   const clamp = (t: number) => Math.min(duration, Math.max(0, t));
@@ -63,12 +64,6 @@ export function Editor({ source, range, onRangeChange, mirrored }: EditorProps) 
     () => onRangeChange({ start: range.start, end: Math.max(time, range.start + MIN_CLIP) }),
     [time, range.start, onRangeChange],
   );
-
-  useEffect(() => {
-    setLoad("loading");
-    setPlaying(false);
-    setTime(0);
-  }, [source.previewUrl]);
 
   useEffect(() => {
     if (videoRef.current) videoRef.current.playbackRate = Number(speed);
@@ -124,6 +119,7 @@ export function Editor({ source, range, onRangeChange, mirrored }: EditorProps) 
       </header>
 
       <div className="editor__preview">
+        {source.previewUrl && (
         <video
           ref={videoRef}
           src={source.previewUrl}
@@ -149,12 +145,19 @@ export function Editor({ source, range, onRangeChange, mirrored }: EditorProps) 
             }
           }}
         />
-        {mirrored && <span className="editor__badge">Mirrored preview</span>}
+        )}
+        {load === "ready" && (mirrored || source.previewHasAudio === false) && (
+          <span className="editor__badge">
+            {[mirrored && "Mirrored preview", source.previewHasAudio === false && "Silent preview · the saved file keeps its sound"]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        )}
         {load !== "ready" && (
           <div className="editor__overlay" role="status">
-            {load === "loading" ? (
-              "Loading preview…"
-            ) : (
+            {load === "loading" && "Loading preview…"}
+            {load === "none" && "This link has no playable preview. Set the range by typing times or dragging the handles."}
+            {load === "error" && (
               <>
                 <Icon name="alert" size={16} />
                 <span>Preview unavailable. Check your connection; trimming and export still work.</span>

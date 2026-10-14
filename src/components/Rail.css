@@ -77,6 +77,14 @@
   background: var(--warn);
 }
 
+.rail__dot.is-ok {
+  background: var(--ok);
+}
+
+.rail__dot.is-checking {
+  background: var(--text-3);
+}
+
 .rail__engine-name {
   flex: 1;
   color: var(--text-2);

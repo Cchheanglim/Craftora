@@ -1,5 +1,6 @@
 import type { Job } from "../types";
 import { formatSize } from "../lib/exportPlan";
+import { revealFile } from "../lib/engine";
 import { Icon } from "./Icon";
 import "./Library.css";
 
@@ -17,7 +18,7 @@ export function Library({ jobs, onOpenWorkspace }: LibraryProps) {
     <section className="library" aria-labelledby="library-title">
       <header className="library__head">
         <h1 id="library-title">Library</h1>
-        <p>Files Craftora has finished this session.</p>
+        <p>Files Craftora has finished this session, saved in Videos\Craftora.</p>
       </header>
 
       {finished.length === 0 ? (
@@ -39,6 +40,9 @@ export function Library({ jobs, onOpenWorkspace }: LibraryProps) {
                   Size
                 </th>
                 <th scope="col">Finished</th>
+                <th scope="col">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -47,12 +51,20 @@ export function Library({ jobs, onOpenWorkspace }: LibraryProps) {
                   <td>
                     <span className="library__name">
                       <Icon name={job.kind === "audio" ? "music" : "film"} size={15} />
-                      <span className="mono truncate">{job.fileName}</span>
+                      <span className="mono truncate">{job.outputPath?.split(/[\\/]/).pop() ?? job.fileName}</span>
                     </span>
                   </td>
                   <td className="library__detail">{job.summary}</td>
                   <td className="mono is-num">{formatSize(job.sizeMb)}</td>
                   <td className="library__detail">{job.finishedAt ? dateFormat.format(job.finishedAt) : ""}</td>
+                  <td className="is-num">
+                    {job.outputPath && (
+                      <button type="button" className="btn btn--ghost" onClick={() => void revealFile(job.outputPath!)}>
+                        <Icon name="folder" size={14} />
+                        Show in folder
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

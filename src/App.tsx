@@ -1,7 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExportSettings, Job, MediaSource, Range } from "./types";
 import { DEMO_JOBS, DEMO_SOURCES } from "./data/demo";
 import { planExport } from "./lib/exportPlan";
+import {
+  engineStatus,
+  fetchMedia,
+  inDesktopApp,
+  onFileDrop,
+  openLocal,
+  pickMediaFile,
+  type EngineStatus,
+} from "./lib/engine";
 import { useQueue } from "./state/useQueue";
 import { Toolbar } from "./components/Toolbar";
 import { Rail, type View } from "./components/Rail";
@@ -9,18 +18,21 @@ import { Editor } from "./components/Editor";
 import { ExportPanel } from "./components/ExportPanel";
 import { QueueDock } from "./components/QueueDock";
 import { Library } from "./components/Library";
+import { EmptyWorkspace } from "./components/EmptyWorkspace";
 import "./App.css";
 
 function defaultSettings(source: MediaSource, previous?: ExportSettings): ExportSettings {
-  const pick = (kind: "video" | "audio", preferred: string) => {
+  const first = (kind: "video" | "audio", prefer?: (label: string) => boolean) => {
     const streams = source.streams.filter((s) => s.kind === kind);
-    return (streams.find((s) => s.id === preferred) ?? streams[0])?.id ?? "";
+    return ((prefer && streams.find((s) => prefer(s.label))) ?? streams[0])?.id ?? "";
   };
   const hasAudio = source.streams.some((s) => s.kind === "audio");
+  const hasVideo = source.streams.some((s) => s.kind === "video");
   return {
-    output: previous?.output === "audio" && hasAudio ? "audio" : "video",
-    videoStreamId: pick("video", "1080p"),
-    audioStreamId: pick("audio", ""),
+    output: (previous?.output === "audio" && hasAudio) || !hasVideo ? "audio" : "video",
+    // 1080p is a sensible default when offered; otherwise the best available.
+    videoStreamId: first("video", (label) => label.startsWith("1080p")),
+    audioStreamId: first("audio"),
     videoContainer: previous?.videoContainer ?? "mp4",
     audioContainer: previous?.audioContainer ?? "mp3",
     mirror: false,
@@ -29,68 +41,137 @@ function defaultSettings(source: MediaSource, previous?: ExportSettings): Export
   };
 }
 
-const FIRST = DEMO_SOURCES[0];
+/** The demo source opens pre-trimmed in the browser preview; real links open whole. */
+const DEMO = DEMO_SOURCES[0];
 
 export default function App() {
   const [view, setView] = useState<View>("workspace");
-  const [url, setUrl] = useState(FIRST.url);
-  const [source, setSource] = useState<MediaSource>(FIRST);
+  const [url, setUrl] = useState(inDesktopApp ? "" : DEMO.url);
+  const [source, setSource] = useState<MediaSource | null>(inDesktopApp ? null : DEMO);
   const [range, setRange] = useState<Range>({ start: 84, end: 225.5 });
-  const [settings, setSettings] = useState<ExportSettings>(() => defaultSettings(FIRST));
+  const [settings, setSettings] = useState<ExportSettings>(() => defaultSettings(DEMO));
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [freshId, setFreshId] = useState<string | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
-  const queue = useQueue(DEMO_JOBS);
+  const [engines, setEngines] = useState<EngineStatus | "checking" | "browser">(inDesktopApp ? "checking" : "browser");
+  const [dragging, setDragging] = useState(false);
+  const queue = useQueue(inDesktopApp ? [] : DEMO_JOBS, inDesktopApp);
 
-  const plan = useMemo(() => planExport(source, range, settings), [source, range, settings]);
+  useEffect(() => {
+    if (inDesktopApp) void engineStatus().then(setEngines);
+  }, []);
 
-  const fetchSource = (link: string) => {
-    setFetching(true);
-    setFetchError(null);
-    // Stand-in for `yt-dlp --dump-json` through Tauri: only the demo links resolve.
-    window.setTimeout(() => {
-      const found = DEMO_SOURCES.find((s) => s.url.toLowerCase() === link.toLowerCase());
-      if (found) {
-        setSource(found);
-        setRange({ start: 0, end: found.duration });
-        setSettings((prev) => defaultSettings(found, prev));
-        setView("workspace");
-      } else {
-        setFetchError("Can't fetch this link yet: the yt-dlp engine isn't connected. Clear the field to pick a demo link.");
-      }
-      setFetching(false);
-    }, 450);
+  const plan = useMemo(() => (source ? planExport(source, range, settings) : null), [source, range, settings]);
+
+  const openSource = (next: MediaSource) => {
+    setSource(next);
+    setRange({ start: 0, end: next.duration });
+    setSettings((prev) => defaultSettings(next, prev));
+    setView("workspace");
   };
 
+  const fetchSource = async (link: string) => {
+    setUrl(link);
+    setFetching(true);
+    setFetchError(null);
+    try {
+      if (inDesktopApp) {
+        openSource(await fetchMedia(link));
+      } else {
+        // Browser preview: only the demo links resolve.
+        await new Promise((resolve) => window.setTimeout(resolve, 450));
+        const found = DEMO_SOURCES.find((s) => s.url.toLowerCase() === link.toLowerCase());
+        if (!found) throw new Error("Real links need the desktop app. In this browser preview, clear the field to pick a demo link.");
+        openSource(found);
+      }
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  /** A file on this PC: read with ffprobe, no internet needed. */
+  const openFile = async (path?: string) => {
+    const chosen = path ?? (await pickMediaFile());
+    if (!chosen) return;
+    setUrl("");
+    setFetching(true);
+    setFetchError(null);
+    try {
+      openSource(await openLocal(chosen));
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  // Dropping a file anywhere on the window opens it.
+  const openFileRef = useRef(openFile);
+  openFileRef.current = openFile;
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const unlisten = onFileDrop((state) => {
+      if (state === "over") setDragging(true);
+      else if (state === "left") setDragging(false);
+      else {
+        setDragging(false);
+        if (state.dropped[0]) void openFileRef.current(state.dropped[0]);
+      }
+    });
+    return () => void unlisten.then((stop) => stop());
+  }, []);
+
   const addToQueue = useCallback(() => {
+    if (!source || !plan) return;
+    const id = crypto.randomUUID();
+    const isVideo = settings.output === "video";
     const job: Job = {
-      id: crypto.randomUUID(),
+      id,
       title: source.title,
       summary: plan.summary,
       kind: settings.output,
       status: "waiting",
       progress: 0,
-      needsEncode: plan.cutMode === "precise",
+      needsEncode: plan.cutMode === "precise" || (isVideo && (settings.mirror || settings.reverse)),
       sizeMb: plan.sizeMb,
       fileName: plan.fileName,
       command: plan.command,
+      spec: inDesktopApp
+        ? {
+            id,
+            url: source.url,
+            format: plan.stream.id,
+            output: settings.output,
+            container: isVideo ? settings.videoContainer : settings.audioContainer,
+            start: range.start,
+            end: range.end,
+            duration: source.duration,
+            cutMode: plan.cutMode,
+            mirror: isVideo && settings.mirror,
+            reverse: isVideo && settings.reverse,
+            fileName: plan.fileName,
+            local: source.local ?? false,
+          }
+        : undefined,
     };
     queue.add(job);
     setFreshId(job.id);
     setQueuedCount((n) => n + 1);
-  }, [source.title, plan, settings.output, queue]);
+  }, [source, plan, settings, range, queue]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && view === "workspace") {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && view === "workspace" && source) {
         e.preventDefault();
         addToQueue();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [addToQueue, view]);
+  }, [addToQueue, view, source]);
 
   const finishedCount = queue.jobs.filter((j) => j.status === "finished").length;
 
@@ -102,15 +183,18 @@ export default function App() {
           setUrl(next);
           setFetchError(null);
         }}
-        onFetch={fetchSource}
+        onFetch={(link) => void fetchSource(link)}
         fetching={fetching}
         error={fetchError}
         suggestions={DEMO_SOURCES}
+        onOpenFile={inDesktopApp ? () => void openFile() : undefined}
       />
-      <Rail view={view} onViewChange={setView} libraryCount={finishedCount} />
+      <Rail view={view} onViewChange={setView} libraryCount={finishedCount} engines={engines} />
       <main className="app__main">
         <div className="app__work">
-          {view === "workspace" ? (
+          {view === "library" ? (
+            <Library jobs={queue.jobs} onOpenWorkspace={() => setView("workspace")} />
+          ) : source && plan ? (
             <>
               <Editor
                 key={source.url}
@@ -129,11 +213,20 @@ export default function App() {
               />
             </>
           ) : (
-            <Library jobs={queue.jobs} onOpenWorkspace={() => setView("workspace")} />
+            <EmptyWorkspace
+              fetching={fetching}
+              onTrySample={() => void fetchSource(DEMO.url)}
+              onOpenFile={inDesktopApp ? () => void openFile() : undefined}
+            />
           )}
         </div>
         <QueueDock queue={queue} freshId={freshId} />
       </main>
+      {dragging && (
+        <div className="app__drop" role="status">
+          <span>Drop to open this file</span>
+        </div>
+      )}
     </div>
   );
 }

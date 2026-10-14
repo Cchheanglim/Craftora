@@ -1,3 +1,4 @@
+import type { EngineStatus } from "../lib/engine";
 import { Icon } from "./Icon";
 import "./Rail.css";
 
@@ -7,9 +8,11 @@ interface RailProps {
   view: View;
   onViewChange: (view: View) => void;
   libraryCount: number;
+  /** "browser" in a plain browser tab, where downloads are simulated. */
+  engines: EngineStatus | "checking" | "browser";
 }
 
-export function Rail({ view, onViewChange, libraryCount }: RailProps) {
+export function Rail({ view, onViewChange, libraryCount, engines }: RailProps) {
   return (
     <nav className="rail" aria-label="Main">
       <ul className="rail__nav">
@@ -40,20 +43,36 @@ export function Rail({ view, onViewChange, libraryCount }: RailProps) {
 
       <section className="rail__engines" aria-label="Engines">
         <h2 className="section-label">Engines</h2>
-        <EngineRow name="yt-dlp" />
-        <EngineRow name="FFmpeg" />
-        <p className="rail__hint">Preview mode. Downloads are simulated until the engines are connected.</p>
+        {typeof engines === "string" ? (
+          <>
+            <EngineRow name="yt-dlp" version={null} checking={engines === "checking"} />
+            <EngineRow name="FFmpeg" version={null} checking={engines === "checking"} />
+            {engines === "browser" && (
+              <p className="rail__hint">Browser preview. Downloads are simulated; open the desktop app to download for real.</p>
+            )}
+          </>
+        ) : (
+          <>
+            <EngineRow name="yt-dlp" version={engines.ytDlp} />
+            <EngineRow name="FFmpeg" version={engines.ffmpeg} />
+            {(!engines.ytDlp || !engines.ffmpeg) && (
+              <p className="rail__hint">An engine is missing. Run scripts/fetch-sidecars.ps1, then restart Craftora.</p>
+            )}
+          </>
+        )}
       </section>
     </nav>
   );
 }
 
-function EngineRow({ name }: { name: string }) {
+function EngineRow({ name, version, checking = false }: { name: string; version: string | null; checking?: boolean }) {
   return (
     <div className="rail__engine">
-      <span className="rail__dot" aria-hidden="true" />
+      <span className={version ? "rail__dot is-ok" : checking ? "rail__dot is-checking" : "rail__dot"} aria-hidden="true" />
       <span className="rail__engine-name">{name}</span>
-      <span className="rail__engine-state">Not connected</span>
+      <span className={version ? "rail__engine-state mono" : "rail__engine-state"}>
+        {version ?? (checking ? "Checking…" : "Not connected")}
+      </span>
     </div>
   );
 }
