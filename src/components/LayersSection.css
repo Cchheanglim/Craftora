@@ -1,0 +1,114 @@
+.layers__add {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.layers__hint {
+  margin-top: var(--space-2);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+
+.layers__list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.layer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.layer__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.layer__head > svg {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+
+.layer__name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+}
+
+.layer__length {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.layer__head .btn--icon {
+  width: 26px;
+  height: 26px;
+}
+
+.layer__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.layer__fields .time-field .field {
+  width: 100%;
+}
+
+.layer__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.layer__field label {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.layer__field .field {
+  width: 100%;
+}
+
+.layer__note {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.layer__volume,
+.layers > .layer__volume {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.layers > .layer__volume {
+  margin-top: var(--space-3);
+}
+
+.layer__volume input[type="range"] {
+  width: 100%;
+  accent-color: var(--text);
+}
+
+.layer__volume .mono {
+  text-align: right;
+  color: var(--text);
+}
