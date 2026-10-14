@@ -25,7 +25,7 @@ export function planExport(source: MediaSource, range: Range, settings: ExportSe
   const isVideo = settings.output === "video";
   const streamId = isVideo ? settings.videoStreamId : settings.audioStreamId;
   const candidates = source.streams.filter((s) => s.kind === settings.output);
-  const stream = candidates.find((s) => s.id === streamId) ?? candidates[0];
+  const stream = candidates.find((s) => s.id === streamId) ?? candidates[0] ?? source.streams[0];
 
   const container = isVideo ? settings.videoContainer : settings.audioContainer;
   const cutForced = isVideo && (settings.mirror || settings.reverse);
@@ -38,23 +38,35 @@ export function planExport(source: MediaSource, range: Range, settings: ExportSe
   const to = formatTimecode(range.end);
   const fileName = `${slug(source.title)}_${compact(from)}-${compact(to)}.${container}`;
 
-  const parts = ["yt-dlp"];
-  if (isVideo) {
-    parts.push(`-f "${stream.id}+bestaudio"`);
+  // Mirrors the arguments src-tauri/src/jobs.rs builds (progress flags omitted).
+  const transform = isVideo && (settings.mirror || settings.reverse);
+  const whole = range.start <= 0.05 && range.end >= source.duration - 0.05;
+  const filters = [settings.mirror && "hflip", settings.reverse && "reverse"].filter(Boolean).join(",");
+  const reencode = `${filters ? `-vf ${filters} ` : ""}${settings.reverse ? "-af areverse " : ""}-c:v libx264 -crf 18 -preset medium -c:a aac -b:a 192k`;
+  const parts: string[] = [];
+
+  if (source.local) {
+    // Files on this PC: one FFmpeg pass, no network.
+    const audioCodec = { mp3: "-c:a libmp3lame -b:a 320k", wav: "-c:a pcm_s16le", flac: "-c:a flac" } as Record<string, string>;
+    parts.push("ffmpeg");
+    if (!whole) parts.push(`-ss ${range.start.toFixed(3)}`);
+    parts.push(`-i "${source.url}"`);
+    if (!whole) parts.push(`-t ${length.toFixed(3)}`);
+    if (!isVideo) parts.push(`-vn ${audioCodec[container]}`);
+    else if (cutMode === "fast") parts.push("-c copy");
+    else parts.push(reencode);
+    parts.push(`"${fileName}"`);
   } else {
-    parts.push(`-f "${stream.id}"`, `-x --audio-format ${container}`);
-  }
-  parts.push(`--download-sections "*${from}-${to}"`);
-  if (cutMode === "precise") parts.push("--force-keyframes-at-cuts");
-  if (isVideo) {
-    const filters = [settings.mirror && "hflip", settings.reverse && "reverse"].filter(Boolean);
-    if (filters.length > 0) {
-      const audio = settings.reverse ? " -af areverse" : "";
-      parts.push(`--postprocessor-args "ffmpeg:-vf ${filters.join(",")}${audio}"`);
+    const downloadName = transform ? `clip.${container}` : fileName;
+    parts.push("yt-dlp", `-f "${stream.id}"`);
+    if (!whole) {
+      parts.push(`--download-sections "*${range.start.toFixed(2)}-${range.end.toFixed(2)}"`);
+      if (cutMode === "precise") parts.push("--force-keyframes-at-cuts");
     }
-    parts.push(`--merge-output-format ${container}`);
+    parts.push(isVideo ? `--merge-output-format ${container} --remux-video ${container}` : `-x --audio-format ${container}`);
+    parts.push(`-o "${downloadName}"`, `"${source.url}"`);
+    if (transform) parts.push(`\nffmpeg -i "${downloadName}" ${reencode} "${fileName}"`);
   }
-  parts.push(`-o "${fileName}"`, `"${source.url}"`);
 
   const transforms = isVideo
     ? [settings.mirror && "Mirror", settings.reverse && "Reverse"].filter(Boolean)

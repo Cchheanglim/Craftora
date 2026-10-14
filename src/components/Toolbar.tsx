@@ -10,9 +10,11 @@ interface ToolbarProps {
   error: string | null;
   /** Links offered as suggestions in the URL field. */
   suggestions: { url: string; title: string }[];
+  /** Opens a file from this PC; absent in the browser preview. */
+  onOpenFile?: () => void;
 }
 
-export function Toolbar({ url, onUrlChange, onFetch, fetching, error, suggestions }: ToolbarProps) {
+export function Toolbar({ url, onUrlChange, onFetch, fetching, error, suggestions, onOpenFile }: ToolbarProps) {
   const [pasteFailed, setPasteFailed] = useState(false);
 
   const submit = (e: FormEvent) => {
@@ -71,6 +73,17 @@ export function Toolbar({ url, onUrlChange, onFetch, fetching, error, suggestion
         <button type="submit" className="btn btn--secondary" disabled={fetching || !url.trim()}>
           {fetching ? "Fetching…" : "Fetch"}
         </button>
+        {onOpenFile && (
+          <>
+            <span className="toolbar__or" aria-hidden="true">
+              or
+            </span>
+            <button type="button" className="btn btn--secondary" onClick={onOpenFile} disabled={fetching}>
+              <Icon name="folder" size={14} />
+              Open file
+            </button>
+          </>
+        )}
         {message && (
           <p id="media-url-error" className="toolbar__error" role="alert">
             <Icon name="alert" size={13} />

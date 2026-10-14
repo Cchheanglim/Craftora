@@ -36,6 +36,7 @@ export function ExportPanel({ source, settings, plan, onChange, onAddToQueue, qu
   }, []);
   const streams = source.streams.filter((s) => s.kind === settings.output);
   const hasAudioStreams = source.streams.some((s) => s.kind === "audio");
+  const hasVideoStreams = source.streams.some((s) => s.kind === "video");
 
   const setOutput = (output: OutputKind) => onChange({ output });
 
@@ -58,7 +59,7 @@ export function ExportPanel({ source, settings, plan, onChange, onAddToQueue, qu
           <legend className="section-label">Output</legend>
           <div className="export__output">
             <div className="segmented" role="group" aria-label="Output type">
-              <button type="button" aria-pressed={isVideo} onClick={() => setOutput("video")}>
+              <button type="button" aria-pressed={isVideo} onClick={() => setOutput("video")} disabled={!hasVideoStreams}>
                 Video
               </button>
               <button type="button" aria-pressed={!isVideo} onClick={() => setOutput("audio")} disabled={!hasAudioStreams}>

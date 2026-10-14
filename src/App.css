@@ -17,6 +17,26 @@
   flex-direction: column;
 }
 
+/* Shown while a file is dragged over the window. */
+.app__drop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgb(18 18 19 / 0.82);
+  pointer-events: none;
+}
+
+.app__drop span {
+  padding: var(--space-4) var(--space-5);
+  border: 1px dashed var(--line-hover);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  font-size: var(--text-lg);
+  font-weight: 500;
+}
+
 .app__work {
   flex: 1;
   min-height: 0;

@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { Job } from "../types";
 import type { Queue } from "../state/useQueue";
 import { formatSize } from "../lib/exportPlan";
+import { formatClock } from "../lib/timecode";
+import { revealFile } from "../lib/engine";
 import { Icon } from "./Icon";
 import "./QueueDock.css";
 
@@ -26,14 +28,18 @@ export function QueueDock({ queue, freshId }: QueueDockProps) {
   const running = jobs.filter(isActive).length;
   const waiting = jobs.filter((j) => j.status === "waiting").length;
   const paused = jobs.filter((j) => j.status === "paused").length;
+  const failed = jobs.filter((j) => j.status === "failed").length;
   const finished = jobs.filter((j) => j.status === "finished").length;
-  const unfinished = jobs.filter((j) => j.status !== "finished");
-  const overall = unfinished.length ? unfinished.reduce((sum, j) => sum + j.progress, 0) / unfinished.length : 0;
+  const unfinished = jobs.filter((j) => j.status !== "finished" && j.status !== "failed");
+  const overall = unfinished.length
+    ? unfinished.reduce((sum, j) => sum + (j.progress ?? 0), 0) / unfinished.length
+    : 0;
 
   const counts = [
     running && `${running} running`,
     waiting && `${waiting} waiting`,
     paused && `${paused} paused`,
+    failed && `${failed} failed`,
     finished && `${finished} finished`,
   ].filter(Boolean);
 
@@ -48,17 +54,18 @@ export function QueueDock({ queue, freshId }: QueueDockProps) {
           </span>
         )}
         <div className="queue__actions">
-          {running + waiting > 0 ? (
-            <button type="button" className="btn btn--ghost" onClick={queue.pauseAll}>
-              Pause all
-            </button>
-          ) : (
-            paused > 0 && (
-              <button type="button" className="btn btn--ghost" onClick={queue.resumeAll}>
-                Resume all
+          {queue.canPause &&
+            (running + waiting > 0 ? (
+              <button type="button" className="btn btn--ghost" onClick={queue.pauseAll}>
+                Pause all
               </button>
-            )
-          )}
+            ) : (
+              paused > 0 && (
+                <button type="button" className="btn btn--ghost" onClick={queue.resumeAll}>
+                  Resume all
+                </button>
+              )
+            ))}
           {finished > 0 && (
             <button type="button" className="btn btn--ghost" onClick={queue.clearFinished}>
               Clear finished
@@ -97,6 +104,7 @@ export function QueueDock({ queue, freshId }: QueueDockProps) {
 function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolean }) {
   const [copied, setCopied] = useState(false);
   const done = job.status === "finished";
+  const failed = job.status === "failed";
 
   const copy = async () => {
     try {
@@ -126,30 +134,37 @@ function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolea
             <Icon name="check" size={14} />
             Finished <span>· {job.finishedAt ? ago(job.finishedAt) : ""}</span>
           </span>
+        ) : failed ? (
+          <span className="queue__failed" title={job.error}>
+            <Icon name="alert" size={14} />
+            <span className="truncate">{job.error ?? "Failed"}</span>
+          </span>
         ) : (
           <>
             <span
-              className={`queue__bar${job.status === "paused" ? " is-paused" : ""}`}
+              className={`queue__bar${job.status === "paused" ? " is-paused" : ""}${
+                job.progress === null && job.status !== "waiting" ? " is-indeterminate" : ""
+              }`}
               role="progressbar"
               aria-label={`${job.title} progress`}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-valuenow={Math.round(job.progress)}
+              aria-valuenow={job.progress === null ? undefined : Math.round(job.progress)}
             >
-              <span style={{ width: `${job.progress}%` }} />
+              <span style={{ width: job.progress === null ? undefined : `${job.progress}%` }} />
             </span>
             <span className="queue__status">
-              <span>{statusText(job)}</span>
-              <span className="mono">{job.status === "waiting" ? "" : `${Math.round(job.progress)}%`}</span>
+              <span className="truncate">{statusText(job)}</span>
+              <span className="mono">{progressText(job)}</span>
             </span>
           </>
         )}
       </div>
 
-      <span className="queue__size mono">{formatSize(job.sizeMb)}</span>
+      <span className="queue__size mono">{done ? formatSize(job.sizeMb) : `~${formatSize(job.sizeMb)}`}</span>
 
       <div className="queue__row-actions">
-        {(job.status === "downloading" || job.status === "encoding") && (
+        {queue.canPause && isActive(job) && (
           <button type="button" className="btn btn--icon" aria-label={`Pause ${job.title}`} onClick={() => queue.pause(job.id)}>
             <Icon name="pause" size={14} />
           </button>
@@ -159,12 +174,32 @@ function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolea
             <Icon name="play" size={14} />
           </button>
         )}
+        {failed && (
+          <button type="button" className="btn btn--icon" aria-label={`Retry ${job.title}`} title="Retry" onClick={() => queue.retry(job.id)}>
+            <Icon name="rotate" size={14} />
+          </button>
+        )}
+        {done && job.outputPath && (
+          <button
+            type="button"
+            className="btn btn--icon"
+            aria-label={`Show ${job.fileName} in folder`}
+            title="Show in folder"
+            onClick={() => void revealFile(job.outputPath!)}
+          >
+            <Icon name="folder" size={14} />
+          </button>
+        )}
         {done ? (
           <button type="button" className="btn btn--icon" aria-label={copied ? "Command copied" : `Copy command for ${job.title}`} onClick={copy}>
             <Icon name={copied ? "check" : "copy"} size={14} />
           </button>
+        ) : failed ? (
+          <button type="button" className="btn btn--icon" aria-label={`Remove ${job.title}`} title="Remove" onClick={() => queue.remove(job.id)}>
+            <Icon name="x" size={14} />
+          </button>
         ) : (
-          <button type="button" className="btn btn--icon" aria-label={`Cancel ${job.title}`} onClick={() => queue.cancel(job.id)}>
+          <button type="button" className="btn btn--icon" aria-label={`Cancel ${job.title}`} title="Cancel" onClick={() => queue.cancel(job.id)}>
             <Icon name="x" size={14} />
           </button>
         )}
@@ -190,18 +225,30 @@ function MixedNumbers({ text }: { text: string }) {
   );
 }
 
+const mb = (bytes: number) => formatSize(bytes / 1_000_000);
+
 function statusText(job: Job): string {
-  const done = formatSize((job.sizeMb * job.progress) / 100);
   switch (job.status) {
-    case "downloading":
-      return `Downloading · ${done} of ${formatSize(job.sizeMb)}`;
+    case "downloading": {
+      if (job.downloadedBytes !== undefined) {
+        const of = job.totalBytes ? ` of ${mb(job.totalBytes)}` : "";
+        const speed = job.speedBps ? ` · ${mb(job.speedBps)}/s` : "";
+        return `Downloading · ${mb(job.downloadedBytes)}${of}${speed}`;
+      }
+      if (job.spec) return "Downloading…";
+      return `Downloading · ${formatSize((job.sizeMb * (job.progress ?? 0)) / 100)} of ${formatSize(job.sizeMb)}`;
+    }
     case "encoding":
-      return "Encoding with FFmpeg";
+      return job.phase === "processing" ? "Finishing with FFmpeg" : job.phase === "cutting" ? "Cutting with FFmpeg" : "Encoding with FFmpeg";
     case "paused":
       return "Paused";
-    case "failed":
-      return job.error ?? "Failed";
     default:
       return "Waiting";
   }
+}
+
+function progressText(job: Job): string {
+  if (job.status === "waiting" || job.progress === null) return "";
+  const eta = job.status === "downloading" && job.etaSeconds ? ` · ${formatClock(job.etaSeconds)}` : "";
+  return `${Math.round(job.progress)}%${eta}`;
 }

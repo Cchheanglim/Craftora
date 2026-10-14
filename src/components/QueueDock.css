@@ -139,6 +139,48 @@
   background: var(--text-3);
 }
 
+/* Total unknown (e.g. section downloads): a segment sweeps instead of filling. */
+.queue__bar.is-indeterminate {
+  overflow: hidden;
+}
+
+.queue__bar.is-indeterminate > span {
+  width: 30%;
+  transition: none;
+  animation: sweep 1.4s var(--ease-out) infinite;
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .queue__bar.is-indeterminate > span {
+    animation: none;
+    width: 100%;
+    opacity: 0.35;
+  }
+}
+
+.queue__failed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--text);
+}
+
+.queue__failed svg {
+  flex-shrink: 0;
+  color: var(--danger);
+}
+
 .queue__status {
   display: flex;
   justify-content: space-between;

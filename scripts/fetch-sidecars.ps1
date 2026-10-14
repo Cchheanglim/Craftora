@@ -1,0 +1,90 @@
+<#
+.SYNOPSIS
+  Downloads the yt-dlp and FFmpeg binaries Craftora bundles as Tauri sidecars.
+
+.DESCRIPTION
+  Fetches official release builds, verifies their SHA-256 checksums, and places them in
+  src-tauri/bin/ named with this machine's Rust target triple, e.g.
+  yt-dlp-x86_64-pc-windows-msvc.exe. The binaries are gitignored; run this once per machine:
+
+    powershell -ExecutionPolicy Bypass -File scripts/fetch-sidecars.ps1
+
+  Re-run with -Force to replace existing binaries (for example to update yt-dlp).
+#>
+param(
+  # BtbN FFmpeg build. "gpl" includes libx264 (used for precise cuts and transforms).
+  [string]$FfmpegBuild = "ffmpeg-n9.0-latest-win64-gpl-9.0",
+  [switch]$Force
+)
+
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+
+$root = Split-Path -Parent $PSScriptRoot
+$binDir = Join-Path $root "src-tauri\bin"
+New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+
+$triple = (& rustc -vV | Select-String "^host: (.+)$").Matches[0].Groups[1].Value
+if (-not $triple) { throw "Could not read the Rust target triple from 'rustc -vV'. Is Rust installed?" }
+
+$tmp = Join-Path ([IO.Path]::GetTempPath()) "craftora-sidecars"
+New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+
+function Get-File([string]$Url, [string]$OutFile) {
+  Write-Host "  downloading $Url"
+  & curl.exe -fL --progress-bar --retry 3 --connect-timeout 30 -o $OutFile $Url
+  if ($LASTEXITCODE -ne 0) { throw "Download failed: $Url" }
+}
+
+function Assert-Checksum([string]$File, [string]$SumsFile, [string]$Name) {
+  $line = Get-Content $SumsFile | Where-Object { $_ -match "\s\*?$([regex]::Escape($Name))$" } | Select-Object -First 1
+  if (-not $line) { throw "No checksum listed for $Name" }
+  $expected = ($line -split "\s+")[0].ToLower()
+  $actual = (Get-FileHash -Algorithm SHA256 $File).Hash.ToLower()
+  if ($expected -ne $actual) { throw "Checksum mismatch for $Name (expected $expected, got $actual)" }
+  Write-Host "  checksum OK: $Name"
+}
+
+# --- yt-dlp -------------------------------------------------------------------
+$ytdlpTarget = Join-Path $binDir "yt-dlp-$triple.exe"
+if ($Force -or -not (Test-Path $ytdlpTarget)) {
+  Write-Host "yt-dlp"
+  $base = "https://github.com/yt-dlp/yt-dlp/releases/latest/download"
+  Get-File "$base/SHA2-256SUMS" (Join-Path $tmp "yt-dlp.sums")
+  Get-File "$base/yt-dlp.exe" (Join-Path $tmp "yt-dlp.exe")
+  Assert-Checksum (Join-Path $tmp "yt-dlp.exe") (Join-Path $tmp "yt-dlp.sums") "yt-dlp.exe"
+  Copy-Item (Join-Path $tmp "yt-dlp.exe") $ytdlpTarget -Force
+} else {
+  Write-Host "yt-dlp already present (use -Force to replace)"
+}
+
+# --- FFmpeg + ffprobe -----------------------------------------------------------
+$ffmpegTarget = Join-Path $binDir "ffmpeg-$triple.exe"
+$ffprobeTarget = Join-Path $binDir "ffprobe-$triple.exe"
+if ($Force -or -not (Test-Path $ffmpegTarget) -or -not (Test-Path $ffprobeTarget)) {
+  Write-Host "FFmpeg ($FfmpegBuild)"
+  $base = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest"
+  $zip = Join-Path $tmp "$FfmpegBuild.zip"
+  Get-File "$base/checksums.sha256" (Join-Path $tmp "ffmpeg.sums")
+  Get-File "$base/$FfmpegBuild.zip" $zip
+  Assert-Checksum $zip (Join-Path $tmp "ffmpeg.sums") "$FfmpegBuild.zip"
+  $unzipped = Join-Path $tmp "ffmpeg"
+  if (Test-Path $unzipped) { Remove-Item -Recurse -Force $unzipped }
+  Expand-Archive -Path $zip -DestinationPath $unzipped
+  $bin = Join-Path $unzipped "$FfmpegBuild\bin"
+  Copy-Item (Join-Path $bin "ffmpeg.exe") $ffmpegTarget -Force
+  Copy-Item (Join-Path $bin "ffprobe.exe") $ffprobeTarget -Force
+  Copy-Item (Join-Path $unzipped "$FfmpegBuild\LICENSE.txt") (Join-Path $binDir "FFMPEG-LICENSE.txt") -Force
+} else {
+  Write-Host "FFmpeg already present (use -Force to replace)"
+}
+
+Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+
+Write-Host ""
+Write-Host "Sidecars in $binDir"
+$ErrorActionPreference = "Continue"
+Write-Host ("  {0,-40} {1}" -f (Split-Path -Leaf $ytdlpTarget), (& $ytdlpTarget --version | Select-Object -First 1))
+foreach ($tool in @($ffmpegTarget, $ffprobeTarget)) {
+  Write-Host ("  {0,-40} {1}" -f (Split-Path -Leaf $tool), (& $tool -version | Select-Object -First 1))
+}
