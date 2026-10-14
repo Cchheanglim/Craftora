@@ -30,13 +30,44 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": ["bin/yt-dlp", "bin/ffmpeg", "bin/ffprobe"],
+    "externalBin": [
+      "bin/yt-dlp",
+      "bin/ffmpeg",
+      "bin/ffprobe"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "Cchheanglim",
+    "copyright": "Copyright (c) 2026 Cchheanglim. MIT License.",
+    "category": "Video",
+    "shortDescription": "Desktop video editor built on yt-dlp and FFmpeg",
+    "createUpdaterArtifacts": true,
+    "resources": {
+      "bin/FFMPEG-LICENSE.txt": "licenses/FFMPEG-LICENSE.txt",
+      "../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md",
+      "../LICENSE": "licenses/CRAFTORA-LICENSE.txt"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "requireSignedVersion": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc2RTIyRjg4ODFDRjYxRjMKUldUelljK0JpQy9pZG56SFhBSEZSNGNhL1ptS2hheHhiZFNzN0lITkIvaDhQVXRGL0VJN3pxY0YK",
+      "endpoints": [
+        "https://github.com/Cchheanglim/Craftora/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

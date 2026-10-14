@@ -19,6 +19,8 @@ interface ToolbarProps {
   onToggleLeft: () => void;
   /** Absent where there is no right panel (Home, Exports). */
   onToggleRight?: () => void;
+  /** A newer version: a button to install it, or its progress (no `onClick`) while installing. */
+  update?: { label: string; onClick?: () => void };
 }
 
 export function Toolbar({
@@ -34,6 +36,7 @@ export function Toolbar({
   rightOpen,
   onToggleLeft,
   onToggleRight,
+  update,
 }: ToolbarProps) {
   const [pasteFailed, setPasteFailed] = useState(false);
 
@@ -113,6 +116,18 @@ export function Toolbar({
       </form>
 
       <div className="toolbar__end">
+        {update && (
+          <button
+            type="button"
+            className="btn btn--secondary"
+            onClick={update.onClick}
+            disabled={!update.onClick}
+            title="Install the new version and restart Craftora"
+          >
+            <Icon name="rotate" size={14} />
+            {update.label}
+          </button>
+        )}
         {onImport && (
           <button type="button" className="btn btn--secondary" onClick={onImport} disabled={fetching} title="Import files (Ctrl+O)">
             <Icon name="upload" size={14} />

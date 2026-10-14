@@ -1,0 +1,187 @@
+# Builds the Windows installer from source and, for a version tag (v1.2.3), publishes a draft
+# GitHub Release with the installer, the auto-update manifest (latest.json) and the source of
+# the bundled FFmpeg. See RELEASING.md for the one-time setup and the release steps.
+#
+# Signing with SignPath runs only once the SIGNPATH_* repository variables are set; until
+# then the installer is published unsigned.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # A test build from any branch: the installer is kept as a workflow artifact, no release.
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the draft release
+  actions: read # SignPath reads this run's details and the unsigned artifact
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      SIDECAR_FFMPEG: src-tauri/bin/ffmpeg-x86_64-pc-windows-msvc.exe
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Check the tag matches the app version
+        if: env.IS_RELEASE == 'true'
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart("v")
+          $app = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($tag -ne $app) { throw "Tag v$tag doesn't match the version in tauri.conf.json ($app). See RELEASING.md." }
+
+      - name: Install packages
+        run: bun install --frozen-lockfile
+
+      - name: Fetch yt-dlp and FFmpeg
+        shell: pwsh
+        run: ./scripts/fetch-sidecars.ps1
+
+      - name: Record the FFmpeg version
+        id: ffmpeg
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $line = (& $env:SIDECAR_FFMPEG -version | Select-Object -First 1)
+          if ($line -notmatch "-g([0-9a-f]{7,40})") { throw "Couldn't read the FFmpeg commit from: $line" }
+          $commit = gh api "repos/FFmpeg/FFmpeg/commits/$($Matches[1])" --jq .sha
+          $scripts = (git ls-remote https://github.com/BtbN/FFmpeg-Builds refs/tags/latest).Split()[0]
+          "version=$line" >> $env:GITHUB_OUTPUT
+          "commit=$commit" >> $env:GITHUB_OUTPUT
+          "scripts=$scripts" >> $env:GITHUB_OUTPUT
+
+      - name: Build the installer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bun tauri build --bundles nsis
+
+      - name: Find the installer
+        id: installer
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if (-not $exe) { throw "The installer wasn't built." }
+          "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
+          "name=$($exe.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload the unsigned installer for signing
+        if: env.SIGN == 'true'
+        id: unsigned
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-unsigned
+          path: ${{ steps.installer.outputs.path }}
+
+      - name: Sign with SignPath
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          # Each release waits for a person to approve it in SignPath.
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed
+
+      - name: Use the signed installer
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: Copy-Item "signed/${{ steps.installer.outputs.name }}" "${{ steps.installer.outputs.path }}" -Force
+
+      # The update signature must match the final installer's bytes, so sign it last.
+      - name: Sign the update
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        # The version is part of the signature (requireSignedVersion in tauri.conf.json).
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          bun tauri signer sign --app-version $version "${{ steps.installer.outputs.path }}"
+
+      - name: Keep the test build
+        if: env.IS_RELEASE != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: craftora-test-build
+          path: |
+            ${{ steps.installer.outputs.path }}
+            ${{ steps.installer.outputs.path }}.sig
+
+      - name: Prepare the release files
+        if: env.IS_RELEASE == 'true'
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $exe = "${{ steps.installer.outputs.path }}"
+          $name = "${{ steps.installer.outputs.name }}"
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item $exe, "$exe.sig" release/
+
+          # The manifest installed copies read to find updates.
+          @{
+            version = $version
+            notes = "See https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = (Get-Content "$exe.sig" -Raw).Trim()
+                url = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$name"
+              }
+            }
+          } | ConvertTo-Json -Depth 5 | Set-Content release/latest.json -Encoding utf8
+
+          # GPL: the exact source of the bundled FFmpeg, and the scripts that built it.
+          curl.exe -fsSL -o release/ffmpeg-source-${{ steps.ffmpeg.outputs.commit }}.tar.gz "https://github.com/FFmpeg/FFmpeg/archive/${{ steps.ffmpeg.outputs.commit }}.tar.gz"
+          curl.exe -fsSL -o release/ffmpeg-build-scripts-${{ steps.ffmpeg.outputs.scripts }}.tar.gz "https://github.com/BtbN/FFmpeg-Builds/archive/${{ steps.ffmpeg.outputs.scripts }}.tar.gz"
+
+          $signed = if ("${{ env.SIGN }}" -eq "true") {
+            "The installer is signed. Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)."
+          } else {
+            "This installer isn't code-signed yet, so Windows may warn that the publisher is unknown. Choose **More info**, then **Run anyway**."
+          }
+          @"
+          ## Download
+
+          Get **$name** below and run it. Installed copies update themselves.
+
+          $signed
+
+          ## Bundled software
+
+          - FFmpeg (GPL v3): ``${{ steps.ffmpeg.outputs.version }}``. Its source code and build scripts are attached to this release. See [THIRD_PARTY_NOTICES.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/THIRD_PARTY_NOTICES.md).
+          - yt-dlp (Unlicense).
+          "@ | Set-Content release/notes.md -Encoding utf8
+
+      - name: Create the draft release
+        if: env.IS_RELEASE == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" --draft --title "Craftora ${{ github.ref_name }}" --notes-file release/notes.md `
+            (Get-ChildItem release | Where-Object Name -ne "notes.md" | ForEach-Object FullName)

@@ -10,6 +10,16 @@ app and do the downloading, cutting and rendering.
 
 > **Status:** early development (v0.1). Things change quickly.
 
+## Download
+
+Get the latest installer from [Releases](https://github.com/Cchheanglim/Craftora/releases).
+It installs for your Windows account without admin rights, and Craftora updates itself
+when a new version comes out (you can turn the automatic check off on the Home screen).
+
+Craftora is applying for free code signing from [SignPath Foundation](https://signpath.org).
+Until it's approved, Windows may say the publisher is unknown: choose **More info**, then
+**Run anyway**. The [code signing policy](CODE_SIGNING.md) includes the privacy policy.
+
 ## Features
 
 - **Import** video and audio files from your PC (button, `Ctrl+O`, or drag them onto the
@@ -83,11 +93,12 @@ project and simulates exports.
 ### Building an installer
 
 ```powershell
-bun tauri build
+bun tauri build --no-sign
 ```
 
-The `.exe` (NSIS) and `.msi` installers end up in
-`src-tauri/target/release/bundle/`. Exported videos are saved to `Videos\Craftora`.
+The `.exe` (NSIS) and `.msi` installers end up in `src-tauri/target/release/bundle/`.
+`--no-sign` skips the update signature, which needs the private update key. Official
+releases are built by GitHub Actions instead; see [RELEASING.md](RELEASING.md).
 
 ## Keyboard shortcuts
 
@@ -137,24 +148,16 @@ files you have opened in Craftora.
 
 ## Roadmap
 
-- **AI editing assistant.** It describes an edit in words and applies it through the same
-  named actions you use, with undo. The action layer in `src/project/actions.ts` is
-  designed for this.
-- Save and reopen projects, and keep export history between sessions.
-- Choose the save folder.
-- Clip speed, fades and transitions.
-- Before a public release: code signing, auto-updates and the licence review below.
+- Let the AI assistant hear the media (for example, to find silences).
+- Faster previews of large files from this PC.
 
 ## Licences
 
 Craftora is [MIT-licensed](LICENSE). The bundled engines have their own licences:
 
 - **yt-dlp:** [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE) (public domain).
-- **FFmpeg:** the default download is a **GPL** build from
-  [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds), which includes libx264. If
-  you distribute Craftora with it, you must follow the GPL for FFmpeg, including providing
-  or linking its source. `FFMPEG-LICENSE.txt` is copied next to the binaries. An LGPL build
-  can be fetched with `-FfmpegBuild ffmpeg-n9.0-latest-win64-lgpl-9.0`, but it has no
-  libx264.
+- **FFmpeg:** a **GPL** build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds),
+  which includes libx264. The installer ships its licence, and every release attaches the
+  exact FFmpeg source and build scripts. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Only download content you have the right to. Respect each site's terms of service.

@@ -25,6 +25,7 @@ import {
   type ProjectEntry,
 } from "./lib/storage";
 import { useQueue } from "./state/useQueue";
+import { useUpdates } from "./lib/updates";
 import { useProject } from "./project/useProject";
 import { usePlayback } from "./project/usePlayback";
 import { cutModeApplies, frameOf, planExport } from "./project/exportPlan";
@@ -156,6 +157,7 @@ export default function App() {
   const currentProject = useCallback(() => projectRef.current, []);
   const currentTime = useCallback(() => timeRef.current, []);
   const queue = useQueue(inDesktopApp ? [] : DEMO_JOBS, inDesktopApp);
+  const updates = useUpdates();
 
   useEffect(() => {
     if (inDesktopApp) void engineStatus().then(setEngines);
@@ -476,6 +478,13 @@ export default function App() {
         rightOpen={rightOpen}
         onToggleLeft={toggleLeft}
         onToggleRight={view === "editor" ? toggleRight : undefined}
+        update={
+          updates.status.kind === "available"
+            ? { label: `Update to v${updates.status.version}`, onClick: () => void updates.install() }
+            : updates.status.kind === "installing"
+              ? { label: `Updating${updates.status.percent === null ? "…" : ` ${updates.status.percent}%`}` }
+              : undefined
+        }
       />
       <Sidebar
         view={view}
@@ -505,6 +514,7 @@ export default function App() {
             onDeleteProject={(id) => void removeProject(id)}
             recent={exported}
             outputDir={outputDir}
+            updates={updates}
           />
         )}
         {view === "library" && <Library jobs={exported} outputDir={outputDir} onOpenWorkspace={() => setView("editor")} />}

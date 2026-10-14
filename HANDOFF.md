@@ -68,7 +68,7 @@ be dragged. Fixed, along with the known issues and next steps 2–4:
   picture-in-picture move, resize and crop, Video 1 reorder, text move, speed, fades, and
   autosave with reopen. **Not yet run in the real app window.**
 
-## Third session (2026-10-14), not committed yet
+## Third session (2026-10-14)
 
 - **Transitions** on Video 1: Crossfade or Dip to black into a clip (Inspector, "Transition from
   the clip before"). The clips overlap by the transition (`transitionLength` caps it at half
@@ -87,6 +87,31 @@ be dragged. Fixed, along with the known issues and next steps 2–4:
     against the real Gemini API** (no key here); errors from Gemini are shown in the chat.
 - A "Loading video…" note while a preview video's first frame loads.
 
+## Fourth session (2026-10-14), not committed yet: releases
+
+The owner chose: **keep the GPL FFmpeg build**, and **release through GitHub with free
+SignPath Foundation signing**. They'll do the sign-ups themselves.
+
+- `.github/workflows/release.yml`: on a `v*` tag, builds the NSIS installer from source and
+  signs it with SignPath. Signing runs only once the `SIGNPATH_*` variables exist; until then
+  the installer is unsigned. It then re-signs the update with `--app-version`
+  (`requireSignedVersion` is on) and writes `latest.json`. It attaches the exact FFmpeg source
+  and BtbN build scripts, and creates a **draft** release. Running it by hand makes a test
+  build only.
+- Auto-updates: `tauri-plugin-updater` and `tauri-plugin-process`. The endpoint is
+  `releases/latest/download/latest.json`. `src/lib/updates.ts` checks once at startup
+  (installed builds only; can be turned off on Home > About), and the toolbar shows
+  "Update to vX".
+- The update key was generated in `C:/Users/chhea/.tauri/` (private key, password file,
+  public key). The public key is in `tauri.conf.json`. The owner must add two GitHub secrets
+  (see `RELEASING.md`).
+- GPL and SignPath paperwork: `THIRD_PARTY_NOTICES.md`; `CODE_SIGNING.md` (SignPath's
+  required line, team roles, privacy policy covering links, the assistant and update checks);
+  licence files bundled into the installer under `licenses/`. The README has a Download
+  section and an up-to-date roadmap.
+- `RELEASING.md`: one-time setup (secrets, two-factor authentication, the SignPath
+  application, the artifact configuration XML, variables) and the steps for each release.
+
 ## Known limitations
 
 - The reverse preview is choppy and silent while playing (browsers can't play backwards).
@@ -102,9 +127,8 @@ be dragged. Fixed, along with the known issues and next steps 2–4:
 
 1. Owner tests transitions and the assistant (needs a Gemini API key from Google AI Studio).
 2. Find why local imports are slow to appear in the preview.
-3. Release prep, once the owner decides: FFmpeg licence (LGPL build vs keeping GPL with
-   notices), auto-updates (Tauri updater + GitHub Releases, free), and code signing (free
-   options: SignPath Foundation for open source, or the Microsoft Store).
+3. Owner: add the GitHub secrets, publish v0.1.0 (unsigned), apply to SignPath Foundation,
+   then set the SignPath variables (all in `RELEASING.md`).
 
 ## Running it
 
