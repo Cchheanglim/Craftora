@@ -1,0 +1,147 @@
+.preview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.preview__screen {
+  position: relative;
+  flex: 1;
+  min-height: 140px;
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  container-type: size;
+  cursor: pointer;
+}
+
+/* The output frame's own shape, centred: clips and text land where they will in the export. */
+.preview__stage {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: min(100cqw, calc(100cqh * var(--aspect)));
+  height: min(100cqh, calc(100cqw / var(--aspect)));
+  overflow: hidden;
+  container-type: size;
+  background: #000;
+}
+
+.preview__layer {
+  position: absolute;
+  inset: 0;
+}
+
+.preview__video {
+  position: absolute;
+  height: auto;
+}
+
+.preview__video.is-mirrored {
+  scale: -1 1;
+}
+
+/* Matches the export's Segoe UI Bold with a soft drop shadow. */
+.preview__text {
+  position: absolute;
+  max-width: 92%;
+  font-family: "Segoe UI", var(--font-ui);
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: pre-wrap;
+  text-align: center;
+  text-shadow: 0.06em 0.06em 0 rgb(0 0 0 / 0.6);
+  pointer-events: none;
+}
+
+.preview__note,
+.preview__badge {
+  position: absolute;
+  font-size: var(--text-xs);
+  pointer-events: none;
+}
+
+.preview__note {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+}
+
+.preview__badge {
+  top: 10px;
+  left: 10px;
+  padding: 3px 7px;
+  background: rgb(0 0 0 / 0.72);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+
+.preview__transport {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.preview__buttons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.preview__play {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--text);
+  color: var(--bg-canvas);
+}
+
+.preview__play:hover:not(:disabled) {
+  background: #ffffff;
+}
+
+.preview__play:disabled {
+  opacity: 0.4;
+}
+
+.preview__clock {
+  font-size: var(--text-tc);
+}
+
+.preview__total {
+  color: var(--text-3);
+}
+
+.preview__right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Full screen: the picture fills the window, controls along the bottom. */
+.preview.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  gap: 0;
+  background: #000;
+}
+
+.preview.is-fullscreen .preview__screen {
+  border: 0;
+  border-radius: 0;
+}
+
+.preview.is-fullscreen .preview__transport {
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-canvas);
+  border-top: 1px solid var(--line);
+}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Job } from "../types";
 import type { Queue } from "../state/useQueue";
-import { formatSize } from "../lib/exportPlan";
+import { formatSize } from "../project/exportPlan";
 import { formatClock } from "../lib/timecode";
 import { revealFile } from "../lib/engine";
 import { Icon } from "./Icon";

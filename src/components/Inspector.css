@@ -1,0 +1,108 @@
+.insp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.insp__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.insp__head svg {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+
+.insp__head h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.insp__meta {
+  margin-top: -6px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.insp__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.insp__field > label,
+.insp__field > legend,
+.insp__volume > label {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.insp__field .field {
+  width: 100%;
+}
+
+.insp__textarea {
+  height: auto;
+  padding: 8px 10px;
+  resize: vertical;
+  line-height: 1.45;
+  font-family: var(--font-ui);
+}
+
+.insp__pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.insp__swatches {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.insp__swatch {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+}
+
+.insp__swatch[aria-pressed="true"] {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.insp__volume {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.insp__volume input[type="range"] {
+  width: 100%;
+  accent-color: var(--text);
+}
+
+.insp__volume .mono {
+  text-align: right;
+  font-size: 12px;
+}
+
+.insp__note {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.insp__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}

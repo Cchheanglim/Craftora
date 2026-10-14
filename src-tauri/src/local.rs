@@ -41,7 +41,6 @@ struct ProbeFormat {
 struct ProbeStream {
     codec_type: Option<String>,
     codec_name: Option<String>,
-    width: Option<u32>,
     height: Option<u32>,
     avg_frame_rate: Option<String>,
     bit_rate: Option<String>,
@@ -91,7 +90,6 @@ impl ProbeStream {
 
 /// What the export step needs to know about an input file.
 pub struct ProbeInfo {
-    pub width: Option<u32>,
     pub has_video: bool,
     pub has_audio: bool,
 }
@@ -100,7 +98,6 @@ pub async fn probe(app: &AppHandle, path: &Path) -> Result<ProbeInfo, String> {
     let probe = run_probe(app, path).await?;
     let video = probe.streams.iter().find(|s| s.is_video());
     Ok(ProbeInfo {
-        width: video.and_then(|v| v.width),
         has_video: video.is_some(),
         has_audio: probe.streams.iter().any(|s| s.is_audio()),
     })
