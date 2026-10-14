@@ -33,6 +33,7 @@ import {
   POSITIONS,
   clipEnd,
   emptyProject,
+  mainOrder,
   mainTrack,
   mediaFromSource,
   projectDuration,
@@ -50,6 +51,7 @@ import { Inspector } from "./components/Inspector";
 import { ExportPanel } from "./components/ExportPanel";
 import { QueueDock } from "./components/QueueDock";
 import { Library } from "./components/Library";
+import { AssistantPanel } from "./components/AssistantPanel";
 import "./App.css";
 
 const DEMO = DEMO_SOURCES[0];
@@ -139,12 +141,20 @@ export default function App() {
   const [outputDir, setOutputDirState] = useState(DEFAULT_OUTPUT_DIR);
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
+  const [rightTab, setRightTab] = useState<"edit" | "assistant">("edit");
   const urlRef = useRef<HTMLInputElement>(null);
 
   const api = useProject(() => (inDesktopApp ? emptyProject() : demoProject()));
   const { project } = api;
   const duration = projectDuration(project);
   const playback = usePlayback(duration);
+  // The assistant reads these at the moment it needs them, between network calls.
+  const projectRef = useRef(project);
+  projectRef.current = project;
+  const timeRef = useRef(playback.time);
+  timeRef.current = playback.time;
+  const currentProject = useCallback(() => projectRef.current, []);
+  const currentTime = useCallback(() => timeRef.current, []);
   const queue = useQueue(inDesktopApp ? [] : DEMO_JOBS, inDesktopApp);
 
   useEffect(() => {
@@ -525,33 +535,52 @@ export default function App() {
       </main>
 
       {showPanel && (
-        <ExportPanel
-          settings={effective}
-          onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
-          plan={plan}
-          cutModeApplies={cutModeApplies(project, effective)}
-          hasPicture={hasPicture}
-          onAddToQueue={addToQueue}
-          queuedCount={queuedCount}
-          outputDir={outputDir}
-          onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
-        >
-          {selected && selectedTrack && (
-            <Inspector
-              key={selected.id}
-              clip={selected}
-              track={selectedTrack}
-              media={project.media.find((m) => m.id === selected.mediaId)}
-              onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
-              onSpeed={(speed) => api.edit({ type: "setSpeed", clipId: selected.id, speed })}
-              onCheckpoint={api.checkpoint}
-              onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
-              onSplit={split}
-              onDelete={remove}
-              canSplit={playback.time > selected.start && playback.time < clipEnd(selected)}
-            />
+        <div className="app__panel">
+          <div className="segmented app__tabs" role="group" aria-label="Right panel">
+            <button type="button" aria-pressed={rightTab === "edit"} onClick={() => setRightTab("edit")}>
+              Edit & export
+            </button>
+            <button type="button" aria-pressed={rightTab === "assistant"} onClick={() => setRightTab("assistant")}>
+              Assistant
+            </button>
+          </div>
+          {rightTab === "assistant" ? (
+            <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} />
+          ) : (
+            <ExportPanel
+              settings={effective}
+              onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
+              plan={plan}
+              cutModeApplies={cutModeApplies(project, effective)}
+              hasPicture={hasPicture}
+              onAddToQueue={addToQueue}
+              queuedCount={queuedCount}
+              outputDir={outputDir}
+              onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
+            >
+              {selected && selectedTrack && (
+                <Inspector
+                  key={selected.id}
+                  clip={selected}
+                  track={selectedTrack}
+                  media={project.media.find((m) => m.id === selected.mediaId)}
+                  onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
+                  onSpeed={(speed) => api.edit({ type: "setSpeed", clipId: selected.id, speed })}
+                  onTransition={
+                    selectedTrack.main && mainOrder(project)[0]?.id !== selected.id
+                      ? (transition, live) => (live ? api.editLive : api.edit)({ type: "setTransition", clipId: selected.id, transition })
+                      : undefined
+                  }
+                  onCheckpoint={api.checkpoint}
+                  onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
+                  onSplit={split}
+                  onDelete={remove}
+                  canSplit={playback.time > selected.start && playback.time < clipEnd(selected)}
+                />
+              )}
+            </ExportPanel>
           )}
-        </ExportPanel>
+        </div>
       )}
 
       <QueueDock queue={queue} freshId={freshId} />

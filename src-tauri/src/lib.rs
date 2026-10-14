@@ -1,3 +1,4 @@
+mod assistant;
 mod engine;
 mod jobs;
 mod local;
@@ -29,6 +30,9 @@ pub fn run() {
             store::save_history,
             store::get_output_dir,
             store::set_output_dir,
+            assistant::assistant_has_key,
+            assistant::assistant_set_key,
+            assistant::assistant_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

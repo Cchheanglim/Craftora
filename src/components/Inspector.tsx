@@ -4,6 +4,7 @@ import {
   NO_CROP,
   POSITIONS,
   SPEEDS,
+  TRANSITION_KINDS,
   clipEnd,
   clipLength,
   isCropped,
@@ -13,6 +14,7 @@ import {
   type MediaItem,
   type Position,
   type Track,
+  type Transition,
 } from "../project/model";
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
@@ -43,6 +45,8 @@ interface InspectorProps {
   /** Applies a change; `live` skips the undo step (use after `checkpoint`). */
   onChange: (patch: ClipPatch, live?: boolean) => void;
   onSpeed: (speed: number) => void;
+  /** Video 1 clips after the first: set the transition into this clip (`live` as in onChange). */
+  onTransition?: (transition: Transition | null, live?: boolean) => void;
   onCheckpoint: () => void;
   onFormat: (format: { videoFormat?: string; audioFormat?: string }) => void;
   onSplit: () => void;
@@ -51,7 +55,7 @@ interface InspectorProps {
 }
 
 /** Settings for the selected clip. */
-export function Inspector({ clip, track, media, onChange, onSpeed, onCheckpoint, onFormat, onSplit, onDelete, canSplit }: InspectorProps) {
+export function Inspector({ clip, track, media, onChange, onSpeed, onTransition, onCheckpoint, onFormat, onSplit, onDelete, canSplit }: InspectorProps) {
   const isText = !clip.mediaId;
   const isPicture = track.kind === "video";
   const isOverlay = isPicture && !track.main;
@@ -175,6 +179,44 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onCheckpoint,
             ))}
           </select>
         </div>
+      )}
+
+      {onTransition && (
+        <fieldset className="insp__group">
+          <legend>Transition from the clip before</legend>
+          <label htmlFor="insp-transition" className="sr-only">
+            Transition
+          </label>
+          <select
+            id="insp-transition"
+            className="field"
+            value={clip.transition?.kind ?? "none"}
+            onChange={(e) => {
+              const kind = e.target.value;
+              onTransition(kind === "none" ? null : { kind: kind as Transition["kind"], duration: clip.transition?.duration ?? 1 });
+            }}
+          >
+            <option value="none">None (straight cut)</option>
+            {TRANSITION_KINDS.map((t) => (
+              <option key={t.kind} value={t.kind}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+          {clip.transition && (
+            <Slider
+              id="insp-transition-length"
+              label="Length"
+              min={0.1}
+              max={3}
+              step={0.1}
+              value={clip.transition.duration}
+              format={sec}
+              onCheckpoint={onCheckpoint}
+              onChange={(duration) => onTransition({ ...clip.transition!, duration }, true)}
+            />
+          )}
+        </fieldset>
       )}
 
       <fieldset className="insp__group">

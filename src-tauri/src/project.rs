@@ -54,6 +54,25 @@ enum Role {
     Text,
 }
 
+#[derive(Deserialize, Clone, Copy, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+enum TransitionKind {
+    #[default]
+    Crossfade,
+    /// Fade to black, then up from black.
+    Dip,
+}
+
+impl TransitionKind {
+    /// The matching FFmpeg `xfade` transition.
+    fn xfade(self) -> &'static str {
+        match self {
+            TransitionKind::Crossfade => "fade",
+            TransitionKind::Dip => "fadeblack",
+        }
+    }
+}
+
 fn one() -> f64 {
     1.0
 }
@@ -87,6 +106,11 @@ struct ClipSpec {
     /// Fractions of the picture cut off: left, top, right, bottom.
     #[serde(default)]
     crop: [f64; 4],
+    /// Main clips: seconds this clip overlaps the previous one (0 = straight cut).
+    #[serde(default)]
+    transition: f64,
+    #[serde(default)]
+    transition_kind: TransitionKind,
     /// Overlays: width as a fraction of the frame. Text: height as a fraction of the frame.
     #[serde(default = "one")]
     size: f64,
@@ -227,7 +251,8 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
     let finite = |v: f64| v.is_finite();
     for clip in &spec.clips {
         let [l, t, r, b] = clip.crop;
-        let numbers = [clip.start, clip.in_point, clip.out, clip.speed, clip.volume, clip.fade_in, clip.fade_out, clip.size, clip.x, clip.y, l, t, r, b];
+        let numbers =
+            [clip.start, clip.in_point, clip.out, clip.speed, clip.volume, clip.fade_in, clip.fade_out, clip.transition, clip.size, clip.x, clip.y, l, t, r, b];
         if !numbers.into_iter().all(finite)
             || clip.start < 0.0
             || clip.in_point < 0.0
@@ -236,6 +261,8 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             || clip.fade_in < 0.0
             || clip.fade_out < 0.0
             || clip.fade_in + clip.fade_out > clip.length() + 0.01
+            || clip.transition < 0.0
+            || clip.transition > clip.length() / 2.0 + 0.01
             || !clip.crop.iter().all(|side| (0.0..=0.45).contains(side))
             || !(0.0..=2.0).contains(&clip.volume)
             || !(0.01..=1.0).contains(&clip.size)
@@ -329,7 +356,6 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
     let mut main: Vec<&ClipSpec> = spec.clips.iter().filter(|c| c.role == Role::Main).collect();
     main.sort_by(|a, b| a.start.total_cmp(&b.start));
     let main_end = main.iter().map(|c| c.end()).fold(0.0, f64::max);
-    let mut pairs = String::new();
     for (i, clip) in main.iter().enumerate() {
         let input = input_of(clip).ok_or("Missing media for a clip.")?;
         let (from, to) = (clip.in_point - input.offset, clip.out - input.offset);
@@ -337,31 +363,55 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         if is_video {
             if input.info.has_video {
                 graph.push(format!(
-                    "[{}:v]trim=start={}:end={},setpts=PTS-STARTPTS{},scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps},format=yuv420p{}[mv{i}]",
+                    "[{}:v]trim=start={}:end={},setpts=PTS-STARTPTS{},scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps},tpad=stop_mode=clone:stop_duration=1,trim=duration={},setpts=PTS-STARTPTS,format=yuv420p{}[mv{i}]",
                     input.index,
                     secs(from),
                     secs(to),
                     clip.picture_edits(),
+                    secs(length),
                     clip.picture_fades(false)
                 ));
             } else {
                 graph.push(format!("color=black:s={w}x{h}:r={fps}:d={},format=yuv420p[mv{i}]", secs(length)));
             }
-            pairs.push_str(&format!("[mv{i}]"));
         }
-        // Every main clip contributes sound (silence if it has none) so the join stays in step.
+        // Every main clip contributes sound (silence if it has none), exactly as long as its
+        // picture, so the joins and transitions stay in step.
         if input.info.has_audio {
             graph.push(format!(
-                "[{}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS{},aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[ma{i}]",
+                "[{}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS{},aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,apad=whole_dur={len},atrim=duration={len}[ma{i}]",
                 input.index,
                 secs(from),
                 secs(to),
-                clip.sound_edits()
+                clip.sound_edits(),
+                len = secs(length)
             ));
         } else {
             graph.push(format!("anullsrc=r=48000:cl=stereo,atrim=duration={},aformat=sample_fmts=fltp[ma{i}]", secs(length)));
         }
-        pairs.push_str(&format!("[ma{i}]"));
+    }
+
+    // Join the main clips one by one: a straight cut, or a transition where they overlap.
+    // A transition starts where the incoming clip starts on the timeline.
+    let (mut joined, mut main_audio) = ("mv0".to_string(), "ma0".to_string());
+    for (i, clip) in main.iter().enumerate().skip(1) {
+        if clip.transition > 0.0 {
+            if is_video {
+                graph.push(format!(
+                    "[{joined}][mv{i}]xfade=transition={}:duration={}:offset={}[jv{i}]",
+                    clip.transition_kind.xfade(),
+                    secs(clip.transition),
+                    secs(clip.start)
+                ));
+            }
+            graph.push(format!("[{main_audio}][ma{i}]acrossfade=d={}:c1=tri:c2=tri[ja{i}]", secs(clip.transition)));
+        } else {
+            if is_video {
+                graph.push(format!("[{joined}][mv{i}]concat=n=2:v=1:a=0[jv{i}]"));
+            }
+            graph.push(format!("[{main_audio}][ma{i}]concat=n=2:v=0:a=1[ja{i}]"));
+        }
+        (joined, main_audio) = (format!("jv{i}"), format!("ja{i}"));
     }
 
     let mut picture = String::new();
@@ -369,16 +419,14 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         if main.is_empty() {
             graph.push(format!("color=black:s={w}x{h}:r={fps}:d={},format=yuv420p[base]", secs(total)));
         } else {
-            graph.push(format!("{pairs}concat=n={}:v=1:a=1[joined][mainaudio]", main.len()));
             // Overlays or sounds that run past the main track continue over black.
             let pad = (total - main_end).max(0.0);
-            graph.push(format!("[joined]tpad=stop_mode=add:stop_duration={}:color=black[base]", secs(pad)));
-            sounds.push("[mainaudio]".into());
+            graph.push(format!("[{joined}]tpad=stop_mode=add:stop_duration={}:color=black[base]", secs(pad)));
+            sounds.push(format!("[{main_audio}]"));
         }
         picture = "base".into();
     } else if !main.is_empty() {
-        graph.push(format!("{pairs}concat=n={}:v=0:a=1[mainaudio]", main.len()));
-        sounds.push("[mainaudio]".into());
+        sounds.push(format!("[{main_audio}]"));
     }
 
     // Everything else, in timeline order.

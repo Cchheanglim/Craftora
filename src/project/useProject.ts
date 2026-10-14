@@ -16,6 +16,11 @@ type Action =
   | { type: "checkpoint" }
   | { type: "undo" }
   | { type: "redo" }
+  /**
+   * A project built from several named edits at once (the AI assistant applies its edits
+   * to a copy, then hands over the result). `transient` as for "edit".
+   */
+  | { type: "commit"; project: Project; transient: boolean }
   /** Another project replaces this one (opened, or new); history starts over. */
   | { type: "reset"; project: Project }
   /** Fresh preview links or a found/missing file: not an edit, so it applies to every undo step. */
@@ -41,6 +46,10 @@ function reducer(state: State, action: Action): State {
       if (!next) return state;
       return { project: next, past: [...state.past, state.project], future: state.future.slice(1) };
     }
+    case "commit":
+      if (action.project === state.project) return state;
+      if (action.transient) return { ...state, project: action.project };
+      return { project: action.project, past: [...state.past, state.project].slice(-HISTORY_LIMIT), future: [] };
     case "reset":
       return { project: action.project, past: [], future: [] };
     case "refreshMedia": {
@@ -66,6 +75,7 @@ export function useProject(initial: () => Project) {
     checkpoint: useCallback(() => dispatch({ type: "checkpoint" }), []),
     undo: useCallback(() => dispatch({ type: "undo" }), []),
     redo: useCallback(() => dispatch({ type: "redo" }), []),
+    commit: useCallback((project: Project, transient: boolean) => dispatch({ type: "commit", project, transient }), []),
     reset: useCallback((project: Project) => dispatch({ type: "reset", project }), []),
     refreshMedia: useCallback((mediaId: string, patch: Partial<MediaItem>) => dispatch({ type: "refreshMedia", mediaId, patch }), []),
   };

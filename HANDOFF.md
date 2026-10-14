@@ -36,7 +36,7 @@ system).
   applied through `useProject` with undo/redo. An AI assistant should dispatch these same
   actions.
 
-## Second session (2026-10-14), not committed yet
+## Second session (2026-10-14)
 
 The owner reported that Video 2 couldn't be moved or cropped and that the playhead couldn't
 be dragged. Fixed, along with the known issues and next steps 2–4:
@@ -68,23 +68,43 @@ be dragged. Fixed, along with the known issues and next steps 2–4:
   picture-in-picture move, resize and crop, Video 1 reorder, text move, speed, fades, and
   autosave with reopen. **Not yet run in the real app window.**
 
+## Third session (2026-10-14), not committed yet
+
+- **Transitions** on Video 1: Crossfade or Dip to black into a clip (Inspector, "Transition from
+  the clip before"). The clips overlap by the transition (`transitionLength` caps it at half
+  of either clip). The preview mixes them live (`transitionMix`); the export chains
+  `xfade`/`acrossfade` (straight cuts use pairwise `concat`), with every main segment padded
+  or trimmed to its exact length. Tested by hand: crossfade + dip render, 10.0 s exactly.
+- **AI editing assistant** (right panel, "Assistant" tab), using **Gemini** (the owner's choice)
+  through the **Interactions API** (`POST v1beta/interactions`, stateful with
+  `previous_interaction_id`). Models: `gemini-3.8-flash` (default), `gemini-4-argon`.
+  - `src-tauri/src/assistant.rs`: the API key lives in Windows Credential Manager (`keyring`)
+    and Rust makes the HTTPS call (`reqwest`), so the key never reaches the web page.
+  - `src/assistant/tools.ts`: the timeline description sent with each message (short ids
+    c1/m1/t1) and one tool per edit action; `useAssistant.ts` runs the tool-call loop (at most
+    8 rounds) and commits each message's edits as one undo step (`useProject.commit`).
+  - Checked: the tools on a sample project in Bun, and the keyring round trip. **Not yet run
+    against the real Gemini API** (no key here); errors from Gemini are shown in the chat.
+- A "Loading video…" note while a preview video's first frame loads.
+
 ## Known limitations
 
 - The reverse preview is choppy and silent while playing (browsers can't play backwards).
 - Preview copies of long videos take a while; the clip shows nothing until its copy is ready.
-- No transitions between clips yet (fades only).
+- The owner saw local imports take 4–11 s to appear in the preview. No preview copy was made,
+  so the cause isn't known yet (debug build, file size or format?). Investigate with the file.
+- The assistant can't see or hear the media (no "cut the silences" yet).
 - Text resizing on the preview scales the font roughly with the box.
-- `DESIGN.md` doesn't yet document the timeline clip colours (`--clip-*` tokens), the Home
-  layout or the preview selection handles. Run `/impeccable document` to refresh it.
+- `DESIGN.md` doesn't yet document the clip colours, Home layout, preview handles or the
+  assistant panel. Run `/impeccable document` to refresh it.
 
 ## Next steps
 
-1. Owner tests the second-session work in the app (`bun tauri dev`), then fix what they report.
-2. Transitions between Video 1 clips (crossfade with `xfade`/`acrossfade`; overlaps the clips).
-3. AI editing assistant, built on `actions.ts`. Needs the owner's decisions: which model
-   or provider, and where the API key lives.
-4. Before a public release: code signing, auto-updates, an FFmpeg licence decision
-   (GPL or LGPL), and user terms.
+1. Owner tests transitions and the assistant (needs a Gemini API key from Google AI Studio).
+2. Find why local imports are slow to appear in the preview.
+3. Release prep, once the owner decides: FFmpeg licence (LGPL build vs keeping GPL with
+   notices), auto-updates (Tauri updater + GitHub Releases, free), and code signing (free
+   options: SignPath Foundation for open source, or the Microsoft Store).
 
 ## Running it
 

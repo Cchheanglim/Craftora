@@ -75,6 +75,18 @@ export const NO_CROP: Crop = { left: 0, top: 0, right: 0, bottom: 0 };
 /** The most a crop may take from one side, so something always remains. */
 export const MAX_CROP = 0.45;
 
+/** How a Video 1 clip takes over from the one before it. Both overlap for `duration`. */
+export interface Transition {
+  kind: "crossfade" | "dip";
+  /** Seconds, as set; the real overlap may be shorter for short clips (see `transitionLength`). */
+  duration: number;
+}
+
+export const TRANSITION_KINDS: { kind: Transition["kind"]; label: string }[] = [
+  { kind: "crossfade", label: "Crossfade" },
+  { kind: "dip", label: "Dip to black" },
+];
+
 export const isCropped = (c: Crop) => c.left > 0 || c.top > 0 || c.right > 0 || c.bottom > 0;
 
 export interface Clip {
@@ -97,6 +109,8 @@ export interface Clip {
   fadeIn: number;
   fadeOut: number;
   crop: Crop;
+  /** Video 1 only: the transition from the previous clip into this one. */
+  transition?: Transition;
   /** Picture-in-picture: width as a fraction of the frame. Text: height as a fraction of the frame. */
   size: number;
   /** Fractions of the free space, like `POSITIONS`. */
@@ -136,6 +150,44 @@ export function fadeAt(c: Clip, t: number): number {
   if (c.fadeIn > 0) f = Math.min(f, into / c.fadeIn);
   if (c.fadeOut > 0) f = Math.min(f, left / c.fadeOut);
   return Math.min(1, Math.max(0, f));
+}
+
+/** Video 1's clips in play order. */
+export const mainOrder = (p: Project) => p.clips.filter((c) => c.trackId === mainTrack(p).id).sort((a, b) => a.start - b.start);
+
+/**
+ * How long `cur` overlaps `prev`: its transition, but at most half of either clip so
+ * neighbouring transitions never collide. 0 without a transition or a previous clip.
+ */
+export function transitionLength(prev: Clip | undefined, cur: Clip): number {
+  if (!prev || !cur.transition) return 0;
+  return Math.max(0, Math.min(cur.transition.duration, clipLength(prev) / 2, clipLength(cur) / 2));
+}
+
+/**
+ * Video 1 transitions at time `t`: how visible (`picture`) and how loud (`sound`) the clip
+ * is, 0–1. The incoming clip is drawn above the outgoing one.
+ */
+export function transitionMix(order: Clip[], clip: Clip, t: number): { picture: number; sound: number } {
+  const i = order.findIndex((c) => c.id === clip.id);
+  if (i === -1) return { picture: 1, sound: 1 };
+  let picture = 1;
+  let sound = 1;
+  const incoming = transitionLength(order[i - 1], clip);
+  if (incoming > 0 && t < clip.start + incoming) {
+    const p = Math.max(0, (t - clip.start) / incoming);
+    picture = clip.transition!.kind === "dip" ? Math.max(0, 2 * p - 1) : p;
+    sound = clip.transition!.kind === "dip" ? Math.max(0, 2 * p - 1) : p;
+  }
+  const next = order[i + 1];
+  const outgoing = next ? transitionLength(clip, next) : 0;
+  if (next && outgoing > 0 && t >= next.start) {
+    const p = Math.min(1, (t - next.start) / outgoing);
+    // A crossfade keeps the outgoing picture underneath; a dip fades it to black first.
+    if (next.transition!.kind === "dip") picture = Math.min(picture, Math.max(0, 1 - 2 * p));
+    sound = Math.min(sound, next.transition!.kind === "dip" ? Math.max(0, 1 - 2 * p) : 1 - p);
+  }
+  return { picture, sound };
 }
 
 export function projectDuration(p: Project): number {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from "react";
 import type { Frame } from "../types";
-import { clipEnd, fadeAt, mainTrack, mediaTimeAt, type Clip, type Project } from "../project/model";
+import { clipEnd, fadeAt, mainOrder, mainTrack, mediaTimeAt, transitionMix, type Clip, type Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
@@ -93,10 +93,19 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const mediaTime = (c: Clip) => (active(c) ? mediaTimeAt(c, time) : null);
   const stageAspect = frame.width / frame.height;
 
-  // Bottom to top: Video 1, then picture tracks from the lowest row up, then text.
+  // Bottom to top: Video 1 in play order (so an incoming transition is above the outgoing
+  // clip), then picture tracks from the lowest row up, then text.
+  const order = mainOrder(project);
+  const layer = (c: Clip) => (c.trackId === main ? order.indexOf(c) : order.length + project.tracks.length - (trackIndex.get(c.trackId) ?? 0));
   const pictures = project.clips
     .filter((c) => c.mediaId && project.tracks.find((t) => t.id === c.trackId)?.kind === "video")
-    .sort((a, b) => (a.trackId === main ? -1 : b.trackId === main ? 1 : (trackIndex.get(b.trackId) ?? 0) - (trackIndex.get(a.trackId) ?? 0)));
+    .sort((a, b) => layer(a) - layer(b));
+  /** Fades and Video 1 transitions together: how visible and how loud a clip is now. */
+  const mix = (c: Clip) => {
+    const fade = fadeAt(c, time);
+    const t = c.trackId === main ? transitionMix(order, c, time) : { picture: 1, sound: 1 };
+    return { picture: fade * t.picture, sound: fade * t.sound };
+  };
   const sounds = project.clips.filter((c) => c.mediaId && project.tracks.find((t) => t.id === c.trackId)?.kind === "audio");
   const texts = project.clips.filter((c) => !c.mediaId);
   const nothingHere = !project.clips.some(active);
@@ -209,25 +218,26 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 isMain={isMain}
                 stageAspect={stageAspect}
                 visible={t !== null}
-                opacity={t === null ? 0 : fadeAt(clip, time)}
+                opacity={t === null ? 0 : mix(clip).picture}
                 selected={isSelected}
                 onPointerDown={isMain ? undefined : beginGesture(clip, "move")}
                 handles={isSelected ? handles(clip) : null}
               >
-                {(onMeta, style) => (
+                {(onMeta, style, onReady) => (
                   <>
                     <SyncedMedia
                       kind="video"
                       src={media.source.previewUrl}
                       time={t}
                       playing={playing}
-                      volume={clip.volume * fadeAt(clip, time)}
+                      volume={clip.volume * mix(clip).sound}
                       muted={muted || separateSound}
                       rate={rate}
                       reverse={clip.reverse}
                       className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
                       style={style}
                       onLoadedMetadata={onMeta}
+                      onReady={onReady}
                     />
                     {separateSound && (
                       <SyncedMedia
@@ -235,7 +245,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         src={media.source.previewAudioUrl!}
                         time={t}
                         playing={playing}
-                        volume={clip.volume * fadeAt(clip, time)}
+                        volume={clip.volume * mix(clip).sound}
                         muted={muted}
                         rate={rate}
                         reverse={clip.reverse}
@@ -257,7 +267,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 src={src}
                 time={mediaTime(clip)}
                 playing={playing}
-                volume={clip.volume * fadeAt(clip, time)}
+                volume={clip.volume * mix(clip).sound}
                 muted={muted}
                 rate={playback.speed * clip.speed}
                 reverse={clip.reverse}
@@ -344,7 +354,7 @@ interface PictureLayerProps {
   selected: boolean;
   onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
   handles: ReactNode;
-  children: (onMeta: (e: SyntheticEvent<HTMLVideoElement>) => void, style: CSSProperties) => ReactNode;
+  children: (onMeta: (e: SyntheticEvent<HTMLVideoElement>) => void, style: CSSProperties, onReady: () => void) => ReactNode;
 }
 
 /**
@@ -354,6 +364,7 @@ interface PictureLayerProps {
 function PictureLayer({ clip, isMain, stageAspect, visible, opacity, selected, onPointerDown, handles, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
+  const [ready, setReady] = useState(false);
   const { left, top, right, bottom } = clip.crop;
   const keptW = 1 - left - right;
   const keptH = 1 - top - bottom;
@@ -397,8 +408,9 @@ function PictureLayer({ clip, isMain, stageAspect, visible, opacity, selected, o
         {children((e) => {
           const v = e.currentTarget;
           if (v.videoWidth && v.videoHeight) setVideoAspect(v.videoWidth / v.videoHeight);
-        }, video)}
+        }, video, () => setReady(true))}
       </div>
+      {visible && !ready && <span className="preview__loading">Loading video…</span>}
       {handles}
     </div>
   );
