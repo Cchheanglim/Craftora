@@ -44,6 +44,29 @@ jobs:
           $app = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           if ($tag -ne $app) { throw "Tag v$tag doesn't match the version in tauri.conf.json ($app). See RELEASING.md." }
 
+      # Fails in seconds with a clear message instead of after the 10-minute build. Shows only
+      # lengths and the key's kind, never the values.
+      - name: Check the update key secrets
+        shell: pwsh
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $key = "$env:KEY".Trim()
+          $password = "$env:PASSWORD"
+          Write-Host "TAURI_SIGNING_PRIVATE_KEY: $($key.Length) characters"
+          Write-Host "TAURI_SIGNING_PRIVATE_KEY_PASSWORD: $($password.Length) characters"
+          if (-not $key) { throw "The TAURI_SIGNING_PRIVATE_KEY repository secret is empty or missing (see RELEASING.md)." }
+          try {
+            $firstLine = ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($key)) -split "`n")[0]
+          } catch {
+            throw "TAURI_SIGNING_PRIVATE_KEY isn't the key file's content: it should be one line of base64 from craftora-updater.key."
+          }
+          if ($firstLine -match "public key") { throw "TAURI_SIGNING_PRIVATE_KEY holds the public key (.key.pub). Use craftora-updater.key instead." }
+          if ($firstLine -notmatch "secret key") { throw "TAURI_SIGNING_PRIVATE_KEY doesn't look like a Tauri private key." }
+          if (-not $password) { throw "The TAURI_SIGNING_PRIVATE_KEY_PASSWORD repository secret is empty or missing." }
+          Write-Host "Both secrets look right."
+
       - name: Install packages
         run: bun install --frozen-lockfile
 
