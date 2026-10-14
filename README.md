@@ -16,9 +16,9 @@ Get the latest installer from [Releases](https://github.com/Cchheanglim/Craftora
 It installs for your Windows account without admin rights, and Craftora updates itself
 when a new version comes out (you can turn the automatic check off on the Home screen).
 
-Craftora is applying for free code signing from [SignPath Foundation](https://signpath.org).
-Until it's approved, Windows may say the publisher is unknown: choose **More info**, then
-**Run anyway**. The [code signing policy](CODE_SIGNING.md) includes the privacy policy.
+The installer isn't code-signed yet, so Windows SmartScreen may say the publisher is
+unknown: choose **More info**, then **Run anyway**. See the [privacy policy](PRIVACY.md)
+for when Craftora goes online.
 
 ## Features
 

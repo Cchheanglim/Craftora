@@ -4,7 +4,7 @@ import type { ProjectEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { inDesktopApp, revealFile } from "../lib/engine";
-import type { Updates } from "../lib/updates";
+import { storeEdition, type Updates } from "../lib/updates";
 import { Icon } from "./Icon";
 import "./Home.css";
 
@@ -30,7 +30,7 @@ interface HomeProps {
 const REPO = "https://github.com/Cchheanglim/Craftora";
 const LINKS = [
   { label: "Licences", url: `${REPO}/blob/main/THIRD_PARTY_NOTICES.md` },
-  { label: "Privacy", url: `${REPO}/blob/main/CODE_SIGNING.md#privacy-policy` },
+  { label: "Privacy", url: `${REPO}/blob/main/PRIVACY.md` },
   { label: "Releases", url: `${REPO}/releases` },
 ];
 
@@ -253,7 +253,11 @@ export function Home({
                   </div>
                 </>
               ) : (
-                <p className="home__muted">Updates are checked in installed copies of Craftora, not in development runs.</p>
+                <p className="home__muted">
+                  {storeEdition
+                    ? "Updates come through the Microsoft Store."
+                    : "Updates are checked in installed copies of Craftora, not in development runs."}
+                </p>
               )}
               {inDesktopApp && (
                 <p className="home__links">

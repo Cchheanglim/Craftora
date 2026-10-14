@@ -1,9 +1,7 @@
 # Builds the Windows installer from source and, for a version tag (v1.2.3), publishes a draft
 # GitHub Release with the installer, the auto-update manifest (latest.json) and the source of
 # the bundled FFmpeg. See RELEASING.md for the one-time setup and the release steps.
-#
-# Signing with SignPath runs only once the SIGNPATH_* repository variables are set; until
-# then the installer is published unsigned.
+# The installer isn't code-signed (see RELEASING.md, "Code signing").
 
 name: Release
 
@@ -15,7 +13,6 @@ on:
 
 permissions:
   contents: write # create the draft release
-  actions: read # SignPath reads this run's details and the unsigned artifact
 
 concurrency:
   group: release-${{ github.ref }}
@@ -27,7 +24,6 @@ jobs:
     timeout-minutes: 120
     env:
       IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
-      SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
       SIDECAR_FFMPEG: src-tauri/bin/ffmpeg-x86_64-pc-windows-msvc.exe
     steps:
       - uses: actions/checkout@v5
@@ -84,40 +80,12 @@ jobs:
           "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
           "name=$($exe.Name)" >> $env:GITHUB_OUTPUT
 
-      - name: Upload the unsigned installer for signing
-        if: env.SIGN == 'true'
-        id: unsigned
-        uses: actions/upload-artifact@v7
-        with:
-          name: installer-unsigned
-          path: ${{ steps.installer.outputs.path }}
-
-      - name: Sign with SignPath
-        if: env.SIGN == 'true'
-        uses: signpath/github-action-submit-signing-request@v3
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
-          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
-          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
-          wait-for-completion: true
-          # Each release waits for a person to approve it in SignPath.
-          wait-for-completion-timeout-in-seconds: 3600
-          output-artifact-directory: signed
-
-      - name: Use the signed installer
-        if: env.SIGN == 'true'
-        shell: pwsh
-        run: Copy-Item "signed/${{ steps.installer.outputs.name }}" "${{ steps.installer.outputs.path }}" -Force
-
-      # The update signature must match the final installer's bytes, so sign it last.
+      # Signed again with the version bound in (requireSignedVersion in tauri.conf.json). Any
+      # later change to the installer, such as code signing, must happen before this step.
       - name: Sign the update
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        # The version is part of the signature (requireSignedVersion in tauri.conf.json).
         shell: pwsh
         run: |
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
@@ -162,17 +130,12 @@ jobs:
           curl.exe -fsSL -o release/ffmpeg-source-${{ steps.ffmpeg.outputs.commit }}.tar.gz "https://github.com/FFmpeg/FFmpeg/archive/${{ steps.ffmpeg.outputs.commit }}.tar.gz"
           curl.exe -fsSL -o release/ffmpeg-build-scripts-${{ steps.ffmpeg.outputs.scripts }}.tar.gz "https://github.com/BtbN/FFmpeg-Builds/archive/${{ steps.ffmpeg.outputs.scripts }}.tar.gz"
 
-          $signed = if ("${{ env.SIGN }}" -eq "true") {
-            "The installer is signed. Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)."
-          } else {
-            "This installer isn't code-signed yet, so Windows may warn that the publisher is unknown. Choose **More info**, then **Run anyway**."
-          }
           @"
           ## Download
 
           Get **$name** below and run it. Installed copies update themselves.
 
-          $signed
+          The installer isn't code-signed, so Windows SmartScreen may say the publisher is unknown. Choose **More info**, then **Run anyway**.
 
           ## Bundled software
 
