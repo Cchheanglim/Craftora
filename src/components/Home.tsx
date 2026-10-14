@@ -2,7 +2,9 @@ import { useState } from "react";
 import type { Job } from "../types";
 import type { ProjectEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
-import { revealFile } from "../lib/engine";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { inDesktopApp, revealFile } from "../lib/engine";
+import type { Updates } from "../lib/updates";
 import { Icon } from "./Icon";
 import "./Home.css";
 
@@ -22,6 +24,31 @@ interface HomeProps {
   /** Finished exports, newest first. */
   recent: Job[];
   outputDir: string;
+  updates: Updates;
+}
+
+const REPO = "https://github.com/Cchheanglim/Craftora";
+const LINKS = [
+  { label: "Licences", url: `${REPO}/blob/main/THIRD_PARTY_NOTICES.md` },
+  { label: "Privacy", url: `${REPO}/blob/main/CODE_SIGNING.md#privacy-policy` },
+  { label: "Releases", url: `${REPO}/releases` },
+];
+
+function updateText(status: Updates["status"]): string {
+  switch (status.kind) {
+    case "checking":
+      return "Checking for updates…";
+    case "current":
+      return "You have the latest version.";
+    case "available":
+      return `Version ${status.version} is available.`;
+    case "installing":
+      return `Installing version ${status.version}…`;
+    case "error":
+      return `Couldn't check for updates: ${status.message}`;
+    default:
+      return "";
+  }
 }
 
 const SHORTCUTS: [string, string][] = [
@@ -56,6 +83,7 @@ export function Home({
   onDeleteProject,
   recent,
   outputDir,
+  updates,
 }: HomeProps) {
   // Deleting asks once more, inline, on the same button.
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -194,6 +222,49 @@ export function Home({
                 </div>
               ))}
             </dl>
+
+            <h2 className="section-label home__gap">About</h2>
+            <div className="home__about">
+              <p>
+                Craftora{updates.version ? ` ${updates.version}` : ""} · MIT License · includes FFmpeg (GPL) and yt-dlp
+              </p>
+              {updates.available ? (
+                <>
+                  {updateText(updates.status) && <p className="home__muted">{updateText(updates.status)}</p>}
+                  <div className="home__about-row">
+                    {updates.status.kind === "available" ? (
+                      <button type="button" className="btn btn--secondary" onClick={() => void updates.install()}>
+                        Install and restart
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn--secondary"
+                        onClick={() => void updates.checkNow()}
+                        disabled={updates.status.kind === "checking" || updates.status.kind === "installing"}
+                      >
+                        Check for updates
+                      </button>
+                    )}
+                    <label className="home__check">
+                      <input type="checkbox" checked={updates.auto} onChange={(e) => updates.setAuto(e.target.checked)} />
+                      Check automatically
+                    </label>
+                  </div>
+                </>
+              ) : (
+                <p className="home__muted">Updates are checked in installed copies of Craftora, not in development runs.</p>
+              )}
+              {inDesktopApp && (
+                <p className="home__links">
+                  {LINKS.map((link) => (
+                    <button key={link.label} type="button" onClick={() => void openUrl(link.url)}>
+                      {link.label}
+                    </button>
+                  ))}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
