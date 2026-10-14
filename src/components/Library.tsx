@@ -1,5 +1,5 @@
 import type { Job } from "../types";
-import { formatSize } from "../lib/exportPlan";
+import { formatSize } from "../project/exportPlan";
 import { revealFile } from "../lib/engine";
 import { Icon } from "./Icon";
 import "./Library.css";

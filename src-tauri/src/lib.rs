@@ -2,6 +2,7 @@ mod engine;
 mod jobs;
 mod local;
 mod media;
+mod project;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,6 +17,7 @@ pub fn run() {
             media::fetch_media,
             local::open_local,
             jobs::start_job,
+            project::start_render,
             jobs::cancel_job,
         ])
         .run(tauri::generate_context!())

@@ -33,6 +33,14 @@
   --accent-fill-hover: #c01733;
   --accent-wash: rgb(250 45 72 / 0.12);
 
+  /* Timeline clips, told apart by track kind (never red: red is the cut and the action) */
+  --clip-video: #273142;
+  --clip-video-line: #415372;
+  --clip-audio: #22362c;
+  --clip-audio-line: #3b6450;
+  --clip-text: #3a3222;
+  --clip-text-line: #6e5b36;
+
   /* State */
   --ok: #30d158;
   --warn: #ffb340;

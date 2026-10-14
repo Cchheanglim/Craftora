@@ -5,6 +5,7 @@ export type CutMode = "fast" | "precise";
 
 /** One downloadable stream that yt-dlp reported for a source. */
 export interface StreamOption {
+  /** yt-dlp format selector (or `local:video` / `local:audio` for files on this PC). */
   id: string;
   kind: OutputKind;
   label: string;
@@ -12,14 +13,15 @@ export interface StreamOption {
   sizeMb: number;
 }
 
-/** A fetched link: what the editor previews and trims. */
+/** A fetched link or an opened file: what can be previewed and placed on the timeline. */
 export interface MediaSource {
+  /** The link, or the absolute path for files on this PC. */
   url: string;
   title: string;
   uploader: string;
   /** Length in seconds. */
   duration: number;
-  /** A file on this PC (url is its path); handled by FFmpeg alone, no network. */
+  /** A file on this PC; handled by FFmpeg alone, no network. */
   local?: boolean;
   /** A directly playable file used for the in-app preview; empty when there is none. */
   previewUrl: string;
@@ -30,37 +32,30 @@ export interface MediaSource {
   streams: StreamOption[];
 }
 
-export interface Range {
-  /** Seconds. */
-  start: number;
-  /** Seconds. */
-  end: number;
+/** The output frame for timeline renders. */
+export interface Frame {
+  id: string;
+  label: string;
+  width: number;
+  height: number;
 }
 
 export interface ExportSettings {
   output: OutputKind;
-  videoStreamId: string;
-  audioStreamId: string;
   videoContainer: VideoContainer;
   audioContainer: AudioContainer;
-  mirror: boolean;
-  reverse: boolean;
+  /** Only used for a single untouched clip; everything else is re-encoded. */
   cutMode: CutMode;
+  frameId: string;
 }
 
-export type JobStatus =
-  | "waiting"
-  | "downloading"
-  | "encoding"
-  | "paused"
-  | "finished"
-  | "failed";
+export type JobStatus = "waiting" | "downloading" | "encoding" | "paused" | "finished" | "failed";
 
-/** What the Rust backend needs to run a job (mirrors `JobSpec` in src-tauri/src/jobs.rs). */
+/** A single untouched cut (mirrors `JobSpec` in src-tauri/src/jobs.rs). */
 export interface JobSpec {
   id: string;
   url: string;
-  /** yt-dlp format selector from the chosen stream. */
+  /** yt-dlp format selector. */
   format: string;
   output: OutputKind;
   container: VideoContainer | AudioContainer;
@@ -68,69 +63,59 @@ export interface JobSpec {
   end: number;
   duration: number;
   cutMode: CutMode;
-  mirror: boolean;
-  reverse: boolean;
   fileName: string;
   /** url is a file opened from this PC. */
   local: boolean;
-  layers: LayerSpec[];
-  /** Loudness of the clip's own sound, 0–2 (1 = unchanged). */
-  mainVolume: number;
 }
 
-export type LayerKind = "video" | "audio";
-
-/** Where a video layer sits on the clip. */
-export type LayerPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center";
-
-/** A file from this PC stacked on the clip, CapCut-style. */
-export interface Layer {
+/** A whole timeline (mirrors `RenderSpec` in src-tauri/src/project.rs). */
+export interface RenderSpec {
   id: string;
-  kind: LayerKind;
-  /** Absolute path on this PC. */
-  path: string;
-  name: string;
-  /** The layer file's own length in seconds. */
-  duration: number;
-  hasAudio: boolean;
-  previewUrl: string;
-  /** Seconds after the clip's In point when the layer begins. */
-  start: number;
-  /** 0–1. */
-  volume: number;
-  /** Video layers: width as a fraction of the clip's width. */
-  size: number;
-  position: LayerPosition;
+  media: { id: string; local: boolean; src: string; format: string }[];
+  clips: RenderClip[];
+  width: number;
+  height: number;
+  fps: number;
+  output: OutputKind;
+  container: VideoContainer | AudioContainer;
+  fileName: string;
 }
 
-/** What Rust receives for each layer (mirrors `LayerSpec` in src-tauri/src/jobs.rs). */
-export interface LayerSpec {
-  path: string;
-  kind: LayerKind;
+export interface RenderClip {
+  role: "main" | "overlay" | "audio" | "text";
+  mediaId?: string;
   start: number;
+  in: number;
+  out: number;
   volume: number;
+  mirror: boolean;
+  reverse: boolean;
   size: number;
   x: number;
   y: number;
+  text: string;
+  color: string;
 }
 
 export interface Job {
   id: string;
   title: string;
-  /** One-line description: range, container, transforms. */
+  /** One-line description: length, format, what's in it. */
   summary: string;
   kind: OutputKind;
   status: JobStatus;
   /** 0–100, or null while the total is unknown. */
   progress: number | null;
-  /** Whether this job needs an FFmpeg re-encode after downloading. */
+  /** Whether this job re-encodes after downloading (demo simulation only). */
   needsEncode: boolean;
   /** Estimated before the job runs, exact once it has finished. */
   sizeMb: number;
   fileName: string;
   command: string;
-  /** Present for jobs the real engines run; absent for simulated demo jobs. */
+  /** A single cut the real engines run. */
   spec?: JobSpec;
+  /** A timeline the real engines render. Absent (with `spec`) for simulated demo jobs. */
+  render?: RenderSpec;
   /** "processing" while yt-dlp merges or converts after downloading. */
   phase?: "downloading" | "processing" | "cutting" | "encoding";
   downloadedBytes?: number;

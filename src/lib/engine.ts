@@ -7,7 +7,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import type { JobSpec, MediaSource } from "../types";
+import type { JobSpec, MediaSource, RenderSpec } from "../types";
 
 export const inDesktopApp = "__TAURI_INTERNALS__" in window;
 
@@ -59,6 +59,17 @@ export async function openLocal(path: string): Promise<MediaSource> {
 }
 
 /** Shows the Windows Open dialog; null when the user cancels. */
+/** Shows the Windows Open dialog; empty when the user cancels. */
+export async function pickMediaFiles(): Promise<string[]> {
+  const picked = await open({
+    multiple: true,
+    directory: false,
+    title: "Import video or audio files",
+    filters: [{ name: "Video and audio", extensions: MEDIA_EXTENSIONS }],
+  });
+  return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
+}
+
 export async function pickMediaFile(): Promise<string | null> {
   const picked = await open({
     multiple: false,
@@ -88,9 +99,25 @@ export async function startJob(spec: JobSpec): Promise<void> {
   }
 }
 
+/** Renders a whole timeline in one FFmpeg pass. */
+export async function startRender(spec: RenderSpec): Promise<void> {
+  try {
+    await invoke("start_render", { spec });
+  } catch (err) {
+    throw new Error(message(err));
+  }
+}
+
 export const cancelJob = (id: string) => invoke<boolean>("cancel_job", { id });
 
 export const onJobEvent = (handler: (event: JobEvent) => void): Promise<UnlistenFn> =>
   listen<JobEvent>("job-event", (e) => handler(e.payload));
 
 export const revealFile = (path: string) => revealItemInDir(path);
+
+/** Makes the app window fill the screen (desktop app only). */
+export async function setWindowFullscreen(on: boolean): Promise<void> {
+  if (!inDesktopApp) return;
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().setFullscreen(on);
+}

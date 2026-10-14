@@ -1,0 +1,204 @@
+.side {
+  grid-area: side;
+  width: var(--side-w);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-2);
+  background: var(--bg-rail);
+  border-right: 1px solid var(--line);
+  min-height: 0;
+  transition: width var(--dur) var(--ease-out);
+}
+
+.side.is-collapsed {
+  width: 56px;
+}
+
+.side__nav {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.side__item {
+  width: 100%;
+  height: var(--control-h);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-md);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.side__item svg {
+  flex-shrink: 0;
+}
+
+.side__item:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.side__item[aria-current="page"] {
+  background: var(--bg-selected);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.side.is-collapsed .side__text,
+.side.is-collapsed .side__count {
+  display: none;
+}
+
+.side.is-collapsed .side__item {
+  justify-content: center;
+  padding: 0;
+}
+
+.side__count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.side__media {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.side__media-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 10px;
+}
+
+.side__media-head .section-label {
+  margin: 0;
+}
+
+.side__media-head .btn {
+  height: 26px;
+  padding: 0 var(--space-2);
+  font-size: 12px;
+}
+
+.side__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.side__file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 4px 6px 10px;
+  border-radius: var(--radius);
+  cursor: grab;
+}
+
+.side__file:hover {
+  background: var(--bg-raised);
+}
+
+.side__file > svg {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+
+.side__file-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 12.5px;
+}
+
+.side__file-meta {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.side__file .btn--icon {
+  width: 26px;
+  height: 26px;
+}
+
+.side__hint {
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+
+.side__engines {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-3) 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.side.is-collapsed .side__engines {
+  align-items: center;
+  padding: var(--space-3) 0 0;
+}
+
+.side__engines .section-label {
+  margin-bottom: 2px;
+}
+
+.side__engine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.side__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex-shrink: 0;
+}
+
+.side__dot.is-ok {
+  background: var(--ok);
+}
+
+.side__dot.is-checking {
+  background: var(--text-3);
+}
+
+.side__engine-name {
+  flex: 1;
+  color: var(--text-2);
+}
+
+.side__engine-state {
+  color: var(--text-3);
+  font-size: var(--text-xs);
+}

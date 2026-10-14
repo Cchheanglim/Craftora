@@ -1,7 +1,8 @@
-//! Running export jobs: yt-dlp downloads the chosen section of a link (files on this PC
-//! skip that), then one FFmpeg pass applies mirror/reverse, layers and the sound mix. Progress streams to the UI as `job-event` events.
+//! Export jobs: shared plumbing (progress events, cancelling, yt-dlp downloads) and the
+//! fast path for a single untouched cut. Whole timelines render in `project.rs`.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -11,10 +12,49 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 use crate::engine::{last_error, sidecar_dir, FFMPEG, YT_DLP};
-use crate::local::{normalize, probe, OpenedFiles};
+use crate::local::{normalize, OpenedFiles};
 
-/// What the export panel asks for. Rust builds every command-line argument itself;
-/// the UI never passes raw arguments.
+#[derive(Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Output {
+    Video,
+    Audio,
+}
+
+#[derive(Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Container {
+    Mp4,
+    Mkv,
+    Mp3,
+    Wav,
+    Flac,
+}
+
+impl Container {
+    pub(crate) fn ext(self) -> &'static str {
+        match self {
+            Container::Mp4 => "mp4",
+            Container::Mkv => "mkv",
+            Container::Mp3 => "mp3",
+            Container::Wav => "wav",
+            Container::Flac => "flac",
+        }
+    }
+    pub(crate) fn is_video(self) -> bool {
+        matches!(self, Container::Mp4 | Container::Mkv)
+    }
+}
+
+#[derive(Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum CutMode {
+    Fast,
+    Precise,
+}
+
+/// A single untouched cut: one source, no edits. yt-dlp downloads just the section
+/// (links), or FFmpeg copies it without re-encoding (files on this PC).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JobSpec {
@@ -28,95 +68,15 @@ pub struct JobSpec {
     end: f64,
     duration: f64,
     cut_mode: CutMode,
-    mirror: bool,
-    reverse: bool,
     file_name: String,
-    /// `url` is a file on this PC (opened via `open_local`); FFmpeg does all the work.
+    /// `url` is a file on this PC (opened via `open_local`).
     #[serde(default)]
     local: bool,
-    /// Extra videos and sounds stacked on the clip, CapCut-style.
-    #[serde(default)]
-    layers: Vec<LayerSpec>,
-    /// Loudness of the clip's own sound, 0–2 (1 = unchanged).
-    #[serde(default = "one")]
-    main_volume: f64,
-}
-
-fn one() -> f64 {
-    1.0
-}
-
-/// A file from this PC placed on the clip.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LayerSpec {
-    path: String,
-    kind: LayerKind,
-    /// Seconds after the clip's In point when the layer begins.
-    start: f64,
-    /// 0–2 (1 = unchanged); 0 drops the layer's sound.
-    volume: f64,
-    /// Video layers: width as a fraction of the clip's width.
-    #[serde(default = "one")]
-    size: f64,
-    /// Video layers: position across the free space, 0 = left/top, 1 = right/bottom.
-    #[serde(default)]
-    x: f64,
-    #[serde(default)]
-    y: f64,
-}
-
-#[derive(Deserialize, Clone, Copy, PartialEq)]
-#[serde(rename_all = "lowercase")]
-enum LayerKind {
-    Video,
-    Audio,
-}
-
-const MAX_LAYERS: usize = 8;
-
-#[derive(Deserialize, Clone, Copy, PartialEq)]
-#[serde(rename_all = "lowercase")]
-enum Output {
-    Video,
-    Audio,
-}
-
-#[derive(Deserialize, Clone, Copy, PartialEq)]
-#[serde(rename_all = "lowercase")]
-enum Container {
-    Mp4,
-    Mkv,
-    Mp3,
-    Wav,
-    Flac,
-}
-
-impl Container {
-    fn ext(self) -> &'static str {
-        match self {
-            Container::Mp4 => "mp4",
-            Container::Mkv => "mkv",
-            Container::Mp3 => "mp3",
-            Container::Wav => "wav",
-            Container::Flac => "flac",
-        }
-    }
-    fn is_video(self) -> bool {
-        matches!(self, Container::Mp4 | Container::Mkv)
-    }
-}
-
-#[derive(Deserialize, Clone, Copy, PartialEq)]
-#[serde(rename_all = "lowercase")]
-enum CutMode {
-    Fast,
-    Precise,
 }
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "kind")]
-enum JobEvent {
+pub(crate) enum JobEvent {
     Progress {
         id: String,
         phase: &'static str,
@@ -189,49 +149,11 @@ impl Jobs {
     }
 }
 
-/// Starts a job in the background; progress arrives as `job-event` events.
-#[tauri::command]
-pub async fn start_job(app: AppHandle, jobs: State<'_, Jobs>, spec: JobSpec) -> Result<(), String> {
-    if spec.end <= spec.start || spec.start < 0.0 {
-        return Err("The clip range is empty.".into());
-    }
-    if (spec.output == Output::Video) != spec.container.is_video() {
-        return Err("That file type doesn't match the output.".into());
-    }
-    if spec.local {
-        let opened = app.state::<OpenedFiles>();
-        let allowed = normalize(Path::new(&spec.url)).is_ok_and(|p| opened.contains(&p));
-        if !allowed {
-            return Err("Open the file again; Craftora only works on files you've opened.".into());
-        }
-    } else if !(spec.url.starts_with("https://") || spec.url.starts_with("http://")) {
-        return Err("Only web links can be downloaded.".into());
-    }
-    if spec.layers.len() > MAX_LAYERS {
-        return Err(format!("A clip can have at most {MAX_LAYERS} layers."));
-    }
-    let opened = app.state::<OpenedFiles>();
-    for layer in &spec.layers {
-        if !normalize(Path::new(&layer.path)).is_ok_and(|p| opened.contains(&p)) {
-            return Err("A layer's file isn't open any more. Remove the layer and add it again.".into());
-        }
-        let in_range = |v: f64, lo: f64, hi: f64| v.is_finite() && (lo..=hi).contains(&v);
-        if !(in_range(layer.start, 0.0, spec.duration)
-            && in_range(layer.volume, 0.0, 2.0)
-            && in_range(layer.size, 0.05, 1.0)
-            && in_range(layer.x, 0.0, 1.0)
-            && in_range(layer.y, 0.0, 1.0))
-        {
-            return Err("A layer has an invalid setting.".into());
-        }
-    }
-    if !(0.0..=2.0).contains(&spec.main_volume) {
-        return Err("The clip volume is out of range.".into());
-    }
-    jobs.register(&spec.id);
+/// Runs `work` in the background and reports how it ended as a `job-event`.
+pub(crate) fn spawn_job(app: AppHandle, id: String, work: impl Future<Output = Result<PathBuf, String>> + Send + 'static) {
+    app.state::<Jobs>().register(&id);
     tauri::async_runtime::spawn(async move {
-        let id = spec.id.clone();
-        let result = run_job(&app, &spec).await;
+        let result = work.await;
         let cancelled = app.state::<Jobs>().finish(&id);
         let event = match result {
             _ if cancelled => JobEvent::Cancelled { id },
@@ -243,6 +165,30 @@ pub async fn start_job(app: AppHandle, jobs: State<'_, Jobs>, spec: JobSpec) -> 
         };
         let _ = app.emit("job-event", event);
     });
+}
+
+/// Starts a single untouched cut; progress arrives as `job-event` events.
+#[tauri::command]
+pub async fn start_job(app: AppHandle, spec: JobSpec) -> Result<(), String> {
+    if spec.end <= spec.start || spec.start < 0.0 {
+        return Err("The clip range is empty.".into());
+    }
+    if (spec.output == Output::Video) != spec.container.is_video() {
+        return Err("That file type doesn't match the output.".into());
+    }
+    if spec.local {
+        if spec.output != Output::Video || spec.cut_mode != CutMode::Fast {
+            return Err("Files on this PC are re-encoded by the timeline renderer.".into());
+        }
+        let opened = app.state::<OpenedFiles>();
+        if !normalize(Path::new(&spec.url)).is_ok_and(|p| opened.contains(&p)) {
+            return Err("Open the file again; Craftora only works on files you've opened.".into());
+        }
+    } else if !is_web_link(&spec.url) {
+        return Err("Only web links can be downloaded.".into());
+    }
+    let task_app = app.clone();
+    spawn_job(app, spec.id.clone(), async move { run_simple(&task_app, &spec).await });
     Ok(())
 }
 
@@ -251,8 +197,12 @@ pub fn cancel_job(jobs: State<'_, Jobs>, id: String) -> bool {
     jobs.cancel(&id)
 }
 
+pub(crate) fn is_web_link(url: &str) -> bool {
+    url.starts_with("https://") || url.starts_with("http://")
+}
+
 /// `Videos\Craftora`, created on first use.
-fn output_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn output_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .video_dir()
@@ -263,7 +213,7 @@ fn output_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// A safe file stem: letters, digits, `-` and `_` only, never empty.
-fn safe_stem(name: &str) -> String {
+pub(crate) fn safe_stem(name: &str) -> String {
     let stem = Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or("");
     let clean: String = stem
         .chars()
@@ -274,7 +224,7 @@ fn safe_stem(name: &str) -> String {
 }
 
 /// First free `stem.ext`, `stem (2).ext`, … in `dir`.
-fn free_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
+pub(crate) fn free_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
     let mut path = dir.join(format!("{stem}.{ext}"));
     let mut n = 2;
     while path.exists() {
@@ -284,48 +234,74 @@ fn free_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
     path
 }
 
-async fn run_job(app: &AppHandle, spec: &JobSpec) -> Result<PathBuf, String> {
+/// Formats seconds for FFmpeg and yt-dlp arguments.
+pub(crate) fn secs(t: f64) -> String {
+    format!("{t:.3}")
+}
+
+async fn run_simple(app: &AppHandle, spec: &JobSpec) -> Result<PathBuf, String> {
     let dir = output_dir(app)?;
     let ext = spec.container.ext();
-    let stem = safe_stem(&spec.file_name);
-    let final_path = free_path(&dir, &stem, ext);
+    let final_path = free_path(&dir, &safe_stem(&spec.file_name), ext);
+    let whole = spec.start <= 0.05 && spec.end >= spec.duration - 0.05;
 
     if spec.local {
-        return render(app, spec, Main::Local, &final_path).await.map(|_| final_path);
+        // Stream copy: instant and lossless; the start lands on a keyframe.
+        let mut args: Vec<String> = ["-y", "-hide_banner", "-nostats", "-progress", "pipe:1"].map(String::from).to_vec();
+        if !whole {
+            args.extend(["-ss".into(), secs(spec.start), "-t".into(), secs(spec.end - spec.start)]);
+        }
+        args.extend(["-i".into(), spec.url.clone()]);
+        args.extend(["-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-avoid_negative_ts", "make_zero"].map(String::from));
+        if spec.container == Container::Mp4 {
+            args.extend(["-movflags".into(), "+faststart".into()]);
+        }
+        args.push(final_path.to_string_lossy().into_owned());
+        let clip = if whole { spec.duration } else { spec.end - spec.start };
+        let result = run_ffmpeg(app, &spec.id, args, clip, "cutting", None).await;
+        if result.is_err() {
+            let _ = std::fs::remove_file(&final_path);
+        }
+        return result.map(|_| final_path);
     }
 
-    // Web links: yt-dlp downloads the section, straight to the final name unless FFmpeg
-    // still has work (transforms, layers, volume), in which case it goes to a temporary file.
-    let needs_render = spec.has_transform() || !spec.layers.is_empty() || (spec.main_volume - 1.0).abs() > 0.01;
-    let download_stem = if needs_render { format!(".{stem}.craftora-tmp") } else {
-        final_path.file_stem().unwrap().to_string_lossy().into_owned()
+    let stem = final_path.file_stem().unwrap().to_string_lossy().into_owned();
+    let request = Download {
+        url: &spec.url,
+        format: &spec.format,
+        section: (!whole).then_some((spec.start, spec.end)),
+        precise: spec.cut_mode == CutMode::Precise,
+        target: match spec.output {
+            Output::Video => DownloadTarget::Video(ext),
+            Output::Audio => DownloadTarget::Audio(ext),
+        },
     };
-    let downloaded = download(app, spec, &dir, &download_stem).await?;
-    if !needs_render {
-        return Ok(downloaded);
-    }
-    let result = render(app, spec, Main::Downloaded(&downloaded), &final_path).await;
-    let _ = std::fs::remove_file(&downloaded);
-    result.map(|_| final_path)
+    download(app, &spec.id, &request, &dir, &stem).await
 }
 
-impl JobSpec {
-    fn has_transform(&self) -> bool {
-        self.output == Output::Video && (self.mirror || self.reverse)
-    }
-    fn is_whole(&self) -> bool {
-        self.start <= 0.05 && self.end >= self.duration - 0.05
-    }
-    fn clip_length(&self) -> f64 {
-        if self.is_whole() { self.duration } else { self.end - self.start }
-    }
+pub(crate) enum DownloadTarget<'a> {
+    /// Merge picture and sound into this container.
+    Video(&'a str),
+    /// Extract the sound and convert it to this format.
+    Audio(&'a str),
+    /// Keep whatever the source provides (for further processing).
+    Any,
 }
 
-/// Stage 1: yt-dlp downloads (only the chosen section of) the source.
-async fn download(app: &AppHandle, spec: &JobSpec, dir: &Path, stem: &str) -> Result<PathBuf, String> {
+pub(crate) struct Download<'a> {
+    pub url: &'a str,
+    pub format: &'a str,
+    /// Only this part of the source, in seconds.
+    pub section: Option<(f64, f64)>,
+    /// Re-encode at the cut points so the section starts exactly where asked.
+    pub precise: bool,
+    pub target: DownloadTarget<'a>,
+}
+
+/// yt-dlp downloads (only the requested section of) a link into `dir/stem.<ext>`.
+pub(crate) async fn download(app: &AppHandle, job_id: &str, request: &Download<'_>, dir: &Path, stem: &str) -> Result<PathBuf, String> {
     let engines = sidecar_dir()?;
     let template = dir.join(format!("{stem}.%(ext)s"));
-    let ext = spec.container.ext();
 
     let mut args: Vec<String> = vec![
         "--no-playlist".into(),
@@ -337,7 +313,7 @@ async fn download(app: &AppHandle, spec: &JobSpec, dir: &Path, stem: &str) -> Re
         "--ffmpeg-location".into(),
         engines.to_string_lossy().into_owned(),
         "-f".into(),
-        spec.format.clone(),
+        request.format.to_string(),
         "--progress-template".into(),
         "download:CRAFTORA|%(progress.status)s|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.speed)s|%(progress.eta)s".into(),
         "--print".into(),
@@ -345,41 +321,38 @@ async fn download(app: &AppHandle, spec: &JobSpec, dir: &Path, stem: &str) -> Re
         "-o".into(),
         template.to_string_lossy().into_owned(),
     ];
-
-    let whole = spec.start <= 0.05 && spec.end >= spec.duration - 0.05;
-    if !whole {
+    if let Some((start, end)) = request.section {
         args.push("--download-sections".into());
-        args.push(format!("*{:.2}-{:.2}", spec.start, spec.end));
-        if spec.cut_mode == CutMode::Precise {
+        args.push(format!("*{start:.2}-{end:.2}"));
+        if request.precise {
             args.push("--force-keyframes-at-cuts".into());
         }
     }
-    match spec.output {
-        Output::Video => {
+    match request.target {
+        DownloadTarget::Video(ext) => {
             args.extend(["--merge-output-format".into(), ext.into(), "--remux-video".into(), ext.into()]);
         }
-        Output::Audio => {
-            args.extend(["-x".into(), "--audio-format".into(), ext.into()]);
-        }
+        DownloadTarget::Audio(ext) => args.extend(["-x".into(), "--audio-format".into(), ext.into()]),
+        DownloadTarget::Any => args.extend(["--merge-output-format".into(), "mkv".into()]),
     }
     args.push("--".into());
-    args.push(spec.url.clone());
+    args.push(request.url.to_string());
 
     let mut final_file: Option<PathBuf> = None;
     let mut phase = "downloading";
-    run_streaming(app, &spec.id, YT_DLP, args, |line| {
+    run_streaming(app, job_id, YT_DLP, args, None, |line| {
         if let Some(path) = line.strip_prefix("CRAFTORA_FILE|") {
             final_file = Some(PathBuf::from(path.trim()));
             return None;
         }
         if let Some(fields) = line.strip_prefix("CRAFTORA|") {
-            return Some(progress_from_fields(&spec.id, fields));
+            return Some(progress_from_fields(job_id, fields));
         }
         // yt-dlp's post-processors announce themselves like "[Merger] Merging formats…".
         let post = ["[Merger]", "[ExtractAudio]", "[VideoRemuxer]", "[VideoConvertor]", "[FixupM3u8]", "[ModifyChapters]"];
         if phase == "downloading" && post.iter().any(|p| line.starts_with(p)) {
             phase = "processing";
-            return Some(progress_event(&spec.id, "processing", None));
+            return Some(progress_event(job_id, "processing", None));
         }
         None
     })
@@ -390,157 +363,26 @@ async fn download(app: &AppHandle, spec: &JobSpec, dir: &Path, stem: &str) -> Re
         .ok_or_else(|| "yt-dlp finished but the file wasn't found.".into())
 }
 
-/// Where the clip's own picture and sound come from for the FFmpeg pass.
-enum Main<'a> {
-    /// A file on this PC: FFmpeg seeks to the In point itself.
-    Local,
-    /// A section yt-dlp already downloaded: it starts at the In point.
-    Downloaded(&'a Path),
-}
-
-/// Formats seconds for FFmpeg arguments.
-fn secs(t: f64) -> String {
-    format!("{t:.3}")
-}
-
-/// One FFmpeg pass: cut (local files), mirror/reverse, stack video layers, mix sound,
-/// and convert to the chosen format. Works offline.
-async fn render(app: &AppHandle, spec: &JobSpec, main: Main<'_>, output: &Path) -> Result<(), String> {
-    let clip = spec.clip_length();
-    let main_path = match main {
-        Main::Local => PathBuf::from(&spec.url),
-        Main::Downloaded(path) => path.to_path_buf(),
-    };
-
-    let mut args: Vec<String> = ["-y", "-hide_banner", "-nostats", "-progress", "pipe:1"].map(String::from).to_vec();
-    if matches!(main, Main::Local) && !spec.is_whole() {
-        // Input options: seeking before -i is fast, and with stream copy lands on a keyframe.
-        args.extend(["-ss".into(), secs(spec.start), "-t".into(), secs(clip)]);
-    }
-    args.extend(["-i".into(), main_path.to_string_lossy().into_owned()]);
-
-    let is_video = spec.output == Output::Video;
-    let simple = spec.layers.is_empty() && (spec.main_volume - 1.0).abs() <= 0.01;
-    let phase;
-
-    if is_video && simple && !spec.has_transform() && spec.cut_mode == CutMode::Fast {
-        // Nothing to change in the picture or sound: copy the streams as they are.
-        args.extend(["-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-avoid_negative_ts", "make_zero"].map(String::from));
-        phase = "cutting";
-    } else {
-        let main_info = probe(app, &main_path).await?;
-        let mut layer_info = Vec::with_capacity(spec.layers.len());
-        for layer in &spec.layers {
-            args.extend(["-i".into(), layer.path.clone()]);
-            layer_info.push(probe(app, Path::new(&layer.path)).await?);
-        }
-
-        let mut graph: Vec<String> = Vec::new();
-
-        // Picture: the clip (mirrored/reversed if asked), then each video layer on top.
-        let mut video_out = None;
-        if is_video {
-            let mut filters: Vec<&str> = Vec::new();
-            if spec.mirror {
-                filters.push("hflip");
-            }
-            if spec.reverse {
-                filters.push("reverse");
-            }
-            let base = if filters.is_empty() { "null".to_string() } else { filters.join(",") };
-            graph.push(format!("[0:v]{base}[v0]"));
-            let mut current = "v0".to_string();
-            for (i, (layer, info)) in spec.layers.iter().zip(&layer_info).enumerate() {
-                if layer.kind != LayerKind::Video || !info.has_video {
-                    continue;
-                }
-                let input = i + 1;
-                let width = ((main_info.width.unwrap_or(1280) as f64 * layer.size / 2.0).round() as u32 * 2).max(2);
-                graph.push(format!(
-                    "[{input}:v]scale={width}:-2,setpts=PTS-STARTPTS+{start}/TB[l{input}]",
-                    start = secs(layer.start)
-                ));
-                let next = format!("v{input}");
-                graph.push(format!(
-                    "[{current}][l{input}]overlay=x='{x}*(W-w)':y='{y}*(H-h)':eof_action=pass[{next}]",
-                    x = layer.x,
-                    y = layer.y
-                ));
-                current = next;
-            }
-            video_out = Some(current);
-        }
-
-        // Sound: the clip's own (reversed with the picture), plus every layer's, mixed.
-        let mut sounds: Vec<String> = Vec::new();
-        if main_info.has_audio && spec.main_volume > 0.0 {
-            let reverse = if spec.reverse && is_video { "areverse," } else { "" };
-            graph.push(format!("[0:a]{reverse}volume={:.2}[a0]", spec.main_volume));
-            sounds.push("[a0]".into());
-        }
-        for (i, (layer, info)) in spec.layers.iter().zip(&layer_info).enumerate() {
-            if !info.has_audio || layer.volume <= 0.0 {
-                continue;
-            }
-            let input = i + 1;
-            let delay_ms = (layer.start * 1000.0).round() as u64;
-            graph.push(format!("[{input}:a]adelay=delays={delay_ms}:all=1,volume={:.2}[a{input}]", layer.volume));
-            sounds.push(format!("[a{input}]"));
-        }
-        let audio_out = match sounds.len() {
-            0 => None,
-            1 => Some(sounds[0].trim_matches(['[', ']']).to_string()),
-            n => {
-                graph.push(format!("{}amix=inputs={n}:duration=longest:normalize=0[amix]", sounds.join("")));
-                Some("amix".to_string())
-            }
-        };
-
-        if !graph.is_empty() {
-            args.extend(["-filter_complex".into(), graph.join(";")]);
-        }
-        if let Some(v) = &video_out {
-            args.extend(["-map".into(), format!("[{v}]")]);
-            args.extend(["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p"].map(String::from));
-        }
-        match &audio_out {
-            Some(a) => args.extend(["-map".into(), format!("[{a}]")]),
-            None if !is_video => return Err("There's no sound to save: the clip and its layers are silent.".into()),
-            None => args.push("-an".into()),
-        }
-        if audio_out.is_some() {
-            let codec: &[&str] = match spec.container {
-                Container::Mp3 => &["-c:a", "libmp3lame", "-b:a", "320k"],
-                Container::Wav => &["-c:a", "pcm_s16le"],
-                Container::Flac => &["-c:a", "flac"],
-                _ => &["-c:a", "aac", "-b:a", "192k"],
-            };
-            args.extend(codec.iter().map(|s| s.to_string()));
-        }
-        // Layers may run past the clip; the clip's length decides the output's.
-        args.extend(["-t".into(), secs(clip)]);
-        phase = "encoding";
-    }
-
-    if spec.container == Container::Mp4 {
-        args.extend(["-movflags".into(), "+faststart".into()]);
-    }
-    args.push(output.to_string_lossy().into_owned());
-
-    let _ = app.emit("job-event", progress_event(&spec.id, phase, Some(0.0)));
-    let result = run_streaming(app, &spec.id, FFMPEG, args, |line| {
+/// Runs FFmpeg with `-progress pipe:1`, reporting progress against `length` seconds of output.
+pub(crate) async fn run_ffmpeg(
+    app: &AppHandle,
+    job_id: &str,
+    args: Vec<String>,
+    length: f64,
+    phase: &'static str,
+    cwd: Option<&Path>,
+) -> Result<(), String> {
+    let _ = app.emit("job-event", progress_event(job_id, phase, Some(0.0)));
+    run_streaming(app, job_id, FFMPEG, args, cwd, |line| {
+        // `-progress` prints key=value lines; out_time_us is the position written so far.
         let micros: f64 = line.strip_prefix("out_time_us=")?.trim().parse().ok()?;
-        let percent = (micros / 1_000_000.0 / clip.max(0.1) * 100.0).clamp(0.0, 100.0);
-        Some(progress_event(&spec.id, phase, Some(percent)))
+        let percent = (micros / 1_000_000.0 / length.max(0.1) * 100.0).clamp(0.0, 100.0);
+        Some(progress_event(job_id, phase, Some(percent)))
     })
-    .await;
-    if result.is_err() {
-        let _ = std::fs::remove_file(output);
-    }
-    result
+    .await
 }
 
-fn progress_event(id: &str, phase: &'static str, percent: Option<f64>) -> JobEvent {
+pub(crate) fn progress_event(id: &str, phase: &'static str, percent: Option<f64>) -> JobEvent {
     JobEvent::Progress {
         id: id.to_string(),
         phase,
@@ -579,19 +421,22 @@ async fn run_streaming(
     id: &str,
     program: &str,
     args: Vec<String>,
+    cwd: Option<&Path>,
     mut on_line: impl FnMut(&str) -> Option<JobEvent>,
 ) -> Result<(), String> {
     let jobs = app.state::<Jobs>();
     if jobs.is_cancelled(id) {
         return Err("Cancelled".into());
     }
-    let (mut rx, child) = app
+    let mut command = app
         .shell()
         .sidecar(program)
         .map_err(|e| format!("{program} is not bundled: {e}"))?
-        .args(args)
-        .spawn()
-        .map_err(|e| format!("Couldn't start {program}: {e}"))?;
+        .args(args);
+    if let Some(dir) = cwd {
+        command = command.current_dir(dir);
+    }
+    let (mut rx, child) = command.spawn().map_err(|e| format!("Couldn't start {program}: {e}"))?;
     if let Some(child) = jobs.attach(id, child) {
         let _ = child.kill();
         return Err("Cancelled".into());
