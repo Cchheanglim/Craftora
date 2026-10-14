@@ -70,12 +70,23 @@ struct ClipSpec {
     #[serde(rename = "in")]
     in_point: f64,
     out: f64,
+    /// 2 plays twice as fast and takes half as long on the timeline.
+    #[serde(default = "one")]
+    speed: f64,
     #[serde(default = "one")]
     volume: f64,
     #[serde(default)]
     mirror: bool,
     #[serde(default)]
     reverse: bool,
+    /// Seconds of fade in and out (picture from/to black or transparent, sound from/to silence).
+    #[serde(default)]
+    fade_in: f64,
+    #[serde(default)]
+    fade_out: f64,
+    /// Fractions of the picture cut off: left, top, right, bottom.
+    #[serde(default)]
+    crop: [f64; 4],
     /// Overlays: width as a fraction of the frame. Text: height as a fraction of the frame.
     #[serde(default = "one")]
     size: f64,
@@ -91,12 +102,93 @@ struct ClipSpec {
 }
 
 impl ClipSpec {
+    /// Seconds on the timeline (after the speed change).
     fn length(&self) -> f64 {
-        self.out - self.in_point
+        (self.out - self.in_point) / self.speed
     }
     fn end(&self) -> f64 {
         self.start + self.length()
     }
+
+    /// Picture filters after the cut: mirror, reverse, crop, speed. Each starts with a comma.
+    fn picture_edits(&self) -> String {
+        let mut chain = String::new();
+        if self.mirror {
+            chain.push_str(",hflip");
+        }
+        if self.reverse {
+            chain.push_str(",reverse");
+        }
+        let [l, t, r, b] = self.crop;
+        if l > 0.0 || t > 0.0 || r > 0.0 || b > 0.0 {
+            chain.push_str(&format!(",crop=w=iw*{:.4}:h=ih*{:.4}:x=iw*{l:.4}:y=ih*{t:.4}", 1.0 - l - r, 1.0 - t - b));
+        }
+        if self.speed != 1.0 {
+            chain.push_str(&format!(",setpts=PTS/{:.4}", self.speed));
+        }
+        chain
+    }
+
+    /// Picture fades over the clip's own time: to black, or with `alpha` to transparent.
+    fn picture_fades(&self, alpha: bool) -> String {
+        let alpha = if alpha { ":alpha=1" } else { "" };
+        let mut chain = String::new();
+        if self.fade_in > 0.0 {
+            chain.push_str(&format!(",fade=t=in:st=0:d={}{alpha}", secs(self.fade_in)));
+        }
+        if self.fade_out > 0.0 {
+            chain.push_str(&format!(",fade=t=out:st={}:d={}{alpha}", secs(self.length() - self.fade_out), secs(self.fade_out)));
+        }
+        chain
+    }
+
+    /// Sound filters after the cut: reverse, speed, volume, fades. Each starts with a comma.
+    fn sound_edits(&self) -> String {
+        let mut chain = String::new();
+        if self.reverse {
+            chain.push_str(",areverse");
+        }
+        if self.speed != 1.0 {
+            chain.push_str(&atempo(self.speed));
+        }
+        chain.push_str(&format!(",volume={:.2}", self.volume));
+        if self.fade_in > 0.0 {
+            chain.push_str(&format!(",afade=t=in:st=0:d={}", secs(self.fade_in)));
+        }
+        if self.fade_out > 0.0 {
+            chain.push_str(&format!(",afade=t=out:st={}:d={}", secs(self.length() - self.fade_out), secs(self.fade_out)));
+        }
+        chain
+    }
+
+    /// drawtext's opacity over time for a faded text clip, or nothing.
+    fn text_alpha(&self) -> String {
+        let (start, end) = (self.start, self.end());
+        let mut expr = "1".to_string();
+        if self.fade_out > 0.0 {
+            expr = format!("if(gt(t,{}),({}-t)/{},{expr})", secs(end - self.fade_out), secs(end), secs(self.fade_out));
+        }
+        if self.fade_in > 0.0 {
+            expr = format!("if(lt(t,{}),(t-{})/{},{expr})", secs(start + self.fade_in), secs(start), secs(self.fade_in));
+        }
+        if expr == "1" { String::new() } else { format!(":alpha='clip({expr},0,1)'") }
+    }
+}
+
+/// FFmpeg's atempo takes 0.5–2 per step; chain steps for 0.25 or 4.
+fn atempo(speed: f64) -> String {
+    let mut rest = speed;
+    let mut chain = String::new();
+    while rest < 0.5 {
+        chain.push_str(",atempo=0.5");
+        rest /= 0.5;
+    }
+    while rest > 2.0 {
+        chain.push_str(",atempo=2.0");
+        rest /= 2.0;
+    }
+    chain.push_str(&format!(",atempo={rest:.4}"));
+    chain
 }
 
 /// Starts rendering a timeline; progress arrives as `job-event` events.
@@ -134,11 +226,17 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
     }
     let finite = |v: f64| v.is_finite();
     for clip in &spec.clips {
-        let numbers = [clip.start, clip.in_point, clip.out, clip.volume, clip.size, clip.x, clip.y];
+        let [l, t, r, b] = clip.crop;
+        let numbers = [clip.start, clip.in_point, clip.out, clip.speed, clip.volume, clip.fade_in, clip.fade_out, clip.size, clip.x, clip.y, l, t, r, b];
         if !numbers.into_iter().all(finite)
             || clip.start < 0.0
             || clip.in_point < 0.0
+            || !(0.25..=4.0).contains(&clip.speed)
             || clip.length() < 0.05
+            || clip.fade_in < 0.0
+            || clip.fade_out < 0.0
+            || clip.fade_in + clip.fade_out > clip.length() + 0.01
+            || !clip.crop.iter().all(|side| (0.0..=0.45).contains(side))
             || !(0.0..=2.0).contains(&clip.volume)
             || !(0.01..=1.0).contains(&clip.size)
             || !(0.0..=1.0).contains(&clip.x)
@@ -238,17 +336,14 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         let length = clip.length();
         if is_video {
             if input.info.has_video {
-                let mut chain = format!("[{}:v]trim=start={}:end={},setpts=PTS-STARTPTS", input.index, secs(from), secs(to));
-                if clip.mirror {
-                    chain.push_str(",hflip");
-                }
-                if clip.reverse {
-                    chain.push_str(",reverse");
-                }
-                chain.push_str(&format!(
-                    ",scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps},format=yuv420p[mv{i}]"
+                graph.push(format!(
+                    "[{}:v]trim=start={}:end={},setpts=PTS-STARTPTS{},scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps},format=yuv420p{}[mv{i}]",
+                    input.index,
+                    secs(from),
+                    secs(to),
+                    clip.picture_edits(),
+                    clip.picture_fades(false)
                 ));
-                graph.push(chain);
             } else {
                 graph.push(format!("color=black:s={w}x{h}:r={fps}:d={},format=yuv420p[mv{i}]", secs(length)));
             }
@@ -256,10 +351,12 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         }
         // Every main clip contributes sound (silence if it has none) so the join stays in step.
         if input.info.has_audio {
-            let reverse = if clip.reverse { ",areverse" } else { "" };
             graph.push(format!(
-                "[{}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS{reverse},volume={:.2},aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[ma{i}]",
-                input.index, secs(from), secs(to), clip.volume
+                "[{}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS{},aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[ma{i}]",
+                input.index,
+                secs(from),
+                secs(to),
+                clip.sound_edits()
             ));
         } else {
             graph.push(format!("anullsrc=r=48000:cl=stereo,atrim=duration={},aformat=sample_fmts=fltp[ma{i}]", secs(length)));
@@ -295,20 +392,14 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                 let input = input_of(clip).ok_or("Missing media for a clip.")?;
                 if input.info.has_video {
                     let width = (((w as f64) * clip.size / 2.0).round() as u32 * 2).max(2);
-                    let mut chain = format!(
-                        "[{}:v]trim=start={}:end={},setpts=PTS-STARTPTS",
+                    graph.push(format!(
+                        "[{}:v]trim=start={}:end={},setpts=PTS-STARTPTS{},scale={width}:-2,format=yuva420p{},setpts=PTS+{start}/TB[o{j}]",
                         input.index,
                         secs(clip.in_point - input.offset),
-                        secs(clip.out - input.offset)
-                    );
-                    if clip.mirror {
-                        chain.push_str(",hflip");
-                    }
-                    if clip.reverse {
-                        chain.push_str(",reverse");
-                    }
-                    chain.push_str(&format!(",scale={width}:-2,setpts=PTS+{start}/TB[o{j}]"));
-                    graph.push(chain);
+                        secs(clip.out - input.offset),
+                        clip.picture_edits(),
+                        clip.picture_fades(true)
+                    ));
                     graph.push(format!(
                         "[{picture}][o{j}]overlay=x='{x}*(W-w)':y='{y}*(H-h)':eof_action=pass:enable='between(t,{start},{end})'[p{j}]",
                         x = clip.x,
@@ -324,9 +415,10 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                 let size = ((h as f64) * clip.size).round().max(8.0) as u32;
                 let color = clip.color.trim_start_matches('#');
                 graph.push(format!(
-                    "[{picture}]drawtext=fontfile='{font}':textfile='{file}':expansion=none:fontsize={size}:fontcolor=0x{color}:shadowcolor=black@0.6:shadowx=2:shadowy=2:x='(w-text_w)*{x}':y='(h-text_h)*{y}':enable='between(t,{start},{end})'[p{j}]",
+                    "[{picture}]drawtext=fontfile='{font}':textfile='{file}':expansion=none:fontsize={size}:fontcolor=0x{color}:shadowcolor=black@0.6:shadowx=2:shadowy=2:x='(w-text_w)*{x}':y='(h-text_h)*{y}'{alpha}:enable='between(t,{start},{end})'[p{j}]",
                     x = clip.x,
-                    y = clip.y
+                    y = clip.y,
+                    alpha = clip.text_alpha()
                 ));
                 picture = format!("p{j}");
             }
@@ -336,14 +428,13 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         if matches!(clip.role, Role::Overlay | Role::Audio) && clip.volume > 0.0 {
             let input = input_of(clip).ok_or("Missing media for a clip.")?;
             if input.info.has_audio {
-                let reverse = if clip.reverse { ",areverse" } else { "" };
                 let delay = (clip.start * 1000.0).round() as u64;
                 graph.push(format!(
-                    "[{}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS{reverse},volume={:.2},aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=delays={delay}:all=1[s{j}]",
+                    "[{}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS{},aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=delays={delay}:all=1[s{j}]",
                     input.index,
                     secs(clip.in_point - input.offset),
                     secs(clip.out - input.offset),
-                    clip.volume
+                    clip.sound_edits()
                 ));
                 sounds.push(format!("[s{j}]"));
             }

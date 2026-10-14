@@ -1,6 +1,6 @@
 import { useCallback, useReducer } from "react";
 import { applyEdit, type EditAction } from "./actions";
-import type { Project } from "./model";
+import type { MediaItem, Project } from "./model";
 
 const HISTORY_LIMIT = 100;
 
@@ -15,7 +15,11 @@ type Action =
   /** Records an undo step before a drag; the drag's own edits are transient. */
   | { type: "checkpoint" }
   | { type: "undo" }
-  | { type: "redo" };
+  | { type: "redo" }
+  /** Another project replaces this one (opened, or new); history starts over. */
+  | { type: "reset"; project: Project }
+  /** Fresh preview links or a found/missing file: not an edit, so it applies to every undo step. */
+  | { type: "refreshMedia"; mediaId: string; patch: Partial<MediaItem> };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -37,6 +41,15 @@ function reducer(state: State, action: Action): State {
       if (!next) return state;
       return { project: next, past: [...state.past, state.project], future: state.future.slice(1) };
     }
+    case "reset":
+      return { project: action.project, past: [], future: [] };
+    case "refreshMedia": {
+      const fix = (p: Project): Project => ({
+        ...p,
+        media: p.media.map((m) => (m.id === action.mediaId ? { ...m, ...action.patch } : m)),
+      });
+      return { project: fix(state.project), past: state.past.map(fix), future: state.future.map(fix) };
+    }
   }
 }
 
@@ -53,6 +66,8 @@ export function useProject(initial: () => Project) {
     checkpoint: useCallback(() => dispatch({ type: "checkpoint" }), []),
     undo: useCallback(() => dispatch({ type: "undo" }), []),
     redo: useCallback(() => dispatch({ type: "redo" }), []),
+    reset: useCallback((project: Project) => dispatch({ type: "reset", project }), []),
+    refreshMedia: useCallback((mediaId: string, patch: Partial<MediaItem>) => dispatch({ type: "refreshMedia", mediaId, patch }), []),
   };
 }
 

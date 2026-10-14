@@ -2,13 +2,14 @@
 //! trimmed and converted offline with FFmpeg alone.
 
 use std::collections::HashSet;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
-use crate::engine::run_to_end;
+use crate::engine::{run_to_end, FFMPEG};
 use crate::media::{codec_name, MediaSource, Stream};
 
 pub const FFPROBE: &str = "ffprobe";
@@ -35,6 +36,8 @@ struct Probe {
 struct ProbeFormat {
     duration: Option<String>,
     size: Option<String>,
+    /// e.g. "mov,mp4,m4a,3gp,3g2,mj2" or "avi".
+    format_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -103,6 +106,133 @@ pub async fn probe(app: &AppHandle, path: &Path) -> Result<ProbeInfo, String> {
     })
 }
 
+/// Containers and codecs the WebView2 player opens. Anything else gets a preview copy.
+const PLAYABLE_FORMATS: [&str; 8] = ["mp4", "mov", "matroska", "webm", "ogg", "mp3", "wav", "flac"];
+const PLAYABLE_VIDEO: [&str; 4] = ["h264", "vp8", "vp9", "av1"];
+const PLAYABLE_AUDIO: [&str; 10] =
+    ["aac", "mp3", "opus", "vorbis", "flac", "pcm_s16le", "pcm_s24le", "pcm_s32le", "pcm_f32le", "pcm_u8"];
+
+/// What the preview player needs made before it can play a file.
+#[derive(Clone, Copy, PartialEq)]
+enum Proxy {
+    None,
+    /// The picture plays, but the sound (AC-3, DTS, …) doesn't: make an AAC copy of the sound.
+    Audio,
+    /// The file doesn't play at all (AVI, HEVC, …): make a small H.264 copy.
+    Video,
+}
+
+impl Proxy {
+    fn needed(probe: &Probe) -> Proxy {
+        let format = probe.format.format_name.as_deref().unwrap_or("");
+        let container_ok = format.split(',').any(|f| PLAYABLE_FORMATS.contains(&f));
+        let codec_ok = |s: &ProbeStream, list: &[&str]| s.codec_name.as_deref().is_some_and(|c| list.contains(&c));
+        let video = probe.streams.iter().find(|s| s.is_video());
+        let audio = probe.streams.iter().find(|s| s.is_audio());
+        match (video, audio) {
+            (Some(v), _) if !container_ok || !codec_ok(v, &PLAYABLE_VIDEO) => Proxy::Video,
+            (_, Some(a)) if !container_ok || !codec_ok(a, &PLAYABLE_AUDIO) => Proxy::Audio,
+            _ => Proxy::None,
+        }
+    }
+    fn name(self) -> &'static str {
+        match self {
+            Proxy::None => "",
+            Proxy::Audio => "audio",
+            Proxy::Video => "video",
+        }
+    }
+}
+
+/// Where the preview copy of `path` lives. The name changes when the file does.
+fn proxy_path(app: &AppHandle, path: &Path, kind: Proxy) -> Result<PathBuf, String> {
+    let meta = std::fs::metadata(path).map_err(|e| format!("Couldn't read the file: {e}"))?;
+    let mut hasher = DefaultHasher::new();
+    path.hash(&mut hasher);
+    meta.len().hash(&mut hasher);
+    meta.modified().ok().hash(&mut hasher);
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("Couldn't find the cache folder: {e}"))?
+        .join("previews");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create {}: {e}", dir.display()))?;
+    Ok(dir.join(format!("{:016x}-{}.mp4", hasher.finish(), kind.name())))
+}
+
+/// Lets the preview player read `path` through the asset protocol.
+fn allow_preview(app: &AppHandle, path: &Path) -> Result<(), String> {
+    app.asset_protocol_scope()
+        .allow_file(path)
+        .map_err(|e| format!("Couldn't allow the preview to read the file: {e}"))
+}
+
+/// Paths the preview plays for an opened file; empty for a part still to be made.
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewFiles {
+    video: String,
+    audio: String,
+}
+
+fn preview_files(path: &Path, kind: Proxy, proxy: Option<&Path>, has_video: bool) -> PreviewFiles {
+    let text = |p: &Path| p.to_string_lossy().into_owned();
+    match (kind, proxy) {
+        (Proxy::None, _) => PreviewFiles { video: text(path), audio: String::new() },
+        (Proxy::Video, Some(p)) => PreviewFiles { video: text(p), audio: String::new() },
+        (Proxy::Video, None) => PreviewFiles::default(),
+        // The picture plays from the original (silently) next to the sound copy.
+        (Proxy::Audio, p) => PreviewFiles {
+            video: if has_video { text(path) } else { String::new() },
+            audio: p.map(text).unwrap_or_default(),
+        },
+    }
+}
+
+/// Makes the preview copy for an opened file that needs one (see `open_local`'s
+/// `previewProxy`). Takes a few seconds per minute of video; the result is cached.
+#[tauri::command]
+pub async fn make_preview(app: AppHandle, opened: State<'_, OpenedFiles>, path: String) -> Result<PreviewFiles, String> {
+    let path = normalize(Path::new(&path))?;
+    if !opened.contains(&path) {
+        return Err("Open the file again; Craftora only works on files you've opened.".into());
+    }
+    let probe = run_probe(&app, &path).await?;
+    let kind = Proxy::needed(&probe);
+    let has_video = probe.streams.iter().any(|s| s.is_video());
+    if kind == Proxy::None {
+        return Ok(preview_files(&path, kind, None, has_video));
+    }
+    let out = proxy_path(&app, &path, kind)?;
+    if !out.is_file() {
+        let tmp = out.with_extension("part");
+        let input = path.to_string_lossy();
+        let tmp_text = tmp.to_string_lossy();
+        let mut args = vec!["-y", "-hide_banner", "-v", "error", "-i", &input];
+        match kind {
+            Proxy::Audio => args.extend(["-map", "0:a:0", "-vn", "-sn", "-dn", "-c:a", "aac", "-b:a", "160k", "-ac", "2"]),
+            // Small, fast to make, and a keyframe every second so scrubbing stays quick.
+            _ => args.extend([
+                "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn",
+                "-vf", "scale=-2:'trunc(min(720,ih)/2)*2'",
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26", "-pix_fmt", "yuv420p", "-g", "30",
+                "-c:a", "aac", "-b:a", "160k", "-ac", "2",
+            ]),
+        }
+        args.extend(["-movflags", "+faststart", "-f", "mp4", &tmp_text]);
+        let output = run_to_end(&app, FFMPEG, &args).await?;
+        if !output.status.success() {
+            let _ = std::fs::remove_file(&tmp);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let detail = stderr.lines().last().unwrap_or("FFmpeg stopped unexpectedly.");
+            return Err(format!("Couldn't make a preview copy: {detail}"));
+        }
+        std::fs::rename(&tmp, &out).map_err(|e| format!("Couldn't save the preview copy: {e}"))?;
+    }
+    allow_preview(&app, &out)?;
+    Ok(preview_files(&path, kind, Some(&out), has_video))
+}
+
 /// "30000/1001" → 29.97
 fn frame_rate(text: &str) -> Option<f64> {
     let (num, den) = text.split_once('/')?;
@@ -163,20 +293,31 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
     }
 
     // Let the preview player read this one file through the asset protocol.
-    app.asset_protocol_scope()
-        .allow_file(&path)
-        .map_err(|e| format!("Couldn't allow the preview to read the file: {e}"))?;
+    allow_preview(&app, &path)?;
     opened.0.lock().unwrap().insert(path.clone());
+
+    // Files the player can't open get a preview copy: reuse one made before, or tell the
+    // UI to ask for one with `make_preview`.
+    let kind = Proxy::needed(&probe);
+    let cached = match kind {
+        Proxy::None => None,
+        _ => proxy_path(&app, &path, kind).ok().filter(|p| p.is_file()),
+    };
+    if let Some(p) = &cached {
+        allow_preview(&app, p)?;
+    }
+    let files = preview_files(&path, kind, cached.as_deref(), video.is_some());
 
     Ok(MediaSource {
         title: path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Untitled".into()),
         uploader: "On this PC".into(),
         duration,
         local: true,
-        // The UI turns the path into a playable asset URL.
-        preview_url: String::new(),
+        // Paths here; the UI turns them into playable asset URLs.
+        preview_url: files.video,
         preview_has_audio: audio.is_some(),
-        preview_audio_url: String::new(),
+        preview_audio_url: files.audio,
+        preview_proxy: if cached.is_some() { "" } else { kind.name() },
         streams,
         url: path_text,
     })

@@ -47,18 +47,32 @@ export async function fetchMedia(url: string): Promise<MediaSource> {
 /** File types offered in the Open dialog; FFmpeg reads many more if dropped. */
 const MEDIA_EXTENSIONS = ["mp4", "mkv", "webm", "mov", "avi", "m4v", "wmv", "flv", "ts", "mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"];
 
+/** The preview plays files straight from disk through Tauri's asset protocol. */
+const assetUrl = (path: string) => (path ? convertFileSrc(path) : "");
+
 /** Reads a file on this PC with ffprobe. Works offline. */
 export async function openLocal(path: string): Promise<MediaSource> {
   try {
     const source = await invoke<MediaSource>("open_local", { path });
-    // The preview plays the file straight from disk through Tauri's asset protocol.
-    return { ...source, previewUrl: convertFileSrc(source.url) };
+    return { ...source, previewUrl: assetUrl(source.previewUrl), previewAudioUrl: assetUrl(source.previewAudioUrl ?? "") };
   } catch (err) {
     throw new Error(message(err));
   }
 }
 
-/** Shows the Windows Open dialog; null when the user cancels. */
+/**
+ * Makes the preview copy a file needs (its `previewProxy`) and returns the source with
+ * playable preview links. Can take a while for long videos; the copy is kept for next time.
+ */
+export async function makePreview(source: MediaSource): Promise<MediaSource> {
+  try {
+    const files = await invoke<{ video: string; audio: string }>("make_preview", { path: source.url });
+    return { ...source, previewUrl: assetUrl(files.video), previewAudioUrl: assetUrl(files.audio), previewProxy: "" };
+  } catch (err) {
+    throw new Error(message(err));
+  }
+}
+
 /** Shows the Windows Open dialog; empty when the user cancels. */
 export async function pickMediaFiles(): Promise<string[]> {
   const picked = await open({
@@ -81,6 +95,12 @@ export async function pickMediaFile(): Promise<string | null> {
 }
 
 export type DropState = "over" | "left" | { dropped: string[] };
+
+/** Shows the folder picker; null when the user cancels. */
+export async function pickFolder(title: string): Promise<string | null> {
+  const picked = await open({ multiple: false, directory: true, title });
+  return typeof picked === "string" ? picked : null;
+}
 
 /** Files dragged onto the window. */
 export const onFileDrop = (handler: (state: DropState) => void): Promise<UnlistenFn> =>

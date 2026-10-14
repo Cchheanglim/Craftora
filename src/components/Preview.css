@@ -30,14 +30,25 @@
   background: #000;
 }
 
-.preview__layer {
+/* One picture: a box placed like the export, with the crop as a window onto the video. */
+.preview__picture {
+  position: absolute;
+}
+
+.preview__picture:not(.is-main) {
+  cursor: move;
+  touch-action: none;
+}
+
+.preview__crop {
   position: absolute;
   inset: 0;
+  overflow: hidden;
 }
 
 .preview__video {
   position: absolute;
-  height: auto;
+  display: block;
 }
 
 .preview__video.is-mirrored {
@@ -54,11 +65,53 @@
   white-space: pre-wrap;
   text-align: center;
   text-shadow: 0.06em 0.06em 0 rgb(0 0 0 / 0.6);
-  pointer-events: none;
+  cursor: move;
+  touch-action: none;
 }
 
-.preview__note,
-.preview__badge {
+/* The selected picture or text: an outline with four square corner handles, kept inside
+   the box so the frame's edge never clips them. Stacking stays as in the export. */
+.preview__picture.is-selected,
+.preview__text.is-selected {
+  outline: 1.5px solid var(--text);
+  outline-offset: -1px;
+}
+
+.preview__handle {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  background: var(--text);
+  border: 1px solid #000;
+  z-index: 2;
+  touch-action: none;
+}
+
+.preview__handle.is-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.preview__handle.is-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.preview__handle.is-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.preview__handle.is-se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.preview__note {
   position: absolute;
   font-size: var(--text-xs);
   pointer-events: none;
@@ -69,15 +122,6 @@
   display: grid;
   place-items: center;
   color: var(--text-3);
-}
-
-.preview__badge {
-  top: 10px;
-  left: 10px;
-  padding: 3px 7px;
-  background: rgb(0 0 0 / 0.72);
-  border-radius: var(--radius-sm);
-  color: var(--text);
 }
 
 .preview__transport {

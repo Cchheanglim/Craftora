@@ -79,21 +79,78 @@
   outline-offset: 2px;
 }
 
-.insp__volume {
+/* A range with its label on the left and its value on the right. */
+.insp__slider {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 40px;
+  grid-template-columns: 56px minmax(0, 1fr) 48px;
   align-items: center;
   gap: var(--space-2);
 }
 
-.insp__volume input[type="range"] {
+.insp__slider > label {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.insp__slider input[type="range"] {
   width: 100%;
   accent-color: var(--text);
 }
 
-.insp__volume .mono {
+.insp__slider .mono {
   text-align: right;
   font-size: 12px;
+  color: var(--text-2);
+}
+
+/* A titled block of sliders (crop, fade). */
+.insp__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.insp__group > legend {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 2px;
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.insp__reset {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.insp__reset:hover {
+  color: var(--text);
+}
+
+.insp__hint {
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.45;
+}
+
+.insp__warn {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--warn);
+}
+
+.insp__warn svg {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .insp__note {

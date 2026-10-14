@@ -15,6 +15,8 @@ interface SidebarProps {
   /** "browser" in a plain browser tab, where downloads are simulated. */
   engines: EngineStatus | "checking" | "browser";
   media: MediaItem[];
+  /** Media whose preview copy is still being made. */
+  preparing: Set<string>;
   /** Absent in the browser preview. */
   onImport?: () => void;
   onAddMedia: (mediaId: string) => void;
@@ -30,6 +32,7 @@ export function Sidebar({
   libraryCount,
   engines,
   media,
+  preparing,
   onImport,
   onAddMedia,
   onRemoveMedia,
@@ -97,7 +100,13 @@ export function Sidebar({
                     <span className="truncate">{item.name}</span>
                     <span className="side__file-meta">
                       <span className="mono">{formatClock(item.source.duration)}</span>
-                      {item.source.local ? " · this PC" : " · link"}
+                      {item.missing
+                        ? " · file not found"
+                        : preparing.has(item.id)
+                          ? " · preparing preview…"
+                          : item.source.local
+                            ? " · this PC"
+                            : " · link"}
                     </span>
                   </span>
                   <button type="button" className="btn btn--icon" aria-label={`Add ${item.name} to the timeline`} title="Add to the timeline" onClick={() => onAddMedia(item.id)}>

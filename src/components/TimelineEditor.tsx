@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { clipEnd, clipLength, type Clip, type Project, type Track } from "../project/model";
+import { clipEnd, clipLength, mainTrack, type Clip, type Project, type Track } from "../project/model";
+import { mainSlot, packedMain } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatClock } from "../lib/timecode";
@@ -13,6 +14,8 @@ const RULER_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 360
 const SNAP_PX = 7;
 const MIN_PPS = 2;
 const MAX_PPS = 400;
+/** Pixels the pointer must travel before a press on a clip becomes a drag. */
+const DRAG_THRESHOLD = 3;
 
 interface TimelineEditorProps {
   project: Project;
@@ -28,13 +31,16 @@ interface TimelineEditorProps {
 
 type DragMode = "move" | "start" | "end";
 
-interface Drag {
+/** What the pointer is doing between press and release. */
+type Gesture =
+  | { kind: "scrub" }
+  | { kind: "clip"; clipId: string; mode: DragMode; originX: number; originStart: number; originEdge: number; moved: boolean };
+
+/** Where a clip being moved is drawn; the project only changes on release. */
+interface Ghost {
   clipId: string;
-  mode: DragMode;
-  originX: number;
-  originStart: number;
-  originEdge: number;
-  moved: boolean;
+  start: number;
+  trackId: string;
 }
 
 const TRACK_ICON: Record<Track["kind"], IconName> = { video: "film", audio: "music", text: "text" };
@@ -53,12 +59,18 @@ export function TimelineEditor({
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const laneRefs = useRef(new Map<string, HTMLDivElement>());
-  const dragRef = useRef<Drag | null>(null);
-  const scrubbing = useRef(false);
+  const gestureRef = useRef<Gesture | null>(null);
+  const [ghost, setGhostState] = useState<Ghost | null>(null);
+  const ghostRef = useRef<Ghost | null>(null);
+  const setGhost = (g: Ghost | null) => {
+    ghostRef.current = g;
+    setGhostState(g);
+  };
   const [pps, setPps] = useState(40);
   // 0 until measured, so the first automatic fit uses the real width.
   const [viewWidth, setViewWidth] = useState(0);
   const [fitted, setFitted] = useState(false);
+  const [scrubbing, setScrubbing] = useState(false);
 
   // Track the visible width for "fit" and the content width.
   useEffect(() => {
@@ -121,55 +133,103 @@ export function TimelineEditor({
     return undefined;
   };
 
+  // Pointer moves and releases are followed on the window, so a drag keeps working when
+  // the pointer leaves the clip or the clip moves to another track. These read the latest
+  // props through refs that are refreshed on every render.
+  const onPointerMove = useRef<(e: PointerEvent) => void>(() => {});
+  const onPointerUp = useRef<() => void>(() => {});
+
+  onPointerMove.current = (e) => {
+    const g = gestureRef.current;
+    if (!g) return;
+    if (g.kind === "scrub") {
+      playback.seek(timeAt(e.clientX));
+      return;
+    }
+    const dx = e.clientX - g.originX;
+    if (!g.moved) {
+      if (Math.abs(dx) < DRAG_THRESHOLD && !laneChanged(g.clipId, e.clientY)) return;
+      g.moved = true;
+      // Trims change the project live; moves only on release (see onPointerUp).
+      if (g.mode !== "move") api.checkpoint();
+    }
+    const dt = dx / pps;
+    const clip = project.clips.find((c) => c.id === g.clipId);
+    if (!clip) return;
+    if (g.mode === "move") {
+      let start = g.originStart + dt;
+      // Snap either edge of the clip.
+      const snappedStart = snap(start, clip.id);
+      const snappedEnd = snap(start + clipLength(clip), clip.id) - clipLength(clip);
+      start = Math.abs(snappedStart - start) <= Math.abs(snappedEnd - start) ? snappedStart : snappedEnd;
+      // Clips only move to tracks of their own kind.
+      const kind = project.tracks.find((t) => t.id === clip.trackId)?.kind;
+      const lane = project.tracks.find((t) => t.id === laneAt(e.clientY));
+      const trackId = lane && lane.kind === kind ? lane.id : (ghostRef.current?.trackId ?? clip.trackId);
+      setGhost({ clipId: clip.id, start: Math.max(0, start), trackId });
+    } else {
+      api.editLive({ type: "trimClip", clipId: clip.id, edge: g.mode, time: snap(g.originEdge + dt, clip.id) });
+    }
+  };
+
+  onPointerUp.current = () => {
+    const g = gestureRef.current;
+    gestureRef.current = null;
+    setScrubbing(false);
+    if (!g || g.kind !== "clip" || !g.moved) return;
+    const final = ghostRef.current;
+    setGhost(null);
+    if (g.mode === "move" && final) {
+      api.edit({ type: "moveClip", clipId: final.clipId, start: final.start, trackId: final.trackId });
+    }
+    api.editLive({ type: "settle" });
+  };
+
+  const laneChanged = (clipId: string, clientY: number) => {
+    const clip = project.clips.find((c) => c.id === clipId);
+    const lane = laneAt(clientY);
+    return Boolean(clip && lane && lane !== clip.trackId);
+  };
+
+  const startGesture = (g: Gesture) => {
+    gestureRef.current = g;
+    const move = (e: PointerEvent) => onPointerMove.current(e);
+    const up = () => {
+      onPointerUp.current();
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
+
   const beginDrag = (clip: Clip, mode: DragMode) => (e: ReactPointerEvent<HTMLElement>) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    e.preventDefault();
     onSelect(clip.id);
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = {
+    startGesture({
+      kind: "clip",
       clipId: clip.id,
       mode,
       originX: e.clientX,
       originStart: clip.start,
       originEdge: mode === "end" ? clipEnd(clip) : clip.start,
       moved: false,
-    };
+    });
   };
 
-  const onDragMove = (e: ReactPointerEvent<HTMLElement>) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    const dx = e.clientX - drag.originX;
-    if (!drag.moved) {
-      if (Math.abs(dx) < 3) return;
-      drag.moved = true;
-      api.checkpoint();
-    }
-    const dt = dx / pps;
-    const clip = project.clips.find((c) => c.id === drag.clipId);
-    if (!clip) return;
-    if (drag.mode === "move") {
-      let start = drag.originStart + dt;
-      // Snap either edge of the clip.
-      const snappedStart = snap(start, clip.id);
-      const snappedEnd = snap(start + clipLength(clip), clip.id) - clipLength(clip);
-      start = Math.abs(snappedStart - start) <= Math.abs(snappedEnd - start) ? snappedStart : snappedEnd;
-      api.editLive({ type: "moveClip", clipId: clip.id, start, trackId: laneAt(e.clientY) });
-    } else {
-      api.editLive({ type: "trimClip", clipId: clip.id, edge: drag.mode, time: snap(drag.originEdge + dt, clip.id) });
-    }
-  };
-
-  const endDrag = () => {
-    if (dragRef.current?.moved) api.editLive({ type: "settle" });
-    dragRef.current = null;
-  };
-
-  const scrub = (e: ReactPointerEvent<HTMLElement>) => {
+  /** Press on the ruler, the playhead or empty track space: move the playhead and follow the pointer. */
+  const beginScrub = (e: ReactPointerEvent<HTMLElement>) => {
     if (e.button !== 0) return;
-    scrubbing.current = true;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    e.stopPropagation();
+    e.preventDefault();
+    playback.pause();
     playback.seek(timeAt(e.clientX));
+    setScrubbing(true);
+    startGesture({ kind: "scrub" });
   };
 
   const onDrop = (track: Track) => (e: DragEvent<HTMLDivElement>) => {
@@ -186,8 +246,26 @@ export function TimelineEditor({
   const selected = project.clips.find((c) => c.id === selectedId);
   const canSplit = selected && playback.time > selected.start && playback.time < clipEnd(selected);
 
+  // While a clip is being moved: it follows the pointer, and on Video 1 the other clips
+  // close up behind it and open a gap where it would land.
+  const placed = new Map<string, { start: number; trackId: string }>();
+  if (ghost) {
+    const main = mainTrack(project).id;
+    const dragged = project.clips.find((c) => c.id === ghost.clipId);
+    if (dragged) {
+      const gapAt = ghost.trackId === main ? mainSlot(project, dragged.id, ghost.start) : Infinity;
+      if (ghost.trackId === main || dragged.trackId === main) {
+        packedMain(project, dragged.id).forEach(({ clip, start }, i) => {
+          placed.set(clip.id, { start: i >= gapAt ? start + clipLength(dragged) : start, trackId: main });
+        });
+      }
+      placed.set(dragged.id, { start: ghost.start, trackId: ghost.trackId });
+    }
+  }
+  const where = (c: Clip) => placed.get(c.id) ?? { start: c.start, trackId: c.trackId };
+
   return (
-    <section className="tl" aria-label="Timeline">
+    <section className={scrubbing ? "tl is-scrubbing" : "tl"} aria-label="Timeline">
       <div className="tl__toolbar" role="toolbar" aria-label="Timeline tools">
         <button type="button" className="btn btn--icon" aria-label="Undo" title="Undo (Ctrl+Z)" onClick={api.undo} disabled={!api.canUndo}>
           <Icon name="undo" />
@@ -243,12 +321,7 @@ export function TimelineEditor({
           }}
         >
           <div ref={contentRef} className="tl__content" style={{ width: contentWidth }}>
-            <div
-              className="tl__ruler mono"
-              onPointerDown={scrub}
-              onPointerMove={(e) => scrubbing.current && playback.seek(timeAt(e.clientX))}
-              onPointerUp={() => (scrubbing.current = false)}
-            >
+            <div className="tl__ruler mono" onPointerDown={beginScrub}>
               {ticks.map((t) => (
                 <span key={t} style={{ left: t * pps }}>
                   {formatClock(t)}
@@ -265,9 +338,8 @@ export function TimelineEditor({
                 }}
                 className={`tl__lane is-${track.kind}`}
                 onPointerDown={(e) => {
-                  if (e.button !== 0) return;
                   onSelect(null);
-                  playback.seek(timeAt(e.clientX));
+                  beginScrub(e);
                 }}
                 onDragOver={(e) => {
                   if (e.dataTransfer.types.includes(MEDIA_DRAG_TYPE)) e.preventDefault();
@@ -275,11 +347,21 @@ export function TimelineEditor({
                 onDrop={onDrop(track)}
               >
                 {project.clips
-                  .filter((c) => c.trackId === track.id)
+                  .filter((c) => where(c).trackId === track.id)
                   .map((clip) => {
                     const media = project.media.find((m) => m.id === clip.mediaId);
                     const label = clip.text ?? media?.name ?? "Clip";
                     const isSelected = clip.id === selectedId;
+                    const isGhost = clip.id === ghost?.clipId;
+                    const { start } = where(clip);
+                    const length = clipLength(clip);
+                    const classes = [
+                      "tl__clip",
+                      `is-${track.kind}`,
+                      isSelected && "is-selected",
+                      isGhost && "is-dragging",
+                      media?.missing && "is-missing",
+                    ].filter(Boolean);
                     return (
                       <div
                         key={clip.id}
@@ -287,12 +369,9 @@ export function TimelineEditor({
                         tabIndex={0}
                         aria-pressed={isSelected}
                         aria-label={`${label}, ${formatClock(clip.start)} to ${formatClock(clipEnd(clip))}`}
-                        className={`tl__clip is-${track.kind}${isSelected ? " is-selected" : ""}`}
-                        style={{ left: clip.start * pps, width: Math.max(4, clipLength(clip) * pps) }}
+                        className={classes.join(" ")}
+                        style={{ left: start * pps, width: Math.max(4, length * pps) }}
                         onPointerDown={beginDrag(clip, "move")}
-                        onPointerMove={onDragMove}
-                        onPointerUp={endDrag}
-                        onPointerCancel={endDrag}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
@@ -300,30 +379,33 @@ export function TimelineEditor({
                           }
                         }}
                       >
-                        <span
-                          className="tl__trim is-start"
-                          onPointerDown={beginDrag(clip, "start")}
-                          onPointerMove={onDragMove}
-                          onPointerUp={endDrag}
-                          onPointerCancel={endDrag}
-                          aria-hidden="true"
-                        />
-                        <span className="tl__label truncate">{label}</span>
-                        <span
-                          className="tl__trim is-end"
-                          onPointerDown={beginDrag(clip, "end")}
-                          onPointerMove={onDragMove}
-                          onPointerUp={endDrag}
-                          onPointerCancel={endDrag}
-                          aria-hidden="true"
-                        />
+                        {clip.fadeIn > 0 && <span className="tl__fade is-in" style={{ width: clip.fadeIn * pps }} aria-hidden="true" />}
+                        {clip.fadeOut > 0 && <span className="tl__fade is-out" style={{ width: clip.fadeOut * pps }} aria-hidden="true" />}
+                        <span className="tl__trim is-start" onPointerDown={beginDrag(clip, "start")} aria-hidden="true" />
+                        <span className="tl__label truncate">
+                          {media?.missing && "Missing · "}
+                          {label}
+                        </span>
+                        {(clip.speed !== 1 || clip.reverse) && (
+                          <span className="tl__tag mono" aria-hidden="true">
+                            {clip.reverse ? "◀ " : ""}
+                            {clip.speed !== 1 ? `${clip.speed}×` : ""}
+                          </span>
+                        )}
+                        <span className="tl__trim is-end" onPointerDown={beginDrag(clip, "end")} aria-hidden="true" />
                       </div>
                     );
                   })}
               </div>
             ))}
 
-            <span className="tl__playhead" style={{ left: playback.time * pps }} aria-hidden="true" />
+            <div
+              className="tl__playhead"
+              style={{ left: playback.time * pps }}
+              onPointerDown={beginScrub}
+              title="Drag to move through the video (← → step, Shift for seconds)"
+              aria-hidden="true"
+            />
             {project.clips.length === 0 && (
               <p className="tl__empty">Drag media here from the left, or press + on a file to add it.</p>
             )}

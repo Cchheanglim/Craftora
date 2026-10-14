@@ -15,6 +15,10 @@ interface ExportPanelProps {
   onAddToQueue: () => void;
   /** Bumps each time a job is queued, to replay the confirmation. */
   queuedCount: number;
+  /** Where exports are saved. */
+  outputDir: string;
+  /** Absent in the browser preview. */
+  onChooseOutputDir?: () => void;
   /** The selected clip's settings, shown above the export settings. */
   children?: ReactNode;
 }
@@ -22,7 +26,18 @@ interface ExportPanelProps {
 const VIDEO_CONTAINERS: VideoContainer[] = ["mp4", "mkv"];
 const AUDIO_CONTAINERS: AudioContainer[] = ["mp3", "wav", "flac"];
 
-export function ExportPanel({ settings, onChange, plan, cutModeApplies, hasPicture, onAddToQueue, queuedCount, children }: ExportPanelProps) {
+export function ExportPanel({
+  settings,
+  onChange,
+  plan,
+  cutModeApplies,
+  hasPicture,
+  onAddToQueue,
+  queuedCount,
+  outputDir,
+  onChooseOutputDir,
+  children,
+}: ExportPanelProps) {
   const [copied, setCopied] = useState(false);
   const [moreBelow, setMoreBelow] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -174,7 +189,16 @@ export function ExportPanel({ settings, onChange, plan, cutModeApplies, hasPictu
             <dt>Size</dt>
             <dd className="mono">≈ {formatSize(plan.sizeMb)}</dd>
             <dt>Save to</dt>
-            <dd className="mono truncate">Videos\Craftora</dd>
+            <dd className="export__folder">
+              <span className="mono truncate" title={outputDir}>
+                {outputDir}
+              </span>
+              {onChooseOutputDir && (
+                <button type="button" className="export__change" onClick={onChooseOutputDir}>
+                  Change
+                </button>
+              )}
+            </dd>
           </dl>
         )}
         <button type="button" className="btn btn--primary export__add" onClick={onAddToQueue} disabled={!ready}>

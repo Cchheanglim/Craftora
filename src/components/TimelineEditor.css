@@ -1,5 +1,6 @@
 .tl {
   flex-shrink: 0;
+  user-select: none;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--line);
@@ -158,6 +159,18 @@
   z-index: 1;
 }
 
+/* Being moved: drawn above the rest, slightly see-through so the gap below shows. */
+.tl__clip.is-dragging {
+  opacity: 0.85;
+  z-index: 3;
+  cursor: grabbing;
+}
+
+.tl__clip.is-missing {
+  border-style: dashed;
+  color: var(--text-3);
+}
+
 .tl__clip:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -170,7 +183,36 @@
   pointer-events: none;
 }
 
+/* Speed and reverse, at the clip's right end. */
+.tl__tag {
+  flex-shrink: 0;
+  padding-right: 4px;
+  font-size: 10.5px;
+  color: var(--text-2);
+  pointer-events: none;
+}
+
+/* Fades: a dark ramp over the faded part of the clip. */
+.tl__fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.tl__fade.is-in {
+  left: 0;
+  background: linear-gradient(to right, rgb(0 0 0 / 0.55), transparent);
+}
+
+.tl__fade.is-out {
+  right: 0;
+  background: linear-gradient(to left, rgb(0 0 0 / 0.55), transparent);
+}
+
 .tl__trim {
+  position: relative;
+  z-index: 1;
   flex-shrink: 0;
   align-self: stretch;
   width: 7px;
@@ -181,27 +223,45 @@
   background: rgb(255 255 255 / 0.85);
 }
 
-/* The playhead: the one accent on the timeline. */
+/* The playhead: the one accent on the timeline. The element is a wide, invisible grab
+   strip above the clips; the red line and its head are drawn inside it. */
 .tl__playhead {
   position: absolute;
   top: 0;
   bottom: 0;
+  width: 13px;
+  margin-left: -6.5px;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 4;
+}
+
+.tl__playhead::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5.5px;
   width: 2px;
-  margin-left: -1px;
   background: var(--accent);
   pointer-events: none;
-  z-index: 2;
 }
 
 .tl__playhead::before {
   content: "";
   position: absolute;
   top: 0;
-  left: -4px;
+  left: 1.5px;
   width: 10px;
-  height: 8px;
+  height: 12px;
   background: var(--accent);
-  clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%);
+  clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%);
+  pointer-events: none;
+}
+
+.tl.is-scrubbing,
+.tl.is-scrubbing * {
+  cursor: ew-resize;
 }
 
 .tl__empty {

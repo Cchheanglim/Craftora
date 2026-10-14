@@ -1,22 +1,24 @@
 import type { ClipPatch } from "../project/actions";
-import { POSITIONS, clipEnd, clipLength, type Clip, type MediaItem, type Position, type Track } from "../project/model";
+import {
+  MAX_CROP,
+  NO_CROP,
+  POSITIONS,
+  SPEEDS,
+  clipEnd,
+  clipLength,
+  isCropped,
+  presetAt,
+  type Clip,
+  type Crop,
+  type MediaItem,
+  type Position,
+  type Track,
+} from "../project/model";
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
 import "./Inspector.css";
 
-const OVERLAY_SIZES = [
-  { label: "Small", value: 0.25 },
-  { label: "Medium", value: 0.4 },
-  { label: "Large", value: 0.6 },
-  { label: "Full frame", value: 1 },
-];
-const TEXT_SIZES = [
-  { label: "Small", value: 0.05 },
-  { label: "Medium", value: 0.08 },
-  { label: "Large", value: 0.12 },
-  { label: "Huge", value: 0.18 },
-];
 const TEXT_COLORS = [
   { label: "White", value: "#ffffff" },
   { label: "Yellow", value: "#ffd60a" },
@@ -25,6 +27,14 @@ const TEXT_COLORS = [
   { label: "Green", value: "#30d158" },
   { label: "Pink", value: "#ff6fb1" },
 ];
+const CROP_SIDES: { side: keyof Crop; label: string }[] = [
+  { side: "left", label: "Left" },
+  { side: "right", label: "Right" },
+  { side: "top", label: "Top" },
+  { side: "bottom", label: "Bottom" },
+];
+/** Longest fade offered, in seconds. */
+const MAX_FADE = 5;
 
 interface InspectorProps {
   clip: Clip;
@@ -32,6 +42,7 @@ interface InspectorProps {
   media?: MediaItem;
   /** Applies a change; `live` skips the undo step (use after `checkpoint`). */
   onChange: (patch: ClipPatch, live?: boolean) => void;
+  onSpeed: (speed: number) => void;
   onCheckpoint: () => void;
   onFormat: (format: { videoFormat?: string; audioFormat?: string }) => void;
   onSplit: () => void;
@@ -40,12 +51,16 @@ interface InspectorProps {
 }
 
 /** Settings for the selected clip. */
-export function Inspector({ clip, track, media, onChange, onCheckpoint, onFormat, onSplit, onDelete, canSplit }: InspectorProps) {
+export function Inspector({ clip, track, media, onChange, onSpeed, onCheckpoint, onFormat, onSplit, onDelete, canSplit }: InspectorProps) {
   const isText = !clip.mediaId;
   const isPicture = track.kind === "video";
   const isOverlay = isPicture && !track.main;
   const hasSound = Boolean(media?.hasAudio);
   const streams = media && !media.source.local ? media.source.streams.filter((s) => s.kind === (isPicture ? "video" : "audio")) : [];
+  const length = clipLength(clip);
+  const maxFade = Math.min(MAX_FADE, Math.floor(length * 10) / 10);
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  const sec = (v: number) => `${v.toFixed(1)} s`;
 
   return (
     <section className="insp" aria-labelledby="insp-title">
@@ -57,8 +72,14 @@ export function Inspector({ clip, track, media, onChange, onCheckpoint, onFormat
       </header>
       <p className="insp__meta">
         {track.name} · <span className="mono">{formatClock(clip.start)}</span> → <span className="mono">{formatClock(clipEnd(clip))}</span> ·{" "}
-        <span className="mono">{formatClock(clipLength(clip))}</span> long
+        <span className="mono">{formatClock(length)}</span> long
       </p>
+      {media?.missing && (
+        <p className="insp__warn">
+          <Icon name="alert" size={13} />
+          This file can't be found. Put it back where it was, or remove the clip.
+        </p>
+      )}
 
       {isText && (
         <>
@@ -74,10 +95,8 @@ export function Inspector({ clip, track, media, onChange, onCheckpoint, onFormat
               onChange={(e) => onChange({ text: e.target.value }, true)}
             />
           </div>
-          <div className="insp__pair">
-            <Select id="insp-text-size" label="Size" value={clip.size} options={TEXT_SIZES} onChange={(size) => onChange({ size })} />
-            <PositionSelect value={clip.position} onChange={(position) => onChange({ position })} />
-          </div>
+          <Slider id="insp-text-size" label="Size" min={0.02} max={0.3} step={0.005} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
+          <PositionSelect clip={clip} onChange={onChange} />
           <fieldset className="insp__field">
             <legend>Color</legend>
             <div className="insp__swatches">
@@ -98,10 +117,38 @@ export function Inspector({ clip, track, media, onChange, onCheckpoint, onFormat
       )}
 
       {isOverlay && (
-        <div className="insp__pair">
-          <Select id="insp-size" label="Size" value={clip.size} options={OVERLAY_SIZES} onChange={(size) => onChange({ size })} />
-          <PositionSelect value={clip.position} onChange={(position) => onChange({ position })} disabled={clip.size >= 1} />
-        </div>
+        <>
+          <p className="insp__hint">Drag the picture on the preview to move it; drag a corner to resize.</p>
+          <Slider id="insp-size" label="Size" min={0.1} max={1} step={0.01} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
+          <PositionSelect clip={clip} onChange={onChange} disabled={clip.size >= 1} />
+        </>
+      )}
+
+      {isPicture && (
+        <fieldset className="insp__group">
+          <legend>
+            Crop
+            {isCropped(clip.crop) && (
+              <button type="button" className="insp__reset" onClick={() => onChange({ crop: NO_CROP })}>
+                Reset
+              </button>
+            )}
+          </legend>
+          {CROP_SIDES.map(({ side, label }) => (
+            <Slider
+              key={side}
+              id={`insp-crop-${side}`}
+              label={label}
+              min={0}
+              max={MAX_CROP}
+              step={0.005}
+              value={clip.crop[side]}
+              format={pct}
+              onCheckpoint={onCheckpoint}
+              onChange={(v) => onChange({ crop: { ...clip.crop, [side]: v } }, true)}
+            />
+          ))}
+        </fieldset>
       )}
 
       {isPicture && (
@@ -117,23 +164,38 @@ export function Inspector({ clip, track, media, onChange, onCheckpoint, onFormat
         </div>
       )}
 
+      {!isText && (
+        <div className="insp__field">
+          <label htmlFor="insp-speed">Speed</label>
+          <select id="insp-speed" className="field mono" value={clip.speed} onChange={(e) => onSpeed(Number(e.target.value))}>
+            {SPEEDS.map((s) => (
+              <option key={s} value={s}>
+                {s}×{s === 1 ? " (normal)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <fieldset className="insp__group">
+        <legend>Fade</legend>
+        <Slider id="insp-fade-in" label="In" min={0} max={maxFade} step={0.1} value={clip.fadeIn} format={sec} onCheckpoint={onCheckpoint} onChange={(fadeIn) => onChange({ fadeIn }, true)} />
+        <Slider id="insp-fade-out" label="Out" min={0} max={maxFade} step={0.1} value={clip.fadeOut} format={sec} onCheckpoint={onCheckpoint} onChange={(fadeOut) => onChange({ fadeOut }, true)} />
+      </fieldset>
+
       {!isText &&
         (hasSound ? (
-          <div className="insp__volume">
-            <label htmlFor="insp-volume">Volume</label>
-            <input
-              id="insp-volume"
-              type="range"
-              min={0}
-              max={100}
-              step={5}
-              value={Math.round(clip.volume * 100)}
-              onPointerDown={onCheckpoint}
-              onKeyDown={onCheckpoint}
-              onChange={(e) => onChange({ volume: Number(e.target.value) / 100 }, true)}
-            />
-            <span className="mono">{Math.round(clip.volume * 100)}%</span>
-          </div>
+          <Slider
+            id="insp-volume"
+            label="Volume"
+            min={0}
+            max={1}
+            step={0.05}
+            value={clip.volume}
+            format={pct}
+            onCheckpoint={onCheckpoint}
+            onChange={(volume) => onChange({ volume }, true)}
+          />
         ) : (
           <p className="insp__note">This file has no sound.</p>
         ))}
@@ -170,40 +232,64 @@ export function Inspector({ clip, track, media, onChange, onCheckpoint, onFormat
   );
 }
 
-function Select({
+/** A labelled range with its value; one undo step per drag. */
+function Slider({
   id,
   label,
+  min,
+  max,
+  step,
   value,
-  options,
+  format,
+  onCheckpoint,
   onChange,
 }: {
   id: string;
   label: string;
+  min: number;
+  max: number;
+  step: number;
   value: number;
-  options: { label: string; value: number }[];
+  format: (v: number) => string;
+  onCheckpoint: () => void;
   onChange: (v: number) => void;
 }) {
-  // Keep a custom value selectable even if it isn't one of the presets.
-  const nearest = options.reduce((a, b) => (Math.abs(b.value - value) < Math.abs(a.value - value) ? b : a));
   return (
-    <div className="insp__field">
+    <div className="insp__slider">
       <label htmlFor={id}>{label}</label>
-      <select id={id} className="field" value={nearest.value} onChange={(e) => onChange(Number(e.target.value))}>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      <input
+        id={id}
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={Math.min(max, value)}
+        disabled={max <= min}
+        onPointerDown={onCheckpoint}
+        onKeyDown={onCheckpoint}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+      <span className="mono">{format(value)}</span>
     </div>
   );
 }
 
-function PositionSelect({ value, onChange, disabled }: { value: Position; onChange: (p: Position) => void; disabled?: boolean }) {
+function PositionSelect({ clip, onChange, disabled }: { clip: Clip; onChange: (patch: ClipPatch) => void; disabled?: boolean }) {
+  const preset = presetAt(clip.x, clip.y);
   return (
     <div className="insp__field">
-      <label htmlFor="insp-position">Position</label>
-      <select id="insp-position" className="field" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value as Position)}>
+      <label htmlFor="insp-position">Place</label>
+      <select
+        id="insp-position"
+        className="field"
+        value={preset ?? "custom"}
+        disabled={disabled}
+        onChange={(e) => {
+          const p = POSITIONS[e.target.value as Position];
+          if (p) onChange({ x: p.x, y: p.y });
+        }}
+      >
+        {!preset && <option value="custom">Where you dragged it</option>}
         {Object.entries(POSITIONS).map(([key, p]) => (
           <option key={key} value={key}>
             {p.label}

@@ -5,7 +5,7 @@
  */
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
-import { POSITIONS, clipLength, mainTrack, projectDuration, type Clip, type MediaItem, type Project } from "./model";
+import { clipLength, isCropped, mainTrack, projectDuration, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
   { id: "1080p", label: "16:9 · 1920 × 1080", width: 1920, height: 1080 },
@@ -52,7 +52,8 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
   if (project.clips.length !== 1) return null;
   const [clip] = project.clips;
   const media = project.media.find((m) => m.id === clip.mediaId);
-  const untouched = clip.volume === 1 && !clip.mirror && !clip.reverse;
+  const untouched =
+    clip.volume === 1 && !clip.mirror && !clip.reverse && clip.speed === 1 && !clip.fadeIn && !clip.fadeOut && !isCropped(clip.crop);
   return media && untouched && clip.trackId === mainTrack(project).id ? { clip, media } : null;
 }
 
@@ -133,19 +134,22 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
         : track?.kind === "audio"
           ? "audio"
           : "overlay";
-    const { x, y } = POSITIONS[c.position];
     return {
       role,
       mediaId: c.mediaId,
       start: c.start,
       in: c.in,
       out: c.out,
+      speed: c.mediaId ? c.speed : 1,
       volume: c.volume,
       mirror: c.mirror,
       reverse: c.reverse,
+      fadeIn: c.fadeIn,
+      fadeOut: c.fadeOut,
+      crop: [c.crop.left, c.crop.top, c.crop.right, c.crop.bottom],
       size: c.size,
-      x,
-      y,
+      x: c.x,
+      y: c.y,
       text: c.text ?? "",
       color: c.color ?? "#ffffff",
     };
@@ -188,6 +192,9 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     "concat",
     project.clips.some((c) => c.mirror) && "hflip",
     project.clips.some((c) => c.reverse) && "reverse",
+    project.clips.some((c) => isCropped(c.crop)) && "crop",
+    project.clips.some((c) => c.speed !== 1) && "setpts, atempo",
+    project.clips.some((c) => c.fadeIn || c.fadeOut) && "fade, afade",
     clips.some((c) => c.role === "overlay") && "overlay",
     counts.texts && "drawtext",
     "amix",
