@@ -1,259 +1,150 @@
 # Handoff: where Craftora stands
 
-Written 2026-10-14 to start a fresh Claude Code session. Read this first, then `README.md`
-(features, setup, structure), `PRODUCT.md` (purpose and principles) and `DESIGN.md` (visual
-system).
+Rewritten 2026-10-16 for a fresh Claude Code session; it replaces the earlier session notes.
+Read this first, then `README.md` (features, setup), `CHANGELOG.md` (what each version added),
+`RELEASING.md` (how to ship) and, for UI work, `PRODUCT.md` and `DESIGN.md`.
 
-## About the owner
+## The owner
 
-- New to desktop apps, React and Rust. Explain things plainly and briefly.
-- Commits to git themselves. Don't commit unless asked.
-- Wants Craftora to work like a simple **CapCut**: calls stacked media **"tracks"**, not
-  layers. Uses plain CSS, not Tailwind.
-- Plans to add an **AI editing assistant** later.
+- New to desktop apps, React and Rust. Explain plainly and briefly, without jargon. Their
+  messages are short and informal; work out what they mean and ask (AskUserQuestion with
+  options works well) when it's really unclear.
+- **Commits and merges themselves.** Don't commit unless asked. Work happens on the `Building`
+  branch; they merge into `main` with GitHub pull requests.
+- Wants Craftora to feel like a simple **CapCut**. Calls stacked media "tracks". Plain CSS, no
+  Tailwind. Design rules: sharp near-square corners, no pill buttons, no purple or decorative
+  gradients, no cursor or scroll effects, a dense dark utility look.
+- PC: Windows 11 laptop, NVIDIA RTX 3050 Laptop GPU plus Intel UHD. Bun isn't always on `PATH`
+  in old terminals: `C:\Users\chhea\AppData\Local\Microsoft\WinGet\Packages\Oven-sh.Bun_Microsoft.Winget.Source_8wekyb3d8bbwe\bun-windows-x64\bun.exe`.
+- They often have `bun tauri dev` running. It holds port 1420 (use that for the browser demo)
+  and locks `src-tauri/target/debug/*.exe`; check Rust with
+  `CARGO_TARGET_DIR=target/check cargo clippy` so the build doesn't fail with "Access is denied".
 
-## What's built (all committed, up to `1f5a62f`, plus the second session below)
+## Status (2026-10-16)
 
-- **Toolchain** on this PC: Bun, Rust, MSVC Build Tools, WebView2. yt-dlp 2026.08.19 and
-  FFmpeg 9.0.2 GPL are in `src-tauri/bin/`, fetched with `scripts/fetch-sidecars.ps1` and
-  gitignored.
-- **CapCut-style editor:**
-  - Home screen with a saved-projects list.
-  - Media library: import files (also offline) or fetch links.
-  - Timeline with Video 1 (main, clips back to back), Video 2+ (picture-in-picture), Audio
-    and Text tracks.
-  - Move, trim, split, delete, undo/redo, snapping, zoom, a draggable playhead.
-  - Inspector: crop, speed, fades, volume, mirror, reverse, size and place, text and
-    colour, source quality.
-  - Synced live preview, with separate sound streams for YouTube. Picture-in-picture and
-    text are moved and resized directly on the preview.
-  - Full-screen preview, collapsible side panels, export queue, keyboard shortcuts.
-- **Export:**
-  - A single untouched clip takes the fast path in `src-tauri/src/jobs.rs`: a yt-dlp
-    section download, or an FFmpeg stream copy.
-  - Anything else is one FFmpeg render in `src-tauri/src/project.rs`.
-- **Built for the AI assistant:** every edit is a named action in `src/project/actions.ts`,
-  applied through `useProject` with undo/redo. An AI assistant should dispatch these same
-  actions.
+- **v0.1.0** is published on GitHub Releases. **v0.2.0** was built by GitHub Actions (green) as a
+  **draft**; the owner was about to paste the 0.2.0 changelog and publish it. Then their
+  installed 0.1.0 should offer "Update to v0.2.0": the first real auto-update test.
+- **Microsoft Store:** 0.1.0 (MSIX) was submitted for certification on 2026-10-15 and is
+  waiting. Identity: `Cchheanglim.Craftora` (`src-tauri/msix/store-identity.json`). When it
+  passes, upload 0.2.0 built with `scripts/make-msix.ps1`. Risk: Store policy 11.2 (copyright
+  complaints about YouTube downloading); fallback, a Store edition without link fetching.
+- **Code signing:** SignPath Foundation turned the project down. GitHub installers are unsigned
+  (SmartScreen warning). Options in `RELEASING.md` → "Code signing" (Store, or a Certum
+  certificate at about $50 a year). Azure Artifact Signing is only for individuals in the US
+  and Canada.
+- Open GitHub issue **#15** ("Bugs") was addressed by 0.2.0; it could be closed with a comment
+  once the owner confirms.
+- **Not yet tried in the real app window:** the link cache (WebView2 plus the `cmedia` custom
+  scheme), importing images, a real "Download first" swap to the local file, and the
+  NVENC export run from the app (it was tested by hand with FFmpeg).
 
-## Second session (2026-10-14)
+## What Craftora is (code map)
 
-The owner reported that Video 2 couldn't be moved or cropped and that the playhead couldn't
-be dragged. Fixed, along with the known issues and next steps 2–4:
+A Tauri 2 desktop video editor. React and TypeScript UI; Rust backend; bundled yt-dlp and
+FFmpeg (GPL build from BtbN) run as sidecars.
 
-- **Preview editing** (`Preview.tsx`): select a picture-in-picture or text on the preview,
-  drag it to move it (snaps to centre and edges), and drag a corner to resize it. Positions
-  are now free `x`/`y` fractions of the free space; `POSITIONS` are presets.
-- **Crop** for any picture clip (four Inspector sliders), previewed and rendered alike.
-- **Playhead**: a wide grab strip, plus drag-to-scrub on the ruler and on empty track space.
-  Drags follow the pointer on `window`, so they survive clips changing track.
-- **Video 1 reorder without jumps**: the dragged clip follows the pointer and its neighbours
-  open a gap. The project changes only on release (`moveClip` with `mainSlot`).
-- **Speed** 0.25–4× (`setSpeed`; `setpts` and chained `atempo`) and **fades** in/out
-  (`fade`, `afade`, alpha fades for picture-in-picture, an alpha expression for text).
-  `clipLength` is now `(out − in) / speed`. Trim and split handle speed and reversed clips.
-- **Reverse preview**: steps backwards by seeking (choppy, silent). The export is smooth.
-- **Preview copies** (`local.rs` `make_preview`): AC-3/DTS sound gets an AAC copy. AVI,
-  HEVC and others get a 720p H.264 copy. They're made in the background and cached in the
-  app cache folder.
-- **Saving** (`store.rs`, `src/lib/storage.ts`): projects autosave to
-  `%APPDATA%\com.cchheanglim.craftora\projects\<id>.json`. Export history goes to
-  `history.json`, and the chosen save folder to `settings.json`. Reopening re-opens local
-  files (marking missing ones) and re-fetches links, whose preview URLs expire.
-  `upgradeProject` fills in fields older saves lack.
-- **Save folder**: "Change" next to Save to in the Export panel.
-- **Checked:** `tsc` and `cargo clippy` are clean. A render with crop, speed, reverse,
-  fades, alpha overlay and text fade was run by hand on generated files, and so were both
-  preview-copy commands. In the browser demo, these were driven: playhead drag,
-  picture-in-picture move, resize and crop, Video 1 reorder, text move, speed, fades, and
-  autosave with reopen. **Not yet run in the real app window.**
+**UI (`src/`)**
+- `project/model.ts`: media, tracks, clips. Every track kind (video, audio, text) can be
+  repeated; any track can be `magnetic` (clips back to back, needed for transitions).
+  A video clip's `size` scales the "fit" size (1 = fills the frame as far as its shape allows);
+  `x`/`y` are fractions of the free space. Images are media with `source.image` (no length
+  limit, default 5 s). `upgradeProject` migrates old saves (old `main` track → magnetic).
+- `project/actions.ts`: **every edit is a named action** (`applyEdit`), used by the UI and the
+  AI. Includes `addTrack`, `removeTrack`, `setMagnetic`, `setTransition`, `setSpeed`.
+  `useProject.ts` adds undo/redo plus `commit` (several AI edits as one undo step),
+  `reset` and `refreshMedia`.
+- `project/exportPlan.ts`: a single untouched clip uses the fast path (yt-dlp section or
+  stream copy); anything else becomes a `RenderSpec` (clips with `layer`, transitions in/out,
+  `quality`).
+- `project/usePlayback.ts`: the timeline clock. It holds while any on-screen media is loading
+  (`setLoading`; 8 s cap). `components/SyncedMedia.tsx` keeps each element on the clock
+  without stacking seeks.
+- `components/`: `Preview` (move and resize pictures and text on the preview), `TimelineEditor`
+  (drag, trim, scrub, **+ Track**, per-track magnet and remove), `Inspector`, `ExportPanel`
+  (Fast or Best quality, save folder), `AssistantPanel`, `FetchChoice` (after Fetch: edit now
+  or download first), `ConfirmDialog` (`useConfirm`, only for actions that can't be undone),
+  `Home` (projects, About and updates), `QueueDock`, `Sidebar` (media, download button).
+- `assistant/`: Gemini editing assistant. `tools.ts` (timeline description with short ids
+  c1/m1/t1, one tool per action), `conversation.ts` (`runTurn`, shared by the hook and tests),
+  `reliable.ts` (retry on 503, fall back through stable Flash models, plain-language errors),
+  `useAssistant.ts` (hook; `recommendedModels`, `fallbackModels`).
+- `lib/engine.ts` (Rust bridge), `lib/storage.ts` (projects, history, save folder),
+  `lib/updates.ts` (Tauri updater; off in the Store edition via `VITE_STORE_BUILD=1`).
 
-## Third session (2026-10-14)
+**Rust (`src-tauri/src/`)**
+- `project.rs`: timeline render in one FFmpeg pass. **One input per clip** (`-ss`/`-t`, or
+  `-loop 1` for images); each picture is scaled, alpha-faded (fades and transitions are alpha
+  ramps) and overlaid on a black base by `layer`; drawtext for text; sounds via
+  `afade`/`adelay`/`amix`.
+- `encoders.rs`: tests NVENC, then QSV, then AMF at startup; "Fast" uses hardware (falls back to
+  x264 if it fails), "Best" uses x264 slow. The RTX 3050 encodes 1 min of 1080p in about 6 s.
+- `jobs.rs`: queue plumbing, yt-dlp downloads (section progress comes from FFmpeg
+  `out_time_us`), fast single cuts, **safe delivery** (`work_dir` `.craftora-<id>`, then
+  `deliver` claims a free name with `create_new`; unit test), cancel kills the process tree,
+  `download_media` ("Download first" → `Videos\Craftora\Downloads`).
+- `media_cache.rs`: link previews play from `http://cmedia.localhost/<id>` (async URI scheme).
+  Range requests are served from a sparse cache file, or fetched in 1 MB pieces;
+  `prefetch_media` fills it (emits `media-cache` progress). Unit test, plus an ignored live test.
+- `local.rs`: open files with ffprobe; preview copies for formats WebView2 can't play
+  (`make_preview`); still-image detection.
+- `media.rs` (fetch links), `store.rs` (projects, history, settings JSON in `%APPDATA%`),
+  `assistant.rs` (Gemini key in Windows Credential Manager; `assistant_models`,
+  `assistant_generate`; errors as `HTTP <code>: <message>`), `engine.rs` (sidecars).
 
-- **Transitions** on Video 1: Crossfade or Dip to black into a clip (Inspector, "Transition from
-  the clip before"). The clips overlap by the transition (`transitionLength` caps it at half
-  of either clip). The preview mixes them live (`transitionMix`); the export chains
-  `xfade`/`acrossfade` (straight cuts use pairwise `concat`), with every main segment padded
-  or trimmed to its exact length. Tested by hand: crossfade + dip render, 10.0 s exactly.
-- **AI editing assistant** (right panel, "Assistant" tab), using **Gemini** (the owner's choice)
-  through the **Interactions API** (`POST v1beta/interactions`, stateful with
-  `previous_interaction_id`). Models: `gemini-3.8-flash` (default), `gemini-4-argon`.
-  - `src-tauri/src/assistant.rs`: the API key lives in Windows Credential Manager (`keyring`)
-    and Rust makes the HTTPS call (`reqwest`), so the key never reaches the web page.
-  - `src/assistant/tools.ts`: the timeline description sent with each message (short ids
-    c1/m1/t1) and one tool per edit action; `useAssistant.ts` runs the tool-call loop (at most
-    8 rounds) and commits each message's edits as one undo step (`useProject.commit`).
-  - Checked: the tools on a sample project in Bun, and the keyring round trip. **Not yet run
-    against the real Gemini API** (no key here); errors from Gemini are shown in the chat.
-- A "Loading video…" note while a preview video's first frame loads.
+## Running and checking
 
-## Fourth session (2026-10-14): releases
+```powershell
+bun tauri dev                    # the desktop app, with live reload
+bun run dev                      # browser demo at http://localhost:1420 (simulated exports)
+bun x tsc --noEmit -p .          # type check
+cd src-tauri; $env:CARGO_TARGET_DIR="target/check"; cargo clippy; cargo test --lib
+cargo test --lib -- --ignored live_cache   # live cache test against archive.org
+```
 
-The owner chose to **keep the GPL FFmpeg build** and release through GitHub. SignPath
-Foundation **rejected** the free-signing application, so installers are unsigned (SmartScreen
-"unknown publisher" warning). The options left are in `RELEASING.md` under "Code signing":
-the Microsoft Store (free; needs MSIX packaging) or a paid certificate (Certum open source,
-about $50 a year). Azure Artifact Signing is open only to individuals in the US and Canada.
+- **FFmpeg filter graphs** are checked by hand: generate test media with `lavfi`
+  (`testsrc2`, `smptebars`, `sine`), build the same graph strings `project.rs` makes, render
+  with `src-tauri/target/release/ffmpeg.exe`, and look at frames.
+- **AI live tests:** the owner's Gemini key is in `.env` as a single line, `gemini key = …`.
+  `.env` is gitignored. A Bun script may read it and call the API, but **never print or copy
+  the key** (copying credentials to the clipboard was blocked by a safety check). Free tier:
+  Flash models work; `gemini-4-argon` has a free limit of 0; 503 "high demand" is common.
+- **Browser tests:** Claude in Chrome works when the extension is connected. HTML5
+  drag-and-drop needs JS-dispatched `DragEvent`s; pointer drags need dispatched `PointerEvent`s.
+- **GitHub API** (no auth) allows 60 requests an hour, so poll slowly (about 2 minutes);
+  `gh` isn't installed.
+- **Shell quirk:** long `python - <<'EOF'` heredocs sometimes break in this Bash tool, and
+  `\\` turns into `\`. Write patch scripts to the scratchpad and run them with `python file.py`.
 
-- `.github/workflows/release.yml`: on a `v*` tag, builds the NSIS installer from source. It
-  re-signs the update with `--app-version` (`requireSignedVersion` is on), writes `latest.json`
-  (UTF-8 without a BOM), attaches the exact FFmpeg source and BtbN build scripts, and creates
-  a **draft** release. Running it by hand makes a test build only.
-- Auto-updates: `tauri-plugin-updater` and `tauri-plugin-process`. The endpoint is
-  `releases/latest/download/latest.json`. `src/lib/updates.ts` checks once at startup
-  (installed builds only; can be turned off on Home > About), and the toolbar shows
-  "Update to vX".
-- The update key was generated in `C:/Users/chhea/.tauri/`. The public key is in
-  `tauri.conf.json`; the owner must add two GitHub secrets (see `RELEASING.md`).
-- GPL paperwork: `THIRD_PARTY_NOTICES.md`; licence files bundled into the installer under
-  `licenses/`. `PRIVACY.md` covers links, the assistant and update checks; Home links to it.
-- Verified on the owner's PC: the release build (109 MB installer with `licenses/`), the
-  version-bound update signature, and the release-prep PowerShell. **Not yet run on GitHub
-  Actions.**
+## Releasing (summary of `RELEASING.md`)
 
-## Fifth session (2026-10-14): Microsoft Store
-
-The owner is registering a free Microsoft Store individual developer account. The Store signs
-MSIX packages for free; a plain `.exe` would need a paid certificate (policy 10.2.9).
-
-- `scripts/make-msix.ps1` builds the **Store edition** (`VITE_STORE_BUILD=1`, which turns off
-  the self-updater in `src/lib/updates.ts`). It lays out the exes, licences and logos with
-  `src-tauri/msix/AppxManifest.xml`, and packs them with the Windows SDK's `makeappx`. The
-  identity comes from `src-tauri/msix/store-identity.json` (still to be created from Partner
-  Center); `-Test` uses a placeholder. A test package was built (153 MB) and the Store flag
-  was verified in the bundle. **Not yet installed or run as MSIX.**
-- Risk: Store policy 11.2 (IP complaints). YouTube downloading may lead to rejection or
-  removal; the listing should present Craftora as an editor. Fallback: a Store edition
-  without link fetching.
-- `RELEASING.md` → "Microsoft Store": registration, the identity file, submission fields
-  (privacy URL, the `runFullTrust` justification) and local testing.
-
-## Sixth session (2026-10-14): first release and Store submission
-
-- **v0.1.0 built on GitHub Actions** (run 38584789641, third attempt, green). The draft has the
-  installer, `.sig`, `latest.json` and the FFmpeg source and build-scripts archives. The first
-  two attempts failed with `Missing comment in secret key`: the owner had put the wrong
-  content in `TAURI_SIGNING_PRIVATE_KEY`, then fixed it. `release.yml` now has a "Check the
-  update key secrets" step that fails in seconds with a plain message (lengths only, never
-  values).
-- **Microsoft Store:** the MSIX product is reserved as **Cchheanglim.Craftora**
-  (`src-tauri/msix/store-identity.json`). `Craftora_0.1.0_x64.msix` was built and submitted
-  for certification (a few business days). It was not run as an installed MSIX first.
-- `README.md` was rewritten for users (download, features, the AI assistant, privacy,
-  shortcuts; developer sections below). There's a new `CHANGELOG.md`, and `RELEASING.md` now
-  includes a changelog step.
-- Unauthenticated GitHub API polling is limited to 60 requests an hour; the run monitor hit
-  it. Use longer intervals or have the owner check the page.
-
-## Seventh session (2026-10-16): fixes for issue #15 (v0.1.1, not released yet)
-
-- **Lost export:** a finished export was deleted. Cause: the output name was picked when a job
-  *started* (`free_path`), so two concurrent jobs could share it, and a failing or cancelled job
-  deleted "its" file. Now jobs write inside `.craftora-<id>` and `jobs::deliver` claims a free
-  name with `create_new` only once the file is complete (unit test in `jobs.rs`). Simple link
-  downloads also go through the working folder. Cancelling kills the process tree
-  (`taskkill /T`), duplicate job ids are refused, and leftover working folders in the export
-  folder are removed at startup.
-- **Stuck at 0%:** yt-dlp reports nothing for `--download-sections` (FFmpeg does the download).
-  It now passes `--downloader-args "ffmpeg_i:-progress pipe:1 -nostats"`, and `out_time_us` is
-  turned into a percentage of the section. Verified with the bundled yt-dlp.
-- **Preview freezes after a jump:** the clock (`usePlayback`) holds while any on-screen media
-  reports loading (`SyncedMedia` `onLoading`, from seeking/waiting/canplay; at most 8 s per
-  element; reversed clips are excluded). It shows "Loading…".
-- **AI fails on every model:** switched from the Interactions API to `models/{model}:generateContent`
-  (stateless; the model's turns are sent back unchanged, so thought signatures survive). The
-  models come from `GET v1beta/models` for the user's key (`assistant_models`). **Not tested
-  against the live API** (no key here).
-- The owner's folders still have leftovers from 0.1.0: `.part` pieces and a `.craftora-*`
-  folder in `Videos\Craftora`, which startup won't clean because it isn't the current export
-  folder.
-
-## Eighth session (2026-10-16): v0.2.0, not released yet
-
-The owner asked for: recommended AI models plus search, confirmations for irreversible
-actions, equal tracks and unlimited tracks, much faster export, a "download first" option,
-and a preview that doesn't freeze. All done; `tsc`, clippy and `cargo test` are clean.
-
-- **Equal tracks:** `Track.main` is gone; any track can be `magnetic` (packed, allows
-  transitions). Actions: `addTrack`, `removeTrack`, `setMagnetic`; `packedTrack`/`slotOn`
-  replace the main-only versions. A video clip's `size` is now a scale of the "fit" size
-  (1 = fills as far as the shape allows) on every track. `upgradeProject` turns old main
-  tracks magnetic and their clips size 1. Checked with a Bun script.
-- **Render rewrite** (`project.rs`): one FFmpeg input per clip with `-ss`/`-t` (no decoding
-  from the file's start). Every picture is scaled (`force_original_aspect_ratio=decrease`),
-  alpha-faded (fades plus transitions as alpha ramps; no more xfade/concat) and overlaid on a
-  black base by `layer`; sounds use `afade` + `adelay` + `amix`. Checked by hand with NVENC
-  and x264.
-- **Encoders** (`encoders.rs`): NVENC, then QSV, then AMF, tested once at startup; "Fast"
-  uses hardware, "Best" uses x264 slow; a failed hardware encode retries on x264. The owner's
-  RTX 3050 does 1 min of 1080p in 6.1 s (x264 medium took 25.3 s).
-- **Download first** (`jobs::download_media`): a queue job (`Job.prefetch`) downloads the whole
-  link to `Videos\Craftora\Downloads`; when it finishes, the media is swapped for the local
-  file (`refreshMedia`, keeping the duration).
-- **Confirmations:** `ConfirmDialog.tsx` (`useConfirm`, a native `<dialog>`) for deleting a
-  project, cancelling a running export, removing the AI key and starting a new chat. Undoable
-  edits don't ask.
-- **Preview sync:** all media pause while any is loading (`running = playing && !waiting`),
-  and seeks are never stacked (the latest target is applied when a seek lands).
-- **AI:** `recommendedModels` picks newest Flash / flagship / Flash-Lite; "Search all models…".
-- Browser-tested: add a track, resize a Video 1 clip on the preview, the delete confirmation.
-  **Not run in the desktop app yet.** Note: a running `bun tauri dev` locks
-  `target/debug/yt-dlp.exe`, so check with `CARGO_TARGET_DIR=target/check cargo clippy`.
-
-## Ninth session (2026-10-16): fetch window, AI reliability, link cache, images
-
-- **Fetch window** (`FetchChoice.tsx`): after Fetch, the user sees the title, length and quality
-  (with whole-file sizes) and picks "Start editing now" or "Download first, then edit". Each
-  option says what it's best for and what it costs; the last choice gets focus. The old
-  toolbar menu is gone. Browser-tested.
-- **AI, tested live with the owner's key** (from `.env`, never printed; `.env` is gitignored).
-  `generateContent` and the tools work end to end: a title, a crossfade and a speed change came
-  out right. Failures were Google 503s ("high demand") and `gemini-4-argon` having a free-tier
-  limit of 0. `reliable.ts` retries 503s (3 tries) and then falls back through
-  `fallbackModels` (stable Flash models, newest first), and says so in the chat. Switching
-  models mid-conversation was tested and works. The conversation loop moved to
-  `conversation.ts` (`runTurn`), shared by the hook and tests. Rust now returns
-  `HTTP <code>: <message>`; `friendlyError` words it.
-- **Link cache** (`media_cache.rs`): link previews play from `http://cmedia.localhost/<id>` (an
-  async Tauri URI scheme, no port). Range requests are served from a sparse cache file in the
-  app cache dir when covered, else fetched in 1 MB pieces, saved and served. "Download first"
-  also calls `prefetch_media`, which fills in 4 MB pieces and emits `media-cache` progress
-  (Media shows "% ready to scrub"). Unit test for ranges; a live test (ignored by default:
-  `cargo test --lib -- --ignored live_cache`) against archive.org passes. The cache map isn't
-  kept across restarts (the file is cleared).
-- **Images**: `open_local` detects still images (`png_pipe`, `image2`, `webp_pipe`…); the
-  source has `image: true` and a nominal duration of 24 h. Clips start at 5 s and behave like
-  text for trim and split (`isStill`); no speed, reverse or sound. Export uses
-  `-loop 1 -framerate fps -t len -i img`. The preview uses `<img>`. Checked by hand (image
-  picture-in-picture render).
-- **Not yet run in the desktop app:** the cache (WebView2 with the custom scheme) and image
-  import.
+1. Bump the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `package.json`,
+   and add a `CHANGELOG.md` section.
+2. The owner commits and merges into `main`. Tag `main` (`git tag -a vX.Y.Z origin/main`) and
+   push the tag.
+3. `.github/workflows/release.yml` checks the secrets, builds the NSIS installer, signs the
+   update (with `--app-version`), writes `latest.json` (no BOM), attaches the FFmpeg source and
+   creates a **draft**. The owner publishes it.
+4. The update key is in `C:\Users\chhea\.tauri\` (never commit or print it); the GitHub
+   secrets `TAURI_SIGNING_PRIVATE_KEY` and `..._PASSWORD` are set.
 
 ## Known limitations
 
-- The reverse preview is choppy and silent while playing (browsers can't play backwards).
-- Preview copies of long videos take a while; the clip shows nothing until its copy is ready.
-- The owner saw local imports take 4–11 s to appear in the preview. No preview copy was made,
-  so the cause isn't known yet (debug build, file size or format?). Investigate with the file.
-- The assistant can't see or hear the media (no "cut the silences" yet).
-- Text resizing on the preview scales the font roughly with the box.
-- `DESIGN.md` doesn't yet document the clip colours, Home layout, preview handles or the
-  assistant panel. Run `/impeccable document` to refresh it.
+- Reverse plays choppy and silent in the preview (browsers can't play backwards); the export
+  is right.
+- A spot in a link that isn't cached yet still waits for the internet once. The cache's map is
+  lost on restart (the file is cleared).
+- Preview copies of long, unusual local files (AVI, HEVC…) take a while to make.
+- The AI can't see or hear the media (no "cut the silences").
+- `DESIGN.md` doesn't describe the newer UI (track header buttons, dialogs, assistant panel,
+  fetch window). Refresh it with `/impeccable document`.
+- About 460 MB of leftovers from 0.1.0 sit in `Videos\Craftora` (`*.part` files and a hidden
+  `.craftora-*` folder). The owner was asked whether to delete them and hasn't answered.
 
-## Next steps
+## Ideas the owner may ask for next
 
-1. Owner tests transitions and the assistant (needs a Gemini API key from Google AI Studio).
-2. Find why local imports are slow to appear in the preview.
-3. Check the published v0.1.0 updates correctly (install 0.1.0, release 0.1.1, see the
-   update offered).
-4. Wait for the Store's certification result and fix whatever it reports.
-
-## Running it
-
-```powershell
-bun tauri dev        # desktop app with live reload (needs a new terminal after installs)
-bun run dev          # browser demo mode at http://localhost:1420 (simulated exports)
-```
-
-If `bun` isn't found in an old terminal, its full path is
-`C:\Users\chhea\AppData\Local\Microsoft\WinGet\Packages\Oven-sh.Bun_Microsoft.Winget.Source_8wekyb3d8bbwe\bun-windows-x64\bun.exe`.
+- Let the AI hear the media (find silences or highlights), probably with an audio-analysis
+  step.
+- Keep the link cache's map across restarts; show cached parts on the timeline.
+- Code signing for GitHub downloads; the Store edition once certified.
+- Close issue #15 after the owner confirms 0.2.0 works.
