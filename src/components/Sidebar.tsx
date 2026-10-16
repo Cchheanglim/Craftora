@@ -17,6 +17,12 @@ interface SidebarProps {
   media: MediaItem[];
   /** Media whose preview copy is still being made. */
   preparing: Set<string>;
+  /** Links whose preview is being cached: how much (0–100) can already be scrubbed instantly. */
+  previewReady: Record<string, number>;
+  /** Links being downloaded for editing. */
+  downloading: Set<string>;
+  /** Downloads a link so it edits like a local file; absent in the browser preview. */
+  onDownload?: (mediaId: string) => void;
   /** Absent in the browser preview. */
   onImport?: () => void;
   onAddMedia: (mediaId: string) => void;
@@ -33,6 +39,9 @@ export function Sidebar({
   engines,
   media,
   preparing,
+  previewReady,
+  downloading,
+  onDownload,
   onImport,
   onAddMedia,
   onRemoveMedia,
@@ -95,20 +104,35 @@ export function Sidebar({
                   }}
                   title="Drag onto the timeline, or press + to add at the end"
                 >
-                  <Icon name={item.hasVideo ? "film" : "music"} size={14} />
+                  <Icon name={item.source.image ? "image" : item.hasVideo ? "film" : "music"} size={14} />
                   <span className="side__file-text">
                     <span className="truncate">{item.name}</span>
                     <span className="side__file-meta">
-                      <span className="mono">{formatClock(item.source.duration)}</span>
+                      {item.source.image ? "Image" : <span className="mono">{formatClock(item.source.duration)}</span>}
                       {item.missing
                         ? " · file not found"
-                        : preparing.has(item.id)
-                          ? " · preparing preview…"
+                        : downloading.has(item.id)
+                          ? previewReady[item.id] !== undefined
+                            ? ` · downloading, ${Math.floor(previewReady[item.id])}% ready to scrub`
+                            : " · downloading…"
+                          : preparing.has(item.id)
+                            ? " · preparing preview…"
                           : item.source.local
                             ? " · this PC"
                             : " · link"}
                     </span>
                   </span>
+                  {onDownload && !item.source.local && !downloading.has(item.id) && (
+                    <button
+                      type="button"
+                      className="btn btn--icon"
+                      aria-label={`Download ${item.name} for editing`}
+                      title="Download the whole video, so it edits smoothly and works offline"
+                      onClick={() => onDownload(item.id)}
+                    >
+                      <Icon name="download" size={14} />
+                    </button>
+                  )}
                   <button type="button" className="btn btn--icon" aria-label={`Add ${item.name} to the timeline`} title="Add to the timeline" onClick={() => onAddMedia(item.id)}>
                     <Icon name="plus" size={14} />
                   </button>

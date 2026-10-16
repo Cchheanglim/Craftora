@@ -33,9 +33,6 @@
 /* One picture: a box placed like the export, with the crop as a window onto the video. */
 .preview__picture {
   position: absolute;
-}
-
-.preview__picture:not(.is-main) {
   cursor: move;
   touch-action: none;
 }
@@ -119,6 +116,19 @@
   bottom: 0;
   right: 0;
   cursor: nwse-resize;
+}
+
+/* Shown while the clock waits for a clip to load after a jump. */
+.preview__waiting {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 3px 7px;
+  background: rgb(0 0 0 / 0.72);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--text);
+  pointer-events: none;
 }
 
 .preview__note {

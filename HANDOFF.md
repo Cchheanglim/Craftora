@@ -145,6 +145,90 @@ MSIX packages for free; a plain `.exe` would need a paid certificate (policy 10.
 - Unauthenticated GitHub API polling is limited to 60 requests an hour; the run monitor hit
   it. Use longer intervals or have the owner check the page.
 
+## Seventh session (2026-10-16): fixes for issue #15 (v0.1.1, not released yet)
+
+- **Lost export:** a finished export was deleted. Cause: the output name was picked when a job
+  *started* (`free_path`), so two concurrent jobs could share it, and a failing or cancelled job
+  deleted "its" file. Now jobs write inside `.craftora-<id>` and `jobs::deliver` claims a free
+  name with `create_new` only once the file is complete (unit test in `jobs.rs`). Simple link
+  downloads also go through the working folder. Cancelling kills the process tree
+  (`taskkill /T`), duplicate job ids are refused, and leftover working folders in the export
+  folder are removed at startup.
+- **Stuck at 0%:** yt-dlp reports nothing for `--download-sections` (FFmpeg does the download).
+  It now passes `--downloader-args "ffmpeg_i:-progress pipe:1 -nostats"`, and `out_time_us` is
+  turned into a percentage of the section. Verified with the bundled yt-dlp.
+- **Preview freezes after a jump:** the clock (`usePlayback`) holds while any on-screen media
+  reports loading (`SyncedMedia` `onLoading`, from seeking/waiting/canplay; at most 8 s per
+  element; reversed clips are excluded). It shows "Loading…".
+- **AI fails on every model:** switched from the Interactions API to `models/{model}:generateContent`
+  (stateless; the model's turns are sent back unchanged, so thought signatures survive). The
+  models come from `GET v1beta/models` for the user's key (`assistant_models`). **Not tested
+  against the live API** (no key here).
+- The owner's folders still have leftovers from 0.1.0: `.part` pieces and a `.craftora-*`
+  folder in `Videos\Craftora`, which startup won't clean because it isn't the current export
+  folder.
+
+## Eighth session (2026-10-16): v0.2.0, not released yet
+
+The owner asked for: recommended AI models plus search, confirmations for irreversible
+actions, equal tracks and unlimited tracks, much faster export, a "download first" option,
+and a preview that doesn't freeze. All done; `tsc`, clippy and `cargo test` are clean.
+
+- **Equal tracks:** `Track.main` is gone; any track can be `magnetic` (packed, allows
+  transitions). Actions: `addTrack`, `removeTrack`, `setMagnetic`; `packedTrack`/`slotOn`
+  replace the main-only versions. A video clip's `size` is now a scale of the "fit" size
+  (1 = fills as far as the shape allows) on every track. `upgradeProject` turns old main
+  tracks magnetic and their clips size 1. Checked with a Bun script.
+- **Render rewrite** (`project.rs`): one FFmpeg input per clip with `-ss`/`-t` (no decoding
+  from the file's start). Every picture is scaled (`force_original_aspect_ratio=decrease`),
+  alpha-faded (fades plus transitions as alpha ramps; no more xfade/concat) and overlaid on a
+  black base by `layer`; sounds use `afade` + `adelay` + `amix`. Checked by hand with NVENC
+  and x264.
+- **Encoders** (`encoders.rs`): NVENC, then QSV, then AMF, tested once at startup; "Fast"
+  uses hardware, "Best" uses x264 slow; a failed hardware encode retries on x264. The owner's
+  RTX 3050 does 1 min of 1080p in 6.1 s (x264 medium took 25.3 s).
+- **Download first** (`jobs::download_media`): a queue job (`Job.prefetch`) downloads the whole
+  link to `Videos\Craftora\Downloads`; when it finishes, the media is swapped for the local
+  file (`refreshMedia`, keeping the duration).
+- **Confirmations:** `ConfirmDialog.tsx` (`useConfirm`, a native `<dialog>`) for deleting a
+  project, cancelling a running export, removing the AI key and starting a new chat. Undoable
+  edits don't ask.
+- **Preview sync:** all media pause while any is loading (`running = playing && !waiting`),
+  and seeks are never stacked (the latest target is applied when a seek lands).
+- **AI:** `recommendedModels` picks newest Flash / flagship / Flash-Lite; "Search all models…".
+- Browser-tested: add a track, resize a Video 1 clip on the preview, the delete confirmation.
+  **Not run in the desktop app yet.** Note: a running `bun tauri dev` locks
+  `target/debug/yt-dlp.exe`, so check with `CARGO_TARGET_DIR=target/check cargo clippy`.
+
+## Ninth session (2026-10-16): fetch window, AI reliability, link cache, images
+
+- **Fetch window** (`FetchChoice.tsx`): after Fetch, the user sees the title, length and quality
+  (with whole-file sizes) and picks "Start editing now" or "Download first, then edit". Each
+  option says what it's best for and what it costs; the last choice gets focus. The old
+  toolbar menu is gone. Browser-tested.
+- **AI, tested live with the owner's key** (from `.env`, never printed; `.env` is gitignored).
+  `generateContent` and the tools work end to end: a title, a crossfade and a speed change came
+  out right. Failures were Google 503s ("high demand") and `gemini-4-argon` having a free-tier
+  limit of 0. `reliable.ts` retries 503s (3 tries) and then falls back through
+  `fallbackModels` (stable Flash models, newest first), and says so in the chat. Switching
+  models mid-conversation was tested and works. The conversation loop moved to
+  `conversation.ts` (`runTurn`), shared by the hook and tests. Rust now returns
+  `HTTP <code>: <message>`; `friendlyError` words it.
+- **Link cache** (`media_cache.rs`): link previews play from `http://cmedia.localhost/<id>` (an
+  async Tauri URI scheme, no port). Range requests are served from a sparse cache file in the
+  app cache dir when covered, else fetched in 1 MB pieces, saved and served. "Download first"
+  also calls `prefetch_media`, which fills in 4 MB pieces and emits `media-cache` progress
+  (Media shows "% ready to scrub"). Unit test for ranges; a live test (ignored by default:
+  `cargo test --lib -- --ignored live_cache`) against archive.org passes. The cache map isn't
+  kept across restarts (the file is cleared).
+- **Images**: `open_local` detects still images (`png_pipe`, `image2`, `webp_pipe`…); the
+  source has `image: true` and a nominal duration of 24 h. Clips start at 5 s and behave like
+  text for trim and split (`isStill`); no speed, reverse or sound. Export uses
+  `-loop 1 -framerate fps -t len -i img`. The preview uses `<img>`. Checked by hand (image
+  picture-in-picture render).
+- **Not yet run in the desktop app:** the cache (WebView2 with the custom scheme) and image
+  import.
+
 ## Known limitations
 
 - The reverse preview is choppy and silent while playing (browsers can't play backwards).

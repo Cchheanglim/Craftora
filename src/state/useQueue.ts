@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer } from "react";
 import type { Job } from "../types";
-import { cancelJob, onJobEvent, startJob, startRender, type JobEvent } from "../lib/engine";
+import { cancelJob, downloadMedia, onJobEvent, startJob, startRender, type JobEvent } from "../lib/engine";
 
 /** How many jobs may download or encode at the same time. */
 const MAX_RUNNING = 2;
@@ -129,10 +129,11 @@ export function useQueue(initial: Job[], real: boolean) {
     let free = MAX_RUNNING - jobs.filter(isRunning).length;
     for (const job of [...jobs].reverse()) {
       if (free <= 0) break;
-      if (job.status !== "waiting" || !(job.spec || job.render)) continue;
+      if (job.status !== "waiting" || !(job.spec || job.render || job.prefetch)) continue;
       free--;
       dispatch({ type: "started", id: job.id });
-      (job.render ? startRender(job.render) : startJob(job.spec!)).catch((err: Error) => dispatch({ type: "failed", id: job.id, message: err.message }));
+      const run = job.prefetch ? downloadMedia({ id: job.id, ...job.prefetch }) : job.render ? startRender(job.render) : startJob(job.spec!);
+      run.catch((err: Error) => dispatch({ type: "failed", id: job.id, message: err.message }));
     }
   }, [jobs, real]);
 

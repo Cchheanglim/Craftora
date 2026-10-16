@@ -57,8 +57,8 @@ interface InspectorProps {
 /** Settings for the selected clip. */
 export function Inspector({ clip, track, media, onChange, onSpeed, onTransition, onCheckpoint, onFormat, onSplit, onDelete, canSplit }: InspectorProps) {
   const isText = !clip.mediaId;
+  const isImage = Boolean(media?.source.image);
   const isPicture = track.kind === "video";
-  const isOverlay = isPicture && !track.main;
   const hasSound = Boolean(media?.hasAudio);
   const streams = media && !media.source.local ? media.source.streams.filter((s) => s.kind === (isPicture ? "video" : "audio")) : [];
   const length = clipLength(clip);
@@ -69,7 +69,7 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onTransition,
   return (
     <section className="insp" aria-labelledby="insp-title">
       <header className="insp__head">
-        <Icon name={isText ? "text" : isPicture ? "film" : "music"} size={14} />
+        <Icon name={isText ? "text" : isImage ? "image" : isPicture ? "film" : "music"} size={14} />
         <h2 id="insp-title" className="truncate">
           {isText ? "Text" : (media?.name ?? "Clip")}
         </h2>
@@ -120,11 +120,11 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onTransition,
         </>
       )}
 
-      {isOverlay && (
+      {isPicture && (
         <>
           <p className="insp__hint">Drag the picture on the preview to move it; drag a corner to resize.</p>
           <Slider id="insp-size" label="Size" min={0.1} max={1} step={0.01} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
-          <PositionSelect clip={clip} onChange={onChange} disabled={clip.size >= 1} />
+          <PositionSelect clip={clip} onChange={onChange} />
         </>
       )}
 
@@ -161,14 +161,16 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onTransition,
             <input type="checkbox" checked={clip.mirror} onChange={(e) => onChange({ mirror: e.target.checked })} />
             <span>Mirror</span>
           </label>
-          <label className="option">
-            <input type="checkbox" checked={clip.reverse} onChange={(e) => onChange({ reverse: e.target.checked })} />
-            <span>Reverse</span>
-          </label>
+          {!isImage && (
+            <label className="option">
+              <input type="checkbox" checked={clip.reverse} onChange={(e) => onChange({ reverse: e.target.checked })} />
+              <span>Reverse</span>
+            </label>
+          )}
         </div>
       )}
 
-      {!isText && (
+      {!isText && !isImage && (
         <div className="insp__field">
           <label htmlFor="insp-speed">Speed</label>
           <select id="insp-speed" className="field mono" value={clip.speed} onChange={(e) => onSpeed(Number(e.target.value))}>
@@ -179,6 +181,10 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onTransition,
             ))}
           </select>
         </div>
+      )}
+
+      {!isText && !track.magnetic && (
+        <p className="insp__hint">To add a transition, turn on the magnet on this track (in the track's header), so clips sit back to back.</p>
       )}
 
       {onTransition && (
@@ -226,6 +232,7 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onTransition,
       </fieldset>
 
       {!isText &&
+        !isImage &&
         (hasSound ? (
           <Slider
             id="insp-volume"

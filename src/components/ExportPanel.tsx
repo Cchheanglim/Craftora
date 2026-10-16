@@ -19,6 +19,8 @@ interface ExportPanelProps {
   outputDir: string;
   /** Absent in the browser preview. */
   onChooseOutputDir?: () => void;
+  /** What does the work for "Fast", e.g. "your NVIDIA graphics card"; null while checking. */
+  fastEncoder: string | null;
   /** The selected clip's settings, shown above the export settings. */
   children?: ReactNode;
 }
@@ -36,6 +38,7 @@ export function ExportPanel({
   queuedCount,
   outputDir,
   onChooseOutputDir,
+  fastEncoder,
   children,
 }: ExportPanelProps) {
   const [copied, setCopied] = useState(false);
@@ -120,6 +123,27 @@ export function ExportPanel({
               ))}
             </select>
           </div>
+        )}
+
+        {isVideo && plan.kind === "render" && (
+          <fieldset>
+            <legend className="section-label">Speed</legend>
+            <div className="segmented" role="group" aria-label="Export speed" aria-describedby="speed-detail">
+              <button type="button" aria-pressed={settings.quality === "fast"} onClick={() => onChange({ quality: "fast" })}>
+                Fast
+              </button>
+              <button type="button" aria-pressed={settings.quality === "best"} onClick={() => onChange({ quality: "best" })}>
+                Best quality
+              </button>
+            </div>
+            <p id="speed-detail" className="export__trade">
+              {settings.quality === "fast"
+                ? fastEncoder && fastEncoder !== "the processor"
+                  ? `Uses ${fastEncoder}: several times quicker. Files are a little larger.`
+                  : "Uses a quick setting on the processor. No graphics card encoder was found."
+                : "Uses the processor at a careful setting: the smallest, cleanest file, but it takes several times longer."}
+            </p>
+          </fieldset>
         )}
 
         <fieldset>

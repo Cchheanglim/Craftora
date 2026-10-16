@@ -38,14 +38,33 @@ export const engineStatus = () => invoke<EngineStatus>("engine_status");
 
 export async function fetchMedia(url: string): Promise<MediaSource> {
   try {
-    return await invoke<MediaSource>("fetch_media", { url });
+    const source = await invoke<MediaSource>("fetch_media", { url });
+    // The preview plays through the disk cache, so parts already fetched scrub instantly.
+    const ids: string[] = [];
+    const cached = async (remote?: string) => {
+      if (!remote) return remote ?? "";
+      const id = await invoke<string>("cache_media", { url: remote });
+      ids.push(id);
+      return convertFileSrc(id, "cmedia");
+    };
+    const previewUrl = await cached(source.previewUrl);
+    const previewAudioUrl = await cached(source.previewAudioUrl);
+    return { ...source, previewUrl, previewAudioUrl, previewCacheIds: ids };
   } catch (err) {
     throw new Error(message(err));
   }
 }
 
+/** Fills a link's preview cache from start to end in the background ("Download first"). */
+export const prefetchPreview = (id: string) => invoke("prefetch_media", { id });
+
+/** How much of each cached preview stream is on disk, 0–100. */
+export const onPreviewCache = (handler: (id: string, percent: number) => void): Promise<UnlistenFn> =>
+  listen<{ id: string; percent: number }>("media-cache", (e) => handler(e.payload.id, e.payload.percent));
+
 /** File types offered in the Open dialog; FFmpeg reads many more if dropped. */
 const MEDIA_EXTENSIONS = ["mp4", "mkv", "webm", "mov", "avi", "m4v", "wmv", "flv", "ts", "mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"];
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "bmp"];
 
 /** The preview plays files straight from disk through Tauri's asset protocol. */
 const assetUrl = (path: string) => (path ? convertFileSrc(path) : "");
@@ -78,8 +97,11 @@ export async function pickMediaFiles(): Promise<string[]> {
   const picked = await open({
     multiple: true,
     directory: false,
-    title: "Import video or audio files",
-    filters: [{ name: "Video and audio", extensions: MEDIA_EXTENSIONS }],
+    title: "Import video, audio or image files",
+    filters: [
+      { name: "Video, audio and images", extensions: [...MEDIA_EXTENSIONS, ...IMAGE_EXTENSIONS] },
+      { name: "Images", extensions: IMAGE_EXTENSIONS },
+    ],
   });
   return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
 }
@@ -129,6 +151,18 @@ export async function startRender(spec: RenderSpec): Promise<void> {
 }
 
 export const cancelJob = (id: string) => invoke<boolean>("cancel_job", { id });
+
+/** Downloads a whole link into Videos\Craftora\Downloads; progress arrives as job events. */
+export async function downloadMedia(spec: { id: string; url: string; format: string; title: string; audioOnly: boolean }): Promise<void> {
+  try {
+    await invoke("download_media", { spec });
+  } catch (err) {
+    throw new Error(message(err));
+  }
+}
+
+/** What encodes "Fast" exports on this PC, e.g. "your NVIDIA graphics card". */
+export const exportEncoder = () => invoke<string>("export_encoder");
 
 export const onJobEvent = (handler: (event: JobEvent) => void): Promise<UnlistenFn> =>
   listen<JobEvent>("job-event", (e) => handler(e.payload));

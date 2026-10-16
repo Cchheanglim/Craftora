@@ -3,9 +3,12 @@ import type { ExportSettings, Job, MediaSource } from "./types";
 import { DEMO_JOBS, DEMO_SOURCES } from "./data/demo";
 import {
   engineStatus,
+  exportEncoder,
   fetchMedia,
   inDesktopApp,
   makePreview,
+  onPreviewCache,
+  prefetchPreview,
   onFileDrop,
   openLocal,
   pickFolder,
@@ -26,17 +29,17 @@ import {
 } from "./lib/storage";
 import { useQueue } from "./state/useQueue";
 import { useUpdates } from "./lib/updates";
+import { formatClock } from "./lib/timecode";
 import { useProject } from "./project/useProject";
 import { usePlayback } from "./project/usePlayback";
 import { cutModeApplies, frameOf, planExport } from "./project/exportPlan";
 import {
   NO_CROP,
-  POSITIONS,
+  baseVideoTrack,
   clipEnd,
   emptyProject,
-  mainOrder,
-  mainTrack,
   mediaFromSource,
+  previousOnTrack,
   projectDuration,
   projectName,
   upgradeProject,
@@ -53,6 +56,7 @@ import { ExportPanel } from "./components/ExportPanel";
 import { QueueDock } from "./components/QueueDock";
 import { Library } from "./components/Library";
 import { AssistantPanel } from "./components/AssistantPanel";
+import { FetchChoice, type FetchChoiceKind } from "./components/FetchChoice";
 import "./App.css";
 
 const DEMO = DEMO_SOURCES[0];
@@ -63,14 +67,13 @@ const AUTOSAVE_MS = 600;
 function demoProject(): Project {
   const project = emptyProject();
   const item = mediaFromSource(DEMO);
-  const corner = POSITIONS["bottom-right"];
   return {
     ...project,
     media: [item],
     clips: [
       {
         id: "demo-clip",
-        trackId: mainTrack(project).id,
+        trackId: baseVideoTrack(project)!.id,
         mediaId: item.id,
         start: 0,
         in: 84,
@@ -82,9 +85,9 @@ function demoProject(): Project {
         fadeIn: 0,
         fadeOut: 0,
         crop: NO_CROP,
-        size: 0.4,
-        x: corner.x,
-        y: corner.y,
+        size: 1,
+        x: 0.5,
+        y: 0.5,
       },
     ],
   };
@@ -96,6 +99,7 @@ const DEFAULT_SETTINGS: ExportSettings = {
   audioContainer: "mp3",
   cutMode: "fast",
   frameId: "1080p",
+  quality: "fast",
 };
 
 /** Panel open/closed is remembered per machine; storage may be unavailable. */
@@ -143,6 +147,24 @@ export default function App() {
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const [rightTab, setRightTab] = useState<"edit" | "assistant">("edit");
+  /** How much of each link preview is cached on disk (by cache id), 0–100. */
+  const [cached, setCached] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const stop = onPreviewCache((id, percent) => setCached((all) => ({ ...all, [id]: percent })));
+    return () => void stop.then((unlisten) => unlisten());
+  }, []);
+  /** A fetched link waiting for the user to choose how to work with it. */
+  const [fetched, setFetched] = useState<MediaSource | null>(null);
+  /** The choice made last time, highlighted in the next fetch's window. */
+  const [lastChoice, setLastChoice] = useState<FetchChoiceKind>(() => {
+    try {
+      return localStorage.getItem("craftora.afterFetch") === "download" ? "download" : "edit";
+    } catch {
+      return "edit";
+    }
+  });
+  const [fastEncoder, setFastEncoder] = useState<string | null>(null);
   const urlRef = useRef<HTMLInputElement>(null);
 
   const api = useProject(() => (inDesktopApp ? emptyProject() : demoProject()));
@@ -160,7 +182,10 @@ export default function App() {
   const updates = useUpdates();
 
   useEffect(() => {
-    if (inDesktopApp) void engineStatus().then(setEngines);
+    if (inDesktopApp) {
+      void engineStatus().then(setEngines);
+      void exportEncoder().then(setFastEncoder).catch(() => setFastEncoder("the processor"));
+    }
     void listProjects().then(setProjects).catch(() => setProjects([]));
     void loadHistory().then(setHistory);
     void getOutputDir().then(setOutputDirState).catch(() => {});
@@ -188,7 +213,8 @@ export default function App() {
   useEffect(() => {
     if (!history) return;
     const known = new Set(history.map((j) => j.id));
-    const added = queue.jobs.filter((j) => j.status === "finished" && !known.has(j.id)).map(forHistory);
+    // Exports only: downloads for editing aren't exports.
+    const added = queue.jobs.filter((j) => j.status === "finished" && !j.prefetch && !known.has(j.id)).map(forHistory);
     if (added.length === 0) return;
     const next = [...added, ...history].slice(0, 500);
     setHistory(next);
@@ -225,15 +251,60 @@ export default function App() {
 
   /** Puts fetched or opened media in the library; with `place`, also on the timeline. */
   const importSource = useCallback(
-    (source: MediaSource, place: boolean) => {
+    (source: MediaSource, place: boolean, format?: string) => {
       const item = mediaFromSource(source);
+      // The quality picked when fetching.
+      if (format && item.hasVideo) item.videoFormat = format;
+      else if (format) item.audioFormat = format;
       api.edit({ type: "importMedia", item });
       if (place) api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId: item.id });
       prepare(item.id, source);
       setView("editor");
+      return item;
     },
     [api, prepare],
   );
+
+  /** Queues a whole link to download, so it edits like a file on this PC. */
+  const downloadForEditing = (item: MediaItem) => {
+    if (!inDesktopApp || item.source.local) return;
+    // Meanwhile, fill the preview's cache from the start, so scrubbing what's done is instant.
+    for (const id of item.source.previewCacheIds ?? []) void prefetchPreview(id).catch(() => {});
+    const format = item.hasVideo ? item.videoFormat : item.audioFormat;
+    const stream = item.source.streams.find((s) => s.id === format);
+    queue.add({
+      id: crypto.randomUUID(),
+      title: item.name,
+      summary: `Download for editing · ${formatClock(item.source.duration)} · ${stream?.label ?? "best quality"}`,
+      kind: item.hasVideo ? "video" : "audio",
+      status: "waiting",
+      progress: 0,
+      needsEncode: false,
+      sizeMb: stream?.sizeMb ?? 0,
+      fileName: item.name,
+      command: `yt-dlp -f "${format}" ${item.hasVideo ? "--merge-output-format mp4" : "-x --audio-format m4a"} "${item.source.url}"`,
+      prefetch: { mediaId: item.id, url: item.source.url, format, title: item.name, audioOnly: !item.hasVideo },
+    });
+  };
+
+  // A finished "download for editing" takes over its link: the media becomes the local file.
+  const swapped = useRef(new Set<string>());
+  useEffect(() => {
+    for (const job of queue.jobs) {
+      if (!job.prefetch || job.status !== "finished" || !job.outputPath || swapped.current.has(job.id)) continue;
+      swapped.current.add(job.id);
+      const { mediaId } = job.prefetch;
+      openLocal(job.outputPath)
+        .then((local) => {
+          const item = projectRef.current.media.find((m) => m.id === mediaId);
+          if (!item) return;
+          // Keep the link's length so clip times stay exactly where they were.
+          api.refreshMedia(mediaId, { source: { ...local, duration: item.source.duration }, missing: false });
+          prepare(mediaId, local);
+        })
+        .catch((err) => setError(`The download finished but couldn't be opened: ${errorText(err)}`));
+    }
+  }, [queue.jobs, api, prepare]);
 
   const fetchSource = async (link: string) => {
     setUrl(link);
@@ -241,13 +312,13 @@ export default function App() {
     setError(null);
     try {
       if (inDesktopApp) {
-        importSource(await fetchMedia(link), project.clips.length === 0);
+        setFetched(await fetchMedia(link));
       } else {
         // Browser preview: only the demo links resolve.
         await new Promise((resolve) => window.setTimeout(resolve, 400));
         const found = DEMO_SOURCES.find((s) => s.url.toLowerCase() === link.toLowerCase());
         if (!found) throw new Error("Real links need the desktop app. In this browser preview, clear the field to pick a demo link.");
-        importSource(found, project.clips.length === 0);
+        setFetched(found);
       }
       setUrl("");
     } catch (err) {
@@ -368,11 +439,18 @@ export default function App() {
     setView("editor");
   };
 
-  /** The selected clip, or else the Video 1 clip under the playhead. */
+  /** The selected clip, or else the clip under the playhead on the lowest video track that has one. */
   const splitTarget = () => {
     const t = playback.time;
-    const inside = (id?: string | null) => project.clips.find((c) => c.id === id && t > c.start && t < clipEnd(c));
-    return inside(selectedId) ?? project.clips.find((c) => c.trackId === mainTrack(project).id && t > c.start && t < clipEnd(c));
+    const under = (c: (typeof project.clips)[number]) => t > c.start && t < clipEnd(c);
+    const selectedClip = project.clips.find((c) => c.id === selectedId && under(c));
+    if (selectedClip) return selectedClip;
+    const videoTracks = project.tracks.filter((tr) => tr.kind === "video").reverse();
+    for (const track of videoTracks) {
+      const clip = project.clips.find((c) => c.trackId === track.id && under(c));
+      if (clip) return clip;
+    }
+    return undefined;
   };
   const split = () => {
     const clip = splitTarget();
@@ -494,6 +572,18 @@ export default function App() {
         engines={engines}
         media={project.media}
         preparing={preparing}
+        previewReady={Object.fromEntries(
+          project.media
+            .filter((m) => m.source.previewCacheIds?.some((id) => cached[id] !== undefined))
+            .map((m) => [m.id, Math.min(...(m.source.previewCacheIds ?? []).map((id) => cached[id] ?? 0))]),
+        )}
+        downloading={
+          new Set(queue.jobs.filter((j) => j.prefetch && j.status !== "finished" && j.status !== "failed").map((j) => j.prefetch!.mediaId))
+        }
+        onDownload={inDesktopApp ? (mediaId) => {
+          const item = project.media.find((m) => m.id === mediaId);
+          if (item) downloadForEditing(item);
+        } : undefined}
         onImport={inDesktopApp ? () => void importFiles() : undefined}
         onAddMedia={addMedia}
         onRemoveMedia={(mediaId) => api.edit({ type: "removeMedia", mediaId })}
@@ -567,6 +657,7 @@ export default function App() {
               queuedCount={queuedCount}
               outputDir={outputDir}
               onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
+              fastEncoder={fastEncoder}
             >
               {selected && selectedTrack && (
                 <Inspector
@@ -577,7 +668,7 @@ export default function App() {
                   onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
                   onSpeed={(speed) => api.edit({ type: "setSpeed", clipId: selected.id, speed })}
                   onTransition={
-                    selectedTrack.main && mainOrder(project)[0]?.id !== selected.id
+                    selectedTrack.magnetic && previousOnTrack(project, selected)
                       ? (transition, live) => (live ? api.editLive : api.edit)({ type: "setTransition", clipId: selected.id, transition })
                       : undefined
                   }
@@ -594,6 +685,27 @@ export default function App() {
       )}
 
       <QueueDock queue={queue} freshId={freshId} />
+      {fetched && (
+        <FetchChoice
+          source={fetched}
+          defaultFormat={mediaFromSource(fetched)[fetched.streams.some((s) => s.kind === "video") ? "videoFormat" : "audioFormat"]}
+          lastChoice={lastChoice}
+          onCancel={() => setFetched(null)}
+          onChoose={(choice, format) => {
+            const item = importSource(fetched, project.clips.length === 0, format);
+            setFetched(null);
+            setLastChoice(choice);
+            try {
+              localStorage.setItem("craftora.afterFetch", choice);
+            } catch {
+              /* not essential */
+            }
+            if (choice !== "download") return;
+            if (inDesktopApp) downloadForEditing(item);
+            else setError("Downloading needs the desktop app; in this browser preview the video streams instead.");
+          }}
+        />
+      )}
       {dragging && (
         <div className="app__drop" role="status">
           <span>Drop to import into Media</span>

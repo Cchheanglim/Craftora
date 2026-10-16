@@ -1,6 +1,10 @@
-//! Rendering a whole timeline: clips joined back to back on the main track, videos
-//! overlaid on top, text drawn in, every sound mixed. One FFmpeg pass, after yt-dlp has
-//! fetched the parts of any links that are used.
+//! Rendering a whole timeline in one FFmpeg pass. Every picture clip is scaled, placed and
+//! faded over a black frame (lower tracks first, later clips on a track over earlier ones),
+//! text is drawn on top, and every sound is mixed.
+//!
+//! Each clip is its own FFmpeg input that starts at the clip's first frame (`-ss`/`-t`
+//! before `-i`), so a clip from the end of a long video doesn't decode everything before it.
+//! Links are fetched first by yt-dlp, just the parts the timeline uses.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -8,13 +12,14 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
+use crate::encoders::{self, Encoder, Quality};
 use crate::jobs::{
-    download, free_path, is_web_link, output_dir, run_ffmpeg, safe_stem, secs, spawn_job, Container, Download,
-    DownloadTarget, Output,
+    deliver, download, is_web_link, output_dir, run_ffmpeg, safe_stem, secs, spawn_job, work_dir, Container,
+    Download, DownloadTarget, Output,
 };
 use crate::local::{normalize, probe, OpenedFiles, ProbeInfo};
 
-const MAX_CLIPS: usize = 80;
+const MAX_CLIPS: usize = 150;
 const MAX_TEXT: usize = 500;
 
 #[derive(Deserialize)]
@@ -29,6 +34,8 @@ pub struct RenderSpec {
     output: Output,
     container: Container,
     file_name: String,
+    #[serde(default)]
+    quality: Quality,
 }
 
 #[derive(Deserialize)]
@@ -41,15 +48,16 @@ struct MediaSpec {
     /// yt-dlp format selector for links.
     #[serde(default)]
     format: String,
+    /// A still picture, shown for as long as its clips last.
+    #[serde(default)]
+    image: bool,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum Role {
-    /// Video 1: clips play back to back and set the base picture.
-    Main,
-    /// Video 2+: picture-in-picture on top.
-    Overlay,
+    /// A clip on a video track: a picture (and its sound).
+    Video,
     Audio,
     Text,
 }
@@ -63,16 +71,6 @@ enum TransitionKind {
     Dip,
 }
 
-impl TransitionKind {
-    /// The matching FFmpeg `xfade` transition.
-    fn xfade(self) -> &'static str {
-        match self {
-            TransitionKind::Crossfade => "fade",
-            TransitionKind::Dip => "fadeblack",
-        }
-    }
-}
-
 fn one() -> f64 {
     1.0
 }
@@ -81,6 +79,9 @@ fn one() -> f64 {
 #[serde(rename_all = "camelCase")]
 struct ClipSpec {
     role: Role,
+    /// Drawing order: higher is on top.
+    #[serde(default)]
+    layer: i64,
     #[serde(default)]
     media_id: Option<String>,
     /// Timeline position in seconds.
@@ -98,7 +99,7 @@ struct ClipSpec {
     mirror: bool,
     #[serde(default)]
     reverse: bool,
-    /// Seconds of fade in and out (picture from/to black or transparent, sound from/to silence).
+    /// Seconds of fade in and out (picture from/to transparent, sound from/to silence).
     #[serde(default)]
     fade_in: f64,
     #[serde(default)]
@@ -106,12 +107,17 @@ struct ClipSpec {
     /// Fractions of the picture cut off: left, top, right, bottom.
     #[serde(default)]
     crop: [f64; 4],
-    /// Main clips: seconds this clip overlaps the previous one (0 = straight cut).
+    /// Seconds this clip overlaps the clip before it on its track, and how.
     #[serde(default)]
-    transition: f64,
+    transition_in: f64,
     #[serde(default)]
-    transition_kind: TransitionKind,
-    /// Overlays: width as a fraction of the frame. Text: height as a fraction of the frame.
+    transition_in_kind: TransitionKind,
+    /// Seconds the next clip overlaps this clip's end, and how.
+    #[serde(default)]
+    transition_out: f64,
+    #[serde(default)]
+    transition_out_kind: TransitionKind,
+    /// Video: scale where 1 fills the frame as far as the shape allows. Text: height / frame.
     #[serde(default = "one")]
     size: f64,
     /// Position across the free space, 0 = left/top, 1 = right/bottom.
@@ -125,6 +131,13 @@ struct ClipSpec {
     color: String,
 }
 
+/// A fade over the clip's own time: `fade_in` from `start` for `length`, or out.
+struct Ramp {
+    fade_in: bool,
+    start: f64,
+    length: f64,
+}
+
 impl ClipSpec {
     /// Seconds on the timeline (after the speed change).
     fn length(&self) -> f64 {
@@ -132,6 +145,36 @@ impl ClipSpec {
     }
     fn end(&self) -> f64 {
         self.start + self.length()
+    }
+
+    /// Every fade the clip has, in its own time: fades, and its share of transitions. A
+    /// crossfade fades the incoming clip in over the outgoing one (whose picture stays); a dip
+    /// fades the outgoing clip out in the first half and the incoming one in the second half.
+    fn ramps(&self, sound: bool) -> Vec<Ramp> {
+        let length = self.length();
+        let mut ramps = Vec::new();
+        if self.fade_in > 0.0 {
+            ramps.push(Ramp { fade_in: true, start: 0.0, length: self.fade_in });
+        }
+        if self.fade_out > 0.0 {
+            ramps.push(Ramp { fade_in: false, start: length - self.fade_out, length: self.fade_out });
+        }
+        if self.transition_in > 0.0 {
+            ramps.push(match self.transition_in_kind {
+                TransitionKind::Crossfade => Ramp { fade_in: true, start: 0.0, length: self.transition_in },
+                TransitionKind::Dip => Ramp { fade_in: true, start: self.transition_in / 2.0, length: self.transition_in / 2.0 },
+            });
+        }
+        if self.transition_out > 0.0 {
+            let begins = length - self.transition_out;
+            match self.transition_out_kind {
+                // The picture stays under the incoming one; only the sound fades.
+                TransitionKind::Crossfade if sound => ramps.push(Ramp { fade_in: false, start: begins, length: self.transition_out }),
+                TransitionKind::Crossfade => {}
+                TransitionKind::Dip => ramps.push(Ramp { fade_in: false, start: begins, length: self.transition_out / 2.0 }),
+            }
+        }
+        ramps
     }
 
     /// Picture filters after the cut: mirror, reverse, crop, speed. Each starts with a comma.
@@ -153,17 +196,12 @@ impl ClipSpec {
         chain
     }
 
-    /// Picture fades over the clip's own time: to black, or with `alpha` to transparent.
-    fn picture_fades(&self, alpha: bool) -> String {
-        let alpha = if alpha { ":alpha=1" } else { "" };
-        let mut chain = String::new();
-        if self.fade_in > 0.0 {
-            chain.push_str(&format!(",fade=t=in:st=0:d={}{alpha}", secs(self.fade_in)));
-        }
-        if self.fade_out > 0.0 {
-            chain.push_str(&format!(",fade=t=out:st={}:d={}{alpha}", secs(self.length() - self.fade_out), secs(self.fade_out)));
-        }
-        chain
+    /// Picture fades to transparent (what's below shows through; black at the bottom).
+    fn picture_fades(&self) -> String {
+        self.ramps(false)
+            .iter()
+            .map(|r| format!(",fade=t={}:st={}:d={}:alpha=1", if r.fade_in { "in" } else { "out" }, secs(r.start.max(0.0)), secs(r.length)))
+            .collect()
     }
 
     /// Sound filters after the cut: reverse, speed, volume, fades. Each starts with a comma.
@@ -176,26 +214,32 @@ impl ClipSpec {
             chain.push_str(&atempo(self.speed));
         }
         chain.push_str(&format!(",volume={:.2}", self.volume));
-        if self.fade_in > 0.0 {
-            chain.push_str(&format!(",afade=t=in:st=0:d={}", secs(self.fade_in)));
-        }
-        if self.fade_out > 0.0 {
-            chain.push_str(&format!(",afade=t=out:st={}:d={}", secs(self.length() - self.fade_out), secs(self.fade_out)));
+        for r in self.ramps(true) {
+            chain.push_str(&format!(",afade=t={}:st={}:d={}", if r.fade_in { "in" } else { "out" }, secs(r.start.max(0.0)), secs(r.length)));
         }
         chain
     }
 
-    /// drawtext's opacity over time for a faded text clip, or nothing.
+    /// drawtext's opacity over time for faded text, or nothing.
     fn text_alpha(&self) -> String {
-        let (start, end) = (self.start, self.end());
-        let mut expr = "1".to_string();
-        if self.fade_out > 0.0 {
-            expr = format!("if(gt(t,{}),({}-t)/{},{expr})", secs(end - self.fade_out), secs(end), secs(self.fade_out));
+        let ramps = self.ramps(false);
+        if ramps.is_empty() {
+            return String::new();
         }
-        if self.fade_in > 0.0 {
-            expr = format!("if(lt(t,{}),(t-{})/{},{expr})", secs(start + self.fade_in), secs(start), secs(self.fade_in));
-        }
-        if expr == "1" { String::new() } else { format!(":alpha='clip({expr},0,1)'") }
+        // The lowest of all ramps, each 0–1 in timeline time.
+        let terms: Vec<String> = ramps
+            .iter()
+            .map(|r| {
+                let from = self.start + r.start;
+                if r.fade_in {
+                    format!("clip((t-{})/{},0,1)", secs(from), secs(r.length))
+                } else {
+                    format!("clip(({}-t)/{},0,1)", secs(from + r.length), secs(r.length))
+                }
+            })
+            .collect();
+        let expr = terms.iter().skip(1).fold(terms[0].clone(), |acc, t| format!("min({acc},{t})"));
+        format!(":alpha='{expr}'")
     }
 }
 
@@ -220,8 +264,7 @@ fn atempo(speed: f64) -> String {
 pub async fn start_render(app: AppHandle, spec: RenderSpec) -> Result<(), String> {
     validate(&app, &spec)?;
     let task_app = app.clone();
-    spawn_job(app, spec.id.clone(), async move { render(&task_app, &spec).await });
-    Ok(())
+    spawn_job(app, spec.id.clone(), async move { render(&task_app, &spec).await })
 }
 
 fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
@@ -251,8 +294,10 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
     let finite = |v: f64| v.is_finite();
     for clip in &spec.clips {
         let [l, t, r, b] = clip.crop;
-        let numbers =
-            [clip.start, clip.in_point, clip.out, clip.speed, clip.volume, clip.fade_in, clip.fade_out, clip.transition, clip.size, clip.x, clip.y, l, t, r, b];
+        let numbers = [
+            clip.start, clip.in_point, clip.out, clip.speed, clip.volume, clip.fade_in, clip.fade_out, clip.transition_in,
+            clip.transition_out, clip.size, clip.x, clip.y, l, t, r, b,
+        ];
         if !numbers.into_iter().all(finite)
             || clip.start < 0.0
             || clip.in_point < 0.0
@@ -261,8 +306,8 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             || clip.fade_in < 0.0
             || clip.fade_out < 0.0
             || clip.fade_in + clip.fade_out > clip.length() + 0.01
-            || clip.transition < 0.0
-            || clip.transition > clip.length() / 2.0 + 0.01
+            || !(0.0..=clip.length() / 2.0 + 0.01).contains(&clip.transition_in)
+            || !(0.0..=clip.length() / 2.0 + 0.01).contains(&clip.transition_out)
             || !clip.crop.iter().all(|side| (0.0..=0.45).contains(side))
             || !(0.0..=2.0).contains(&clip.volume)
             || !(0.01..=1.0).contains(&clip.size)
@@ -292,9 +337,10 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
     Ok(())
 }
 
-/// A usable input for FFmpeg: a local file plus how far its time is shifted.
-struct Input {
-    index: usize,
+/// A media file ready for FFmpeg: a local path and how far its time is shifted.
+struct Source {
+    path: PathBuf,
+    image: bool,
     /// Downloaded sections start at the section's beginning, not at 0.
     offset: f64,
     info: ProbeInfo,
@@ -302,25 +348,23 @@ struct Input {
 
 async fn render(app: &AppHandle, spec: &RenderSpec) -> Result<PathBuf, String> {
     let dir = output_dir(app)?;
-    let final_path = free_path(&dir, &safe_stem(&spec.file_name), spec.container.ext());
-    let work = dir.join(format!(".craftora-{}", safe_stem(&spec.id)));
-    std::fs::create_dir_all(&work).map_err(|e| format!("Couldn't create a working folder: {e}"))?;
-
-    let result = render_in(app, spec, &work, &final_path).await;
+    let work = work_dir(&dir, &spec.id)?;
+    let ext = spec.container.ext();
+    // Rendered inside the working folder; only a finished file reaches the export folder.
+    let temp = work.join(format!("output.{ext}"));
+    let result = match render_in(app, spec, &work, &temp).await {
+        Ok(()) => deliver(&temp, &dir, &safe_stem(&spec.file_name), ext),
+        Err(e) => Err(e),
+    };
     let _ = std::fs::remove_dir_all(&work);
-    if result.is_err() {
-        let _ = std::fs::remove_file(&final_path);
-    }
-    result.map(|_| final_path)
+    result
 }
 
 async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Path) -> Result<(), String> {
     // 1. Every media file used, as a local path (links: just the part the clips use).
-    let mut paths: Vec<PathBuf> = Vec::new();
-    let mut inputs: HashMap<&str, Input> = HashMap::new();
-    for media in &spec.media {
-        let used: Vec<&ClipSpec> =
-            spec.clips.iter().filter(|c| c.media_id.as_deref() == Some(media.id.as_str())).collect();
+    let mut sources: HashMap<&str, Source> = HashMap::new();
+    for (n, media) in spec.media.iter().enumerate() {
+        let used: Vec<&ClipSpec> = spec.clips.iter().filter(|c| c.media_id.as_deref() == Some(media.id.as_str())).collect();
         if used.is_empty() {
             continue;
         }
@@ -329,166 +373,96 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         } else {
             let from = used.iter().map(|c| c.in_point).fold(f64::INFINITY, f64::min);
             let to = used.iter().map(|c| c.out).fold(0.0, f64::max);
-            let request = Download {
-                url: &media.src,
-                format: &media.format,
-                section: Some((from, to)),
-                precise: true,
-                target: DownloadTarget::Any,
-            };
-            let stem = format!("media-{}", paths.len());
-            (download(app, &spec.id, &request, work, &stem).await?, from)
+            let request = Download { url: &media.src, format: &media.format, section: Some((from, to)), precise: true, target: DownloadTarget::Any };
+            (download(app, &spec.id, &request, work, &format!("media-{n}")).await?, from)
         };
         let info = probe(app, &path).await?;
-        inputs.insert(media.id.as_str(), Input { index: paths.len(), offset, info });
-        paths.push(path);
+        sources.insert(media.id.as_str(), Source { path, offset, info, image: media.image });
     }
 
-    // 2. The filter graph.
+    // 2. One input per clip, starting at the clip's first frame.
     let (w, h, fps) = (spec.width, spec.height, spec.fps);
     let is_video = spec.output == Output::Video;
     let total = spec.clips.iter().map(ClipSpec::end).fold(0.0, f64::max);
+    let mut inputs: Vec<String> = Vec::new();
+    let mut input_of: HashMap<usize, (usize, &Source)> = HashMap::new();
+    for (i, clip) in spec.clips.iter().enumerate() {
+        let Some(source) = clip.media_id.as_deref().and_then(|id| sources.get(id)) else { continue };
+        if source.image {
+            // One picture, repeated at the frame rate for as long as the clip lasts.
+            inputs.extend(["-loop".into(), "1".into(), "-framerate".into(), fps.to_string(), "-t".into(), secs(clip.length())]);
+        } else {
+            let from = (clip.in_point - source.offset).max(0.0);
+            inputs.extend(["-ss".into(), secs(from), "-t".into(), secs(clip.out - clip.in_point)]);
+        }
+        inputs.extend(["-i".into(), source.path.to_string_lossy().into_owned()]);
+        input_of.insert(i, (input_of.len(), source));
+    }
+
+    // 3. The filter graph.
     let mut graph: Vec<String> = Vec::new();
-    let mut sounds: Vec<String> = Vec::new();
-    let input_of = |clip: &ClipSpec| clip.media_id.as_deref().and_then(|id| inputs.get(id));
-
-    // Main track, back to back.
-    let mut main: Vec<&ClipSpec> = spec.clips.iter().filter(|c| c.role == Role::Main).collect();
-    main.sort_by(|a, b| a.start.total_cmp(&b.start));
-    let main_end = main.iter().map(|c| c.end()).fold(0.0, f64::max);
-    for (i, clip) in main.iter().enumerate() {
-        let input = input_of(clip).ok_or("Missing media for a clip.")?;
-        let (from, to) = (clip.in_point - input.offset, clip.out - input.offset);
-        let length = clip.length();
-        if is_video {
-            if input.info.has_video {
-                graph.push(format!(
-                    "[{}:v]trim=start={}:end={},setpts=PTS-STARTPTS{},scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps={fps},tpad=stop_mode=clone:stop_duration=1,trim=duration={},setpts=PTS-STARTPTS,format=yuv420p{}[mv{i}]",
-                    input.index,
-                    secs(from),
-                    secs(to),
-                    clip.picture_edits(),
-                    secs(length),
-                    clip.picture_fades(false)
-                ));
-            } else {
-                graph.push(format!("color=black:s={w}x{h}:r={fps}:d={},format=yuv420p[mv{i}]", secs(length)));
-            }
-        }
-        // Every main clip contributes sound (silence if it has none), exactly as long as its
-        // picture, so the joins and transitions stay in step.
-        if input.info.has_audio {
-            graph.push(format!(
-                "[{}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS{},aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,apad=whole_dur={len},atrim=duration={len}[ma{i}]",
-                input.index,
-                secs(from),
-                secs(to),
-                clip.sound_edits(),
-                len = secs(length)
-            ));
-        } else {
-            graph.push(format!("anullsrc=r=48000:cl=stereo,atrim=duration={},aformat=sample_fmts=fltp[ma{i}]", secs(length)));
-        }
-    }
-
-    // Join the main clips one by one: a straight cut, or a transition where they overlap.
-    // A transition starts where the incoming clip starts on the timeline.
-    let (mut joined, mut main_audio) = ("mv0".to_string(), "ma0".to_string());
-    for (i, clip) in main.iter().enumerate().skip(1) {
-        if clip.transition > 0.0 {
-            if is_video {
-                graph.push(format!(
-                    "[{joined}][mv{i}]xfade=transition={}:duration={}:offset={}[jv{i}]",
-                    clip.transition_kind.xfade(),
-                    secs(clip.transition),
-                    secs(clip.start)
-                ));
-            }
-            graph.push(format!("[{main_audio}][ma{i}]acrossfade=d={}:c1=tri:c2=tri[ja{i}]", secs(clip.transition)));
-        } else {
-            if is_video {
-                graph.push(format!("[{joined}][mv{i}]concat=n=2:v=1:a=0[jv{i}]"));
-            }
-            graph.push(format!("[{main_audio}][ma{i}]concat=n=2:v=0:a=1[ja{i}]"));
-        }
-        (joined, main_audio) = (format!("jv{i}"), format!("ja{i}"));
-    }
-
-    let mut picture = String::new();
     if is_video {
-        if main.is_empty() {
-            graph.push(format!("color=black:s={w}x{h}:r={fps}:d={},format=yuv420p[base]", secs(total)));
-        } else {
-            // Overlays or sounds that run past the main track continue over black.
-            let pad = (total - main_end).max(0.0);
-            graph.push(format!("[{joined}]tpad=stop_mode=add:stop_duration={}:color=black[base]", secs(pad)));
-            sounds.push(format!("[{main_audio}]"));
-        }
-        picture = "base".into();
-    } else if !main.is_empty() {
-        sounds.push(format!("[{main_audio}]"));
-    }
-
-    // Everything else, in timeline order.
-    let mut others: Vec<(usize, &ClipSpec)> = spec.clips.iter().filter(|c| c.role != Role::Main).enumerate().collect();
-    others.sort_by(|a, b| a.1.start.total_cmp(&b.1.start));
-    let font = font_path();
-    for (j, clip) in others {
-        let (start, end) = (secs(clip.start), secs(clip.end()));
-        match clip.role {
-            Role::Overlay if is_video => {
-                let input = input_of(clip).ok_or("Missing media for a clip.")?;
-                if input.info.has_video {
-                    let width = (((w as f64) * clip.size / 2.0).round() as u32 * 2).max(2);
+        graph.push(format!("color=black:s={w}x{h}:r={fps}:d={},format=yuv420p[base]", secs(total)));
+        let mut picture = String::from("base");
+        let mut layered: Vec<(usize, &ClipSpec)> = spec.clips.iter().enumerate().filter(|(_, c)| c.role != Role::Audio).collect();
+        layered.sort_by_key(|(_, c)| c.layer);
+        let font = font_path();
+        for (i, clip) in layered {
+            let (start, end) = (secs(clip.start), secs(clip.end()));
+            match clip.role {
+                Role::Video => {
+                    let Some(&(k, source)) = input_of.get(&i) else { continue };
+                    if !source.info.has_video {
+                        continue;
+                    }
+                    // Fits inside size × the frame, keeping its shape.
+                    let (bw, bh) = (((w as f64) * clip.size).round().max(2.0), ((h as f64) * clip.size).round().max(2.0));
                     graph.push(format!(
-                        "[{}:v]trim=start={}:end={},setpts=PTS-STARTPTS{},scale={width}:-2,format=yuva420p{},setpts=PTS+{start}/TB[o{j}]",
-                        input.index,
-                        secs(clip.in_point - input.offset),
-                        secs(clip.out - input.offset),
+                        "[{k}:v]setpts=PTS-STARTPTS{},scale=w={bw}:h={bh}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,fps={fps},format=yuva420p{},setpts=PTS+{start}/TB[v{i}]",
                         clip.picture_edits(),
-                        clip.picture_fades(true)
+                        clip.picture_fades()
                     ));
                     graph.push(format!(
-                        "[{picture}][o{j}]overlay=x='{x}*(W-w)':y='{y}*(H-h)':eof_action=pass:enable='between(t,{start},{end})'[p{j}]",
+                        "[{picture}][v{i}]overlay=x='{x}*(W-w)':y='{y}*(H-h)':eof_action=pass:repeatlast=0:enable='between(t,{start},{end})'[p{i}]",
                         x = clip.x,
                         y = clip.y
                     ));
-                    picture = format!("p{j}");
+                    picture = format!("p{i}");
                 }
-            }
-            Role::Text if is_video => {
-                // The text goes in a file so no character can break the filter syntax.
-                let file = format!("text{j}.txt");
-                std::fs::write(work.join(&file), clip.text.as_bytes()).map_err(|e| format!("Couldn't prepare text: {e}"))?;
-                let size = ((h as f64) * clip.size).round().max(8.0) as u32;
-                let color = clip.color.trim_start_matches('#');
-                graph.push(format!(
-                    "[{picture}]drawtext=fontfile='{font}':textfile='{file}':expansion=none:fontsize={size}:fontcolor=0x{color}:shadowcolor=black@0.6:shadowx=2:shadowy=2:x='(w-text_w)*{x}':y='(h-text_h)*{y}'{alpha}:enable='between(t,{start},{end})'[p{j}]",
-                    x = clip.x,
-                    y = clip.y,
-                    alpha = clip.text_alpha()
-                ));
-                picture = format!("p{j}");
-            }
-            _ => {}
-        }
-        // Sound from overlays and audio clips, placed at their start.
-        if matches!(clip.role, Role::Overlay | Role::Audio) && clip.volume > 0.0 {
-            let input = input_of(clip).ok_or("Missing media for a clip.")?;
-            if input.info.has_audio {
-                let delay = (clip.start * 1000.0).round() as u64;
-                graph.push(format!(
-                    "[{}:a]atrim=start={}:end={},asetpts=PTS-STARTPTS{},aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=delays={delay}:all=1[s{j}]",
-                    input.index,
-                    secs(clip.in_point - input.offset),
-                    secs(clip.out - input.offset),
-                    clip.sound_edits()
-                ));
-                sounds.push(format!("[s{j}]"));
+                Role::Text => {
+                    // The text goes in a file so no character can break the filter syntax.
+                    let file = format!("text{i}.txt");
+                    std::fs::write(work.join(&file), clip.text.as_bytes()).map_err(|e| format!("Couldn't prepare text: {e}"))?;
+                    let size = ((h as f64) * clip.size).round().max(8.0) as u32;
+                    let color = clip.color.trim_start_matches('#');
+                    graph.push(format!(
+                        "[{picture}]drawtext=fontfile='{font}':textfile='{file}':expansion=none:fontsize={size}:fontcolor=0x{color}:shadowcolor=black@0.6:shadowx=2:shadowy=2:x='(w-text_w)*{x}':y='(h-text_h)*{y}'{alpha}:enable='between(t,{start},{end})'[p{i}]",
+                        x = clip.x,
+                        y = clip.y,
+                        alpha = clip.text_alpha()
+                    ));
+                    picture = format!("p{i}");
+                }
+                Role::Audio => {}
             }
         }
+        graph.push(format!("[{picture}]format=yuv420p[outv]"));
     }
 
+    // Every sound, placed at its clip's start.
+    let mut sounds: Vec<String> = Vec::new();
+    for (i, clip) in spec.clips.iter().enumerate() {
+        let Some(&(k, source)) = input_of.get(&i) else { continue };
+        if !source.info.has_audio || clip.volume <= 0.0 {
+            continue;
+        }
+        let delay = (clip.start * 1000.0).round() as u64;
+        graph.push(format!(
+            "[{k}:a]asetpts=PTS-STARTPTS{},aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=delays={delay}:all=1[s{i}]",
+            clip.sound_edits()
+        ));
+        sounds.push(format!("[s{i}]"));
+    }
     let sound = match sounds.len() {
         0 => None,
         1 => Some(sounds[0].trim_matches(['[', ']']).to_string()),
@@ -497,39 +471,47 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
             Some("mix".to_string())
         }
     };
+    if sound.is_none() && !is_video {
+        return Err("There's no sound on the timeline to save.".into());
+    }
 
-    // 3. The FFmpeg command.
-    let mut args: Vec<String> = ["-y", "-hide_banner", "-nostats", "-progress", "pipe:1"].map(String::from).to_vec();
-    for path in &paths {
-        args.extend(["-i".into(), path.to_string_lossy().into_owned()]);
-    }
-    args.extend(["-filter_complex".into(), graph.join(";")]);
-    if is_video {
-        args.extend(["-map".into(), format!("[{picture}]")]);
-        args.extend(["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p", "-r"].map(String::from));
-        args.push(fps.to_string());
-    }
-    match &sound {
-        Some(label) => {
-            args.extend(["-map".into(), format!("[{label}]")]);
-            let codec: &[&str] = match spec.container {
-                Container::Mp3 => &["-c:a", "libmp3lame", "-b:a", "320k"],
-                Container::Wav => &["-c:a", "pcm_s16le"],
-                Container::Flac => &["-c:a", "flac"],
-                _ => &["-c:a", "aac", "-b:a", "192k"],
-            };
-            args.extend(codec.iter().map(|s| s.to_string()));
+    // 4. Encode, on the graphics card when asked and possible; if that fails, on the processor.
+    let encoder = if is_video { encoders::for_render(app, spec.quality).await } else { Encoder::Software };
+    let command = |encoder: Encoder| -> Vec<String> {
+        let mut args: Vec<String> = ["-y", "-hide_banner", "-nostats", "-progress", "pipe:1"].map(String::from).to_vec();
+        args.extend(inputs.iter().cloned());
+        args.extend(["-filter_complex".into(), graph.join(";")]);
+        if is_video {
+            args.extend(["-map".into(), "[outv]".into()]);
+            args.extend(encoder.args(spec.quality));
+            args.extend(["-r".into(), fps.to_string()]);
         }
-        None if !is_video => return Err("There's no sound on the timeline to save.".into()),
-        None => args.push("-an".into()),
+        match &sound {
+            Some(label) => {
+                args.extend(["-map".into(), format!("[{label}]")]);
+                let codec: &[&str] = match spec.container {
+                    Container::Mp3 => &["-c:a", "libmp3lame", "-b:a", "320k"],
+                    Container::Wav => &["-c:a", "pcm_s16le"],
+                    Container::Flac => &["-c:a", "flac"],
+                    _ => &["-c:a", "aac", "-b:a", "192k"],
+                };
+                args.extend(codec.iter().map(|s| s.to_string()));
+            }
+            None => args.push("-an".into()),
+        }
+        args.extend(["-t".into(), secs(total)]);
+        if spec.container == Container::Mp4 {
+            args.extend(["-movflags".into(), "+faststart".into()]);
+        }
+        args.push(output.to_string_lossy().into_owned());
+        args
+    };
+    match run_ffmpeg(app, &spec.id, command(encoder), total, "encoding", Some(work)).await {
+        Err(e) if encoder.is_hardware() && e != "Cancelled" => {
+            run_ffmpeg(app, &spec.id, command(Encoder::Software), total, "encoding", Some(work)).await
+        }
+        result => result,
     }
-    args.extend(["-t".into(), secs(total)]);
-    if spec.container == Container::Mp4 {
-        args.extend(["-movflags".into(), "+faststart".into()]);
-    }
-    args.push(output.to_string_lossy().into_owned());
-
-    run_ffmpeg(app, &spec.id, args, total, "encoding", Some(work)).await
 }
 
 /// A bold Windows font for text clips, escaped for FFmpeg's filter syntax.
