@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { inDesktopApp } from "../lib/engine";
 import type { Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
-import { hasKey, listModels, preferredModel, recommendedModels, setKey, useAssistant, type ModelInfo } from "../assistant/useAssistant";
+import { fallbackModels, hasKey, listModels, preferredModel, recommendedModels, setKey, useAssistant, type ModelInfo } from "../assistant/useAssistant";
 import { Icon } from "./Icon";
 import { useConfirm } from "./ConfirmDialog";
 import "./AssistantPanel.css";
@@ -46,7 +46,8 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
-  const { entries, busy, send, reset } = useAssistant({ api, current, playhead, seek, model });
+  const fallbacks = useMemo(() => (models ? fallbackModels(models) : []), [models]);
+  const { entries, busy, send, reset } = useAssistant({ api, current, playhead, seek, model, fallbacks });
   const { ask, dialog } = useConfirm();
   const recommended = models ? recommendedModels(models) : [];
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);

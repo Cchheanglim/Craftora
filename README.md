@@ -31,10 +31,10 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
 - Import video and audio from your PC: the **Import** button, `Ctrl+O`, or drag files onto
   the window. Imported files work offline.
 - Paste a link from YouTube or any of the [many sites yt-dlp supports](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md),
-  and choose the quality. Next to **Fetch**, choose **Then edit now** (start straight away;
-  only the parts you use are downloaded when you export) or **Then download first** (the whole
-  video goes to `Videos\Craftora\Downloads` and edits like a file on your PC: smoother and
-  offline). Links already in Media have a download button too.
+  and choose the quality. Craftora then asks how you want to work with it: **Start editing
+  now** (only the parts you use are downloaded when you export) or **Download first, then
+  edit** (the whole video goes to `Videos\Craftora\Downloads` and edits like a file on your
+  PC: smoother and offline). Links already in Media have a download button too.
 - Files the built-in player can't show (AC-3 or DTS sound, AVI, HEVC and similar) get a
   preview copy made in the background, once. Exports always use the original.
 
@@ -92,7 +92,9 @@ uses Google's Gemini with your own API key; see [The AI assistant](#the-ai-assis
    it in. A Google AI Pro subscription covers the Gemini app, not the API, so the key is
    separate.
 3. Pick a model: Craftora suggests two or three good ones for your key, and **Search all
-   models…** finds any other.
+   models…** finds any other. The free plan covers the Flash models; the largest models may need
+   billing in Google AI Studio. If a model is busy or not in your plan, the assistant switches to
+   another one by itself.
 4. Type what you want changed. Everything the assistant does for one message is a single
    undo step (`Ctrl+Z`).
 

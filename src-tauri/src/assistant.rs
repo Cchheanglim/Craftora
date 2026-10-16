@@ -59,14 +59,10 @@ async fn call(request: reqwest::RequestBuilder) -> Result<Value, String> {
     let status = response.status();
     let answer: Value = response.json().await.map_err(|e| format!("Unexpected answer from Gemini: {e}"))?;
     if !status.is_success() {
+        // "HTTP <code>: <Google's message>": the UI tells busy servers, plan limits and bad
+        // keys apart by the code and words its own message.
         let detail = answer["error"]["message"].as_str().unwrap_or("no details");
-        return Err(match status.as_u16() {
-            400 if detail.contains("API key") => "Gemini didn't accept the API key. Remove it and paste it again.".into(),
-            401 | 403 => format!("Gemini refused the request: {detail}"),
-            404 => format!("This model isn't available to your key: {detail}"),
-            429 => "Gemini's usage limit was reached. Wait a minute, pick another model, or check your plan in Google AI Studio.".into(),
-            _ => format!("Gemini error {status}: {detail}"),
-        });
+        return Err(format!("HTTP {}: {detail}", status.as_u16()));
     }
     Ok(answer)
 }

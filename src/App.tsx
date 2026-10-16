@@ -54,6 +54,7 @@ import { ExportPanel } from "./components/ExportPanel";
 import { QueueDock } from "./components/QueueDock";
 import { Library } from "./components/Library";
 import { AssistantPanel } from "./components/AssistantPanel";
+import { FetchChoice, type FetchChoiceKind } from "./components/FetchChoice";
 import "./App.css";
 
 const DEMO = DEMO_SOURCES[0];
@@ -119,8 +120,6 @@ function remember(key: string, value: boolean) {
 const isTyping = (el: EventTarget | null) =>
   el instanceof HTMLElement && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
 
-type AfterFetch = "edit" | "download";
-
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /** Finished exports as kept in the history: without what only a running job needs. */
@@ -146,22 +145,16 @@ export default function App() {
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const [rightTab, setRightTab] = useState<"edit" | "assistant">("edit");
-  /** After fetching a link: edit it straight away (streamed), or download it first. */
-  const [afterFetch, setAfterFetchState] = useState<AfterFetch>(() => {
+  /** A fetched link waiting for the user to choose how to work with it. */
+  const [fetched, setFetched] = useState<MediaSource | null>(null);
+  /** The choice made last time, highlighted in the next fetch's window. */
+  const [lastChoice, setLastChoice] = useState<FetchChoiceKind>(() => {
     try {
       return localStorage.getItem("craftora.afterFetch") === "download" ? "download" : "edit";
     } catch {
       return "edit";
     }
   });
-  const setAfterFetch = (choice: AfterFetch) => {
-    setAfterFetchState(choice);
-    try {
-      localStorage.setItem("craftora.afterFetch", choice);
-    } catch {
-      /* not essential */
-    }
-  };
   const [fastEncoder, setFastEncoder] = useState<string | null>(null);
   const urlRef = useRef<HTMLInputElement>(null);
 
@@ -249,8 +242,11 @@ export default function App() {
 
   /** Puts fetched or opened media in the library; with `place`, also on the timeline. */
   const importSource = useCallback(
-    (source: MediaSource, place: boolean) => {
+    (source: MediaSource, place: boolean, format?: string) => {
       const item = mediaFromSource(source);
+      // The quality picked when fetching.
+      if (format && item.hasVideo) item.videoFormat = format;
+      else if (format) item.audioFormat = format;
       api.edit({ type: "importMedia", item });
       if (place) api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId: item.id });
       prepare(item.id, source);
@@ -305,14 +301,13 @@ export default function App() {
     setError(null);
     try {
       if (inDesktopApp) {
-        const item = importSource(await fetchMedia(link), project.clips.length === 0);
-        if (afterFetch === "download") downloadForEditing(item);
+        setFetched(await fetchMedia(link));
       } else {
         // Browser preview: only the demo links resolve.
         await new Promise((resolve) => window.setTimeout(resolve, 400));
         const found = DEMO_SOURCES.find((s) => s.url.toLowerCase() === link.toLowerCase());
         if (!found) throw new Error("Real links need the desktop app. In this browser preview, clear the field to pick a demo link.");
-        importSource(found, project.clips.length === 0);
+        setFetched(found);
       }
       setUrl("");
     } catch (err) {
@@ -541,8 +536,6 @@ export default function App() {
           setError(null);
         }}
         onFetch={(link) => void fetchSource(link)}
-        afterFetch={inDesktopApp ? afterFetch : undefined}
-        onAfterFetchChange={setAfterFetch}
         fetching={busy}
         error={error}
         suggestions={DEMO_SOURCES}
@@ -676,6 +669,27 @@ export default function App() {
       )}
 
       <QueueDock queue={queue} freshId={freshId} />
+      {fetched && (
+        <FetchChoice
+          source={fetched}
+          defaultFormat={mediaFromSource(fetched)[fetched.streams.some((s) => s.kind === "video") ? "videoFormat" : "audioFormat"]}
+          lastChoice={lastChoice}
+          onCancel={() => setFetched(null)}
+          onChoose={(choice, format) => {
+            const item = importSource(fetched, project.clips.length === 0, format);
+            setFetched(null);
+            setLastChoice(choice);
+            try {
+              localStorage.setItem("craftora.afterFetch", choice);
+            } catch {
+              /* not essential */
+            }
+            if (choice !== "download") return;
+            if (inDesktopApp) downloadForEditing(item);
+            else setError("Downloading needs the desktop app; in this browser preview the video streams instead.");
+          }}
+        />
+      )}
       {dragging && (
         <div className="app__drop" role="status">
           <span>Drop to import into Media</span>

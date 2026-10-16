@@ -12,12 +12,15 @@
 - **Much faster export.** Craftora uses your graphics card (NVIDIA, Intel or AMD) when the PC
   has one, and each clip now reads only its own part of the file. Choose **Best quality** in
   the Export panel for smaller files at a slower speed.
-- **Download first, or edit now.** When fetching a link, choose whether to start editing
-  straight away or download the whole video first (smoother scrubbing, works offline). Links
-  already in Media have a download button too.
+- **Download first, or edit now.** After you fetch a link, Craftora shows what it found, lets
+  you pick the quality, and explains the two ways to work with it: start editing straight away
+  (only the parts you use are downloaded at export), or download the whole video first
+  (smoother scrubbing, works offline). Links already in Media have a download button too.
 - **"Are you sure?" checks** before things that can't be undone: deleting a project,
   cancelling a running export, removing the AI key, starting a new AI chat.
 - **AI assistant:** suggests two or three good models for your key, with a search for any other.
+  When Google's servers are busy, or a model isn't in your plan, it retries and then switches to
+  another good model by itself, and says so in the chat.
 
 **Fixed** (reported in [#15](https://github.com/Cchheanglim/Craftora/issues/15))
 
