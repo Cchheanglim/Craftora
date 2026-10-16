@@ -21,6 +21,8 @@ interface SyncedMediaProps {
   onLoadedMetadata?: (e: SyntheticEvent<HTMLVideoElement>) => void;
   /** The first frame is ready to show. */
   onReady?: () => void;
+  /** True while this element can't play the current spot yet (loading or seeking). */
+  onLoading?: (on: boolean) => void;
 }
 
 /** Seconds of drift tolerated while playing before re-seeking (seeking itself stutters). */
@@ -33,11 +35,17 @@ const MAX_RATE = 16;
  * A video or audio element that follows the editor's playhead: a layer, or the separate
  * sound stream of a video-only preview.
  */
-export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, reverse, className, style, onLoadedMetadata, onReady }: SyncedMediaProps) {
+export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, reverse, className, style, onLoadedMetadata, onReady, onLoading }: SyncedMediaProps) {
   const ref = useRef<HTMLVideoElement & HTMLAudioElement>(null);
-  /** Where a reversed clip should be; caught up after each seek lands. */
+  /**
+   * Where the element should be. Seeks aren't stacked: while one is running, newer times
+   * only update this, and the element jumps to the latest one when the seek lands. Stacked
+   * seeks (from dragging the playhead) are what made the picture freeze while time ran on.
+   */
   const target = useRef<number | null>(null);
-  target.current = reverse ? time : null;
+  target.current = time;
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
 
   useEffect(() => {
     const el = ref.current;
@@ -62,18 +70,42 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
       return;
     }
     if (playing) {
-      if (drift > PLAYING_TOLERANCE * Math.max(1, rate)) el.currentTime = time;
+      if (!el.seeking && drift > PLAYING_TOLERANCE * Math.max(1, rate)) el.currentTime = time;
       if (el.paused) void el.play().catch(() => {});
     } else {
       if (!el.paused) el.pause();
-      if (drift > 0.04) el.currentTime = time;
+      if (!el.seeking && drift > 0.04) el.currentTime = time;
     }
   }, [time, playing, reverse, rate]);
+
+  // Loading only holds the clock for clips on screen now, and never for reversed clips,
+  // which seek all the time by design.
+  const tracked = time !== null && !reverse;
+  const report = useRef(onLoading);
+  report.current = onLoading;
+  useEffect(() => {
+    if (!tracked) return;
+    const el = ref.current;
+    // HAVE_FUTURE_DATA: enough to play on from here.
+    if (el && el.readyState < 3) report.current?.(true);
+    return () => report.current?.(false);
+  }, [tracked]);
+  const loadingNow = () => tracked && report.current?.(true);
+  const readyNow = () => {
+    const el = ref.current;
+    if (el && el.readyState >= 3 && !el.seeking) report.current?.(false);
+  };
 
   const onSeeked = () => {
     const el = ref.current;
     const t = target.current;
-    if (el && t !== null && Math.abs(el.currentTime - t) > 0.02) el.currentTime = t;
+    // Catch up with where the playhead went while this seek was running.
+    const tolerance = reverse ? 0.02 : playingRef.current ? PLAYING_TOLERANCE : 0.04;
+    if (el && t !== null && Math.abs(el.currentTime - t) > tolerance) {
+      el.currentTime = t;
+      return;
+    }
+    readyNow();
   };
 
   return kind === "video" ? (
@@ -87,9 +119,23 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
       aria-hidden="true"
       onLoadedMetadata={onLoadedMetadata}
       onLoadedData={onReady}
+      onSeeking={loadingNow}
+      onWaiting={loadingNow}
       onSeeked={onSeeked}
+      onCanPlay={readyNow}
+      onPlaying={readyNow}
     />
   ) : (
-    <audio ref={ref} src={src} preload="auto" aria-hidden="true" onSeeked={onSeeked} />
+    <audio
+      ref={ref}
+      src={src}
+      preload="auto"
+      aria-hidden="true"
+      onSeeking={loadingNow}
+      onWaiting={loadingNow}
+      onSeeked={onSeeked}
+      onCanPlay={readyNow}
+      onPlaying={readyNow}
+    />
   );
 }

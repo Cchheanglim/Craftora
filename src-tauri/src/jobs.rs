@@ -112,8 +112,14 @@ struct Running {
 }
 
 impl Jobs {
-    fn register(&self, id: &str) {
-        self.0.lock().unwrap().insert(id.to_string(), Running::default());
+    /// Starts tracking a job; false when a job with this id is already running.
+    fn register(&self, id: &str) -> bool {
+        let mut jobs = self.0.lock().unwrap();
+        if jobs.contains_key(id) {
+            return false;
+        }
+        jobs.insert(id.to_string(), Running::default());
+        true
     }
 
     /// Keeps the running process so it can be killed. Returns the child back
@@ -134,11 +140,14 @@ impl Jobs {
     }
 
     fn cancel(&self, id: &str) -> bool {
-        let mut jobs = self.0.lock().unwrap();
-        let Some(job) = jobs.get_mut(id) else { return false };
-        job.cancelled = true;
-        if let Some(child) = job.child.take() {
-            let _ = child.kill();
+        let child = {
+            let mut jobs = self.0.lock().unwrap();
+            let Some(job) = jobs.get_mut(id) else { return false };
+            job.cancelled = true;
+            job.child.take()
+        };
+        if let Some(child) = child {
+            kill_tree(child);
         }
         true
     }
@@ -149,9 +158,30 @@ impl Jobs {
     }
 }
 
+/// Stops a process and everything it started: yt-dlp runs FFmpeg itself, and killing only
+/// yt-dlp would leave FFmpeg writing (and locking) files.
+fn kill_tree(child: CommandChild) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &child.pid().to_string(), "/T", "/F"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+    let _ = child.kill();
+}
+
 /// Runs `work` in the background and reports how it ended as a `job-event`.
-pub(crate) fn spawn_job(app: AppHandle, id: String, work: impl Future<Output = Result<PathBuf, String>> + Send + 'static) {
-    app.state::<Jobs>().register(&id);
+pub(crate) fn spawn_job(
+    app: AppHandle,
+    id: String,
+    work: impl Future<Output = Result<PathBuf, String>> + Send + 'static,
+) -> Result<(), String> {
+    if !app.state::<Jobs>().register(&id) {
+        return Err("This export is already running.".into());
+    }
     tauri::async_runtime::spawn(async move {
         let result = work.await;
         let cancelled = app.state::<Jobs>().finish(&id);
@@ -165,6 +195,7 @@ pub(crate) fn spawn_job(app: AppHandle, id: String, work: impl Future<Output = R
         };
         let _ = app.emit("job-event", event);
     });
+    Ok(())
 }
 
 /// Starts a single untouched cut; progress arrives as `job-event` events.
@@ -188,8 +219,7 @@ pub async fn start_job(app: AppHandle, spec: JobSpec) -> Result<(), String> {
         return Err("Only web links can be downloaded.".into());
     }
     let task_app = app.clone();
-    spawn_job(app, spec.id.clone(), async move { run_simple(&task_app, &spec).await });
-    Ok(())
+    spawn_job(app, spec.id.clone(), async move { run_simple(&task_app, &spec).await })
 }
 
 #[tauri::command]
@@ -226,15 +256,110 @@ pub(crate) fn safe_stem(name: &str) -> String {
     if clean.is_empty() { "clip".into() } else { clean }
 }
 
-/// First free `stem.ext`, `stem (2).ext`, … in `dir`.
-pub(crate) fn free_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
-    let mut path = dir.join(format!("{stem}.{ext}"));
-    let mut n = 2;
-    while path.exists() {
-        path = dir.join(format!("{stem} ({n}).{ext}"));
-        n += 1;
+/// A job's private working folder, `.craftora-<id>` in the export folder (the same drive,
+/// so the finished file moves into place instantly). Removed when the job ends; leftovers
+/// from a crash are removed at the next start (`clean_work_dirs`).
+pub(crate) fn work_dir(dir: &Path, job_id: &str) -> Result<PathBuf, String> {
+    let work = dir.join(format!("{WORK_PREFIX}{}", safe_stem(job_id)));
+    std::fs::create_dir_all(&work).map_err(|e| format!("Couldn't create a working folder: {e}"))?;
+    Ok(work)
+}
+
+const WORK_PREFIX: &str = ".craftora-";
+
+/// Moves a finished file from the working folder into `dir` as `stem.ext`, or
+/// `stem (2).ext`… if that's taken. The name is claimed only now, when the file is complete,
+/// so two exports never share a name and nothing already in the folder is ever replaced.
+pub(crate) fn deliver(finished: &Path, dir: &Path, stem: &str, ext: &str) -> Result<PathBuf, String> {
+    for n in 1..10_000 {
+        let path = if n == 1 { dir.join(format!("{stem}.{ext}")) } else { dir.join(format!("{stem} ({n}).{ext}")) };
+        // create_new fails if the name exists, so this claims it atomically.
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(placeholder) => {
+                drop(placeholder);
+                let moved = std::fs::rename(finished, &path).or_else(|_| std::fs::copy(finished, &path).map(|_| ()));
+                return match moved {
+                    Ok(()) => Ok(path),
+                    Err(e) => {
+                        let _ = std::fs::remove_file(&path);
+                        Err(format!("Couldn't save the file to {}: {e}", dir.display()))
+                    }
+                };
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("Couldn't save the file to {}: {e}", dir.display())),
+        }
     }
-    path
+    Err("There are too many files with this name in the export folder.".into())
+}
+
+/// Removes working folders left behind when Craftora was closed during an export or a
+/// download. Called at startup, when nothing can be running.
+pub(crate) fn clean_work_dirs(app: &AppHandle) {
+    for dir in [output_dir(app), downloads_dir(app)].into_iter().flatten() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let is_ours = entry.file_name().to_string_lossy().starts_with(WORK_PREFIX);
+            if is_ours && entry.file_type().is_ok_and(|t| t.is_dir()) {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
+}
+
+/// `Videos\Craftora\Downloads`: whole links downloaded to edit like files on this PC.
+pub(crate) fn downloads_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .video_dir()
+        .map_err(|e| format!("Couldn't find your Videos folder: {e}"))?
+        .join("Craftora")
+        .join("Downloads");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create {}: {e}", dir.display()))?;
+    Ok(dir)
+}
+
+/// A whole link to download before editing ("Download first").
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaDownload {
+    id: String,
+    url: String,
+    /// yt-dlp format selector, as chosen for the picture (or the sound for audio-only links).
+    format: String,
+    title: String,
+    #[serde(default)]
+    audio_only: bool,
+}
+
+/// Downloads a whole link into the Downloads folder; the UI then opens it like a local file.
+#[tauri::command]
+pub async fn download_media(app: AppHandle, spec: MediaDownload) -> Result<(), String> {
+    if !is_web_link(&spec.url) || spec.format.is_empty() {
+        return Err("Only web links can be downloaded.".into());
+    }
+    let task_app = app.clone();
+    spawn_job(app, spec.id.clone(), async move {
+        let dir = downloads_dir(&task_app)?;
+        let work = work_dir(&dir, &spec.id)?;
+        let request = Download {
+            url: &spec.url,
+            format: &spec.format,
+            section: None,
+            precise: false,
+            // MP4 (or M4A) plays in the preview without a preview copy.
+            target: if spec.audio_only { DownloadTarget::Audio("m4a") } else { DownloadTarget::Video("mp4") },
+        };
+        let result = match download(&task_app, &spec.id, &request, &work, "download").await {
+            Ok(file) => {
+                let ext = file.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_else(|| "mp4".into());
+                deliver(&file, &dir, &safe_stem(&spec.title), &ext)
+            }
+            Err(e) => Err(e),
+        };
+        let _ = std::fs::remove_dir_all(&work);
+        result
+    })
 }
 
 /// Formats seconds for FFmpeg and yt-dlp arguments.
@@ -244,8 +369,15 @@ pub(crate) fn secs(t: f64) -> String {
 
 async fn run_simple(app: &AppHandle, spec: &JobSpec) -> Result<PathBuf, String> {
     let dir = output_dir(app)?;
+    let work = work_dir(&dir, &spec.id)?;
+    let result = run_simple_in(app, spec, &dir, &work).await;
+    let _ = std::fs::remove_dir_all(&work);
+    result
+}
+
+async fn run_simple_in(app: &AppHandle, spec: &JobSpec, dir: &Path, work: &Path) -> Result<PathBuf, String> {
     let ext = spec.container.ext();
-    let final_path = free_path(&dir, &safe_stem(&spec.file_name), ext);
+    let stem = safe_stem(&spec.file_name);
     let whole = spec.start <= 0.05 && spec.end >= spec.duration - 0.05;
 
     if spec.local {
@@ -259,16 +391,13 @@ async fn run_simple(app: &AppHandle, spec: &JobSpec) -> Result<PathBuf, String> 
         if spec.container == Container::Mp4 {
             args.extend(["-movflags".into(), "+faststart".into()]);
         }
-        args.push(final_path.to_string_lossy().into_owned());
+        let temp = work.join(format!("output.{ext}"));
+        args.push(temp.to_string_lossy().into_owned());
         let clip = if whole { spec.duration } else { spec.end - spec.start };
-        let result = run_ffmpeg(app, &spec.id, args, clip, "cutting", None).await;
-        if result.is_err() {
-            let _ = std::fs::remove_file(&final_path);
-        }
-        return result.map(|_| final_path);
+        run_ffmpeg(app, &spec.id, args, clip, "cutting", None).await?;
+        return deliver(&temp, dir, &stem, ext);
     }
 
-    let stem = final_path.file_stem().unwrap().to_string_lossy().into_owned();
     let request = Download {
         url: &spec.url,
         format: &spec.format,
@@ -279,7 +408,10 @@ async fn run_simple(app: &AppHandle, spec: &JobSpec) -> Result<PathBuf, String> 
             Output::Audio => DownloadTarget::Audio(ext),
         },
     };
-    download(app, &spec.id, &request, &dir, &stem).await
+    let downloaded = download(app, &spec.id, &request, work, "download").await?;
+    // yt-dlp picks the final extension (e.g. after merging or converting).
+    let downloaded_ext = downloaded.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_else(|| ext.to_string());
+    deliver(&downloaded, dir, &stem, &downloaded_ext)
 }
 
 pub(crate) enum DownloadTarget<'a> {
@@ -330,7 +462,11 @@ pub(crate) async fn download(app: &AppHandle, job_id: &str, request: &Download<'
         if request.precise {
             args.push("--force-keyframes-at-cuts".into());
         }
+        // yt-dlp hands sections to FFmpeg and reports nothing until the end, so the queue
+        // sat at 0%. FFmpeg's own progress (out_time_us=…) is read below instead.
+        args.extend(["--downloader-args".into(), "ffmpeg_i:-progress pipe:1 -nostats".into()]);
     }
+    let section_length = request.section.map(|(start, end)| (end - start).max(0.1));
     match request.target {
         DownloadTarget::Video(ext) => {
             args.extend(["--merge-output-format".into(), ext.into(), "--remux-video".into(), ext.into()]);
@@ -350,6 +486,10 @@ pub(crate) async fn download(app: &AppHandle, job_id: &str, request: &Download<'
         }
         if let Some(fields) = line.strip_prefix("CRAFTORA|") {
             return Some(progress_from_fields(job_id, fields));
+        }
+        if let (Some(length), Some(micros)) = (section_length, line.strip_prefix("out_time_us=")) {
+            let seconds = micros.trim().parse::<f64>().ok()? / 1_000_000.0;
+            return Some(progress_event(job_id, "downloading", Some((seconds / length * 100.0).clamp(0.0, 100.0))));
         }
         // yt-dlp's post-processors announce themselves like "[Merger] Merging formats…".
         let post = ["[Merger]", "[ExtractAudio]", "[VideoRemuxer]", "[VideoConvertor]", "[FixupM3u8]", "[ModifyChapters]"];
@@ -473,5 +613,29 @@ async fn run_streaming(
         _ => Err(last_error(&errors)
             .or_else(|| errors.lines().last().map(str::to_string))
             .unwrap_or_else(|| format!("{program} stopped unexpectedly."))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deliver_never_replaces_an_existing_export() {
+        let dir = std::env::temp_dir().join(format!("craftora-deliver-{}", std::process::id()));
+        let work = dir.join(".craftora-job");
+        std::fs::create_dir_all(&work).unwrap();
+        std::fs::write(dir.join("clip.mp4"), b"earlier export").unwrap();
+
+        for expected in ["clip (2).mp4", "clip (3).mp4"] {
+            let finished = work.join("output.mp4");
+            std::fs::write(&finished, b"new export").unwrap();
+            let path = deliver(&finished, &dir, "clip", "mp4").unwrap();
+            assert_eq!(path.file_name().unwrap(), expected);
+            assert_eq!(std::fs::read(&path).unwrap(), b"new export");
+            assert!(!finished.exists());
+        }
+        assert_eq!(std::fs::read(dir.join("clip.mp4")).unwrap(), b"earlier export");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

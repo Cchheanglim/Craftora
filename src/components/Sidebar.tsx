@@ -17,6 +17,10 @@ interface SidebarProps {
   media: MediaItem[];
   /** Media whose preview copy is still being made. */
   preparing: Set<string>;
+  /** Links being downloaded for editing. */
+  downloading: Set<string>;
+  /** Downloads a link so it edits like a local file; absent in the browser preview. */
+  onDownload?: (mediaId: string) => void;
   /** Absent in the browser preview. */
   onImport?: () => void;
   onAddMedia: (mediaId: string) => void;
@@ -33,6 +37,8 @@ export function Sidebar({
   engines,
   media,
   preparing,
+  downloading,
+  onDownload,
   onImport,
   onAddMedia,
   onRemoveMedia,
@@ -102,13 +108,26 @@ export function Sidebar({
                       <span className="mono">{formatClock(item.source.duration)}</span>
                       {item.missing
                         ? " · file not found"
-                        : preparing.has(item.id)
-                          ? " · preparing preview…"
+                        : downloading.has(item.id)
+                          ? " · downloading…"
+                          : preparing.has(item.id)
+                            ? " · preparing preview…"
                           : item.source.local
                             ? " · this PC"
                             : " · link"}
                     </span>
                   </span>
+                  {onDownload && !item.source.local && !downloading.has(item.id) && (
+                    <button
+                      type="button"
+                      className="btn btn--icon"
+                      aria-label={`Download ${item.name} for editing`}
+                      title="Download the whole video, so it edits smoothly and works offline"
+                      onClick={() => onDownload(item.id)}
+                    >
+                      <Icon name="download" size={14} />
+                    </button>
+                  )}
                   <button type="button" className="btn btn--icon" aria-label={`Add ${item.name} to the timeline`} title="Add to the timeline" onClick={() => onAddMedia(item.id)}>
                     <Icon name="plus" size={14} />
                   </button>

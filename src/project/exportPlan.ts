@@ -5,7 +5,7 @@
  */
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
-import { clipLength, isCropped, mainOrder, mainTrack, projectDuration, transitionLength, type Clip, type MediaItem, type Project } from "./model";
+import { clipLength, isCropped, projectDuration, trackOrder, transitionLength, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
   { id: "1080p", label: "16:9 · 1920 × 1080", width: 1920, height: 1080 },
@@ -47,14 +47,23 @@ function slug(title: string): string {
 
 const compact = (seconds: number) => formatTimecode(seconds).slice(0, 8).replace(/:/g, "").replace(/^00/, "");
 
-/** One clip on Video 1 with nothing changed: eligible for the fast, lossless path. */
+/** One full-size video clip with nothing changed: eligible for the fast, lossless path. */
 function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | null {
   if (project.clips.length !== 1) return null;
   const [clip] = project.clips;
   const media = project.media.find((m) => m.id === clip.mediaId);
+  const onVideoTrack = project.tracks.find((t) => t.id === clip.trackId)?.kind === "video";
   const untouched =
-    clip.volume === 1 && !clip.mirror && !clip.reverse && clip.speed === 1 && !clip.fadeIn && !clip.fadeOut && !isCropped(clip.crop);
-  return media && untouched && clip.trackId === mainTrack(project).id ? { clip, media } : null;
+    clip.volume === 1 &&
+    !clip.mirror &&
+    !clip.reverse &&
+    clip.speed === 1 &&
+    !clip.fadeIn &&
+    !clip.fadeOut &&
+    !isCropped(clip.crop) &&
+    clip.size >= 0.999 &&
+    clip.start < 0.001;
+  return media && untouched && onVideoTrack ? { clip, media } : null;
 }
 
 /** Whether the Fast/Precise choice applies (only the single-cut path can skip re-encoding). */
@@ -123,21 +132,18 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
 
   // Everything else: one render of the whole timeline.
   const frame = frameOf(settings);
-  const main = mainTrack(project).id;
   const used = project.media.filter((m) => project.clips.some((c) => c.mediaId === m.id));
-  const order = mainOrder(project);
   const clips: RenderClip[] = project.clips.map((c) => {
-    const index = order.findIndex((o) => o.id === c.id);
-    const track = project.tracks.find((t) => t.id === c.trackId);
-    const role: RenderClip["role"] = !c.mediaId
-      ? "text"
-      : c.trackId === main
-        ? "main"
-        : track?.kind === "audio"
-          ? "audio"
-          : "overlay";
+    const trackIndex = project.tracks.findIndex((t) => t.id === c.trackId);
+    const track = project.tracks[trackIndex];
+    const order = track?.magnetic ? trackOrder(project, track.id) : [];
+    const i = order.findIndex((o) => o.id === c.id);
+    const next = i >= 0 ? order[i + 1] : undefined;
+    const role: RenderClip["role"] = !c.mediaId ? "text" : track?.kind === "audio" ? "audio" : "video";
     return {
       role,
+      // Lower tracks first; on a track, later clips over earlier ones (for transitions).
+      layer: (project.tracks.length - trackIndex) * 10_000 + Math.max(0, i),
       mediaId: c.mediaId,
       start: c.start,
       in: c.in,
@@ -149,8 +155,10 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       fadeIn: c.fadeIn,
       fadeOut: c.fadeOut,
       crop: [c.crop.left, c.crop.top, c.crop.right, c.crop.bottom],
-      transition: index > 0 ? transitionLength(order[index - 1], c) : 0,
-      transitionKind: c.transition?.kind ?? "crossfade",
+      transitionIn: i > 0 ? transitionLength(order[i - 1], c) : 0,
+      transitionInKind: c.transition?.kind ?? "crossfade",
+      transitionOut: next ? transitionLength(c, next) : 0,
+      transitionOutKind: next?.transition?.kind ?? "crossfade",
       size: c.size,
       x: c.x,
       y: c.y,
@@ -193,27 +201,26 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     .filter((m) => !m.local)
     .map((m) => `yt-dlp -f "${m.format}" --download-sections "*…" --force-keyframes-at-cuts "${m.src}"`);
   const graph = [
-    "concat",
     project.clips.some((c) => c.mirror) && "hflip",
     project.clips.some((c) => c.reverse) && "reverse",
     project.clips.some((c) => isCropped(c.crop)) && "crop",
     project.clips.some((c) => c.speed !== 1) && "setpts, atempo",
     project.clips.some((c) => c.fadeIn || c.fadeOut) && "fade, afade",
-    clips.some((c) => c.transition > 0) && "xfade, acrossfade",
-    clips.some((c) => c.role === "overlay") && "overlay",
+    clips.some((c) => c.transitionIn > 0) && "transitions",
+    "overlay",
     counts.texts && "drawtext",
     "amix",
   ].filter(Boolean);
   const command = [
     ...downloads,
-    `ffmpeg ${media.map((m) => `-i "${m.local ? m.src : "<downloaded>"}"`).join(" ")} -filter_complex "${graph.join(", ")}…"${
-      isVideo ? ` -c:v libx264 -crf 18 -r ${FPS}` : ""
+    `ffmpeg ${media.map((m) => `-ss … -t … -i "${m.local ? m.src : "<downloaded>"}"`).join(" ")} -filter_complex "${graph.join(", ")}…"${
+      isVideo ? (settings.quality === "fast" ? ` -c:v <graphics card or libx264 veryfast> -r ${FPS}` : ` -c:v libx264 -preset slow -crf 18 -r ${FPS}`) : ""
     } "${fileName}"`,
   ].join("\n");
 
   return {
     kind: "render",
-    spec: { media, clips, width: frame.width, height: frame.height, fps: FPS, output: settings.output, container, fileName },
+    spec: { media, clips, width: frame.width, height: frame.height, fps: FPS, output: settings.output, container, fileName, quality: settings.quality },
     sizeMb,
     fileName,
     title,

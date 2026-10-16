@@ -3,8 +3,9 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { inDesktopApp } from "../lib/engine";
 import type { Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
-import { MODELS, hasKey, setKey, useAssistant } from "../assistant/useAssistant";
+import { hasKey, listModels, preferredModel, recommendedModels, setKey, useAssistant, type ModelInfo } from "../assistant/useAssistant";
 import { Icon } from "./Icon";
+import { useConfirm } from "./ConfirmDialog";
 import "./AssistantPanel.css";
 
 const KEY_PAGE = "https://aistudio.google.com/apikey";
@@ -15,6 +16,8 @@ const EXAMPLES = [
   "Speed up the second clip 2× and fade out the end",
 ];
 const MODEL_KEY = "craftora.assistantModel";
+/** The model list's last entry, which opens the search instead of picking a model. */
+const SEARCH = "__search__";
 
 interface AssistantPanelProps {
   api: ProjectApi;
@@ -23,22 +26,50 @@ interface AssistantPanelProps {
   seek: (t: number) => void;
 }
 
-function rememberedModel(): string {
+function rememberedModel(): string | null {
   try {
-    const saved = localStorage.getItem(MODEL_KEY);
-    return MODELS.some((m) => m.id === saved) ? saved! : MODELS[0].id;
+    return localStorage.getItem(MODEL_KEY);
   } catch {
-    return MODELS[0].id;
+    return null;
   }
 }
 
 /** Chat with the AI editing assistant, which edits the timeline with the editor's own actions. */
 export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelProps) {
   const [keyState, setKeyState] = useState<"checking" | "missing" | "ready">("checking");
-  const [model, setModel] = useState(rememberedModel);
+  const [model, setModel] = useState("");
+  /** The models this key can use; null while loading. */
+  const [models, setModels] = useState<ModelInfo[] | null>(null);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  /** The "any model" search, open or closed, and what's typed in it. */
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
   const { entries, busy, send, reset } = useAssistant({ api, current, playhead, seek, model });
+  const { ask, dialog } = useConfirm();
+  const recommended = models ? recommendedModels(models) : [];
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (models ?? []).filter((m) => words.every((w) => `${m.id} ${m.label}`.toLowerCase().includes(w)));
+
+  const startOver = async () => {
+    const ok = await ask({
+      title: "Start a new chat?",
+      message: "The assistant forgets this conversation. Edits it already made stay on your timeline.",
+      confirmLabel: "New chat",
+    });
+    if (ok) reset();
+  };
+
+  const removeKey = async () => {
+    const ok = await ask({
+      title: "Remove your API key?",
+      message: "Craftora deletes the key from this PC. To use the assistant again you'll need to paste it again (it's still in Google AI Studio).",
+      confirmLabel: "Remove key",
+      danger: true,
+    });
+    if (ok) await setKey(null).then(() => setKeyState("missing"));
+  };
 
   useEffect(() => {
     if (!inDesktopApp) return;
@@ -46,6 +77,20 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
       .then((ok) => setKeyState(ok ? "ready" : "missing"))
       .catch(() => setKeyState("missing"));
   }, []);
+
+  // Once there's a key, ask Google which models it can use.
+  useEffect(() => {
+    if (keyState !== "ready") return;
+    setModels(null);
+    setModelsError(null);
+    listModels()
+      .then((list) => {
+        setModels(list);
+        const saved = rememberedModel();
+        setModel(list.some((m) => m.id === saved) ? saved! : (preferredModel(list) ?? ""));
+      })
+      .catch((err) => setModelsError(err instanceof Error ? err.message : String(err)));
+  }, [keyState]);
 
   // Follow the conversation as it grows.
   useEffect(() => {
@@ -80,23 +125,85 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
 
   return (
     <section className="asst" aria-label="Assistant">
+      {dialog}
       <header className="asst__head">
         <label htmlFor="asst-model" className="sr-only">
           Model
         </label>
-        <select id="asst-model" className="field" value={model} onChange={(e) => chooseModel(e.target.value)} disabled={busy}>
-          {MODELS.map((m) => (
+        <select
+          id="asst-model"
+          className="field"
+          value={model}
+          onChange={(e) => {
+            if (e.target.value === SEARCH) setSearching(true);
+            else chooseModel(e.target.value);
+          }}
+          disabled={busy || !models?.length}
+        >
+          {!models && <option value="">{modelsError ? "Couldn't load models" : "Loading models…"}</option>}
+          {models?.length === 0 && <option value="">No usable models for this key</option>}
+          {recommended.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
+              {m.why ? ` (${m.why})` : ""}
             </option>
           ))}
+          {model && !recommended.some((m) => m.id === model) && <option value={model}>{models?.find((m) => m.id === model)?.label ?? model}</option>}
+          {models && models.length > recommended.length && <option value={SEARCH}>Search all {models.length} models…</option>}
         </select>
-        <button type="button" className="btn btn--ghost" onClick={reset} disabled={busy || entries.length === 0} title="Start a new conversation">
+        <button type="button" className="btn btn--ghost" onClick={() => void startOver()} disabled={busy || entries.length === 0} title="Start a new conversation">
           New chat
         </button>
       </header>
+      {searching && models && (
+        <div className="asst__search">
+          <div className="asst__search-field">
+            <Icon name="search" size={13} />
+            <label htmlFor="asst-model-search" className="sr-only">
+              Search models
+            </label>
+            <input
+              id="asst-model-search"
+              className="field"
+              placeholder="Type a model name, e.g. pro or 2.5"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && setSearching(false)}
+              autoFocus
+            />
+            <button type="button" className="btn btn--ghost" onClick={() => setSearching(false)}>
+              Close
+            </button>
+          </div>
+          <ul className="asst__results">
+            {matches.slice(0, 50).map((m) => (
+              <li key={m.id}>
+                <button
+                  type="button"
+                  aria-pressed={m.id === model}
+                  onClick={() => {
+                    chooseModel(m.id);
+                    setSearching(false);
+                    setQuery("");
+                  }}
+                >
+                  <span>{m.label}</span>
+                  <span className="mono">{m.id}</span>
+                </button>
+              </li>
+            ))}
+            {matches.length === 0 && <li className="asst__fine">No model matches “{query}”.</li>}
+          </ul>
+        </div>
+      )}
 
       <div ref={logRef} className="asst__log" aria-live="polite">
+        {modelsError && (
+          <p className="asst__msg is-error">
+            <Icon name="alert" size={12} />
+            <span>Couldn't load your models: {modelsError}</span>
+          </p>
+        )}
         {entries.length === 0 ? (
           <div className="asst__empty">
             <p>Tell the assistant what to change. It edits your timeline directly, and Ctrl+Z undoes it.</p>
@@ -145,13 +252,11 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
           <button
             type="button"
             className="asst__link"
-            onClick={() => {
-              void setKey(null).then(() => setKeyState("missing"));
-            }}
+            onClick={() => void removeKey()}
           >
             Remove API key
           </button>
-          <button type="submit" className="btn btn--secondary" disabled={busy || !draft.trim()}>
+          <button type="submit" className="btn btn--secondary" disabled={busy || !draft.trim() || !model}>
             Send
             <kbd>↵</kbd>
           </button>

@@ -52,7 +52,11 @@ export interface ExportSettings {
   /** Only used for a single untouched clip; everything else is re-encoded. */
   cutMode: CutMode;
   frameId: string;
+  /** Timeline renders: "fast" uses the graphics card when there is one; "best" is slower and smaller. */
+  quality: RenderQuality;
 }
+
+export type RenderQuality = "fast" | "best";
 
 export type JobStatus = "waiting" | "downloading" | "encoding" | "paused" | "finished" | "failed";
 
@@ -84,10 +88,15 @@ export interface RenderSpec {
   output: OutputKind;
   container: VideoContainer | AudioContainer;
   fileName: string;
+  quality: RenderQuality;
 }
 
+export type TransitionKind = "crossfade" | "dip";
+
 export interface RenderClip {
-  role: "main" | "overlay" | "audio" | "text";
+  role: "video" | "audio" | "text";
+  /** Drawing order for pictures and text: higher is on top. */
+  layer: number;
   mediaId?: string;
   start: number;
   in: number;
@@ -100,9 +109,13 @@ export interface RenderClip {
   fadeOut: number;
   /** Fractions cut off each side: left, top, right, bottom. */
   crop: [number, number, number, number];
-  /** Main clips: seconds this clip overlaps the previous one (0 = straight cut), and how. */
-  transition: number;
-  transitionKind: "crossfade" | "dip";
+  /** Seconds this clip overlaps the clip before it on its track (0 = straight cut), and how. */
+  transitionIn: number;
+  transitionInKind: TransitionKind;
+  /** The same for the clip after it, which overlaps this clip's end. */
+  transitionOut: number;
+  transitionOutKind: TransitionKind;
+  /** Video: scale where 1 fills the frame as far as the shape allows. Text: height / frame height. */
   size: number;
   x: number;
   y: number;
@@ -129,6 +142,8 @@ export interface Job {
   spec?: JobSpec;
   /** A timeline the real engines render. Absent (with `spec`) for simulated demo jobs. */
   render?: RenderSpec;
+  /** A whole link downloaded so it can be edited like a file on this PC ("Download first"). */
+  prefetch?: { mediaId: string; url: string; format: string; title: string; audioOnly: boolean };
   /** "processing" while yt-dlp merges or converts after downloading. */
   phase?: "downloading" | "processing" | "cutting" | "encoding";
   downloadedBytes?: number;

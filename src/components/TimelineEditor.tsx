@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { TRANSITION_KINDS, clipEnd, clipLength, mainOrder, mainTrack, transitionLength, type Clip, type Project, type Track } from "../project/model";
-import { mainSlot, packedMain } from "../project/actions";
+import { TRANSITION_KINDS, clipEnd, clipLength, trackOrder, transitionLength, type Clip, type Project, type Track, type TrackKind } from "../project/model";
+import { packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatClock } from "../lib/timecode";
@@ -71,6 +71,7 @@ export function TimelineEditor({
   const [viewWidth, setViewWidth] = useState(0);
   const [fitted, setFitted] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
 
   // Track the visible width for "fit" and the content width.
   useEffect(() => {
@@ -246,28 +247,34 @@ export function TimelineEditor({
   const selected = project.clips.find((c) => c.id === selectedId);
   const canSplit = selected && playback.time > selected.start && playback.time < clipEnd(selected);
 
-  // While a clip is being moved: it follows the pointer, and on Video 1 the other clips
-  // close up behind it and open a gap where it would land.
+  // While a clip is being moved: it follows the pointer, and on a magnetic track the other
+  // clips close up behind it and open a gap where it would land.
+  const isMagnetic = (trackId: string) => Boolean(project.tracks.find((t) => t.id === trackId)?.magnetic);
   const placed = new Map<string, { start: number; trackId: string }>();
   if (ghost) {
-    const main = mainTrack(project).id;
     const dragged = project.clips.find((c) => c.id === ghost.clipId);
     if (dragged) {
-      const gapAt = ghost.trackId === main ? mainSlot(project, dragged.id, ghost.start) : Infinity;
-      if (ghost.trackId === main || dragged.trackId === main) {
-        packedMain(project, dragged.id).forEach(({ clip, start }, i) => {
-          placed.set(clip.id, { start: i >= gapAt ? start + clipLength(dragged) : start, trackId: main });
+      for (const trackId of new Set([ghost.trackId, dragged.trackId])) {
+        if (!isMagnetic(trackId)) continue;
+        const gapAt = trackId === ghost.trackId ? slotOn(project, trackId, dragged.id, ghost.start) : Infinity;
+        packedTrack(project, trackId, dragged.id).forEach(({ clip, start }, i) => {
+          placed.set(clip.id, { start: i >= gapAt ? start + clipLength(dragged) : start, trackId });
         });
       }
       placed.set(dragged.id, { start: ghost.start, trackId: ghost.trackId });
     }
   }
   const where = (c: Clip) => placed.get(c.id) ?? { start: c.start, trackId: c.trackId };
-  const order = mainOrder(project);
-  /** Seconds a Video 1 clip overlaps the one before it (its transition). */
+  /** Seconds a clip on a magnetic track overlaps the one before it (its transition). */
   const overlap = (c: Clip) => {
+    if (ghost || !isMagnetic(c.trackId)) return 0;
+    const order = trackOrder(project, c.trackId);
     const i = order.findIndex((o) => o.id === c.id);
-    return i > 0 && !ghost ? transitionLength(order[i - 1], c) : 0;
+    return i > 0 ? transitionLength(order[i - 1], c) : 0;
+  };
+  const addTrack = (kind: TrackKind) => {
+    setAddOpen(false);
+    api.edit({ type: "addTrack", trackId: `${kind}-${crypto.randomUUID().slice(0, 8)}`, kind });
   };
 
   return (
@@ -293,6 +300,34 @@ export function TimelineEditor({
           <Icon name="text" size={14} />
           Text
         </button>
+        <div
+          className="tl__add"
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget)) setAddOpen(false);
+          }}
+        >
+          <button
+            type="button"
+            className="btn btn--ghost"
+            aria-expanded={addOpen}
+            aria-haspopup="menu"
+            title="Add a track"
+            onClick={() => setAddOpen((o) => !o)}
+          >
+            <Icon name="plus" size={14} />
+            Track
+          </button>
+          {addOpen && (
+            <div className="tl__menu" role="menu">
+              {(["video", "audio", "text"] as TrackKind[]).map((kind) => (
+                <button key={kind} type="button" role="menuitem" onClick={() => addTrack(kind)} autoFocus={kind === "video"}>
+                  <Icon name={TRACK_ICON[kind]} size={13} />
+                  {kind === "video" ? "Video track" : kind === "audio" ? "Audio track" : "Text track"}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="tl__zoom">
           <button type="button" className="btn btn--icon" aria-label="Zoom out" onClick={() => setPps((p) => Math.max(MIN_PPS, p / 1.5))}>
             <Icon name="minus" size={14} />
@@ -309,12 +344,42 @@ export function TimelineEditor({
       <div className="tl__body">
         <div className="tl__heads">
           <div className="tl__ruler-spacer" />
-          {project.tracks.map((track) => (
-            <div key={track.id} className={`tl__head is-${track.kind}`}>
-              <Icon name={TRACK_ICON[track.kind]} size={13} />
-              <span className="truncate">{track.name}</span>
-            </div>
-          ))}
+          {project.tracks.map((track) => {
+            const clipCount = project.clips.filter((c) => c.trackId === track.id).length;
+            return (
+              <div key={track.id} className={`tl__head is-${track.kind}`}>
+                <Icon name={TRACK_ICON[track.kind]} size={13} />
+                <span className="truncate">{track.name}</span>
+                <button
+                  type="button"
+                  className="tl__head-btn"
+                  aria-pressed={Boolean(track.magnetic)}
+                  aria-label={`Magnet for ${track.name}`}
+                  title={
+                    track.magnetic
+                      ? "Magnet on: clips stay back to back and can have transitions. Click to turn off."
+                      : "Magnet off: clips go anywhere. Click to keep them back to back."
+                  }
+                  onClick={() => api.edit({ type: "setMagnetic", trackId: track.id, magnetic: !track.magnetic })}
+                >
+                  <Icon name="magnet" size={12} />
+                </button>
+                <button
+                  type="button"
+                  className="tl__head-btn"
+                  aria-label={`Remove ${track.name}`}
+                  title={
+                    clipCount
+                      ? `Remove ${track.name} and its ${clipCount} clip${clipCount === 1 ? "" : "s"} (Ctrl+Z brings it back)`
+                      : `Remove ${track.name}`
+                  }
+                  onClick={() => api.edit({ type: "removeTrack", trackId: track.id })}
+                >
+                  <Icon name="x" size={12} />
+                </button>
+              </div>
+            );
+          })}
         </div>
 
         <div

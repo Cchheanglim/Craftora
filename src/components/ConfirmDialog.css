@@ -1,0 +1,43 @@
+/* A modal "Are you sure?" box, centred over a dimmed window. */
+.confirm {
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text);
+  max-width: min(420px, calc(100vw - 32px));
+}
+
+.confirm::backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
+
+.confirm__box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+}
+
+.confirm__box h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.confirm__message {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.confirm__note {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}

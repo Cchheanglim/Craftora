@@ -1,4 +1,5 @@
 mod assistant;
+mod encoders;
 mod engine;
 mod jobs;
 mod local;
@@ -16,6 +17,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(jobs::Jobs::default())
         .manage(local::OpenedFiles::default())
+        .setup(|app| {
+            // Exports interrupted by closing the app leave working folders behind.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || jobs::clean_work_dirs(&handle));
+            // Find the fastest encoder now, so the first export doesn't wait for it.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                encoders::hardware(&handle).await;
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             engine::engine_status,
             media::fetch_media,
@@ -24,6 +36,7 @@ pub fn run() {
             jobs::start_job,
             project::start_render,
             jobs::cancel_job,
+            jobs::download_media,
             store::list_projects,
             store::load_project,
             store::save_project,
@@ -34,7 +47,9 @@ pub fn run() {
             store::set_output_dir,
             assistant::assistant_has_key,
             assistant::assistant_set_key,
-            assistant::assistant_request,
+            encoders::export_encoder,
+            assistant::assistant_models,
+            assistant::assistant_generate,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

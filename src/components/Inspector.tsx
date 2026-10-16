@@ -58,7 +58,6 @@ interface InspectorProps {
 export function Inspector({ clip, track, media, onChange, onSpeed, onTransition, onCheckpoint, onFormat, onSplit, onDelete, canSplit }: InspectorProps) {
   const isText = !clip.mediaId;
   const isPicture = track.kind === "video";
-  const isOverlay = isPicture && !track.main;
   const hasSound = Boolean(media?.hasAudio);
   const streams = media && !media.source.local ? media.source.streams.filter((s) => s.kind === (isPicture ? "video" : "audio")) : [];
   const length = clipLength(clip);
@@ -120,11 +119,11 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onTransition,
         </>
       )}
 
-      {isOverlay && (
+      {isPicture && (
         <>
           <p className="insp__hint">Drag the picture on the preview to move it; drag a corner to resize.</p>
           <Slider id="insp-size" label="Size" min={0.1} max={1} step={0.01} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
-          <PositionSelect clip={clip} onChange={onChange} disabled={clip.size >= 1} />
+          <PositionSelect clip={clip} onChange={onChange} />
         </>
       )}
 
@@ -179,6 +178,10 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onTransition,
             ))}
           </select>
         </div>
+      )}
+
+      {!isText && !track.magnetic && (
+        <p className="insp__hint">To add a transition, turn on the magnet on this track (in the track's header), so clips sit back to back.</p>
       )}
 
       {onTransition && (

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { Job } from "../types";
 import type { ProjectEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
@@ -6,6 +5,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { inDesktopApp, revealFile } from "../lib/engine";
 import { storeEdition, type Updates } from "../lib/updates";
 import { Icon } from "./Icon";
+import { useConfirm } from "./ConfirmDialog";
 import "./Home.css";
 
 interface HomeProps {
@@ -85,11 +85,20 @@ export function Home({
   outputDir,
   updates,
 }: HomeProps) {
-  // Deleting asks once more, inline, on the same button.
-  const [confirming, setConfirming] = useState<string | null>(null);
+  const { ask, dialog } = useConfirm();
+  const deleteProject = async (p: ProjectEntry) => {
+    const ok = await ask({
+      title: `Delete “${p.name}”?`,
+      message: "The project and its edits are deleted for good. Your video files and finished exports aren't touched.",
+      confirmLabel: "Delete project",
+      danger: true,
+    });
+    if (ok) onDeleteProject(p.id);
+  };
 
   return (
     <section className="home" aria-labelledby="home-title">
+      {dialog}
       <div className="home__inner">
         <header className="home__head">
           <h1 id="home-title">Craftora</h1>
@@ -154,30 +163,15 @@ export function Home({
                       </span>
                       {p.id === currentId && <span className="home__open">Open now</span>}
                     </button>
-                    {confirming === p.id ? (
-                      <button
-                        type="button"
-                        className="btn btn--ghost home__delete is-confirming"
-                        onClick={() => {
-                          setConfirming(null);
-                          onDeleteProject(p.id);
-                        }}
-                        onBlur={() => setConfirming(null)}
-                        autoFocus
-                      >
-                        Delete?
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn btn--icon home__delete"
-                        aria-label={`Delete ${p.name}`}
-                        title="Delete project"
-                        onClick={() => setConfirming(p.id)}
-                      >
-                        <Icon name="trash" size={14} />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="btn btn--icon home__delete"
+                      aria-label={`Delete ${p.name}`}
+                      title="Delete project"
+                      onClick={() => void deleteProject(p)}
+                    >
+                      <Icon name="trash" size={14} />
+                    </button>
                   </li>
                 ))}
               </ul>

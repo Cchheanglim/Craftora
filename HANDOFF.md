@@ -145,6 +145,29 @@ MSIX packages for free; a plain `.exe` would need a paid certificate (policy 10.
 - Unauthenticated GitHub API polling is limited to 60 requests an hour; the run monitor hit
   it. Use longer intervals or have the owner check the page.
 
+## Seventh session (2026-10-16): fixes for issue #15 (v0.1.1, not released yet)
+
+- **Lost export:** a finished export was deleted. Cause: the output name was picked when a job
+  *started* (`free_path`), so two concurrent jobs could share it, and a failing or cancelled job
+  deleted "its" file. Now jobs write inside `.craftora-<id>` and `jobs::deliver` claims a free
+  name with `create_new` only once the file is complete (unit test in `jobs.rs`). Simple link
+  downloads also go through the working folder. Cancelling kills the process tree
+  (`taskkill /T`), duplicate job ids are refused, and leftover working folders in the export
+  folder are removed at startup.
+- **Stuck at 0%:** yt-dlp reports nothing for `--download-sections` (FFmpeg does the download).
+  It now passes `--downloader-args "ffmpeg_i:-progress pipe:1 -nostats"`, and `out_time_us` is
+  turned into a percentage of the section. Verified with the bundled yt-dlp.
+- **Preview freezes after a jump:** the clock (`usePlayback`) holds while any on-screen media
+  reports loading (`SyncedMedia` `onLoading`, from seeking/waiting/canplay; at most 8 s per
+  element; reversed clips are excluded). It shows "Loading…".
+- **AI fails on every model:** switched from the Interactions API to `models/{model}:generateContent`
+  (stateless; the model's turns are sent back unchanged, so thought signatures survive). The
+  models come from `GET v1beta/models` for the user's key (`assistant_models`). **Not tested
+  against the live API** (no key here).
+- The owner's folders still have leftovers from 0.1.0: `.part` pieces and a `.craftora-*`
+  folder in `Videos\Craftora`, which startup won't clean because it isn't the current export
+  folder.
+
 ## Known limitations
 
 - The reverse preview is choppy and silent while playing (browsers can't play backwards).

@@ -5,6 +5,7 @@ import { formatSize } from "../project/exportPlan";
 import { formatClock } from "../lib/timecode";
 import { revealFile } from "../lib/engine";
 import { Icon } from "./Icon";
+import { useConfirm } from "./ConfirmDialog";
 import "./QueueDock.css";
 
 interface QueueDockProps {
@@ -103,6 +104,20 @@ export function QueueDock({ queue, freshId }: QueueDockProps) {
 
 function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolean }) {
   const [copied, setCopied] = useState(false);
+  const { ask, dialog } = useConfirm();
+  const cancel = async () => {
+    // A job that hasn't started loses nothing; a running one loses its progress.
+    const running = job.status === "downloading" || job.status === "encoding";
+    const ok =
+      !running ||
+      (await ask({
+        title: "Cancel this export?",
+        message: `“${job.title}” stops now and what it has done so far is thrown away. You can add it to the queue again later.`,
+        confirmLabel: "Cancel export",
+        danger: true,
+      }));
+    if (ok) queue.cancel(job.id);
+  };
   const done = job.status === "finished";
   const failed = job.status === "failed";
 
@@ -118,6 +133,7 @@ function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolea
 
   return (
     <li className={fresh ? "queue__row is-fresh" : "queue__row"}>
+      {dialog}
       <div className="queue__name">
         <Icon name={job.kind === "audio" ? "music" : "film"} size={15} />
         <div>
@@ -199,7 +215,7 @@ function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolea
             <Icon name="x" size={14} />
           </button>
         ) : (
-          <button type="button" className="btn btn--icon" aria-label={`Cancel ${job.title}`} title="Cancel" onClick={() => queue.cancel(job.id)}>
+          <button type="button" className="btn btn--icon" aria-label={`Cancel ${job.title}`} title="Cancel" onClick={() => void cancel()}>
             <Icon name="x" size={14} />
           </button>
         )}

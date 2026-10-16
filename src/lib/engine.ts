@@ -130,6 +130,18 @@ export async function startRender(spec: RenderSpec): Promise<void> {
 
 export const cancelJob = (id: string) => invoke<boolean>("cancel_job", { id });
 
+/** Downloads a whole link into Videos\Craftora\Downloads; progress arrives as job events. */
+export async function downloadMedia(spec: { id: string; url: string; format: string; title: string; audioOnly: boolean }): Promise<void> {
+  try {
+    await invoke("download_media", { spec });
+  } catch (err) {
+    throw new Error(message(err));
+  }
+}
+
+/** What encodes "Fast" exports on this PC, e.g. "your NVIDIA graphics card". */
+export const exportEncoder = () => invoke<string>("export_encoder");
+
 export const onJobEvent = (handler: (event: JobEvent) => void): Promise<UnlistenFn> =>
   listen<JobEvent>("job-event", (e) => handler(e.payload));
 

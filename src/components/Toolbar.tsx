@@ -7,6 +7,9 @@ interface ToolbarProps {
   onUrlChange: (url: string) => void;
   onFetch: (url: string) => void;
   fetching: boolean;
+  /** What happens after fetching; absent in the browser preview. */
+  afterFetch?: "edit" | "download";
+  onAfterFetchChange: (choice: "edit" | "download") => void;
   error: string | null;
   /** Links offered as suggestions in the URL field. */
   suggestions: { url: string; title: string }[];
@@ -28,6 +31,8 @@ export function Toolbar({
   onUrlChange,
   onFetch,
   fetching,
+  afterFetch,
+  onAfterFetchChange,
   error,
   suggestions,
   onImport,
@@ -107,6 +112,23 @@ export function Toolbar({
         <button type="submit" className="btn btn--secondary" disabled={fetching || !url.trim()}>
           {fetching ? "Fetching…" : "Fetch"}
         </button>
+        {afterFetch && (
+          <>
+            <label htmlFor="after-fetch" className="sr-only">
+              After fetching
+            </label>
+            <select
+              id="after-fetch"
+              className="field toolbar__then"
+              value={afterFetch}
+              onChange={(e) => onAfterFetchChange(e.target.value as "edit" | "download")}
+              title="Edit now: start editing right away; only the parts you use are downloaded when you export. Download first: the whole video is saved to Videos\Craftora\Downloads, then it edits like a file on this PC (smoother, works offline)."
+            >
+              <option value="edit">Then edit now</option>
+              <option value="download">Then download first</option>
+            </select>
+          </>
+        )}
         {message && (
           <p id="media-url-error" className="toolbar__error" role="alert">
             <Icon name="alert" size={13} />

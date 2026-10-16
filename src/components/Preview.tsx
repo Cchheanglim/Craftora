@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from "react";
 import type { Frame } from "../types";
-import { clipEnd, fadeAt, mainOrder, mainTrack, mediaTimeAt, transitionMix, type Clip, type Project } from "../project/model";
+import { clipEnd, fadeAt, mediaTimeAt, trackOrder, transitionMix, type Clip, type Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
@@ -13,7 +13,7 @@ const FRAME = 1 / 30;
 const SPEEDS = [0.5, 1, 1.5, 2];
 /** Pixels within which a dragged picture or text snaps to the centre or the edges. */
 const SNAP_PX = 6;
-const MIN_OVERLAY = 0.1;
+const MIN_PICTURE = 0.1;
 const MIN_TEXT = 0.02;
 const MAX_TEXT = 0.3;
 
@@ -60,6 +60,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   /** Set when a drag ends, so the click that follows doesn't count as a click on the screen. */
   const justDragged = useRef(false);
   const { time, playing } = playback;
+  // While a clip loads, everything holds together: sound must not run on under a stuck picture.
+  const running = playing && !playback.waiting;
 
   const toggleFullscreen = () => {
     const next = !fullscreen;
@@ -86,31 +88,32 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     return () => window.removeEventListener("craftora:toggle-fullscreen", onToggle);
   });
 
-  const main = mainTrack(project).id;
   const trackIndex = new Map(project.tracks.map((t, i) => [t.id, i]));
+  const trackKind = (c: Clip) => project.tracks.find((t) => t.id === c.trackId)?.kind;
   const mediaOf = (c: Clip) => project.media.find((m) => m.id === c.mediaId);
   const active = (c: Clip) => time >= c.start && time < clipEnd(c);
   const mediaTime = (c: Clip) => (active(c) ? mediaTimeAt(c, time) : null);
   const stageAspect = frame.width / frame.height;
 
-  // Bottom to top: Video 1 in play order (so an incoming transition is above the outgoing
-  // clip), then picture tracks from the lowest row up, then text.
-  const order = mainOrder(project);
-  const layer = (c: Clip) => (c.trackId === main ? order.indexOf(c) : order.length + project.tracks.length - (trackIndex.get(c.trackId) ?? 0));
-  const pictures = project.clips
-    .filter((c) => c.mediaId && project.tracks.find((t) => t.id === c.trackId)?.kind === "video")
-    .sort((a, b) => layer(a) - layer(b));
-  /** Fades and Video 1 transitions together: how visible and how loud a clip is now. */
+  // Each magnetic track's clips in play order, for transitions.
+  const orders = new Map(project.tracks.filter((t) => t.magnetic).map((t) => [t.id, trackOrder(project, t.id)]));
+  // Bottom track first; on a track, later clips over earlier ones (an incoming transition
+  // covers the outgoing clip). The same order as the export.
+  const layer = (c: Clip) => (project.tracks.length - (trackIndex.get(c.trackId) ?? 0)) * 10_000 + (orders.get(c.trackId)?.indexOf(c) ?? 0);
+  const byLayer = (a: Clip, b: Clip) => layer(a) - layer(b);
+  const pictures = project.clips.filter((c) => c.mediaId && trackKind(c) === "video").sort(byLayer);
+  /** Fades and transitions together: how visible and how loud a clip is now. */
   const mix = (c: Clip) => {
     const fade = fadeAt(c, time);
-    const t = c.trackId === main ? transitionMix(order, c, time) : { picture: 1, sound: 1 };
+    const order = orders.get(c.trackId);
+    const t = order ? transitionMix(order, c, time) : { picture: 1, sound: 1 };
     return { picture: fade * t.picture, sound: fade * t.sound };
   };
-  const sounds = project.clips.filter((c) => c.mediaId && project.tracks.find((t) => t.id === c.trackId)?.kind === "audio");
-  const texts = project.clips.filter((c) => !c.mediaId);
+  const sounds = project.clips.filter((c) => c.mediaId && trackKind(c) === "audio");
+  const texts = project.clips.filter((c) => !c.mediaId).sort(byLayer);
   const nothingHere = !project.clips.some(active);
   const selected = project.clips.find((c) => c.id === selectedId);
-  const editable = (c?: Clip) => Boolean(c && c.trackId !== main && project.tracks.find((t) => t.id === c.trackId)?.kind !== "audio");
+  const editable = (c?: Clip) => Boolean(c && trackKind(c) !== "audio");
 
   // Moving and resizing follow the pointer on the window, like the timeline.
   const onPointerMove = useRef<(e: PointerEvent) => void>(() => {});
@@ -139,7 +142,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const fromLeft = g.mode === "nw" || g.mode === "sw";
     const fromTop = g.mode === "nw" || g.mode === "ne";
     const scale = (box.width + (fromLeft ? -dx : dx)) / box.width;
-    const size = g.isText ? clamp(g.size * scale, MIN_TEXT, MAX_TEXT) : clamp(g.size * scale, MIN_OVERLAY, 1);
+    const size = g.isText ? clamp(g.size * scale, MIN_TEXT, MAX_TEXT) : clamp(g.size * scale, MIN_PICTURE, 1);
     const ratio = size / g.size;
     const width = box.width * ratio;
     const height = box.height * ratio;
@@ -207,20 +210,18 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             const media = mediaOf(clip);
             if (!media?.source.previewUrl) return null;
             const t = mediaTime(clip);
-            const isMain = clip.trackId === main;
             const separateSound = Boolean(media.source.previewAudioUrl);
-            const isSelected = clip.id === selectedId && t !== null && !isMain;
+            const isSelected = clip.id === selectedId && t !== null;
             const rate = playback.speed * clip.speed;
             return (
               <PictureLayer
                 key={clip.id}
                 clip={clip}
-                isMain={isMain}
                 stageAspect={stageAspect}
                 visible={t !== null}
                 opacity={t === null ? 0 : mix(clip).picture}
                 selected={isSelected}
-                onPointerDown={isMain ? undefined : beginGesture(clip, "move")}
+                onPointerDown={beginGesture(clip, "move")}
                 handles={isSelected ? handles(clip) : null}
               >
                 {(onMeta, style, onReady) => (
@@ -229,11 +230,12 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                       kind="video"
                       src={media.source.previewUrl}
                       time={t}
-                      playing={playing}
+                      playing={running}
                       volume={clip.volume * mix(clip).sound}
                       muted={muted || separateSound}
                       rate={rate}
                       reverse={clip.reverse}
+                      onLoading={(on) => playback.setLoading(`${clip.id}:video`, on)}
                       className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
                       style={style}
                       onLoadedMetadata={onMeta}
@@ -244,11 +246,12 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         kind="audio"
                         src={media.source.previewAudioUrl!}
                         time={t}
-                        playing={playing}
+                        playing={running}
                         volume={clip.volume * mix(clip).sound}
                         muted={muted}
                         rate={rate}
                         reverse={clip.reverse}
+                        onLoading={(on) => playback.setLoading(`${clip.id}:audio`, on)}
                       />
                     )}
                   </>
@@ -266,11 +269,12 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 kind="audio"
                 src={src}
                 time={mediaTime(clip)}
-                playing={playing}
+                playing={running}
                 volume={clip.volume * mix(clip).sound}
                 muted={muted}
                 rate={playback.speed * clip.speed}
                 reverse={clip.reverse}
+                onLoading={(on) => playback.setLoading(`${clip.id}:audio`, on)}
               />
             );
           })}
@@ -298,6 +302,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           })}
         </div>
         {nothingHere && duration > 0 && <p className="preview__note">Nothing on the timeline here</p>}
+        {playing && playback.waiting && <p className="preview__waiting">Loading…</p>}
       </div>
 
       <div className="preview__transport" onClick={(e) => e.stopPropagation()}>
@@ -347,7 +352,6 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
 
 interface PictureLayerProps {
   clip: Clip;
-  isMain: boolean;
   stageAspect: number;
   visible: boolean;
   opacity: number;
@@ -358,10 +362,10 @@ interface PictureLayerProps {
 }
 
 /**
- * One picture on the stage, placed like the export: Video 1 fitted inside the frame,
- * other tracks at their size and position. The crop is a window onto the video.
+ * One picture on the stage, placed like the export: fitted inside the frame, scaled by its
+ * size, at its position. The crop is a window onto the video.
  */
-function PictureLayer({ clip, isMain, stageAspect, visible, opacity, selected, onPointerDown, handles, children }: PictureLayerProps) {
+function PictureLayer({ clip, stageAspect, visible, opacity, selected, onPointerDown, handles, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
@@ -370,26 +374,15 @@ function PictureLayer({ clip, isMain, stageAspect, visible, opacity, selected, o
   const keptH = 1 - top - bottom;
   const aspect = (videoAspect * keptW) / keptH;
 
-  let box: CSSProperties;
-  if (isMain) {
-    // Fitted inside the frame, centred, like FFmpeg's scale + pad.
-    const wide = aspect >= stageAspect;
-    box = {
-      width: wide ? "100%" : `${(aspect / stageAspect) * 100}%`,
-      height: wide ? `${(stageAspect / aspect) * 100}%` : "100%",
-      left: "50%",
-      top: "50%",
-      translate: "-50% -50%",
-    };
-  } else {
-    box = {
-      width: `${clip.size * 100}%`,
-      aspectRatio: String(aspect),
-      left: `${clip.x * 100}%`,
-      top: `${clip.y * 100}%`,
-      translate: `${-clip.x * 100}% ${-clip.y * 100}%`,
-    };
-  }
+  // Size 1 fits the frame keeping the shape (FFmpeg: force_original_aspect_ratio=decrease).
+  const fitWidth = aspect >= stageAspect ? 1 : aspect / stageAspect;
+  const box: CSSProperties = {
+    width: `${fitWidth * clip.size * 100}%`,
+    aspectRatio: String(aspect),
+    left: `${clip.x * 100}%`,
+    top: `${clip.y * 100}%`,
+    translate: `${-clip.x * 100}% ${-clip.y * 100}%`,
+  };
   const video: CSSProperties = {
     width: `${100 / keptW}%`,
     height: `${100 / keptH}%`,
@@ -399,7 +392,7 @@ function PictureLayer({ clip, isMain, stageAspect, visible, opacity, selected, o
 
   return (
     <div
-      className={[isMain ? "preview__picture is-main" : "preview__picture", selected && "is-selected"].filter(Boolean).join(" ")}
+      className={selected ? "preview__picture is-selected" : "preview__picture"}
       style={{ ...box, visibility: visible ? "visible" : "hidden", opacity }}
       onPointerDown={onPointerDown}
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}

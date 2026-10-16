@@ -47,7 +47,7 @@
 }
 
 .tl__heads {
-  width: 92px;
+  width: 136px;
   flex-shrink: 0;
   border-right: 1px solid var(--line);
   background: var(--bg-panel);
@@ -72,6 +72,84 @@
 .tl__head svg {
   flex-shrink: 0;
   color: var(--text-3);
+}
+
+.tl__head .truncate {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Magnet and remove: small square buttons, faint until the row is hovered. */
+.tl__head-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-3);
+  opacity: 0.55;
+}
+
+.tl__head:hover .tl__head-btn,
+.tl__head-btn:focus-visible {
+  opacity: 1;
+}
+
+.tl__head-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.tl__head .tl__head-btn svg {
+  color: inherit;
+}
+
+.tl__head-btn[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--text);
+  background: var(--bg-selected);
+}
+
+/* "+ Track" and its small menu. */
+.tl__add {
+  position: relative;
+}
+
+.tl__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 10;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.tl__menu button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-align: left;
+}
+
+.tl__menu button:hover,
+.tl__menu button:focus-visible {
+  background: var(--bg-hover);
 }
 
 .tl__head.is-text,

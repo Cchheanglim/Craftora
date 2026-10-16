@@ -7,12 +7,16 @@ import type { MediaSource } from "../types";
 
 export type TrackKind = "video" | "audio" | "text";
 
+/**
+ * A row on the timeline. Every track of a kind works the same way; higher video tracks are
+ * drawn over lower ones. There can be as many tracks as the user wants.
+ */
 export interface Track {
   id: string;
   kind: TrackKind;
   name: string;
-  /** Video 1: clips play back to back and make the base picture. */
-  main?: boolean;
+  /** Clips stay back to back with no gaps (CapCut's "main track magnet"); allows transitions. */
+  magnetic?: boolean;
 }
 
 export type Position =
@@ -27,7 +31,7 @@ export type Position =
   | "bottom-right";
 
 /**
- * Preset places for picture-in-picture and text. `x`/`y` are fractions of the free space
+ * Preset places for pictures and text. `x`/`y` are fractions of the free space
  * (0 = left/top, 1 = right/bottom). The preview and FFmpeg use the same numbers, so what
  * you see is what gets saved.
  */
@@ -75,7 +79,7 @@ export const NO_CROP: Crop = { left: 0, top: 0, right: 0, bottom: 0 };
 /** The most a crop may take from one side, so something always remains. */
 export const MAX_CROP = 0.45;
 
-/** How a Video 1 clip takes over from the one before it. Both overlap for `duration`. */
+/** How a clip on a magnetic track takes over from the one before it. Both overlap for `duration`. */
 export interface Transition {
   kind: "crossfade" | "dip";
   /** Seconds, as set; the real overlap may be shorter for short clips (see `transitionLength`). */
@@ -109,9 +113,12 @@ export interface Clip {
   fadeIn: number;
   fadeOut: number;
   crop: Crop;
-  /** Video 1 only: the transition from the previous clip into this one. */
+  /** Magnetic tracks only: the transition from the previous clip into this one. */
   transition?: Transition;
-  /** Picture-in-picture: width as a fraction of the frame. Text: height as a fraction of the frame. */
+  /**
+   * Video: scale of the picture, where 1 fills the frame as far as its shape allows (like
+   * "fit"). Text: letter height as a fraction of the frame.
+   */
   size: number;
   /** Fractions of the free space, like `POSITIONS`. */
   x: number;
@@ -152,8 +159,15 @@ export function fadeAt(c: Clip, t: number): number {
   return Math.min(1, Math.max(0, f));
 }
 
-/** Video 1's clips in play order. */
-export const mainOrder = (p: Project) => p.clips.filter((c) => c.trackId === mainTrack(p).id).sort((a, b) => a.start - b.start);
+/** A track's clips in play order. */
+export const trackOrder = (p: Project, trackId: string) => p.clips.filter((c) => c.trackId === trackId).sort((a, b) => a.start - b.start);
+
+/** Where a clip's transition into it overlaps: the clip before it on a magnetic track. */
+export function previousOnTrack(p: Project, c: Clip): Clip | undefined {
+  if (!p.tracks.find((t) => t.id === c.trackId)?.magnetic) return undefined;
+  const order = trackOrder(p, c.trackId);
+  return order[order.findIndex((o) => o.id === c.id) - 1];
+}
 
 /**
  * How long `cur` overlaps `prev`: its transition, but at most half of either clip so
@@ -165,8 +179,9 @@ export function transitionLength(prev: Clip | undefined, cur: Clip): number {
 }
 
 /**
- * Video 1 transitions at time `t`: how visible (`picture`) and how loud (`sound`) the clip
- * is, 0–1. The incoming clip is drawn above the outgoing one.
+ * Transitions at time `t` for a clip on a magnetic track (`order` is that track's clips):
+ * how visible (`picture`) and how loud (`sound`) the clip is, 0–1. The incoming clip is
+ * drawn above the outgoing one.
  */
 export function transitionMix(order: Clip[], clip: Clip, t: number): { picture: number; sound: number } {
   const i = order.findIndex((c) => c.id === clip.id);
@@ -198,9 +213,9 @@ export function emptyProject(): Project {
   return {
     media: [],
     tracks: [
-      { id: "text-1", kind: "text", name: "Text" },
+      { id: "text-1", kind: "text", name: "Text 1" },
       { id: "video-2", kind: "video", name: "Video 2" },
-      { id: "video-1", kind: "video", name: "Video 1", main: true },
+      { id: "video-1", kind: "video", name: "Video 1", magnetic: true },
       { id: "audio-1", kind: "audio", name: "Audio 1" },
     ],
     clips: [],
@@ -209,25 +224,35 @@ export function emptyProject(): Project {
 
 /** Fills in fields added after a project was saved, so old project files keep opening. */
 export function upgradeProject(p: Project): Project {
+  // Before all tracks were equal, "Video 1" was the main track and its clips always filled
+  // the frame; it becomes a magnetic track and its clips get the full size.
+  const legacyMain = new Set(p.tracks.filter((t) => (t as Track & { main?: boolean }).main).map((t) => t.id));
   return {
     ...p,
+    tracks: p.tracks.map((t) => {
+      const { main, ...rest } = t as Track & { main?: boolean };
+      return main ? { ...rest, magnetic: true } : rest;
+    }),
     clips: p.clips.map((c) => {
       const legacy = c as Clip & { position?: Position };
       const place = legacy.position ? POSITIONS[legacy.position] : undefined;
+      const wasMain = legacyMain.has(c.trackId);
       return {
         ...c,
         speed: c.speed ?? 1,
         fadeIn: c.fadeIn ?? 0,
         fadeOut: c.fadeOut ?? 0,
         crop: c.crop ?? NO_CROP,
-        x: c.x ?? place?.x ?? 0.5,
-        y: c.y ?? place?.y ?? 0.5,
+        size: wasMain ? 1 : c.size,
+        x: wasMain ? 0.5 : (c.x ?? place?.x ?? 0.5),
+        y: wasMain ? 0.5 : (c.y ?? place?.y ?? 0.5),
       };
     }),
   };
 }
 
-export const mainTrack = (p: Project) => p.tracks.find((t) => t.main)!;
+/** The bottom video track: where new videos go by default. */
+export const baseVideoTrack = (p: Project) => [...p.tracks].reverse().find((t) => t.kind === "video");
 export const trackOf = (p: Project, c: Clip) => p.tracks.find((t) => t.id === c.trackId);
 export const mediaOf = (p: Project, c: Clip) => p.media.find((m) => m.id === c.mediaId);
 
