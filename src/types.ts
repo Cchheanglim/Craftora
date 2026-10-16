@@ -34,6 +34,10 @@ export interface MediaSource {
    * which preview copy is still being made. Absent once the preview is ready.
    */
   previewProxy?: "audio" | "video" | "";
+  /** A still picture (PNG, JPEG…): no sound, shown for as long as its clip lasts. */
+  image?: boolean;
+  /** Links: the preview streams' ids in the disk cache (src-tauri/src/media_cache.rs). */
+  previewCacheIds?: string[];
   streams: StreamOption[];
 }
 
@@ -80,7 +84,7 @@ export interface JobSpec {
 /** A whole timeline (mirrors `RenderSpec` in src-tauri/src/project.rs). */
 export interface RenderSpec {
   id: string;
-  media: { id: string; local: boolean; src: string; format: string }[];
+  media: { id: string; local: boolean; image: boolean; src: string; format: string }[];
   clips: RenderClip[];
   width: number;
   height: number;

@@ -57,6 +57,7 @@ interface InspectorProps {
 /** Settings for the selected clip. */
 export function Inspector({ clip, track, media, onChange, onSpeed, onTransition, onCheckpoint, onFormat, onSplit, onDelete, canSplit }: InspectorProps) {
   const isText = !clip.mediaId;
+  const isImage = Boolean(media?.source.image);
   const isPicture = track.kind === "video";
   const hasSound = Boolean(media?.hasAudio);
   const streams = media && !media.source.local ? media.source.streams.filter((s) => s.kind === (isPicture ? "video" : "audio")) : [];
@@ -68,7 +69,7 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onTransition,
   return (
     <section className="insp" aria-labelledby="insp-title">
       <header className="insp__head">
-        <Icon name={isText ? "text" : isPicture ? "film" : "music"} size={14} />
+        <Icon name={isText ? "text" : isImage ? "image" : isPicture ? "film" : "music"} size={14} />
         <h2 id="insp-title" className="truncate">
           {isText ? "Text" : (media?.name ?? "Clip")}
         </h2>
@@ -160,14 +161,16 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onTransition,
             <input type="checkbox" checked={clip.mirror} onChange={(e) => onChange({ mirror: e.target.checked })} />
             <span>Mirror</span>
           </label>
-          <label className="option">
-            <input type="checkbox" checked={clip.reverse} onChange={(e) => onChange({ reverse: e.target.checked })} />
-            <span>Reverse</span>
-          </label>
+          {!isImage && (
+            <label className="option">
+              <input type="checkbox" checked={clip.reverse} onChange={(e) => onChange({ reverse: e.target.checked })} />
+              <span>Reverse</span>
+            </label>
+          )}
         </div>
       )}
 
-      {!isText && (
+      {!isText && !isImage && (
         <div className="insp__field">
           <label htmlFor="insp-speed">Speed</label>
           <select id="insp-speed" className="field mono" value={clip.speed} onChange={(e) => onSpeed(Number(e.target.value))}>
@@ -229,6 +232,7 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onTransition,
       </fieldset>
 
       {!isText &&
+        !isImage &&
         (hasSound ? (
           <Slider
             id="insp-volume"

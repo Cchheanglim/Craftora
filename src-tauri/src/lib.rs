@@ -3,6 +3,7 @@ mod encoders;
 mod engine;
 mod jobs;
 mod local;
+mod media_cache;
 mod media;
 mod project;
 mod store;
@@ -17,6 +18,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(jobs::Jobs::default())
         .manage(local::OpenedFiles::default())
+        .manage(media_cache::MediaCache::default())
+        // Link previews play through a disk cache, so scrubbing what's fetched is instant.
+        .register_asynchronous_uri_scheme_protocol("cmedia", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn(async move {
+                responder.respond(media_cache::serve(&app, request).await);
+            });
+        })
         .setup(|app| {
             // Exports interrupted by closing the app leave working folders behind.
             let handle = app.handle().clone();
@@ -37,6 +46,8 @@ pub fn run() {
             project::start_render,
             jobs::cancel_job,
             jobs::download_media,
+            media_cache::cache_media,
+            media_cache::prefetch_media,
             store::list_projects,
             store::load_project,
             store::save_project,

@@ -4,6 +4,7 @@
  * Undo/Redo covers both.
  */
 import {
+  DEFAULT_IMAGE_LENGTH,
   DEFAULT_TEXT_LENGTH,
   MAX_CROP,
   MIN_CLIP,
@@ -12,6 +13,7 @@ import {
   baseVideoTrack,
   clipEnd,
   clipLength,
+  isStill,
   transitionLength,
   type Clip,
   type MediaItem,
@@ -247,7 +249,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
       // A file without picture always lands on a sound track.
       const kind: TrackKind = !media.hasVideo || requested?.kind === "audio" ? "audio" : "video";
       const track = requested?.kind === kind ? requested : kind === "video" ? baseVideoTrack(p) : p.tracks.find((t) => t.kind === "audio");
-      const clip = newClip({ id: action.clipId, trackId: track?.id ?? "", mediaId: media.id, start: 0, in: 0, out: media.source.duration });
+      const length = media.source.image ? DEFAULT_IMAGE_LENGTH : media.source.duration;
+      const clip = newClip({ id: action.clipId, trackId: track?.id ?? "", mediaId: media.id, start: 0, in: 0, out: length });
       return place(p, track, kind, clip, action.at);
     }
 
@@ -288,7 +291,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const clip = p.clips.find((c) => c.id === action.clipId);
       if (!clip) return p;
       const media = p.media.find((m) => m.id === clip.mediaId);
-      const trimmed = fitFades(trim(clip, action.edge, action.time, media ? media.source.duration : null));
+      // Text and images have no media length to respect: any length goes.
+      const trimmed = fitFades(trim(clip, action.edge, action.time, isStill(p, clip) ? null : (media?.source.duration ?? null)));
       const next = { ...p, clips: p.clips.map((c) => (c.id === clip.id ? trimmed : c)) };
       return isMagnetic(p, clip.trackId) ? packMagnetic(next) : next;
     }
@@ -300,8 +304,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const used = firstLength * clip.speed;
       let first: Clip;
       let second: Clip;
-      if (!clip.mediaId) {
-        // Text keeps 0-based in/out.
+      if (isStill(p, clip)) {
+        // Text and images keep 0-based in/out.
         first = { ...clip, out: round(firstLength) };
         second = { ...clip, id: action.newClipId, start: round(action.at), in: 0, out: round(clipEnd(clip) - action.at) };
       } else if (clip.reverse) {
@@ -335,7 +339,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
 
     case "setSpeed": {
       const clip = p.clips.find((c) => c.id === action.clipId);
-      if (!clip || !clip.mediaId) return p;
+      if (!clip || isStill(p, clip)) return p;
       const speed = clamp(action.speed, 0.25, 4);
       return settle({ ...p, clips: p.clips.map((c) => (c.id === clip.id ? fitFades({ ...c, speed }) : c)) });
     }

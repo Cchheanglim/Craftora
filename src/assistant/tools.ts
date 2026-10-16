@@ -79,7 +79,7 @@ export function describe(p: Project, playhead: number, ids: ShortIds): string {
     media: p.media.map((m) => ({
       id: ids.short(m.id, "m"),
       name: m.name,
-      length: r2(m.source.duration),
+      ...(m.source.image ? { image: true } : { length: r2(m.source.duration) }),
       video: m.hasVideo,
       sound: m.hasAudio,
     })),
@@ -375,6 +375,7 @@ How the timeline works:
 - A magnetic track (magnetic: true) keeps its clips back to back with no gaps; moving or deleting a clip there shifts the others, and only magnetic tracks can have transitions.
 - Audio tracks hold music and voice-overs, text tracks hold titles. Any number of tracks can be added.
 - A clip's "uses" is the part of its media it plays, in media seconds; start/end are timeline seconds.
+- Images (image: true) are still pictures on a video track: they can be any length (trim_clip the end), start at 5 seconds, and have no sound or speed.
 - After every round of tool calls you get the updated timeline back; use its ids, not guesses.
 
 Rules:

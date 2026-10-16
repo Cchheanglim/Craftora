@@ -200,6 +200,35 @@ and a preview that doesn't freeze. All done; `tsc`, clippy and `cargo test` are 
   **Not run in the desktop app yet.** Note: a running `bun tauri dev` locks
   `target/debug/yt-dlp.exe`, so check with `CARGO_TARGET_DIR=target/check cargo clippy`.
 
+## Ninth session (2026-10-16): fetch window, AI reliability, link cache, images
+
+- **Fetch window** (`FetchChoice.tsx`): after Fetch, the user sees the title, length and quality
+  (with whole-file sizes) and picks "Start editing now" or "Download first, then edit". Each
+  option says what it's best for and what it costs; the last choice gets focus. The old
+  toolbar menu is gone. Browser-tested.
+- **AI, tested live with the owner's key** (from `.env`, never printed; `.env` is gitignored).
+  `generateContent` and the tools work end to end: a title, a crossfade and a speed change came
+  out right. Failures were Google 503s ("high demand") and `gemini-4-argon` having a free-tier
+  limit of 0. `reliable.ts` retries 503s (3 tries) and then falls back through
+  `fallbackModels` (stable Flash models, newest first), and says so in the chat. Switching
+  models mid-conversation was tested and works. The conversation loop moved to
+  `conversation.ts` (`runTurn`), shared by the hook and tests. Rust now returns
+  `HTTP <code>: <message>`; `friendlyError` words it.
+- **Link cache** (`media_cache.rs`): link previews play from `http://cmedia.localhost/<id>` (an
+  async Tauri URI scheme, no port). Range requests are served from a sparse cache file in the
+  app cache dir when covered, else fetched in 1 MB pieces, saved and served. "Download first"
+  also calls `prefetch_media`, which fills in 4 MB pieces and emits `media-cache` progress
+  (Media shows "% ready to scrub"). Unit test for ranges; a live test (ignored by default:
+  `cargo test --lib -- --ignored live_cache`) against archive.org passes. The cache map isn't
+  kept across restarts (the file is cleared).
+- **Images**: `open_local` detects still images (`png_pipe`, `image2`, `webp_pipe`…); the
+  source has `image: true` and a nominal duration of 24 h. Clips start at 5 s and behave like
+  text for trim and split (`isStill`); no speed, reverse or sound. Export uses
+  `-loop 1 -framerate fps -t len -i img`. The preview uses `<img>`. Checked by hand (image
+  picture-in-picture render).
+- **Not yet run in the desktop app:** the cache (WebView2 with the custom scheme) and image
+  import.
+
 ## Known limitations
 
 - The reverse preview is choppy and silent while playing (browsers can't play backwards).

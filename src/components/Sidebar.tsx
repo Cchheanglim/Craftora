@@ -17,6 +17,8 @@ interface SidebarProps {
   media: MediaItem[];
   /** Media whose preview copy is still being made. */
   preparing: Set<string>;
+  /** Links whose preview is being cached: how much (0–100) can already be scrubbed instantly. */
+  previewReady: Record<string, number>;
   /** Links being downloaded for editing. */
   downloading: Set<string>;
   /** Downloads a link so it edits like a local file; absent in the browser preview. */
@@ -37,6 +39,7 @@ export function Sidebar({
   engines,
   media,
   preparing,
+  previewReady,
   downloading,
   onDownload,
   onImport,
@@ -101,15 +104,17 @@ export function Sidebar({
                   }}
                   title="Drag onto the timeline, or press + to add at the end"
                 >
-                  <Icon name={item.hasVideo ? "film" : "music"} size={14} />
+                  <Icon name={item.source.image ? "image" : item.hasVideo ? "film" : "music"} size={14} />
                   <span className="side__file-text">
                     <span className="truncate">{item.name}</span>
                     <span className="side__file-meta">
-                      <span className="mono">{formatClock(item.source.duration)}</span>
+                      {item.source.image ? "Image" : <span className="mono">{formatClock(item.source.duration)}</span>}
                       {item.missing
                         ? " · file not found"
                         : downloading.has(item.id)
-                          ? " · downloading…"
+                          ? previewReady[item.id] !== undefined
+                            ? ` · downloading, ${Math.floor(previewReady[item.id])}% ready to scrub`
+                            : " · downloading…"
                           : preparing.has(item.id)
                             ? " · preparing preview…"
                           : item.source.local

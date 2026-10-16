@@ -137,6 +137,8 @@ export interface Project {
 /** Shortest clip a trim or split may leave, in seconds. */
 export const MIN_CLIP = 0.2;
 export const DEFAULT_TEXT_LENGTH = 3;
+/** How long an image is shown when first added. */
+export const DEFAULT_IMAGE_LENGTH = 5;
 export const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
 
 /** How long the clip lasts on the timeline. */
@@ -255,6 +257,9 @@ export function upgradeProject(p: Project): Project {
 export const baseVideoTrack = (p: Project) => [...p.tracks].reverse().find((t) => t.kind === "video");
 export const trackOf = (p: Project, c: Clip) => p.tracks.find((t) => t.id === c.trackId);
 export const mediaOf = (p: Project, c: Clip) => p.media.find((m) => m.id === c.mediaId);
+
+/** A clip with no media time of its own (text, or a still image): it can be any length. */
+export const isStill = (p: Project, c: Clip) => !c.mediaId || Boolean(mediaOf(p, c)?.source.image);
 
 /** A name for the project list: the first thing imported. */
 export const projectName = (p: Project) => p.media[0]?.name.replace(/\.[a-z0-9]{2,4}$/i, "") ?? "Untitled project";

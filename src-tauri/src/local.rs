@@ -44,6 +44,7 @@ struct ProbeFormat {
 struct ProbeStream {
     codec_type: Option<String>,
     codec_name: Option<String>,
+    width: Option<u32>,
     height: Option<u32>,
     avg_frame_rate: Option<String>,
     bit_rate: Option<String>,
@@ -233,6 +234,18 @@ pub async fn make_preview(app: AppHandle, opened: State<'_, OpenedFiles>, path: 
     Ok(preview_files(&path, kind, Some(&out), has_video))
 }
 
+/// How long a still image may be shown: effectively unlimited (clips start at 5 seconds).
+pub const IMAGE_DURATION: f64 = 24.0 * 3600.0;
+
+/// The picture stream of a still image file (PNG, JPEG, WebP, BMP), if this is one. FFmpeg
+/// reads these as a one-frame "video" with no length. Animated GIFs aren't included.
+fn still_image(probe: &Probe) -> Option<&ProbeStream> {
+    let format = probe.format.format_name.as_deref().unwrap_or("");
+    let still = format == "image2" || ["png_pipe", "jpeg_pipe", "webp_pipe", "bmp_pipe", "tiff_pipe"].contains(&format);
+    let picture = probe.streams.iter().find(|s| s.codec_type.as_deref() == Some("video"))?;
+    (still && !probe.streams.iter().any(|s| s.is_audio())).then_some(picture)
+}
+
 /// "30000/1001" → 29.97
 fn frame_rate(text: &str) -> Option<f64> {
     let (num, den) = text.split_once('/')?;
@@ -250,6 +263,29 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
     let path = normalize(&path)?;
     let path_text = path.to_string_lossy().into_owned();
     let probe = run_probe(&app, &path).await?;
+
+    if let Some(image) = still_image(&probe) {
+        allow_preview(&app, &path)?;
+        opened.0.lock().unwrap().insert(path.clone());
+        let size_mb = probe.format.size.as_deref().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0) / 1_000_000.0;
+        let label = match (image.width, image.height) {
+            (Some(w), Some(h)) => format!("Image · {w}×{h}"),
+            _ => "Image".into(),
+        };
+        return Ok(MediaSource {
+            title: path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Untitled".into()),
+            uploader: "On this PC".into(),
+            duration: IMAGE_DURATION,
+            local: true,
+            preview_url: path_text.clone(),
+            preview_has_audio: false,
+            preview_audio_url: String::new(),
+            preview_proxy: "",
+            image: true,
+            streams: vec![Stream { id: "local:image".into(), kind: "video", label, detail: codec_name(image.codec_name.as_deref()), size_mb }],
+            url: path_text,
+        });
+    }
 
     let duration = probe
         .format
@@ -318,6 +354,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
         preview_has_audio: audio.is_some(),
         preview_audio_url: files.audio,
         preview_proxy: if cached.is_some() { "" } else { kind.name() },
+        image: false,
         streams,
         url: path_text,
     })

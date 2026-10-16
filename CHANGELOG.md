@@ -16,6 +16,12 @@
   you pick the quality, and explains the two ways to work with it: start editing straight away
   (only the parts you use are downloaded at export), or download the whole video first
   (smoother scrubbing, works offline). Links already in Media have a download button too.
+- **Images.** Import PNG, JPEG, WebP or BMP pictures and put them on any video track: they
+  start at 5 seconds and can be stretched to any length, sized, placed, cropped, faded and
+  used in transitions.
+- **Instant scrubbing for links.** Link previews play through a cache on your PC: any part
+  already fetched plays instantly, with no "Loading…". With **Download first**, the cache fills
+  from start to end in the background, and Media shows how much is ready to scrub.
 - **"Are you sure?" checks** before things that can't be undone: deleting a project,
   cancelling a running export, removing the AI key, starting a new AI chat.
 - **AI assistant:** suggests two or three good models for your key, with a search for any other.

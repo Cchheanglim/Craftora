@@ -48,6 +48,9 @@ struct MediaSpec {
     /// yt-dlp format selector for links.
     #[serde(default)]
     format: String,
+    /// A still picture, shown for as long as its clips last.
+    #[serde(default)]
+    image: bool,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq)]
@@ -337,6 +340,7 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
 /// A media file ready for FFmpeg: a local path and how far its time is shifted.
 struct Source {
     path: PathBuf,
+    image: bool,
     /// Downloaded sections start at the section's beginning, not at 0.
     offset: f64,
     info: ProbeInfo,
@@ -373,7 +377,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
             (download(app, &spec.id, &request, work, &format!("media-{n}")).await?, from)
         };
         let info = probe(app, &path).await?;
-        sources.insert(media.id.as_str(), Source { path, offset, info });
+        sources.insert(media.id.as_str(), Source { path, offset, info, image: media.image });
     }
 
     // 2. One input per clip, starting at the clip's first frame.
@@ -384,8 +388,14 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
     let mut input_of: HashMap<usize, (usize, &Source)> = HashMap::new();
     for (i, clip) in spec.clips.iter().enumerate() {
         let Some(source) = clip.media_id.as_deref().and_then(|id| sources.get(id)) else { continue };
-        let from = (clip.in_point - source.offset).max(0.0);
-        inputs.extend(["-ss".into(), secs(from), "-t".into(), secs(clip.out - clip.in_point), "-i".into(), source.path.to_string_lossy().into_owned()]);
+        if source.image {
+            // One picture, repeated at the frame rate for as long as the clip lasts.
+            inputs.extend(["-loop".into(), "1".into(), "-framerate".into(), fps.to_string(), "-t".into(), secs(clip.length())]);
+        } else {
+            let from = (clip.in_point - source.offset).max(0.0);
+            inputs.extend(["-ss".into(), secs(from), "-t".into(), secs(clip.out - clip.in_point)]);
+        }
+        inputs.extend(["-i".into(), source.path.to_string_lossy().into_owned()]);
         input_of.insert(i, (input_of.len(), source));
     }
 

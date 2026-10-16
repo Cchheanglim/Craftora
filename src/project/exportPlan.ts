@@ -63,7 +63,7 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
     !isCropped(clip.crop) &&
     clip.size >= 0.999 &&
     clip.start < 0.001;
-  return media && untouched && onVideoTrack ? { clip, media } : null;
+  return media && !media.source.image && untouched && onVideoTrack ? { clip, media } : null;
 }
 
 /** Whether the Fast/Precise choice applies (only the single-cut path can skip re-encoding). */
@@ -172,6 +172,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     return {
       id: m.id,
       local: Boolean(m.source.local),
+      image: Boolean(m.source.image),
       src: m.source.url,
       format: m.source.local ? "" : pictureNeeded ? m.videoFormat : m.audioFormat,
     };

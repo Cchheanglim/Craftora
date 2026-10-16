@@ -89,6 +89,8 @@ pub struct MediaSource {
     /// Files on this PC: "audio" or "video" when a preview copy still has to be made
     /// (`make_preview`), empty otherwise.
     pub(crate) preview_proxy: &'static str,
+    /// A still picture (PNG, JPEG…) rather than a video; it can be shown for any length.
+    pub(crate) image: bool,
     pub(crate) streams: Vec<Stream>,
 }
 
@@ -267,6 +269,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         preview_has_audio,
         preview_audio_url,
         preview_proxy: "",
+        image: false,
         streams,
     })
 }

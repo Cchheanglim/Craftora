@@ -7,6 +7,8 @@ import {
   fetchMedia,
   inDesktopApp,
   makePreview,
+  onPreviewCache,
+  prefetchPreview,
   onFileDrop,
   openLocal,
   pickFolder,
@@ -145,6 +147,13 @@ export default function App() {
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const [rightTab, setRightTab] = useState<"edit" | "assistant">("edit");
+  /** How much of each link preview is cached on disk (by cache id), 0–100. */
+  const [cached, setCached] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const stop = onPreviewCache((id, percent) => setCached((all) => ({ ...all, [id]: percent })));
+    return () => void stop.then((unlisten) => unlisten());
+  }, []);
   /** A fetched link waiting for the user to choose how to work with it. */
   const [fetched, setFetched] = useState<MediaSource | null>(null);
   /** The choice made last time, highlighted in the next fetch's window. */
@@ -259,6 +268,8 @@ export default function App() {
   /** Queues a whole link to download, so it edits like a file on this PC. */
   const downloadForEditing = (item: MediaItem) => {
     if (!inDesktopApp || item.source.local) return;
+    // Meanwhile, fill the preview's cache from the start, so scrubbing what's done is instant.
+    for (const id of item.source.previewCacheIds ?? []) void prefetchPreview(id).catch(() => {});
     const format = item.hasVideo ? item.videoFormat : item.audioFormat;
     const stream = item.source.streams.find((s) => s.id === format);
     queue.add({
@@ -561,6 +572,11 @@ export default function App() {
         engines={engines}
         media={project.media}
         preparing={preparing}
+        previewReady={Object.fromEntries(
+          project.media
+            .filter((m) => m.source.previewCacheIds?.some((id) => cached[id] !== undefined))
+            .map((m) => [m.id, Math.min(...(m.source.previewCacheIds ?? []).map((id) => cached[id] ?? 0))]),
+        )}
         downloading={
           new Set(queue.jobs.filter((j) => j.prefetch && j.status !== "finished" && j.status !== "failed").map((j) => j.prefetch!.mediaId))
         }

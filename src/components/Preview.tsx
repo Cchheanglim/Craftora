@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
 import { clipEnd, fadeAt, mediaTimeAt, trackOrder, transitionMix, type Clip, type Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
@@ -224,7 +224,20 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 onPointerDown={beginGesture(clip, "move")}
                 handles={isSelected ? handles(clip) : null}
               >
-                {(onMeta, style, onReady) => (
+                {(onShape, style, onReady) =>
+                  media.source.image ? (
+                    <img
+                      src={media.source.previewUrl}
+                      alt=""
+                      className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
+                      style={style}
+                      draggable={false}
+                      onLoad={(e) => {
+                        onShape(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight);
+                        onReady();
+                      }}
+                    />
+                  ) : (
                   <>
                     <SyncedMedia
                       kind="video"
@@ -238,7 +251,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                       onLoading={(on) => playback.setLoading(`${clip.id}:video`, on)}
                       className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
                       style={style}
-                      onLoadedMetadata={onMeta}
+                      onLoadedMetadata={(e) => onShape(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
                       onReady={onReady}
                     />
                     {separateSound && (
@@ -255,7 +268,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                       />
                     )}
                   </>
-                )}
+                  )
+                }
               </PictureLayer>
             );
           })}
@@ -358,7 +372,8 @@ interface PictureLayerProps {
   selected: boolean;
   onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
   handles: ReactNode;
-  children: (onMeta: (e: SyntheticEvent<HTMLVideoElement>) => void, style: CSSProperties, onReady: () => void) => ReactNode;
+  /** Renders the picture: a video or an image. It reports its pixel size and when it's ready. */
+  children: (onShape: (width: number, height: number) => void, style: CSSProperties, onReady: () => void) => ReactNode;
 }
 
 /**
@@ -398,10 +413,13 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, onPointer
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
     >
       <div className="preview__crop">
-        {children((e) => {
-          const v = e.currentTarget;
-          if (v.videoWidth && v.videoHeight) setVideoAspect(v.videoWidth / v.videoHeight);
-        }, video, () => setReady(true))}
+        {children(
+          (width, height) => {
+            if (width && height) setVideoAspect(width / height);
+          },
+          video,
+          () => setReady(true),
+        )}
       </div>
       {visible && !ready && <span className="preview__loading">Loading video…</span>}
       {handles}

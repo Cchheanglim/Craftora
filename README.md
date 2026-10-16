@@ -28,13 +28,16 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
 ## What you can do
 
 **Bring things in**
-- Import video and audio from your PC: the **Import** button, `Ctrl+O`, or drag files onto
-  the window. Imported files work offline.
+- Import video, audio and images (PNG, JPEG, WebP, BMP) from your PC: the **Import** button,
+  `Ctrl+O`, or drag files onto the window. Imported files work offline. An image starts at
+  5 seconds on the timeline; drag its edge to show it for longer.
 - Paste a link from YouTube or any of the [many sites yt-dlp supports](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md),
   and choose the quality. Craftora then asks how you want to work with it: **Start editing
   now** (only the parts you use are downloaded when you export) or **Download first, then
   edit** (the whole video goes to `Videos\Craftora\Downloads` and edits like a file on your
   PC: smoother and offline). Links already in Media have a download button too.
+- Link previews are cached on your PC as they play: jumping back to any part already fetched
+  is instant. While a "Download first" link downloads, Media shows how much is ready to scrub.
 - Files the built-in player can't show (AC-3 or DTS sound, AVI, HEVC and similar) get a
   preview copy made in the background, once. Exports always use the original.
 
