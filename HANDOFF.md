@@ -168,6 +168,38 @@ MSIX packages for free; a plain `.exe` would need a paid certificate (policy 10.
   folder in `Videos\Craftora`, which startup won't clean because it isn't the current export
   folder.
 
+## Eighth session (2026-10-16): v0.2.0, not released yet
+
+The owner asked for: recommended AI models plus search, confirmations for irreversible
+actions, equal tracks and unlimited tracks, much faster export, a "download first" option,
+and a preview that doesn't freeze. All done; `tsc`, clippy and `cargo test` are clean.
+
+- **Equal tracks:** `Track.main` is gone; any track can be `magnetic` (packed, allows
+  transitions). Actions: `addTrack`, `removeTrack`, `setMagnetic`; `packedTrack`/`slotOn`
+  replace the main-only versions. A video clip's `size` is now a scale of the "fit" size
+  (1 = fills as far as the shape allows) on every track. `upgradeProject` turns old main
+  tracks magnetic and their clips size 1. Checked with a Bun script.
+- **Render rewrite** (`project.rs`): one FFmpeg input per clip with `-ss`/`-t` (no decoding
+  from the file's start). Every picture is scaled (`force_original_aspect_ratio=decrease`),
+  alpha-faded (fades plus transitions as alpha ramps; no more xfade/concat) and overlaid on a
+  black base by `layer`; sounds use `afade` + `adelay` + `amix`. Checked by hand with NVENC
+  and x264.
+- **Encoders** (`encoders.rs`): NVENC, then QSV, then AMF, tested once at startup; "Fast"
+  uses hardware, "Best" uses x264 slow; a failed hardware encode retries on x264. The owner's
+  RTX 3050 does 1 min of 1080p in 6.1 s (x264 medium took 25.3 s).
+- **Download first** (`jobs::download_media`): a queue job (`Job.prefetch`) downloads the whole
+  link to `Videos\Craftora\Downloads`; when it finishes, the media is swapped for the local
+  file (`refreshMedia`, keeping the duration).
+- **Confirmations:** `ConfirmDialog.tsx` (`useConfirm`, a native `<dialog>`) for deleting a
+  project, cancelling a running export, removing the AI key and starting a new chat. Undoable
+  edits don't ask.
+- **Preview sync:** all media pause while any is loading (`running = playing && !waiting`),
+  and seeks are never stacked (the latest target is applied when a seek lands).
+- **AI:** `recommendedModels` picks newest Flash / flagship / Flash-Lite; "Search all models…".
+- Browser-tested: add a track, resize a Video 1 clip on the preview, the delete confirmation.
+  **Not run in the desktop app yet.** Note: a running `bun tauri dev` locks
+  `target/debug/yt-dlp.exe`, so check with `CARGO_TARGET_DIR=target/check cargo clippy`.
+
 ## Known limitations
 
 - The reverse preview is choppy and silent while playing (browsers can't play backwards).

@@ -31,23 +31,28 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
 - Import video and audio from your PC: the **Import** button, `Ctrl+O`, or drag files onto
   the window. Imported files work offline.
 - Paste a link from YouTube or any of the [many sites yt-dlp supports](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md),
-  and choose the quality.
+  and choose the quality. Next to **Fetch**, choose **Then edit now** (start straight away;
+  only the parts you use are downloaded when you export) or **Then download first** (the whole
+  video goes to `Videos\Craftora\Downloads` and edits like a file on your PC: smoother and
+  offline). Links already in Media have a download button too.
 - Files the built-in player can't show (AC-3 or DTS sound, AVI, HEVC and similar) get a
   preview copy made in the background, once. Exports always use the original.
 
 **Edit on the timeline**
-- **Video 1** is the main track: its clips play back to back. **Video 2 and up** are
-  picture-in-picture. **Audio** tracks hold music and voice-overs, and the **Text** track
-  holds titles.
+- Every video track works the same way: higher tracks are drawn over lower ones, and any
+  clip can fill the frame or be a small picture-in-picture. **Audio** tracks hold music and
+  voice-overs, **Text** tracks hold titles. Add as many tracks as you like with **+ Track**.
+- The **magnet** on a track's header keeps its clips back to back (no gaps) and allows
+  transitions; turn it off to place clips anywhere. Video 1 starts with it on.
 - Drag clips to move them and their edges to trim. Split at the playhead (`S`), delete, and
   undo or redo anything (`Ctrl+Z` / `Ctrl+Y`). Edges snap to the playhead and to other clips.
 - Drag the red playhead, or anywhere on the ruler, to move through the video.
 
 **Shape each clip** (select it; settings are on the right)
-- Move and resize picture-in-picture and text **directly on the preview**: drag to move,
-  drag a corner to resize.
+- Move and resize any video or text **directly on the preview**: drag to move, drag a corner
+  to resize.
 - Crop, mirror, reverse, change speed (0.25× to 4×), fade in and out, and set the volume.
-- **Transitions** between clips on Video 1: crossfade or dip to black.
+- **Transitions** between clips on a magnetic track: crossfade or dip to black.
 - Text: words, size, colour and place.
 
 **AI assistant** (optional): describe an edit in your own words, such as "add the title My
@@ -57,8 +62,12 @@ uses Google's Gemini with your own API key; see [The AI assistant](#the-ai-assis
 **Export**
 - MP4 or MKV video, or audio only (MP3, WAV, FLAC), in 16:9, 9:16 (Shorts and Reels), 1:1
   or 4:3.
+- **Fast** export uses your graphics card (NVIDIA, Intel or AMD) when the PC has one, which is
+  several times quicker; **Best quality** uses the processor for smaller files.
 - Exports run in a queue at the bottom while you keep editing. Choose the save folder next
   to **Save to** in the Export panel (default: `Videos\Craftora`).
+- Before anything that can't be undone (deleting a project, cancelling a running export),
+  Craftora asks first. Edits on the timeline can always be undone with `Ctrl+Z`.
 - Open **Command that will run** in the Export panel to see the exact FFmpeg and yt-dlp
   commands.
 
@@ -73,8 +82,8 @@ uses Google's Gemini with your own API key; see [The AI assistant](#the-ai-assis
   original quality but starts on the nearest keyframe; **Precise** is frame-accurate and
   re-encodes.
 - **Anything more** (several clips, tracks, text, crop, speed, fades or transitions):
-  Craftora renders the whole timeline in one FFmpeg pass. For links, yt-dlp first downloads
-  just the parts the timeline uses.
+  Craftora renders the whole timeline in one FFmpeg pass, each clip reading only its own part
+  of its file. For links, yt-dlp first downloads just the parts the timeline uses.
 
 ## The AI assistant
 
@@ -82,7 +91,9 @@ uses Google's Gemini with your own API key; see [The AI assistant](#the-ai-assis
 2. Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey) and paste
    it in. A Google AI Pro subscription covers the Gemini app, not the API, so the key is
    separate.
-3. Type what you want changed. Everything the assistant does for one message is a single
+3. Pick a model: Craftora suggests two or three good ones for your key, and **Search all
+   models…** finds any other.
+4. Type what you want changed. Everything the assistant does for one message is a single
    undo step (`Ctrl+Z`).
 
 The key is kept in Windows Credential Manager on your PC. Each message sends your words and
