@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type RefObject } from "react";
+import type { FormEvent, RefObject } from "react";
 import { Icon } from "./Icon";
 import "./Toolbar.css";
 
@@ -8,8 +8,6 @@ interface ToolbarProps {
   onFetch: (url: string) => void;
   fetching: boolean;
   error: string | null;
-  /** Links offered as suggestions in the URL field. */
-  suggestions: { url: string; title: string }[];
   /** Imports files from this PC; absent in the browser preview. */
   onImport?: () => void;
   /** Lets Home's "Paste a link" focus the field. */
@@ -29,7 +27,6 @@ export function Toolbar({
   onFetch,
   fetching,
   error,
-  suggestions,
   onImport,
   inputRef,
   leftOpen,
@@ -38,26 +35,11 @@ export function Toolbar({
   onToggleRight,
   update,
 }: ToolbarProps) {
-  const [pasteFailed, setPasteFailed] = useState(false);
-
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (url.trim()) onFetch(url.trim());
   };
 
-  const paste = async () => {
-    try {
-      const text = (await navigator.clipboard.readText()).trim();
-      if (!text) return;
-      onUrlChange(text);
-      onFetch(text);
-      setPasteFailed(false);
-    } catch {
-      setPasteFailed(true);
-    }
-  };
-
-  const message = error ?? (pasteFailed ? "Couldn't read the clipboard. Paste with Ctrl+V instead." : null);
 
   return (
     <header className="toolbar">
@@ -72,7 +54,7 @@ export function Toolbar({
         >
           <Icon name="panelLeft" />
         </button>
-        <Icon name="logo" size={20} className="toolbar__logo" />
+        <img src="/craftora.svg" width={22} height={22} alt="" className="toolbar__logo" />
         <span>Craftora</span>
       </div>
 
@@ -90,27 +72,18 @@ export function Toolbar({
             value={url}
             onChange={(e) => onUrlChange(e.target.value)}
             placeholder="Paste a video or audio link"
-            aria-invalid={message ? true : undefined}
-            aria-describedby={message ? "media-url-error" : undefined}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "media-url-error" : undefined}
             spellCheck={false}
-            list="media-url-suggestions"
           />
-          <datalist id="media-url-suggestions">
-            {suggestions.map((s) => (
-              <option key={s.url} value={s.url} label={s.title} />
-            ))}
-          </datalist>
         </div>
-        <button type="button" className="btn btn--ghost" onClick={paste}>
-          Paste
-        </button>
         <button type="submit" className="btn btn--secondary" disabled={fetching || !url.trim()}>
           {fetching ? "Fetching…" : "Fetch"}
         </button>
-        {message && (
+        {error && (
           <p id="media-url-error" className="toolbar__error" role="alert">
             <Icon name="alert" size={13} />
-            {message}
+            {error}
           </p>
         )}
       </form>

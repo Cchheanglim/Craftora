@@ -1,4 +1,4 @@
-/** Stroke icons drawn on a 24px grid, 2px stroke (Lucide-compatible shapes). */
+/** Stroke icons drawn on a 24px grid, 1.75px stroke (Lucide-compatible shapes). */
 const paths = {
   logo: (
     <>
@@ -204,7 +204,7 @@ export function Icon({ name, size = 16, className }: IconProps) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={2}
+      strokeWidth={1.75}
       strokeLinecap="round"
       strokeLinejoin="round"
     >

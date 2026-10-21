@@ -20,13 +20,17 @@ import {
   deleteProject,
   getOutputDir,
   listProjects,
+  loadFetchHistory,
   loadHistory,
   loadProject,
+  saveFetchHistory,
   saveHistory,
   saveProject,
   setOutputDir,
+  type FetchEntry,
   type ProjectEntry,
 } from "./lib/storage";
+import { captureThumbnail } from "./lib/thumbnail";
 import { useQueue } from "./state/useQueue";
 import { useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
@@ -124,6 +128,9 @@ const isTyping = (el: EventTarget | null) =>
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
+/** The project's picture for lists: the first media that has one. */
+const coverOf = (project: Project) => project.media.find((m) => m.source.thumbnail)?.source.thumbnail;
+
 /** Finished exports as kept in the history: without what only a running job needs. */
 const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined });
 
@@ -143,6 +150,12 @@ export default function App() {
   const [projectId, setProjectId] = useState<string>(() => crypto.randomUUID());
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [history, setHistory] = useState<Job[] | null>(null);
+  /** Links fetched before, newest first. */
+  const [fetchHistory, setFetchHistory] = useState<FetchEntry[]>(loadFetchHistory);
+  const changeFetchHistory = (next: FetchEntry[]) => {
+    setFetchHistory(next);
+    saveFetchHistory(next);
+  };
   const [outputDir, setOutputDirState] = useState(DEFAULT_OUTPUT_DIR);
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
@@ -201,6 +214,7 @@ export default function App() {
         savedAt: Date.now(),
         duration: projectDuration(project),
         clips: project.clips.length,
+        thumbnail: coverOf(project),
       };
       saveProject({ ...entry, version: 1, project })
         .then(() => setProjects((list) => [entry, ...list.filter((p) => p.id !== entry.id)]))
@@ -265,6 +279,20 @@ export default function App() {
     [api, prepare],
   );
 
+  // Files on this PC get a picture of their first frame once their preview plays here.
+  const thumbTried = useRef(new Set<string>());
+  useEffect(() => {
+    for (const m of project.media) {
+      const s = m.source;
+      if (!s.local || s.thumbnail || s.previewProxy || !s.previewUrl || !(m.hasVideo || s.image) || thumbTried.current.has(m.id)) continue;
+      thumbTried.current.add(m.id);
+      void captureThumbnail(s.previewUrl, s.image).then((thumbnail) => {
+        const current = projectRef.current.media.find((x) => x.id === m.id);
+        if (thumbnail && current) api.refreshMedia(m.id, { source: { ...current.source, thumbnail } });
+      });
+    }
+  }, [project.media, api]);
+
   /** Queues a whole link to download, so it edits like a file on this PC. */
   const downloadForEditing = (item: MediaItem) => {
     if (!inDesktopApp || item.source.local) return;
@@ -311,15 +339,19 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
+      let source: MediaSource;
       if (inDesktopApp) {
-        setFetched(await fetchMedia(link));
+        source = await fetchMedia(link);
       } else {
         // Browser preview: only the demo links resolve.
         await new Promise((resolve) => window.setTimeout(resolve, 400));
         const found = DEMO_SOURCES.find((s) => s.url.toLowerCase() === link.toLowerCase());
-        if (!found) throw new Error("Real links need the desktop app. In this browser preview, clear the field to pick a demo link.");
-        setFetched(found);
+        if (!found) throw new Error("Real links need the desktop app.");
+        source = found;
       }
+      setFetched(source);
+      const entry: FetchEntry = { url: link, title: source.title, thumbnail: source.thumbnail, fetchedAt: Date.now() };
+      changeFetchHistory([entry, ...fetchHistory.filter((e) => e.url !== link)].slice(0, 50));
       setUrl("");
     } catch (err) {
       setError(errorText(err));
@@ -484,11 +516,12 @@ export default function App() {
       command: plan.command,
       spec: inDesktopApp && plan.kind === "simple" ? { ...plan.spec, id } : undefined,
       render: inDesktopApp && plan.kind === "render" ? { ...plan.spec, id } : undefined,
+      thumbnail: coverOf(project),
     };
     queue.add(job);
     setFreshId(id);
     setQueuedCount((n) => n + 1);
-  }, [plan, effective.output, queue]);
+  }, [plan, effective.output, queue, project]);
 
   // Keyboard shortcuts, CapCut-style.
   const keys = useRef<(e: KeyboardEvent) => void>(() => {});
@@ -549,7 +582,6 @@ export default function App() {
         onFetch={(link) => void fetchSource(link)}
         fetching={busy}
         error={error}
-        suggestions={DEMO_SOURCES}
         onImport={inDesktopApp ? () => void importFiles() : undefined}
         inputRef={urlRef}
         leftOpen={leftOpen}
@@ -588,6 +620,10 @@ export default function App() {
         onAddMedia={addMedia}
         onRemoveMedia={(mediaId) => api.edit({ type: "removeMedia", mediaId })}
         usedMedia={usedMedia}
+        history={fetchHistory}
+        onFetchAgain={(link) => void fetchSource(link)}
+        onRemoveHistory={(link) => changeFetchHistory(fetchHistory.filter((e) => e.url !== link))}
+        onClearHistory={() => changeFetchHistory([])}
       />
 
       <main className="app__work">
@@ -595,7 +631,6 @@ export default function App() {
           <Home
             onImport={inDesktopApp ? () => void importFiles() : undefined}
             onPasteLink={() => urlRef.current?.focus()}
-            onTrySample={() => void fetchSource(DEMO.url)}
             busy={busy}
             projects={projects}
             currentId={project.clips.length || project.media.length ? projectId : null}

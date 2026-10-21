@@ -30,7 +30,7 @@
 }
 
 .toolbar__logo {
-  color: var(--accent);
+  display: block;
 }
 
 .toolbar__form {

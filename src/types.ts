@@ -36,6 +36,8 @@ export interface MediaSource {
   previewProxy?: "audio" | "video" | "";
   /** A still picture (PNG, JPEG…): no sound, shown for as long as its clip lasts. */
   image?: boolean;
+  /** A small picture: the site's picture for a link, or a JPEG data URL of a file's first frame. */
+  thumbnail?: string;
   /** Links: the preview streams' ids in the disk cache (src-tauri/src/media_cache.rs). */
   previewCacheIds?: string[];
   streams: StreamOption[];
@@ -155,6 +157,8 @@ export interface Job {
   speedBps?: number;
   etaSeconds?: number;
   outputPath?: string;
+  /** The project's picture when it was queued, shown in the export lists. */
+  thumbnail?: string;
   finishedAt?: number;
   error?: string;
 }

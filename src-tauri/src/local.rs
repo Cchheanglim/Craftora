@@ -282,6 +282,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
             preview_audio_url: String::new(),
             preview_proxy: "",
             image: true,
+            thumbnail: String::new(),
             streams: vec![Stream { id: "local:image".into(), kind: "video", label, detail: codec_name(image.codec_name.as_deref()), size_mb }],
             url: path_text,
         });
@@ -355,6 +356,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
         preview_audio_url: files.audio,
         preview_proxy: if cached.is_some() { "" } else { kind.name() },
         image: false,
+        thumbnail: String::new(),
         streams,
         url: path_text,
     })

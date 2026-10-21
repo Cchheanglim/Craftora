@@ -5,6 +5,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { inDesktopApp, revealFile } from "../lib/engine";
 import { storeEdition, type Updates } from "../lib/updates";
 import { Icon } from "./Icon";
+import { Thumb } from "./Thumb";
 import { useConfirm } from "./ConfirmDialog";
 import "./Home.css";
 
@@ -12,7 +13,6 @@ interface HomeProps {
   /** Absent in the browser preview. */
   onImport?: () => void;
   onPasteLink: () => void;
-  onTrySample: () => void;
   busy: boolean;
   /** Saved projects, most recent first. */
   projects: ProjectEntry[];
@@ -74,7 +74,6 @@ function ago(ms: number): string {
 export function Home({
   onImport,
   onPasteLink,
-  onTrySample,
   busy,
   projects,
   currentId,
@@ -129,15 +128,6 @@ export function Home({
                   </span>
                 </button>
               </li>
-              <li>
-                <button type="button" className="home__action" onClick={onTrySample} disabled={busy}>
-                  <Icon name="film" size={18} />
-                  <span>
-                    <strong>{busy ? "Opening…" : "Try a sample"}</strong>
-                    <span>Big Buck Bunny, a free Blender film</span>
-                  </span>
-                </button>
-              </li>
             </ul>
 
             <div className="home__section-head home__gap">
@@ -154,7 +144,7 @@ export function Home({
                 {projects.map((p) => (
                   <li key={p.id} className={p.id === currentId ? "is-current" : undefined}>
                     <button type="button" className="home__project" onClick={() => onOpenProject(p.id)}>
-                      <Icon name="scissors" size={14} />
+                      <Thumb src={p.thumbnail} icon="scissors" />
                       <span className="home__project-text">
                         <span className="truncate">{p.name}</span>
                         <span className="home__project-meta">
@@ -188,7 +178,7 @@ export function Home({
               <ul className="home__recent">
                 {recent.slice(0, 5).map((job) => (
                   <li key={job.id}>
-                    <Icon name={job.kind === "audio" ? "music" : "film"} size={14} />
+                    <Thumb src={job.thumbnail} icon={job.kind === "audio" ? "music" : "film"} />
                     <span className="truncate mono">{job.outputPath?.split(/[\\/]/).pop() ?? job.fileName}</span>
                     {job.outputPath && (
                       <button type="button" className="btn btn--icon" aria-label={`Show ${job.fileName} in folder`} title="Show in folder" onClick={() => void revealFile(job.outputPath!)}>

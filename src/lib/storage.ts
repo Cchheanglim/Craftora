@@ -16,6 +16,8 @@ export interface ProjectEntry {
   savedAt: number;
   duration: number;
   clips: number;
+  /** The first picture in the project (see `MediaSource.thumbnail`). */
+  thumbnail?: string;
 }
 
 export interface SavedProject extends ProjectEntry {
@@ -26,6 +28,7 @@ export interface SavedProject extends ProjectEntry {
 export const DEFAULT_OUTPUT_DIR = "Videos\\Craftora";
 const BROWSER_PROJECTS = "craftora.projects";
 const BROWSER_HISTORY = "craftora.history";
+const FETCH_HISTORY = "craftora.fetchHistory";
 
 const message = (err: unknown) => (typeof err === "string" ? err : err instanceof Error ? err.message : String(err));
 
@@ -58,7 +61,7 @@ export async function listProjects(): Promise<ProjectEntry[]> {
   if (inDesktopApp) return call<ProjectEntry[]>("list_projects");
   const all = browserRead<Record<string, SavedProject>>(BROWSER_PROJECTS, {});
   return Object.values(all)
-    .map(({ id, name, savedAt, duration, clips }) => ({ id, name, savedAt, duration, clips }))
+    .map(({ id, name, savedAt, duration, clips, thumbnail }) => ({ id, name, savedAt, duration, clips, thumbnail }))
     .sort((a, b) => b.savedAt - a.savedAt);
 }
 
@@ -96,6 +99,20 @@ export async function saveHistory(jobs: Job[]): Promise<void> {
   if (inDesktopApp) return call("save_history", { contents: JSON.stringify(jobs) });
   browserWrite(BROWSER_HISTORY, jobs);
 }
+
+/** A link fetched before, listed in the sidebar so it can be fetched again. */
+export interface FetchEntry {
+  url: string;
+  title: string;
+  thumbnail?: string;
+  /** Milliseconds since 1970. */
+  fetchedAt: number;
+}
+
+// shortcut: kept in the window's localStorage (it persists in the desktop app too); move to
+// store.rs next to the export history if it ever needs to survive a reset of the app's web data.
+export const loadFetchHistory = (): FetchEntry[] => browserRead<FetchEntry[]>(FETCH_HISTORY, []);
+export const saveFetchHistory = (entries: FetchEntry[]) => browserWrite(FETCH_HISTORY, entries);
 
 export async function getOutputDir(): Promise<string> {
   return inDesktopApp ? call<string>("get_output_dir") : DEFAULT_OUTPUT_DIR;
