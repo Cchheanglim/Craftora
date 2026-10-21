@@ -5,6 +5,7 @@ import {
   engineStatus,
   exportEncoder,
   fetchMedia,
+  getCookieFile,
   inDesktopApp,
   makePreview,
   onPreviewCache,
@@ -13,6 +14,12 @@ import {
   openLocal,
   pickFolder,
   pickMediaFiles,
+  openSignIn,
+  pickCookieFile,
+  setCookieFile,
+  onFetchPage,
+  signOutEverywhere,
+  updateYtDlp,
   type EngineStatus,
 } from "./lib/engine";
 import {
@@ -32,7 +39,7 @@ import {
 } from "./lib/storage";
 import { captureThumbnail } from "./lib/thumbnail";
 import { useQueue } from "./state/useQueue";
-import { useUpdates } from "./lib/updates";
+import { storeEdition, useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
 import { useProject } from "./project/useProject";
 import { usePlayback } from "./project/usePlayback";
@@ -131,6 +138,15 @@ const errorText = (err: unknown) => (err instanceof Error ? err.message : String
 /** The project's picture for lists: the first media that has one. */
 const coverOf = (project: Project) => project.media.find((m) => m.source.thumbnail)?.source.thumbnail;
 
+/** "youtube.com" for a link, or null when it doesn't parse. */
+function siteOf(link: string): string | null {
+  try {
+    return new URL(link).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
 /** Finished exports as kept in the history: without what only a running job needs. */
 const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined });
 
@@ -178,6 +194,12 @@ export default function App() {
     }
   });
   const [fastEncoder, setFastEncoder] = useState<string | null>(null);
+  /** A cookies.txt file yt-dlp uses for logins instead of Craftora's sign-in window. */
+  const [cookieFile, setCookieFileState] = useState<string | null>(null);
+  const [signInMessage, setSignInMessage] = useState<string | null>(null);
+  /** A link that failed because its website wants a login: offered as "Sign in to …". */
+  const [loginNeeded, setLoginNeeded] = useState<{ site: string; link: string } | null>(null);
+  const [ytDlpUpdate, setYtDlpUpdate] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null });
   const urlRef = useRef<HTMLInputElement>(null);
 
   const api = useProject(() => (inDesktopApp ? emptyProject() : demoProject()));
@@ -198,6 +220,7 @@ export default function App() {
     if (inDesktopApp) {
       void engineStatus().then(setEngines);
       void exportEncoder().then(setFastEncoder).catch(() => setFastEncoder("the processor"));
+      void getCookieFile().then(setCookieFileState).catch(() => {});
     }
     void listProjects().then(setProjects).catch(() => setProjects([]));
     void loadHistory().then(setHistory);
@@ -338,6 +361,7 @@ export default function App() {
     setUrl(link);
     setBusy(true);
     setError(null);
+    setLoginNeeded(null);
     try {
       let source: MediaSource;
       if (inDesktopApp) {
@@ -354,10 +378,38 @@ export default function App() {
       changeFetchHistory([entry, ...fetchHistory.filter((e) => e.url !== link)].slice(0, 50));
       setUrl("");
     } catch (err) {
-      setError(errorText(err));
+      const text = errorText(err);
+      // yt-dlp asks for a login as "Sign in to confirm…", "log in", "Use --cookies…".
+      const needsLogin = /sign in|log ?in|cookies|private|members/i.test(text);
+      setError(text);
+      const site = siteOf(link);
+      if (needsLogin && inDesktopApp && site) setLoginNeeded({ site, link });
     } finally {
       setBusy(false);
     }
+  };
+
+  const chooseCookieFile = (file: string | null) => {
+    setCookieFile(file)
+      .then(() => setCookieFileState(file))
+      .catch((err) => setSignInMessage(errorText(err)));
+  };
+
+  // "Fetch this video" in the sign-in window fetches the page it shows, with the login.
+  const fetchRef = useRef(fetchSource);
+  fetchRef.current = fetchSource;
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const stop = onFetchPage((link) => void fetchRef.current(link));
+    return () => void stop.then((unlisten) => unlisten());
+  }, []);
+
+  const refreshYtDlp = () => {
+    setYtDlpUpdate({ busy: true, message: null });
+    updateYtDlp()
+      .then((message) => setYtDlpUpdate({ busy: false, message }))
+      .catch((err) => setYtDlpUpdate({ busy: false, message: `Couldn't update: ${errorText(err)}` }))
+      .finally(() => void engineStatus().then(setEngines));
   };
 
   /** Files from this PC: picked in the dialog, or dropped on the window. */
@@ -582,6 +634,15 @@ export default function App() {
         onFetch={(link) => void fetchSource(link)}
         fetching={busy}
         error={error}
+        errorAction={
+          loginNeeded
+            ? {
+                label: `Sign in to ${loginNeeded.site}`,
+                // Opens the video's own page: log in there, then "Fetch this video".
+                onClick: () => void openSignIn(loginNeeded.link).catch((err) => setError(errorText(err))),
+              }
+            : undefined
+        }
         onImport={inDesktopApp ? () => void importFiles() : undefined}
         inputRef={urlRef}
         leftOpen={leftOpen}
@@ -640,6 +701,27 @@ export default function App() {
             recent={exported}
             outputDir={outputDir}
             updates={updates}
+            links={
+              inDesktopApp
+                ? {
+                    cookieFile,
+                    onPickCookieFile: () => void pickCookieFile().then((file) => file && chooseCookieFile(file)),
+                    onClearCookieFile: () => chooseCookieFile(null),
+                    onSignIn: (site) => {
+                      setSignInMessage(null);
+                      openSignIn(site).catch((err) => setSignInMessage(errorText(err)));
+                    },
+                    onSignOut: () =>
+                      void signOutEverywhere()
+                        .then(() => setSignInMessage("Signed out of all websites."))
+                        .catch((err) => setSignInMessage(errorText(err))),
+                    signInMessage,
+                    onUpdateYtDlp: storeEdition ? undefined : refreshYtDlp,
+                    updating: ytDlpUpdate.busy,
+                    ytDlpMessage: ytDlpUpdate.message,
+                  }
+                : undefined
+            }
           />
         )}
         {view === "library" && <Library jobs={exported} outputDir={outputDir} onOpenWorkspace={() => setView("editor")} />}

@@ -13,18 +13,38 @@ Read this first, then `README.md` (features, setup), `CHANGELOG.md` (what each v
   branch; they merge into `main` with GitHub pull requests.
 - Wants Craftora to feel like a simple **CapCut**. Calls stacked media "tracks". Plain CSS, no
   Tailwind. Design rules: sharp near-square corners, no pill buttons, no purple or decorative
-  gradients, no cursor or scroll effects, a dense dark utility look.
+  gradients, no cursor or scroll effects, a dense dark utility look. Since 2026-10-21:
+  icon-only buttons are round glass circles (`.btn--icon`), and the logo is a glossy black
+  cat with a red collar biting a pen (master: `icon-design/craftora-icon.svg`; style
+  references in `Refer/`, which is gitignored).
+- Hates friction: anything that makes them close their browser or leave the screen they're
+  on is a dealbreaker ("I will stop using it").
 - PC: Windows 11 laptop, NVIDIA RTX 3050 Laptop GPU plus Intel UHD. Bun isn't always on `PATH`
   in old terminals: `C:\Users\chhea\AppData\Local\Microsoft\WinGet\Packages\Oven-sh.Bun_Microsoft.Winget.Source_8wekyb3d8bbwe\bun-windows-x64\bun.exe`.
 - They often have `bun tauri dev` running. It holds port 1420 (use that for the browser demo)
   and locks `src-tauri/target/debug/*.exe`; check Rust with
   `CARGO_TARGET_DIR=target/check cargo clippy` so the build doesn't fail with "Access is denied".
 
-## Status (2026-10-16)
+## Status (2026-10-21)
 
-- **v0.1.0** is published on GitHub Releases. **v0.2.0** was built by GitHub Actions (green) as a
-  **draft**; the owner was about to paste the 0.2.0 changelog and publish it. Then their
-  installed 0.1.0 should offer "Update to v0.2.0": the first real auto-update test.
+- **Uncommitted on `Building` (not yet tried in the real window):** sign-in for links that
+  need a login (`src-tauri/src/signin.rs`). A login error in the toolbar shows "Sign in to
+  <site>", which opens the video's page in a Craftora window; its menu bar item **Fetch this
+  video** sends `fetch-page` and the main window fetches that page. Logins live in the
+  app's WebView2 cookie store and reach yt-dlp as a temporary cookies.txt per run (deleted
+  after); a user-picked cookie file overrides them (Home → Links). Borrowing a browser's
+  logins (`--cookies-from-browser`) was removed: Brave/Chrome lock it while open. Also
+  uncommitted: Home's Shortcuts list removed, the app zoomed to 110% (`set_zoom` in
+  `lib.rs`), larger thumbnails. Risk: Google may refuse logins in an embedded WebView2.
+- Committed since 0.2.0: the cat logo and all icon files, round icon buttons, fetch history
+  in the sidebar (localStorage, `FetchEntry`), thumbnails for media, projects and exports
+  (`Thumb`, `lib/thumbnail.ts`), no Paste button or sample links, "Update yt-dlp" (Home →
+  Links; hidden in the Store edition).
+- **GitHub releases:** the published **v0.2.0** release had **no files** (it was made by hand
+  with generated notes), so `latest.json` 404s and 0.1.0 can't update. Fix: delete it, publish
+  the build's v0.2.0 draft. A stray tag **v1.0.0** points at an old commit; suggest deleting it.
+  Not confirmed whether the owner did either.
+- **v0.1.0** is published on GitHub Releases.
 - **Microsoft Store:** 0.1.0 (MSIX) was submitted for certification on 2026-10-15 and is
   waiting. Identity: `Cchheanglim.Craftora` (`src-tauri/msix/store-identity.json`). When it
   passes, upload 0.2.0 built with `scripts/make-msix.ps1`. Risk: Store policy 11.2 (copyright

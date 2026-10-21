@@ -6,6 +6,7 @@ mod local;
 mod media_cache;
 mod media;
 mod project;
+mod signin;
 mod store;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -35,10 +36,15 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 encoders::hardware(&handle).await;
             });
+            // Everything a little larger than 100%: text, pictures and controls alike.
+            if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
+                let _ = main.set_zoom(1.1);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             engine::engine_status,
+            engine::update_yt_dlp,
             media::fetch_media,
             local::open_local,
             local::make_preview,
@@ -56,6 +62,10 @@ pub fn run() {
             store::save_history,
             store::get_output_dir,
             store::set_output_dir,
+            store::get_cookie_file,
+            store::set_cookie_file,
+            signin::open_sign_in,
+            signin::sign_out_everywhere,
             assistant::assistant_has_key,
             assistant::assistant_set_key,
             encoders::export_encoder,
