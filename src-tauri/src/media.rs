@@ -15,6 +15,7 @@ struct Info {
     channel: Option<String>,
     duration: Option<f64>,
     is_live: Option<bool>,
+    thumbnail: Option<String>,
     #[serde(default)]
     formats: Vec<Format>,
 }
@@ -91,6 +92,9 @@ pub struct MediaSource {
     pub(crate) preview_proxy: &'static str,
     /// A still picture (PNG, JPEG…) rather than a video; it can be shown for any length.
     pub(crate) image: bool,
+    /// Links: the site's picture for the video; empty when there is none.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub(crate) thumbnail: String,
     pub(crate) streams: Vec<Stream>,
 }
 
@@ -270,6 +274,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         preview_audio_url,
         preview_proxy: "",
         image: false,
+        thumbnail: info.thumbnail.unwrap_or_default(),
         streams,
     })
 }

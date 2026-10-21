@@ -65,6 +65,9 @@ pub struct ProjectEntry {
     duration: f64,
     #[serde(default)]
     clips: u32,
+    /// A small picture of the project's first video (a link's picture or a JPEG data URL).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    thumbnail: Option<String>,
 }
 
 /// Saved projects, most recently saved first.

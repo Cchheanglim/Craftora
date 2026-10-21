@@ -1,11 +1,22 @@
 import type { EngineStatus } from "../lib/engine";
+import type { FetchEntry } from "../lib/storage";
 import type { MediaItem } from "../project/model";
 import { formatClock } from "../lib/timecode";
 import { Icon } from "./Icon";
+import { Thumb } from "./Thumb";
 import { MEDIA_DRAG_TYPE } from "./TimelineEditor";
 import "./Sidebar.css";
 
 export type View = "home" | "editor" | "library";
+
+/** "youtube.com" for a link; the link itself when it doesn't parse (yt-dlp takes some without https://). */
+function siteOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
 
 interface SidebarProps {
   view: View;
@@ -29,6 +40,11 @@ interface SidebarProps {
   onRemoveMedia: (mediaId: string) => void;
   /** Media used on the timeline can't be removed without removing its clips. */
   usedMedia: Set<string>;
+  /** Links fetched before, newest first. */
+  history: FetchEntry[];
+  onFetchAgain: (url: string) => void;
+  onRemoveHistory: (url: string) => void;
+  onClearHistory: () => void;
 }
 
 export function Sidebar({
@@ -46,6 +62,10 @@ export function Sidebar({
   onAddMedia,
   onRemoveMedia,
   usedMedia,
+  history,
+  onFetchAgain,
+  onRemoveHistory,
+  onClearHistory,
 }: SidebarProps) {
   const nav = [
     { id: "home" as const, label: "Home", icon: "logo" as const },
@@ -104,7 +124,7 @@ export function Sidebar({
                   }}
                   title="Drag onto the timeline, or press + to add at the end"
                 >
-                  <Icon name={item.source.image ? "image" : item.hasVideo ? "film" : "music"} size={14} />
+                  <Thumb src={item.source.thumbnail} icon={item.source.image ? "image" : item.hasVideo ? "film" : "music"} />
                   <span className="side__file-text">
                     <span className="truncate">{item.name}</span>
                     <span className="side__file-meta">
@@ -145,6 +165,35 @@ export function Sidebar({
               ))}
             </ul>
           )}
+        </section>
+      )}
+
+      {!collapsed && history.length > 0 && (
+        <section className="side__media side__history" aria-labelledby="history-title">
+          <header className="side__media-head">
+            <h2 id="history-title" className="section-label">
+              History
+            </h2>
+            <button type="button" className="btn btn--ghost" onClick={onClearHistory}>
+              Clear
+            </button>
+          </header>
+          <ul className="side__list">
+            {history.map((entry) => (
+              <li key={entry.url} className="side__file side__past">
+                <button type="button" className="side__past-open" title={`Fetch again: ${entry.url}`} onClick={() => onFetchAgain(entry.url)}>
+                  <Thumb src={entry.thumbnail} icon="link" />
+                  <span className="side__file-text">
+                    <span className="truncate">{entry.title}</span>
+                    <span className="side__file-meta truncate">{siteOf(entry.url)}</span>
+                  </span>
+                </button>
+                <button type="button" className="btn btn--icon" aria-label={`Remove ${entry.title} from history`} title="Remove from history" onClick={() => onRemoveHistory(entry.url)}>
+                  <Icon name="x" size={13} />
+                </button>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 

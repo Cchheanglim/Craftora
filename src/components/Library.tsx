@@ -2,6 +2,7 @@ import type { Job } from "../types";
 import { formatSize } from "../project/exportPlan";
 import { revealFile } from "../lib/engine";
 import { Icon } from "./Icon";
+import { Thumb } from "./Thumb";
 import "./Library.css";
 
 interface LibraryProps {
@@ -54,7 +55,7 @@ export function Library({ jobs, outputDir, onOpenWorkspace }: LibraryProps) {
                 <tr key={job.id}>
                   <td>
                     <span className="library__name">
-                      <Icon name={job.kind === "audio" ? "music" : "film"} size={15} />
+                      <Thumb src={job.thumbnail} icon={job.kind === "audio" ? "music" : "film"} />
                       <span className="mono truncate">{job.outputPath?.split(/[\\/]/).pop() ?? job.fileName}</span>
                     </span>
                   </td>
