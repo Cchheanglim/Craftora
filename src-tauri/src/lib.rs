@@ -39,6 +39,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             engine::engine_status,
+            engine::update_yt_dlp,
             media::fetch_media,
             local::open_local,
             local::make_preview,
@@ -56,6 +57,8 @@ pub fn run() {
             store::save_history,
             store::get_output_dir,
             store::set_output_dir,
+            store::get_cookies_browser,
+            store::set_cookies_browser,
             assistant::assistant_has_key,
             assistant::assistant_set_key,
             encoders::export_encoder,

@@ -37,6 +37,19 @@ pub fn last_error(stderr: &str) -> Option<String> {
         .find_map(|l| l.trim().strip_prefix("ERROR:").map(|m| m.trim().to_string()))
 }
 
+/// Updates the bundled yt-dlp to its newest release (sites change often, and old versions stop
+/// working on them). Returns yt-dlp's own one-line answer, e.g. "Updated yt-dlp to stable@…".
+#[tauri::command]
+pub async fn update_yt_dlp(app: AppHandle) -> Result<String, String> {
+    let output = run_to_end(&app, YT_DLP, &["-U"]).await?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(last_error(&stderr).unwrap_or_else(|| "yt-dlp couldn't update itself.".into()));
+    }
+    Ok(stdout.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("yt-dlp is up to date.").trim().to_string())
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineStatus {

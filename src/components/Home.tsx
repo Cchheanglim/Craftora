@@ -25,7 +25,29 @@ interface HomeProps {
   recent: Job[];
   outputDir: string;
   updates: Updates;
+  /** Settings for fetching links; absent in the browser preview. */
+  links?: LinkSettings;
 }
+
+export interface LinkSettings {
+  /** The browser whose sign-ins are borrowed, or null. */
+  browser: string | null;
+  onBrowser: (browser: string | null) => void;
+  /** Absent in the Store edition, whose install folder can't be changed. */
+  onUpdateYtDlp?: () => void;
+  updating: boolean;
+  /** yt-dlp's answer to the last update. */
+  ytDlpMessage: string | null;
+}
+
+const BROWSERS = [
+  ["firefox", "Firefox"],
+  ["chrome", "Chrome"],
+  ["edge", "Edge"],
+  ["brave", "Brave"],
+  ["opera", "Opera"],
+  ["vivaldi", "Vivaldi"],
+];
 
 const REPO = "https://github.com/Cchheanglim/Craftora";
 const LINKS = [
@@ -83,6 +105,7 @@ export function Home({
   recent,
   outputDir,
   updates,
+  links,
 }: HomeProps) {
   const { ask, dialog } = useConfirm();
   const deleteProject = async (p: ProjectEntry) => {
@@ -188,6 +211,44 @@ export function Home({
                   </li>
                 ))}
               </ul>
+            )}
+
+            {links && (
+              <>
+                <h2 className="section-label home__gap">Links</h2>
+                <div className="home__about">
+                  <div className="home__about-row">
+                    <label htmlFor="cookies-browser">Use sign-ins from</label>
+                    <select
+                      id="cookies-browser"
+                      className="field"
+                      value={links.browser ?? ""}
+                      onChange={(e) => links.onBrowser(e.target.value || null)}
+                    >
+                      <option value="">No browser</option>
+                      {BROWSERS.map(([id, name]) => (
+                        <option key={id} value={id}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="home__muted">
+                    For private, age-restricted or members-only videos: Craftora uses the accounts you're signed in to in that browser. Close the browser before fetching. Firefox works most reliably.
+                  </p>
+                  {links.onUpdateYtDlp && (
+                    <>
+                      <div className="home__about-row">
+                        <button type="button" className="btn btn--secondary" onClick={links.onUpdateYtDlp} disabled={links.updating}>
+                          {links.updating ? "Updating yt-dlp…" : "Update yt-dlp"}
+                        </button>
+                        {links.ytDlpMessage && <span className="home__muted">{links.ytDlpMessage}</span>}
+                      </div>
+                      <p className="home__muted">If links from a site stop working, update yt-dlp: sites change often.</p>
+                    </>
+                  )}
+                </div>
+              </>
             )}
 
             <h2 className="section-label home__gap">Shortcuts</h2>

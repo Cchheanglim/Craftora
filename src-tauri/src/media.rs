@@ -232,12 +232,11 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         return Err("That doesn't look like a web link. Paste a link starting with https://".into());
     }
 
-    let output = run_to_end(
-        &app,
-        YT_DLP,
-        &["--dump-single-json", "--no-playlist", "--no-warnings", "--encoding", "utf-8", &url],
-    )
-    .await?;
+    let mut args: Vec<String> = ["--dump-single-json", "--no-playlist", "--no-warnings", "--encoding", "utf-8"].map(String::from).to_vec();
+    args.extend(crate::store::cookie_args(&app));
+    args.extend(["--".into(), url.clone()]);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = run_to_end(&app, YT_DLP, &args).await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

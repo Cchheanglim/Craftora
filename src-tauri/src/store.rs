@@ -125,6 +125,41 @@ struct Settings {
     /// Where exports are saved; the default is Videos\Craftora.
     #[serde(default)]
     output_dir: Option<String>,
+    /// The browser whose sign-ins yt-dlp borrows for links that need a login; none by default.
+    #[serde(default)]
+    cookies_browser: Option<String>,
+}
+
+/// Browsers yt-dlp can read sign-ins from on Windows.
+const BROWSERS: [&str; 6] = ["firefox", "chrome", "edge", "brave", "opera", "vivaldi"];
+
+fn write_settings(app: &AppHandle, settings: &Settings) -> Result<(), String> {
+    let text = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+    write_json(&data_dir(app)?.join("settings.json"), &text)
+}
+
+/// yt-dlp arguments that borrow the chosen browser's sign-ins (empty when none is chosen).
+pub(crate) fn cookie_args(app: &AppHandle) -> Vec<String> {
+    match read_settings(app).cookies_browser {
+        Some(browser) => vec!["--cookies-from-browser".into(), browser],
+        None => Vec::new(),
+    }
+}
+
+#[tauri::command]
+pub fn get_cookies_browser(app: AppHandle) -> Option<String> {
+    read_settings(&app).cookies_browser
+}
+
+/// `None` stops using a browser's sign-ins.
+#[tauri::command]
+pub fn set_cookies_browser(app: AppHandle, browser: Option<String>) -> Result<(), String> {
+    if browser.as_deref().is_some_and(|b| !BROWSERS.contains(&b)) {
+        return Err("Craftora can't read sign-ins from that browser.".into());
+    }
+    let mut settings = read_settings(&app);
+    settings.cookies_browser = browser;
+    write_settings(&app, &settings)
 }
 
 fn read_settings(app: &AppHandle) -> Settings {
@@ -154,7 +189,6 @@ pub fn set_output_dir(app: AppHandle, path: Option<String>) -> Result<String, St
     }
     let mut settings = read_settings(&app);
     settings.output_dir = path;
-    let text = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    write_json(&data_dir(&app)?.join("settings.json"), &text)?;
+    write_settings(&app, &settings)?;
     get_output_dir(app)
 }

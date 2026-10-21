@@ -36,6 +36,13 @@ const message = (err: unknown) => (typeof err === "string" ? err : err instanceo
 
 export const engineStatus = () => invoke<EngineStatus>("engine_status");
 
+/** Updates the bundled yt-dlp; resolves with its answer ("Updated yt-dlp to …" or "up to date"). */
+export const updateYtDlp = () => invoke<string>("update_yt_dlp");
+
+/** The browser whose sign-ins yt-dlp borrows (firefox, chrome, edge…), or null for none. */
+export const getCookiesBrowser = () => invoke<string | null>("get_cookies_browser");
+export const setCookiesBrowser = (browser: string | null) => invoke<void>("set_cookies_browser", { browser });
+
 export async function fetchMedia(url: string): Promise<MediaSource> {
   try {
     const source = await invoke<MediaSource>("fetch_media", { url });

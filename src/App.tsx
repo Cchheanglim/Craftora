@@ -5,6 +5,7 @@ import {
   engineStatus,
   exportEncoder,
   fetchMedia,
+  getCookiesBrowser,
   inDesktopApp,
   makePreview,
   onPreviewCache,
@@ -13,6 +14,8 @@ import {
   openLocal,
   pickFolder,
   pickMediaFiles,
+  setCookiesBrowser,
+  updateYtDlp,
   type EngineStatus,
 } from "./lib/engine";
 import {
@@ -32,7 +35,7 @@ import {
 } from "./lib/storage";
 import { captureThumbnail } from "./lib/thumbnail";
 import { useQueue } from "./state/useQueue";
-import { useUpdates } from "./lib/updates";
+import { storeEdition, useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
 import { useProject } from "./project/useProject";
 import { usePlayback } from "./project/usePlayback";
@@ -178,6 +181,9 @@ export default function App() {
     }
   });
   const [fastEncoder, setFastEncoder] = useState<string | null>(null);
+  /** The browser whose sign-ins yt-dlp borrows, or null. */
+  const [cookiesBrowser, setCookiesBrowserState] = useState<string | null>(null);
+  const [ytDlpUpdate, setYtDlpUpdate] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null });
   const urlRef = useRef<HTMLInputElement>(null);
 
   const api = useProject(() => (inDesktopApp ? emptyProject() : demoProject()));
@@ -198,6 +204,7 @@ export default function App() {
     if (inDesktopApp) {
       void engineStatus().then(setEngines);
       void exportEncoder().then(setFastEncoder).catch(() => setFastEncoder("the processor"));
+      void getCookiesBrowser().then(setCookiesBrowserState).catch(() => {});
     }
     void listProjects().then(setProjects).catch(() => setProjects([]));
     void loadHistory().then(setHistory);
@@ -354,10 +361,27 @@ export default function App() {
       changeFetchHistory([entry, ...fetchHistory.filter((e) => e.url !== link)].slice(0, 50));
       setUrl("");
     } catch (err) {
-      setError(errorText(err));
+      const text = errorText(err);
+      // yt-dlp asks for a login as "Sign in to confirm…", "log in", "Use --cookies…".
+      const needsLogin = /sign in|log ?in|cookies|private|members/i.test(text);
+      setError(needsLogin && inDesktopApp ? `${text} Tip: on Home, under Links, pick the browser you're signed in with.` : text);
     } finally {
       setBusy(false);
     }
+  };
+
+  const chooseCookiesBrowser = (browser: string | null) => {
+    setCookiesBrowser(browser)
+      .then(() => setCookiesBrowserState(browser))
+      .catch((err) => setError(errorText(err)));
+  };
+
+  const refreshYtDlp = () => {
+    setYtDlpUpdate({ busy: true, message: null });
+    updateYtDlp()
+      .then((message) => setYtDlpUpdate({ busy: false, message }))
+      .catch((err) => setYtDlpUpdate({ busy: false, message: `Couldn't update: ${errorText(err)}` }))
+      .finally(() => void engineStatus().then(setEngines));
   };
 
   /** Files from this PC: picked in the dialog, or dropped on the window. */
@@ -640,6 +664,17 @@ export default function App() {
             recent={exported}
             outputDir={outputDir}
             updates={updates}
+            links={
+              inDesktopApp
+                ? {
+                    browser: cookiesBrowser,
+                    onBrowser: chooseCookiesBrowser,
+                    onUpdateYtDlp: storeEdition ? undefined : refreshYtDlp,
+                    updating: ytDlpUpdate.busy,
+                    ytDlpMessage: ytDlpUpdate.message,
+                  }
+                : undefined
+            }
           />
         )}
         {view === "library" && <Library jobs={exported} outputDir={outputDir} onOpenWorkspace={() => setView("editor")} />}
