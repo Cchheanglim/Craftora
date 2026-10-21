@@ -6,6 +6,7 @@ import { inDesktopApp, revealFile } from "../lib/engine";
 import { storeEdition, type Updates } from "../lib/updates";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
+import { useState, type FormEvent } from "react";
 import { useConfirm } from "./ConfirmDialog";
 import "./Home.css";
 
@@ -30,24 +31,20 @@ interface HomeProps {
 }
 
 export interface LinkSettings {
-  /** The browser whose sign-ins are borrowed, or null. */
-  browser: string | null;
-  onBrowser: (browser: string | null) => void;
+  /** A cookies.txt file used instead of Craftora's sign-in window, or null. */
+  cookieFile: string | null;
+  onPickCookieFile: () => void;
+  onClearCookieFile: () => void;
+  onSignIn: (site: string) => void;
+  onSignOut: () => void;
+  /** The answer to the last sign-in or sign-out. */
+  signInMessage: string | null;
   /** Absent in the Store edition, whose install folder can't be changed. */
   onUpdateYtDlp?: () => void;
   updating: boolean;
   /** yt-dlp's answer to the last update. */
   ytDlpMessage: string | null;
 }
-
-const BROWSERS = [
-  ["firefox", "Firefox"],
-  ["chrome", "Chrome"],
-  ["edge", "Edge"],
-  ["brave", "Brave"],
-  ["opera", "Opera"],
-  ["vivaldi", "Vivaldi"],
-];
 
 const REPO = "https://github.com/Cchheanglim/Craftora";
 const LINKS = [
@@ -72,17 +69,6 @@ function updateText(status: Updates["status"]): string {
       return "";
   }
 }
-
-const SHORTCUTS: [string, string][] = [
-  ["Space", "Play / pause"],
-  ["S", "Split at the playhead"],
-  ["Delete", "Delete the selected clip"],
-  ["Ctrl Z / Ctrl Y", "Undo / redo"],
-  ["T", "Add text"],
-  ["I / O", "Trim selected clip to the playhead"],
-  ["F", "Full-screen preview"],
-  ["Ctrl ↵", "Add to queue"],
-];
 
 function ago(ms: number): string {
   const minutes = Math.round((Date.now() - ms) / 60_000);
@@ -213,60 +199,7 @@ export function Home({
               </ul>
             )}
 
-            {links && (
-              <>
-                <h2 className="section-label home__gap">Links</h2>
-                <div className="home__about">
-                  <div className="home__about-row">
-                    <label htmlFor="cookies-browser">Use sign-ins from</label>
-                    <select
-                      id="cookies-browser"
-                      className="field"
-                      value={links.browser ?? ""}
-                      onChange={(e) => links.onBrowser(e.target.value || null)}
-                    >
-                      <option value="">No browser</option>
-                      {BROWSERS.map(([id, name]) => (
-                        <option key={id} value={id}>
-                          {name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <p className="home__muted">
-                    For private, age-restricted or members-only videos: Craftora uses the accounts you're signed in to in that browser. Close the browser before fetching. Firefox works most reliably.
-                  </p>
-                  {links.onUpdateYtDlp && (
-                    <>
-                      <div className="home__about-row">
-                        <button type="button" className="btn btn--secondary" onClick={links.onUpdateYtDlp} disabled={links.updating}>
-                          {links.updating ? "Updating yt-dlp…" : "Update yt-dlp"}
-                        </button>
-                        {links.ytDlpMessage && <span className="home__muted">{links.ytDlpMessage}</span>}
-                      </div>
-                      <p className="home__muted">If links from a site stop working, update yt-dlp: sites change often.</p>
-                    </>
-                  )}
-                </div>
-              </>
-            )}
-
-            <h2 className="section-label home__gap">Shortcuts</h2>
-            <dl className="home__keys">
-              {SHORTCUTS.map(([keys, label]) => (
-                <div key={keys}>
-                  <dt>
-                    {keys.split(" / ").map((k, i) => (
-                      <span key={k}>
-                        {i > 0 && " / "}
-                        <kbd>{k}</kbd>
-                      </span>
-                    ))}
-                  </dt>
-                  <dd>{label}</dd>
-                </div>
-              ))}
-            </dl>
+            {links && <Links links={links} />}
 
             <h2 className="section-label home__gap">About</h2>
             <div className="home__about">
@@ -318,5 +251,69 @@ export function Home({
         </div>
       </div>
     </section>
+  );
+}
+
+/** Signing in to websites for links that need a login, and keeping yt-dlp current. */
+function Links({ links }: { links: LinkSettings }) {
+  const [site, setSite] = useState("");
+  const signIn = (e: FormEvent) => {
+    e.preventDefault();
+    if (site.trim()) links.onSignIn(site.trim());
+  };
+  return (
+    <>
+      <h2 className="section-label home__gap">Links</h2>
+      <div className="home__about">
+        <form className="home__about-row" onSubmit={signIn}>
+          <label htmlFor="sign-in-site" className="sr-only">
+            Website to sign in to
+          </label>
+          <input
+            id="sign-in-site"
+            className="field home__site"
+            value={site}
+            onChange={(e) => setSite(e.target.value)}
+            placeholder="youtube.com"
+            spellCheck={false}
+          />
+          <button type="submit" className="btn btn--secondary" disabled={!site.trim()}>
+            Open
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={links.onSignOut}>
+            Sign out of all
+          </button>
+        </form>
+        <p className="home__muted">
+          For age-restricted, private or members-only videos. A window opens: log in, go to the video, then click Fetch this video at the top of the window. Your browser can stay open, and the login is remembered.
+        </p>
+        {links.signInMessage && <p className="home__muted">{links.signInMessage}</p>}
+        <div className="home__about-row">
+          {links.cookieFile ? (
+            <>
+              <span className="home__muted mono truncate">Using {links.cookieFile}</span>
+              <button type="button" className="btn btn--ghost" onClick={links.onClearCookieFile}>
+                Stop using
+              </button>
+            </>
+          ) : (
+            <button type="button" className="btn btn--ghost" onClick={links.onPickCookieFile}>
+              Use a cookie file instead…
+            </button>
+          )}
+        </div>
+        {links.onUpdateYtDlp && (
+          <>
+            <div className="home__about-row">
+              <button type="button" className="btn btn--secondary" onClick={links.onUpdateYtDlp} disabled={links.updating}>
+                {links.updating ? "Updating yt-dlp…" : "Update yt-dlp"}
+              </button>
+              {links.ytDlpMessage && <span className="home__muted">{links.ytDlpMessage}</span>}
+            </div>
+            <p className="home__muted">If links from a website stop working, update yt-dlp: websites change often.</p>
+          </>
+        )}
+      </div>
+    </>
   );
 }

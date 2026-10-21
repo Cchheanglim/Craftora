@@ -125,40 +125,30 @@ struct Settings {
     /// Where exports are saved; the default is Videos\Craftora.
     #[serde(default)]
     output_dir: Option<String>,
-    /// The browser whose sign-ins yt-dlp borrows for links that need a login; none by default.
+    /// A cookie file (cookies.txt) exported from a browser; when absent, yt-dlp gets the logins
+    /// made in Craftora's sign-in window. (Reading a browser's own logins needed it closed.)
     #[serde(default)]
-    cookies_browser: Option<String>,
+    cookies_file: Option<String>,
 }
-
-/// Browsers yt-dlp can read sign-ins from on Windows.
-const BROWSERS: [&str; 6] = ["firefox", "chrome", "edge", "brave", "opera", "vivaldi"];
 
 fn write_settings(app: &AppHandle, settings: &Settings) -> Result<(), String> {
     let text = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
     write_json(&data_dir(app)?.join("settings.json"), &text)
 }
 
-/// yt-dlp arguments that borrow the chosen browser's sign-ins (empty when none is chosen).
-pub(crate) fn cookie_args(app: &AppHandle) -> Vec<String> {
-    match read_settings(app).cookies_browser {
-        Some(browser) => vec!["--cookies-from-browser".into(), browser],
-        None => Vec::new(),
-    }
+#[tauri::command]
+pub fn get_cookie_file(app: AppHandle) -> Option<String> {
+    read_settings(&app).cookies_file
 }
 
+/// `None` goes back to the logins made in Craftora's sign-in window.
 #[tauri::command]
-pub fn get_cookies_browser(app: AppHandle) -> Option<String> {
-    read_settings(&app).cookies_browser
-}
-
-/// `None` stops using a browser's sign-ins.
-#[tauri::command]
-pub fn set_cookies_browser(app: AppHandle, browser: Option<String>) -> Result<(), String> {
-    if browser.as_deref().is_some_and(|b| !BROWSERS.contains(&b)) {
-        return Err("Craftora can't read sign-ins from that browser.".into());
+pub fn set_cookie_file(app: AppHandle, file: Option<String>) -> Result<(), String> {
+    if file.as_ref().is_some_and(|f| !Path::new(f).is_file()) {
+        return Err("That cookie file doesn't exist.".into());
     }
     let mut settings = read_settings(&app);
-    settings.cookies_browser = browser;
+    settings.cookies_file = file;
     write_settings(&app, &settings)
 }
 

@@ -474,7 +474,8 @@ pub(crate) async fn download(app: &AppHandle, job_id: &str, request: &Download<'
         DownloadTarget::Audio(ext) => args.extend(["-x".into(), "--audio-format".into(), ext.into()]),
         DownloadTarget::Any => args.extend(["--merge-output-format".into(), "mkv".into()]),
     }
-    args.extend(crate::store::cookie_args(app));
+    let (cookies, _cookie_file) = crate::signin::cookie_args(app).await;
+    args.extend(cookies);
     args.push("--".into());
     args.push(request.url.to_string());
 

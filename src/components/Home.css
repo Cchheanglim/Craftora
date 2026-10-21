@@ -205,27 +205,9 @@
   min-width: 0;
 }
 
-.home__keys {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 12.5px;
-}
 
-.home__keys > div {
-  display: grid;
-  grid-template-columns: 140px minmax(0, 1fr);
-  align-items: center;
-}
 
-.home__keys dt {
-  color: var(--text-3);
-}
 
-.home__keys dd {
-  margin: 0;
-  color: var(--text-2);
-}
 
 .home__about {
   display: flex;
@@ -265,4 +247,9 @@
 
 .home__links button:hover {
   color: var(--text);
+}
+
+.home__site {
+  flex: 1;
+  min-width: 0;
 }

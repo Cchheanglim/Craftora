@@ -39,9 +39,16 @@ export const engineStatus = () => invoke<EngineStatus>("engine_status");
 /** Updates the bundled yt-dlp; resolves with its answer ("Updated yt-dlp to …" or "up to date"). */
 export const updateYtDlp = () => invoke<string>("update_yt_dlp");
 
-/** The browser whose sign-ins yt-dlp borrows (firefox, chrome, edge…), or null for none. */
-export const getCookiesBrowser = () => invoke<string | null>("get_cookies_browser");
-export const setCookiesBrowser = (browser: string | null) => invoke<void>("set_cookies_browser", { browser });
+/** A cookies.txt file yt-dlp uses for logins instead of Craftora's sign-in window, or null. */
+export const getCookieFile = () => invoke<string | null>("get_cookie_file");
+export const setCookieFile = (file: string | null) => invoke<void>("set_cookie_file", { file });
+
+/** Opens a website or a video's page in a Craftora window, to log in and pick a video there. */
+export const openSignIn = (site: string) => invoke<void>("open_sign_in", { site });
+export const signOutEverywhere = () => invoke<void>("sign_out_everywhere");
+/** "Fetch this video" in the sign-in window: the link of the page it shows. */
+export const onFetchPage = (handler: (link: string) => void): Promise<UnlistenFn> =>
+  listen<string>("fetch-page", (e) => handler(e.payload));
 
 export async function fetchMedia(url: string): Promise<MediaSource> {
   try {
@@ -111,6 +118,16 @@ export async function pickMediaFiles(): Promise<string[]> {
     ],
   });
   return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
+}
+
+export async function pickCookieFile(): Promise<string | null> {
+  const picked = await open({
+    multiple: false,
+    directory: false,
+    title: "Choose a cookie file (cookies.txt)",
+    filters: [{ name: "Cookie file", extensions: ["txt"] }],
+  });
+  return typeof picked === "string" ? picked : null;
 }
 
 export async function pickMediaFile(): Promise<string | null> {

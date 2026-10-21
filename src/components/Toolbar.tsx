@@ -8,6 +8,8 @@ interface ToolbarProps {
   onFetch: (url: string) => void;
   fetching: boolean;
   error: string | null;
+  /** A button next to the error, such as "Sign in to youtube.com". */
+  errorAction?: { label: string; onClick: () => void };
   /** Imports files from this PC; absent in the browser preview. */
   onImport?: () => void;
   /** Lets Home's "Paste a link" focus the field. */
@@ -27,6 +29,7 @@ export function Toolbar({
   onFetch,
   fetching,
   error,
+  errorAction,
   onImport,
   inputRef,
   leftOpen,
@@ -84,6 +87,11 @@ export function Toolbar({
           <p id="media-url-error" className="toolbar__error" role="alert">
             <Icon name="alert" size={13} />
             {error}
+            {errorAction && (
+              <button type="button" className="btn btn--primary" onClick={errorAction.onClick}>
+                {errorAction.label}
+              </button>
+            )}
           </p>
         )}
       </form>
