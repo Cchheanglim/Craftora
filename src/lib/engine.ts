@@ -52,6 +52,8 @@ export const tellSignIn = (message: string) => invoke<void>("tell_sign_in", { me
 export interface FoundPage {
   page: string;
   title: string;
+  /** The page's own preview picture, or "". */
+  image: string;
   /** Video files and embedded players the page plays, best guesses first, each carrying the page. */
   media: string[];
 }
@@ -70,7 +72,10 @@ export async function fetchMedia(url: string): Promise<MediaSource> {
       ids.push(id);
       return convertFileSrc(id, "cmedia");
     };
-    const previewUrl = await cached(source.previewUrl);
+    // Stream playlists can't go through the byte cache: the relay fetches their pieces instead.
+    const previewUrl = source.previewHls
+      ? `${convertFileSrc("hls", "cmedia")}?u=${encodeURIComponent(source.previewUrl)}`
+      : await cached(source.previewUrl);
     const previewAudioUrl = await cached(source.previewAudioUrl);
     return { ...source, previewUrl, previewAudioUrl, previewCacheIds: ids };
   } catch (err) {

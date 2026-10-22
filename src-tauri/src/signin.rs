@@ -30,7 +30,9 @@ const FIND_MEDIA: &str = r#"(() => {
   loaded.filter((u) => /\.(m3u8|mpd)(\?|$)/i.test(u)).forEach(add);
   loaded.filter((u) => /\.(mp4|webm|m4v|mov)(\?|$)/i.test(u)).forEach(add);
   document.querySelectorAll("iframe[src]").forEach((e) => add(e.src));
-  return { title: document.title, media: media.slice(0, 5) };
+  const meta = (name) => document.querySelector(`meta[property="${name}"], meta[name="${name}"]`)?.content;
+  const image = meta("og:image") || meta("twitter:image") || document.querySelector("video[poster]")?.poster || "";
+  return { title: document.title, image: /^https?:/.test(image) ? image : "", media: media.slice(0, 5) };
 })()"#;
 
 /// What "Fetch this video" sends to the main window.
@@ -41,6 +43,9 @@ struct FoundPage {
     page: String,
     #[serde(default)]
     title: String,
+    /// The page's own preview picture (og:image, or the player's poster).
+    #[serde(default)]
+    image: String,
     #[serde(default)]
     media: Vec<String>,
 }

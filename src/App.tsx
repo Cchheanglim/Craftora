@@ -161,7 +161,7 @@ async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource>
     for (const media of found.media) {
       try {
         const source = await fetchMedia(media);
-        return { ...source, title: found.title || source.title };
+        return { ...source, title: found.title || source.title, thumbnail: source.thumbnail || found.image || undefined };
       } catch {
         // An ad or a player that isn't the video: try the next guess.
       }
