@@ -22,6 +22,14 @@ pub fn run() {
         .manage(media_cache::MediaCache::default())
         // Link previews play through a disk cache, so scrubbing what's fetched is instant.
         .register_asynchronous_uri_scheme_protocol("cmedia", |ctx, request, responder| {
+            // Only Craftora's own window. Every window gets every custom scheme, and a website in
+            // the sign-in window could otherwise use the HLS relay (which fetches any address) to
+            // read the user's local network and localhost services.
+            if ctx.webview_label() != "main" {
+                let refused = tauri::http::Response::builder().status(403).body(Vec::new()).unwrap_or_default();
+                responder.respond(refused);
+                return;
+            }
             let app = ctx.app_handle().clone();
             tauri::async_runtime::spawn(async move {
                 responder.respond(media_cache::serve(&app, request).await);
