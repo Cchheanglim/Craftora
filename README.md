@@ -4,7 +4,7 @@
 
 <h1>Craftora</h1>
 
-<p><strong>A simple Windows video editor, in the spirit of CapCut.</strong></p>
+<p><strong>A simple Windows video editor, and FETCH anything.</strong></p>
 
 <p>
   <a href="https://github.com/Cchheanglim/Craftora/releases/latest"><img src="https://img.shields.io/github/v/release/Cchheanglim/Craftora?label=version&color=fa2d48" alt="Latest version"></a>
