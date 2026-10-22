@@ -72,10 +72,8 @@ export async function fetchMedia(url: string): Promise<MediaSource> {
       ids.push(id);
       return convertFileSrc(id, "cmedia");
     };
-    // Stream playlists can't go through the byte cache: the relay fetches their pieces instead.
-    const previewUrl = source.previewHls
-      ? `${convertFileSrc("hls", "cmedia")}?u=${encodeURIComponent(source.previewUrl)}`
-      : await cached(source.previewUrl);
+    // Stream playlists can't go through the byte cache; the WebView plays them itself.
+    const previewUrl = source.previewHls ? source.previewUrl : await cached(source.previewUrl);
     const previewAudioUrl = await cached(source.previewAudioUrl);
     return { ...source, previewUrl, previewAudioUrl, previewCacheIds: ids };
   } catch (err) {
