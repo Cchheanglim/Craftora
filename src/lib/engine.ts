@@ -61,6 +61,11 @@ export interface FoundPage {
 export const onFetchPage = (handler: (found: FoundPage) => void): Promise<UnlistenFn> =>
   listen<FoundPage>("fetch-page", (e) => handler(e.payload));
 
+/** Carries the page a link's servers want (`REFERER_MARK` in src-tauri/src/signin.rs). */
+const PAGE_MARK = "#craftora-referer=";
+/** The HLS relay in src-tauri/src/media_cache.rs (Windows' address for the `cmedia` scheme). */
+export const HLS_RELAY = "http://cmedia.localhost/hls";
+
 export async function fetchMedia(url: string): Promise<MediaSource> {
   try {
     const source = await invoke<MediaSource>("fetch_media", { url });
@@ -72,8 +77,13 @@ export async function fetchMedia(url: string): Promise<MediaSource> {
       ids.push(id);
       return convertFileSrc(id, "cmedia");
     };
-    // Stream playlists can't go through the byte cache; the WebView plays them itself.
-    const previewUrl = source.previewHls ? source.previewUrl : await cached(source.previewUrl);
+    // Stream playlists can't go through the byte cache. The WebView plays them itself, except
+    // when their server wants the page they came from: then hls.js plays them through the relay.
+    const previewUrl = !source.previewHls
+      ? await cached(source.previewUrl)
+      : source.previewUrl.includes(PAGE_MARK)
+        ? `${HLS_RELAY}?u=${encodeURIComponent(source.previewUrl)}`
+        : source.previewUrl;
     const previewAudioUrl = await cached(source.previewAudioUrl);
     return { ...source, previewUrl, previewAudioUrl, previewCacheIds: ids };
   } catch (err) {

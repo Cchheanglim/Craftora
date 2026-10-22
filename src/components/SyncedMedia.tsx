@@ -1,4 +1,6 @@
 import { useEffect, useRef, type CSSProperties, type SyntheticEvent } from "react";
+import type Hls from "hls.js";
+import { HLS_RELAY } from "../lib/engine";
 
 interface SyncedMediaProps {
   kind: "video" | "audio";
@@ -104,6 +106,31 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
     onFailed?.();
   };
 
+  // Streams through the relay play with hls.js (the WebView's own HLS player refuses the relay's
+  // address). Loaded on first use, so it costs nothing for everything else.
+  const viaHls = src.startsWith(HLS_RELAY);
+  const failedRef = useRef(failed);
+  failedRef.current = failed;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !viaHls) return;
+    let player: Hls | undefined;
+    let gone = false;
+    void import("hls.js").then(({ default: HlsPlayer }) => {
+      if (gone) return;
+      player = new HlsPlayer();
+      player.on(HlsPlayer.Events.ERROR, (_event, data) => {
+        if (data.fatal) failedRef.current();
+      });
+      player.loadSource(src);
+      player.attachMedia(el);
+    });
+    return () => {
+      gone = true;
+      player?.destroy();
+    };
+  }, [src, viaHls]);
+
   const onSeeked = () => {
     const el = ref.current;
     const t = target.current;
@@ -119,7 +146,7 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
   return kind === "video" ? (
     <video
       ref={ref}
-      src={src}
+      src={viaHls ? undefined : src}
       className={className}
       style={style}
       preload="auto"
@@ -137,7 +164,7 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
   ) : (
     <audio
       ref={ref}
-      src={src}
+      src={viaHls ? undefined : src}
       preload="auto"
       aria-hidden="true"
       onError={failed}
