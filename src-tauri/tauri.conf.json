@@ -31,7 +31,6 @@
     "active": true,
     "targets": "all",
     "externalBin": [
-      "bin/yt-dlp",
       "bin/ffmpeg",
       "bin/ffprobe"
     ],
@@ -48,6 +47,7 @@
     "shortDescription": "Desktop video editor built on yt-dlp and FFmpeg",
     "createUpdaterArtifacts": true,
     "resources": {
+      "bin/yt-dlp/": "yt-dlp/",
       "bin/FFMPEG-LICENSE.txt": "licenses/FFMPEG-LICENSE.txt",
       "../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md",
       "../LICENSE": "licenses/CRAFTORA-LICENSE.txt"

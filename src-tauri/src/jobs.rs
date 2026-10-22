@@ -9,7 +9,6 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
-use tauri_plugin_shell::ShellExt;
 
 use crate::engine::{last_error, sidecar_dir, FFMPEG, YT_DLP};
 use crate::local::{normalize, OpenedFiles};
@@ -445,6 +444,9 @@ pub(crate) async fn download(app: &AppHandle, job_id: &str, request: &Download<'
         "--progress".into(),
         "--encoding".into(),
         "utf-8".into(),
+        // Streams come in many small pieces: fetching four at a time is much faster than one.
+        "--concurrent-fragments".into(),
+        "4".into(),
         "--ffmpeg-location".into(),
         engines.to_string_lossy().into_owned(),
         "-f".into(),
@@ -571,11 +573,7 @@ async fn run_streaming(
     if jobs.is_cancelled(id) {
         return Err("Cancelled".into());
     }
-    let mut command = app
-        .shell()
-        .sidecar(program)
-        .map_err(|e| format!("{program} is not bundled: {e}"))?
-        .args(args);
+    let mut command = crate::engine::command(app, program)?.args(args);
     if let Some(dir) = cwd {
         command = command.current_dir(dir);
     }
