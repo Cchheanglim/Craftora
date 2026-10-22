@@ -36,6 +36,9 @@ struct Format {
     protocol: Option<String>,
     /// HLS formats: the master playlist that lists every quality and the sound.
     manifest_url: Option<String>,
+    /// Headers the site's video servers want, such as the page as `Referer`.
+    #[serde(default)]
+    http_headers: BTreeMap<String, String>,
 }
 
 impl Format {
@@ -92,7 +95,8 @@ pub struct MediaSource {
     pub(crate) preview_has_audio: bool,
     /// Separate sound stream played in sync with a video-only preview; empty when not needed.
     pub(crate) preview_audio_url: String,
-    /// `preview_url` is a stream playlist (HLS), played by the WebView itself from its web address.
+    /// `preview_url` is a stream playlist (HLS): played by the WebView itself, or with hls.js through
+    /// the relay in media_cache.rs when its server wants the page it came from.
     pub(crate) preview_hls: bool,
     /// Files on this PC: "audio" or "video" when a preview copy still has to be made
     /// (`make_preview`), empty otherwise.
@@ -282,13 +286,12 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         _ => hls_preview(&info.formats).map_or((String::new(), false, false), |url| (url, true, true)),
     };
     let preview_audio_url = if preview_has_audio || preview_url.is_empty() { String::new() } else { preview_audio(&info.formats) };
-    // A video found by playing a page: the preview's server wants that page too (media_cache.rs).
-    let page = crate::signin::split_referer(&url).1;
-    // Not for stream playlists: the WebView plays those itself and only from their real address
-    // (it refused them from the app's own `cmedia` scheme), so they can't carry the page.
-    // shortcut: a stream whose server insists on the page won't preview; it needs Download first.
-    let with_page = |preview: String| match page {
-        Some(page) if !preview.is_empty() && !preview_hls => format!("{preview}{}{page}", crate::signin::REFERER_MARK),
+    // The page the preview's servers want: the one a found video came from, or the Referer yt-dlp
+    // says the site's video servers need. The cache and the HLS relay send it (media_cache.rs).
+    let site_page = info.formats.iter().find_map(|f| f.http_headers.get("Referer").cloned());
+    let page = crate::signin::split_referer(&url).1.map(str::to_string).or(site_page);
+    let with_page = |preview: String| match &page {
+        Some(page) if !preview.is_empty() => format!("{preview}{}{page}", crate::signin::REFERER_MARK),
         _ => preview,
     };
     let (preview_url, preview_audio_url) = (with_page(preview_url), with_page(preview_audio_url));
