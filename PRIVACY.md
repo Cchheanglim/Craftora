@@ -1,11 +1,20 @@
 # Privacy policy
 
-Craftora doesn't transfer any information to other networked systems unless you ask it to.
+Craftora doesn't send any information to other networked systems unless you use a feature that needs it, and it has no tracking or analytics.
 
-These are the only times Craftora goes online, each one started by you:
+These are the only times Craftora goes online:
 
 - **Links you fetch or export.** When you paste a link, Craftora asks that website (through
-  yt-dlp) for the video, and downloads it when you export.
+  yt-dlp) for the video, and downloads it when you export. Like any web request, the website
+  sees your IP address.
+- **Signing in to a website.** When a link needs a login, Craftora can open the website in its
+  own small browser window, separate from your browser. Logins made there are kept on your PC,
+  inside Craftora, and are only sent to the website they belong to, when you fetch from it.
+  **Sign out of all** (Home → Links) removes them.
+- **Pictures of fetched videos.** History, Media, Projects and Exports show each video's picture
+  from its website, so those websites are contacted again when Craftora shows them.
+- **Updating yt-dlp.** The **Update yt-dlp** button (Home → Links) downloads the newest yt-dlp
+  from GitHub.
 - **The AI assistant.** It is off until you add your own Gemini API key. Each message you send
   goes to Google's Gemini API together with a text description of your timeline (clip names,
   times and settings, never the media files). Google's
