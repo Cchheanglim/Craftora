@@ -1,14 +1,41 @@
-# Craftora
+<div align="center">
 
-A simple Windows video editor, in the spirit of CapCut. Put clips on a timeline, trim and
-split them, stack picture-in-picture, add titles, music and voice-overs, then export a clean
-video or audio file. Files on your PC work offline, and nothing is uploaded.
+<img src="src-tauri/icons/icon.png" width="128" alt="Craftora's logo: a black cat with a red collar biting a pen">
+
+<h1>Craftora</h1>
+
+<p><strong>A simple Windows video editor, in the spirit of CapCut.</strong></p>
+
+<p>
+  <a href="https://github.com/Cchheanglim/Craftora/releases/latest"><img src="https://img.shields.io/github/v/release/Cchheanglim/Craftora?label=version&color=fa2d48" alt="Latest version"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6" alt="Platform: Windows 10 and 11">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Cchheanglim/Craftora?color=2c2c30" alt="License: MIT"></a>
+  <a href="https://github.com/Cchheanglim/Craftora/releases"><img src="https://img.shields.io/github/downloads/Cchheanglim/Craftora/total?color=2c2c30" alt="Downloads"></a>
+  <img src="https://img.shields.io/badge/built%20with-Tauri%202-24c8db" alt="Built with Tauri 2">
+</p>
+
+<p>
+  <a href="https://github.com/Cchheanglim/Craftora/releases/latest"><strong>Download</strong></a> ·
+  <a href="#what-you-can-do">Features</a> ·
+  <a href="CHANGELOG.md">What's new</a> ·
+  <a href="https://github.com/Cchheanglim/Craftora/issues">Report a problem</a>
+</p>
+
+<img src="docs/screenshot.png" width="100%" alt="Craftora's editor: a film in the preview, its clip on the timeline, Media and History in the sidebar, and the Export panel on the right">
+
+<sub>Shown: <em>Big Buck Bunny</em> © Blender Foundation, <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.</sub>
+
+</div>
+
+Put clips on a timeline, trim and split them, stack picture-in-picture, add titles, music and
+voice-overs, then export a clean video or audio file. Files on your PC work offline, and
+nothing is uploaded.
 
 Craftora is a [Tauri 2](https://tauri.app) app with a React and TypeScript interface.
 [FFmpeg](https://ffmpeg.org) and [yt-dlp](https://github.com/yt-dlp/yt-dlp) ship inside it
 and do the cutting, rendering and downloading.
 
-> **Status:** early (v0.1). Things change quickly; please
+> **Status:** young (v0.3) and changing quickly. Please
 > [report problems](https://github.com/Cchheanglim/Craftora/issues).
 
 ## Download
