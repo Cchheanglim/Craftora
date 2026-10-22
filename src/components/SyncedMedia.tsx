@@ -1,5 +1,5 @@
 import { useEffect, useRef, type CSSProperties, type SyntheticEvent } from "react";
-import type Hls from "hls.js";
+import Hls from "hls.js";
 import { HLS_RELAY } from "../lib/engine";
 
 interface SyncedMediaProps {
@@ -106,29 +106,21 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
     onFailed?.();
   };
 
-  // Streams through the relay play with hls.js (the WebView's own HLS player refuses the relay's
-  // address). Loaded on first use, so it costs nothing for everything else.
+  // Streams through the relay play with hls.js: the WebView's own HLS player refuses the relay's
+  // address, and only the relay can send the page those streams' servers want.
   const viaHls = src.startsWith(HLS_RELAY);
   const failedRef = useRef(failed);
   failedRef.current = failed;
   useEffect(() => {
     const el = ref.current;
     if (!el || !viaHls) return;
-    let player: Hls | undefined;
-    let gone = false;
-    void import("hls.js").then(({ default: HlsPlayer }) => {
-      if (gone) return;
-      player = new HlsPlayer();
-      player.on(HlsPlayer.Events.ERROR, (_event, data) => {
-        if (data.fatal) failedRef.current();
-      });
-      player.loadSource(src);
-      player.attachMedia(el);
+    const player = new Hls();
+    player.on(Hls.Events.ERROR, (_event, data) => {
+      if (data.fatal) failedRef.current();
     });
-    return () => {
-      gone = true;
-      player?.destroy();
-    };
+    player.loadSource(src);
+    player.attachMedia(el);
+    return () => player.destroy();
   }, [src, viaHls]);
 
   const onSeeked = () => {
