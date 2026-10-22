@@ -69,10 +69,11 @@ Write-Host "Laying out the package..."
 if (Test-Path $layout) { Remove-Item -Recurse -Force $layout }
 New-Item -ItemType Directory -Force $layout, (Join-Path $layout "Assets"), (Join-Path $layout "licenses") | Out-Null
 
-foreach ($exe in "craftora.exe", "ffmpeg.exe", "ffprobe.exe", "yt-dlp.exe") {
-  $source = Join-Path $release $exe
+foreach ($item in "craftora.exe", "ffmpeg.exe", "ffprobe.exe", "yt-dlp") {
+  $source = Join-Path $release $item
   if (-not (Test-Path $source)) { throw "Missing $source. Run without -SkipBuild (and scripts/fetch-sidecars.ps1 first)." }
-  Copy-Item $source $layout
+  # yt-dlp is a folder (its unpacked build), which the app runs from next to itself.
+  Copy-Item $source $layout -Recurse
 }
 Copy-Item (Join-Path $release "licenses\*") (Join-Path $layout "licenses")
 foreach ($logo in "StoreLogo", "Square44x44Logo", "Square71x71Logo", "Square150x150Logo") {

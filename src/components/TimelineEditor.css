@@ -366,3 +366,13 @@
   color: var(--text-3);
   pointer-events: none;
 }
+
+/* Dragging media from the Media list: the lane under the pointer shows where it lands. */
+body.is-dragging-media,
+body.is-dragging-media * {
+  cursor: copy !important;
+}
+
+body.is-dragging-media .tl__lane:hover {
+  background: var(--accent-wash);
+}

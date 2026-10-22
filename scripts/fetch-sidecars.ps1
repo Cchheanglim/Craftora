@@ -4,8 +4,9 @@
 
 .DESCRIPTION
   Fetches official release builds, verifies their SHA-256 checksums, and places them in
-  src-tauri/bin/ named with this machine's Rust target triple, e.g.
-  yt-dlp-x86_64-pc-windows-msvc.exe. The binaries are gitignored; run this once per machine:
+  src-tauri/bin/: FFmpeg and FFprobe named with this machine's Rust target triple (e.g.
+  ffmpeg-x86_64-pc-windows-msvc.exe), and yt-dlp's unpacked build as the folder bin/yt-dlp,
+  bundled as a resource. The binaries are gitignored; run this once per machine:
 
     powershell -ExecutionPolicy Bypass -File scripts/fetch-sidecars.ps1
 
@@ -46,14 +47,20 @@ function Assert-Checksum([string]$File, [string]$SumsFile, [string]$Name) {
 }
 
 # --- yt-dlp -------------------------------------------------------------------
-$ytdlpTarget = Join-Path $binDir "yt-dlp-$triple.exe"
+# The unpacked build (a folder): the one-file yt-dlp.exe unpacks itself on every run, which
+# took about 4 s per run (28 s on the first) with the virus scanner, against under 1 s.
+$ytdlpDir = Join-Path $binDir "yt-dlp"
+$ytdlpTarget = Join-Path $ytdlpDir "yt-dlp.exe"
 if ($Force -or -not (Test-Path $ytdlpTarget)) {
   Write-Host "yt-dlp"
   $base = "https://github.com/yt-dlp/yt-dlp/releases/latest/download"
   Get-File "$base/SHA2-256SUMS" (Join-Path $tmp "yt-dlp.sums")
-  Get-File "$base/yt-dlp.exe" (Join-Path $tmp "yt-dlp.exe")
-  Assert-Checksum (Join-Path $tmp "yt-dlp.exe") (Join-Path $tmp "yt-dlp.sums") "yt-dlp.exe"
-  Copy-Item (Join-Path $tmp "yt-dlp.exe") $ytdlpTarget -Force
+  Get-File "$base/yt-dlp_win.zip" (Join-Path $tmp "yt-dlp_win.zip")
+  Assert-Checksum (Join-Path $tmp "yt-dlp_win.zip") (Join-Path $tmp "yt-dlp.sums") "yt-dlp_win.zip"
+  if (Test-Path $ytdlpDir) { Remove-Item -Recurse -Force $ytdlpDir }
+  Expand-Archive (Join-Path $tmp "yt-dlp_win.zip") $ytdlpDir
+  # The old one-file sidecar, from before the switch.
+  Remove-Item (Join-Path $binDir "yt-dlp-$triple.exe") -ErrorAction SilentlyContinue
 } else {
   Write-Host "yt-dlp already present (use -Force to replace)"
 }

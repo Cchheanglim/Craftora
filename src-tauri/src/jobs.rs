@@ -9,7 +9,6 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
-use tauri_plugin_shell::ShellExt;
 
 use crate::engine::{last_error, sidecar_dir, FFMPEG, YT_DLP};
 use crate::local::{normalize, OpenedFiles};
@@ -445,6 +444,9 @@ pub(crate) async fn download(app: &AppHandle, job_id: &str, request: &Download<'
         "--progress".into(),
         "--encoding".into(),
         "utf-8".into(),
+        // Streams come in many small pieces: fetching four at a time is much faster than one.
+        "--concurrent-fragments".into(),
+        "4".into(),
         "--ffmpeg-location".into(),
         engines.to_string_lossy().into_owned(),
         "-f".into(),
@@ -461,6 +463,12 @@ pub(crate) async fn download(app: &AppHandle, job_id: &str, request: &Download<'
         args.push(format!("*{start:.2}-{end:.2}"));
         if request.precise {
             args.push("--force-keyframes-at-cuts".into());
+            // Exact cuts re-encode the section. FFmpeg's default (slow x264 on the processor) took
+            // about 3x longer than the encoder exports use, the graphics card when there is one.
+            if !matches!(request.target, DownloadTarget::Audio(_)) {
+                let encoder = crate::encoders::for_render(app, crate::encoders::Quality::Fast).await;
+                args.extend(["--downloader-args".into(), format!("ffmpeg_o:{}", encoder.args(crate::encoders::Quality::Fast).join(" "))]);
+            }
         }
         // yt-dlp hands sections to FFmpeg and reports nothing until the end, so the queue
         // sat at 0%. FFmpeg's own progress (out_time_us=…) is read below instead.
@@ -571,11 +579,7 @@ async fn run_streaming(
     if jobs.is_cancelled(id) {
         return Err("Cancelled".into());
     }
-    let mut command = app
-        .shell()
-        .sidecar(program)
-        .map_err(|e| format!("{program} is not bundled: {e}"))?
-        .args(args);
+    let mut command = crate::engine::command(app, program)?.args(args);
     if let Some(dir) = cwd {
         command = command.current_dir(dir);
     }

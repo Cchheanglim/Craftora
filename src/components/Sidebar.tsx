@@ -4,7 +4,7 @@ import type { MediaItem } from "../project/model";
 import { formatClock } from "../lib/timecode";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
-import { MEDIA_DRAG_TYPE } from "./TimelineEditor";
+import { beginMediaDrag } from "./TimelineEditor";
 import "./Sidebar.css";
 
 export type View = "home" | "editor" | "library";
@@ -117,10 +117,10 @@ export function Sidebar({
                 <li
                   key={item.id}
                   className="side__file"
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData(MEDIA_DRAG_TYPE, item.id);
-                    e.dataTransfer.effectAllowed = "copy";
+                  onPointerDown={(e) => {
+                    if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
+                    e.preventDefault(); // no text selection while dragging
+                    beginMediaDrag(item.id, e);
                   }}
                   title="Drag onto the timeline, or press + to add at the end"
                 >

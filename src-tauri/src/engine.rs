@@ -3,8 +3,11 @@
 use std::path::PathBuf;
 
 use serde::Serialize;
-use tauri::AppHandle;
-use tauri_plugin_shell::{process::Output, ShellExt};
+use tauri::{AppHandle, Manager};
+use tauri_plugin_shell::{
+    process::{Command, Output},
+    ShellExt,
+};
 
 pub const YT_DLP: &str = "yt-dlp";
 pub const FFMPEG: &str = "ffmpeg";
@@ -18,11 +21,24 @@ pub fn sidecar_dir() -> Result<PathBuf, String> {
         .ok_or_else(|| "Could not locate the app folder".to_string())
 }
 
-/// Runs a sidecar to completion and collects its output.
+/// The command that runs an engine. yt-dlp is its unpacked build, bundled as the `yt-dlp`
+/// resource folder: the one-file build unpacks itself on every run, and with the virus scanner
+/// checking those files each time it took about 4 s to start (28 s on the first run), against
+/// under 1 s unpacked. FFmpeg and FFprobe are ordinary sidecars.
+pub fn command(app: &AppHandle, name: &str) -> Result<Command, String> {
+    if name == YT_DLP {
+        let exe = app.path().resource_dir().map_err(|e| e.to_string())?.join("yt-dlp").join("yt-dlp.exe");
+        if !exe.is_file() {
+            return Err("yt-dlp is not bundled. Run scripts/fetch-sidecars.ps1, then restart Craftora.".into());
+        }
+        return Ok(app.shell().command(exe));
+    }
+    app.shell().sidecar(name).map_err(|e| format!("{name} is not bundled: {e}"))
+}
+
+/// Runs an engine to completion and collects its output.
 pub async fn run_to_end(app: &AppHandle, name: &str, args: &[&str]) -> Result<Output, String> {
-    app.shell()
-        .sidecar(name)
-        .map_err(|e| format!("{name} is not bundled: {e}"))?
+    command(app, name)?
         .args(args)
         .output()
         .await

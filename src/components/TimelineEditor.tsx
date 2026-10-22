@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { TRANSITION_KINDS, clipEnd, clipLength, trackOrder, transitionLength, type Clip, type Project, type Track, type TrackKind } from "../project/model";
-import { packedTrack, slotOn } from "../project/actions";
+import { fitsTrack, packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatClock } from "../lib/timecode";
@@ -8,7 +8,33 @@ import { Icon, type IconName } from "./Icon";
 import "./TimelineEditor.css";
 
 /** Drag-and-drop type for media dragged from the library. */
-export const MEDIA_DRAG_TYPE = "application/x-craftora-media";
+/**
+ * The media being dragged from the Media list onto a track, or null. A pointer drag rather than
+ * HTML5 drag-and-drop: on Windows, Tauri takes over HTML5 drops (to receive files from File
+ * Explorer), so dropping onto the timeline never worked in the desktop app.
+ */
+export const mediaDrag: { current: string | null } = { current: null };
+
+/** Starts dragging `mediaId` from the Media list; a lane adds it where the pointer is let go. */
+export function beginMediaDrag(mediaId: string, e: ReactPointerEvent) {
+  const [x, y] = [e.clientX, e.clientY];
+  const move = (ev: PointerEvent) => {
+    if (mediaDrag.current || Math.hypot(ev.clientX - x, ev.clientY - y) < 4) return;
+    mediaDrag.current = mediaId;
+    document.body.classList.add("is-dragging-media");
+  };
+  // Lanes read `mediaDrag` in their own pointerup, which runs before this window listener.
+  const end = () => {
+    mediaDrag.current = null;
+    document.body.classList.remove("is-dragging-media");
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", end);
+    window.removeEventListener("pointercancel", end);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", end);
+  window.addEventListener("pointercancel", end);
+}
 
 const RULER_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
 const SNAP_PX = 7;
@@ -163,10 +189,9 @@ export function TimelineEditor({
       const snappedStart = snap(start, clip.id);
       const snappedEnd = snap(start + clipLength(clip), clip.id) - clipLength(clip);
       start = Math.abs(snappedStart - start) <= Math.abs(snappedEnd - start) ? snappedStart : snappedEnd;
-      // Clips only move to tracks of their own kind.
-      const kind = project.tracks.find((t) => t.id === clip.trackId)?.kind;
+      // A video can also go on an audio track (just its sound); otherwise clips keep their kind.
       const lane = project.tracks.find((t) => t.id === laneAt(e.clientY));
-      const trackId = lane && lane.kind === kind ? lane.id : (ghostRef.current?.trackId ?? clip.trackId);
+      const trackId = lane && fitsTrack(project, clip, lane) ? lane.id : (ghostRef.current?.trackId ?? clip.trackId);
       setGhost({ clipId: clip.id, start: Math.max(0, start), trackId });
     } else {
       api.editLive({ type: "trimClip", clipId: clip.id, edge: g.mode, time: snap(g.originEdge + dt, clip.id) });
@@ -233,11 +258,9 @@ export function TimelineEditor({
     startGesture({ kind: "scrub" });
   };
 
-  const onDrop = (track: Track) => (e: DragEvent<HTMLDivElement>) => {
-    const mediaId = e.dataTransfer.getData(MEDIA_DRAG_TYPE);
-    if (!mediaId) return;
-    e.preventDefault();
-    api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId, trackId: track.id, at: timeAt(e.clientX) });
+  const onMediaDrop = (track: Track) => (e: ReactPointerEvent<HTMLDivElement>) => {
+    const mediaId = mediaDrag.current;
+    if (mediaId) api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId, trackId: track.id, at: timeAt(e.clientX) });
   };
 
   const step = RULER_STEPS.find((s) => s * pps >= 70) ?? 3600;
@@ -412,10 +435,7 @@ export function TimelineEditor({
                   onSelect(null);
                   beginScrub(e);
                 }}
-                onDragOver={(e) => {
-                  if (e.dataTransfer.types.includes(MEDIA_DRAG_TYPE)) e.preventDefault();
-                }}
-                onDrop={onDrop(track)}
+                onPointerUp={onMediaDrop(track)}
               >
                 {project.clips
                   .filter((c) => where(c).trackId === track.id)

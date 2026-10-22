@@ -108,6 +108,17 @@ export function packedTrack(p: Project, trackId: string, except?: string): { cli
  * The order index a clip dropped on a magnetic track at `start` takes: it goes before the
  * first other clip whose middle is to the right of its left edge.
  */
+/**
+ * Whether `clip` can sit on `track`: text on text tracks; a video on a video track or, for just
+ * its sound, on an audio track; a sound file only on audio tracks; a picture only on video tracks.
+ */
+export function fitsTrack(p: Project, clip: Clip, track: Track): boolean {
+  if (!clip.mediaId) return track.kind === "text";
+  const media = p.media.find((m) => m.id === clip.mediaId);
+  if (!media || track.kind === "text") return false;
+  return track.kind === "video" ? media.hasVideo : !media.source.image;
+}
+
 export function slotOn(p: Project, trackId: string, clipId: string, start: number): number {
   const others = packedTrack(p, trackId, clipId);
   const index = others.findIndex(({ clip, start: s }) => start < s + clipLength(clip) / 2);
@@ -276,8 +287,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
       if (!clip) return p;
       const target = p.tracks.find((t) => t.id === (action.trackId ?? clip.trackId));
       const current = p.tracks.find((t) => t.id === clip.trackId);
-      // Clips only move between tracks of the same kind.
-      const track = target && current && target.kind === current.kind ? target : current;
+      const track = target && fitsTrack(p, clip, target) ? target : current;
       if (!track) return p;
       // A transition belongs to the clip's place on its track; a new place starts without one.
       const moved = track.id === clip.trackId ? clip : { ...clip, transition: undefined };

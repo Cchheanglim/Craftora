@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -66,13 +66,18 @@ impl Cached {
     }
 }
 
-fn client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .user_agent(USER_AGENT)
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(120))
-        .build()
-        .unwrap_or_default()
+/// One client for every request: it keeps connections open, so each piece of a preview doesn't
+/// pay for a new connection and TLS handshake (a new client per piece made scrubbing slow).
+fn client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .user_agent(USER_AGENT)
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(120))
+            .build()
+            .unwrap_or_default()
+    })
 }
 
 /// Positioned file I/O, so playing and filling never move each other's file cursor.

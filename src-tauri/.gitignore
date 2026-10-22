@@ -8,3 +8,4 @@
 
 # Sidecar binaries are downloaded by scripts/fetch-sidecars.ps1
 /bin/*.exe
+/bin/yt-dlp/
