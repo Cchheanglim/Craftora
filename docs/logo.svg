@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>Craftora cat</title>
+  <defs>
+    <linearGradient id="tileFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff5068"/><stop offset="1" stop-color="#c40a29"/></linearGradient>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2c2c33"/><stop offset="1" stop-color="#09090b"/></linearGradient>
+    <linearGradient id="pen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c9cbd2"/></linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".4"/><stop offset=".5" stop-color="#fff" stop-opacity=".06"/><stop offset="1" stop-color="#fff" stop-opacity=".2"/></linearGradient>
+    <clipPath id="tileClip"><path d="M 601.62 0 c 147.85 0 221.77 0 278.24 28.77 a 263.99 263.99 0 0 1 115.37 115.37 c 28.77 56.47 28.77 130.39 28.77 278.24 L 1024 601.62 c 0 147.85 0 221.77 -28.77 278.24 a 263.99 263.99 0 0 1 -115.37 115.37 c -56.47 28.77 -130.39 28.77 -278.24 28.77 L 422.38 1024 c -147.85 0 -221.77 0 -278.24 -28.77 a 263.99 263.99 0 0 1 -115.37 -115.37 c -28.77 -56.47 -28.77 -130.39 -28.77 -278.24 L 0 422.38 c 0 -147.85 0 -221.77 28.77 -278.24 a 263.99 263.99 0 0 1 115.37 -115.37 c 56.47 -28.77 130.39 -28.77 278.24 -28.77 Z"/></clipPath>
+    <filter id="blur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="28"/></filter>
+    <filter id="rimGlow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="b"/>
+      <feComposite in="SourceAlpha" in2="b" operator="arithmetic" k2="1" k3="-1" result="edge"/>
+      <feFlood flood-color="#ff3a55"/>
+      <feComposite in2="edge" operator="in" result="glow"/>
+      <feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="glow"/></feMerge>
+    </filter>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#5a0010" flood-opacity=".35"/></filter>
+  </defs>
+  <path id="bg" d="M 601.62 0 c 147.85 0 221.77 0 278.24 28.77 a 263.99 263.99 0 0 1 115.37 115.37 c 28.77 56.47 28.77 130.39 28.77 278.24 L 1024 601.62 c 0 147.85 0 221.77 -28.77 278.24 a 263.99 263.99 0 0 1 -115.37 115.37 c -56.47 28.77 -130.39 28.77 -278.24 28.77 L 422.38 1024 c -147.85 0 -221.77 0 -278.24 -28.77 a 263.99 263.99 0 0 1 -115.37 -115.37 c -28.77 -56.47 -28.77 -130.39 -28.77 -278.24 L 0 422.38 c 0 -147.85 0 -221.77 28.77 -278.24 a 263.99 263.99 0 0 1 115.37 -115.37 c 56.47 -28.77 130.39 -28.77 278.24 -28.77 Z" fill="url(#tileFill)"/>
+  <g clip-path="url(#tileClip)">
+    <circle cx="420" cy="560" r="300" fill="#ff8394" opacity=".35" filter="url(#blur)"/>
+    <g transform="translate(-10 14)">
+      <!-- black cat: fur with a red rim light, like the reference's glow -->
+      <g filter="url(#shadow)"><g fill="url(#fur)" filter="url(#rimGlow)">
+      <path d="M 100 1060 C 120 900 270 830 460 830 C 650 830 800 900 820 1060 Z"/>
+      <path d="M 196 600 L 214 350 Q 220 316 248 334 L 400 462 Z"/>
+      <path d="M 724 600 L 706 350 Q 700 316 672 334 L 520 462 Z"/>
+      <path d="M 160 690 C 160 530 280 430 460 430 C 640 430 760 530 760 690 C 760 810 640 890 460 890 C 280 890 160 810 160 690 Z"/>
+      </g></g>
+      <path d="M 232 548 L 244 386 L 352 478 Z" fill="#ff8fa1" opacity=".85"/>
+      <path d="M 688 548 L 676 386 L 568 478 Z" fill="#ff8fa1" opacity=".85"/>
+      <!-- red collar and gold tag -->
+      <path d="M 236 868 Q 460 964 684 868 L 698 920 Q 460 1016 222 920 Z" fill="#ff2b47"/>
+      <path d="M 236 868 Q 460 964 684 868" fill="none" stroke="#ff8a9a" stroke-width="8" opacity=".6"/>
+      <circle cx="460" cy="990" r="32" fill="#ffc93c"/>
+      <circle cx="450" cy="980" r="9" fill="#fff" opacity=".7"/>
+      <!-- face: one open amber eye, one happy wink -->
+      <ellipse cx="358" cy="650" rx="50" ry="58" fill="#ffc93c"/>
+      <ellipse cx="358" cy="656" rx="15" ry="42" fill="#0b0b0d"/>
+      <circle cx="374" cy="628" r="13" fill="#fff"/>
+      <path d="M 518 660 Q 562 616 606 660" fill="none" stroke="#ffc93c" stroke-width="22" stroke-linecap="round"/>
+      <path d="M 442 716 L 478 716 L 460 736 Z" fill="#ff8fa1"/>
+      <!-- the pen, held in the teeth -->
+      <g transform="rotate(-9 460 786)">
+        <rect x="226" y="766" width="440" height="40" rx="20" fill="url(#pen)"/>
+        <rect x="226" y="766" width="84" height="40" rx="20" fill="#ff2b47"/>
+        <rect x="320" y="754" width="130" height="14" rx="7" fill="#9ea2ad"/>
+        <path d="M 660 766 L 736 786 L 660 806 Z" fill="#9ea2ad"/>
+        <path d="M 716 781 L 736 786 L 716 791 Z" fill="#1b1b1f"/>
+      </g>
+      <path d="M 424 748 L 442 748 L 433 776 Z" fill="#fff"/>
+      <path d="M 478 744 L 496 744 L 487 770 Z" fill="#fff"/>
+      <path d="M 400 742 Q 430 762 460 742 Q 490 762 520 742" fill="none" stroke="#4a4a54" stroke-width="10" stroke-linecap="round"/>
+    </g>
+    <!-- sparkles: a play button and a twinkle, like the reference's plus signs -->
+    <path d="M 756 168 L 852 226 L 756 284 Z" fill="#fff" stroke="#fff" stroke-width="28" stroke-linejoin="round"/>
+    <path d="M 900 300 Q 906 330 936 336 Q 906 342 900 372 Q 894 342 864 336 Q 894 330 900 300 Z" fill="#fff" opacity=".8"/>
+    <path d="M 601.62 0 c 147.85 0 221.77 0 278.24 28.77 a 263.99 263.99 0 0 1 115.37 115.37 c 28.77 56.47 28.77 130.39 28.77 278.24 L 1024 601.62 c 0 147.85 0 221.77 -28.77 278.24 a 263.99 263.99 0 0 1 -115.37 115.37 c -56.47 28.77 -130.39 28.77 -278.24 28.77 L 422.38 1024 c -147.85 0 -221.77 0 -278.24 -28.77 a 263.99 263.99 0 0 1 -115.37 -115.37 c -28.77 -56.47 -28.77 -130.39 -28.77 -278.24 L 0 422.38 c 0 -147.85 0 -221.77 28.77 -278.24 a 263.99 263.99 0 0 1 115.37 -115.37 c 56.47 -28.77 130.39 -28.77 278.24 -28.77 Z" fill="none" stroke="url(#rim)" stroke-width="26"/>
+  </g>
+</svg>
