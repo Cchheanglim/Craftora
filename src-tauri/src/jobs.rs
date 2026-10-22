@@ -444,9 +444,6 @@ pub(crate) async fn download(app: &AppHandle, job_id: &str, request: &Download<'
         "--progress".into(),
         "--encoding".into(),
         "utf-8".into(),
-        // Streams come in many small pieces: fetching four at a time is much faster than one.
-        "--concurrent-fragments".into(),
-        "4".into(),
         "--ffmpeg-location".into(),
         engines.to_string_lossy().into_owned(),
         "-f".into(),
