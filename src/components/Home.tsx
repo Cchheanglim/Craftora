@@ -285,7 +285,7 @@ function Links({ links }: { links: LinkSettings }) {
           </button>
         </form>
         <p className="home__muted">
-          For age-restricted, private or members-only videos. A window opens: log in, go to the video, then click Fetch this video at the top of the window. Your browser can stay open, and the login is remembered.
+          For restricted site, private or members-only videos. A window opens: log in, go to the video, then click Fetch this video at the top of the window. Your browser can stay open, and the login is remembered.
         </p>
         {links.signInMessage && <p className="home__muted">{links.signInMessage}</p>}
         <div className="home__about-row">
@@ -310,7 +310,7 @@ function Links({ links }: { links: LinkSettings }) {
               </button>
               {links.ytDlpMessage && <span className="home__muted">{links.ytDlpMessage}</span>}
             </div>
-            <p className="home__muted">If links from a website stop working, update yt-dlp: websites change often.</p>
+            <p className="home__muted">If links from a website stop working, update Craftora: websites change often.</p>
           </>
         )}
       </div>
