@@ -262,6 +262,13 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
 
     let (preview_url, preview_has_audio) = preview(&info.formats);
     let preview_audio_url = if preview_has_audio || preview_url.is_empty() { String::new() } else { preview_audio(&info.formats) };
+    // A video found by playing a page: the preview's server wants that page too (media_cache.rs).
+    let page = crate::signin::split_referer(&url).1;
+    let with_page = |preview: String| match page {
+        Some(page) if !preview.is_empty() => format!("{preview}{}{page}", crate::signin::REFERER_MARK),
+        _ => preview,
+    };
+    let (preview_url, preview_audio_url) = (with_page(preview_url), with_page(preview_audio_url));
     Ok(MediaSource {
         url,
         title: info.title.unwrap_or_else(|| "Untitled".into()),

@@ -206,6 +206,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
         }}
       >
         <div ref={stageRef} className="preview__stage" style={{ "--aspect": stageAspect } as CSSProperties}>
+          {pictures.some((c) => {
+            // A link with nothing the WebView can play (a stream playlist) would otherwise just be black.
+            const source = mediaOf(c)?.source;
+            return mediaTime(c) !== null && source && !source.local && !source.previewUrl;
+          }) && <span className="preview__loading">This stream can't play in the preview. Download it with ⬇ in Media to watch and edit it.</span>}
           {pictures.map((clip) => {
             const media = mediaOf(clip);
             if (!media?.source.previewUrl) return null;

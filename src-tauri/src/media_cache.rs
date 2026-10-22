@@ -121,9 +121,13 @@ fn read_at(path: &PathBuf, offset: u64, len: u64) -> std::io::Result<Vec<u8>> {
 /// Fetches `[start, start + len)` from the internet into the cache; returns the bytes.
 async fn fetch(entry: &Entry, start: u64, len: u64) -> Result<Vec<u8>, String> {
     let end = start + len - 1;
-    let response = client()
-        .get(&entry.url)
-        .header(header::RANGE, format!("bytes={start}-{end}"))
+    // Videos found by playing a page are refused without that page as the Referer.
+    let (url, page) = crate::signin::split_referer(&entry.url);
+    let mut request = client().get(url).header(header::RANGE, format!("bytes={start}-{end}"));
+    if let Some(page) = page {
+        request = request.header(header::REFERER, page);
+    }
+    let response = request
         .send()
         .await
         .map_err(|e| format!("Couldn't reach the video: {e}"))?;
