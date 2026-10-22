@@ -18,6 +18,7 @@ import {
   pickCookieFile,
   setCookieFile,
   onFetchPage,
+  type FoundPage,
   signOutEverywhere,
   updateYtDlp,
   type EngineStatus,
@@ -147,6 +148,27 @@ function siteOf(link: string): string | null {
   }
 }
 
+/**
+ * Fetches a link; when yt-dlp doesn't know the page ("Unsupported URL"), tries what the page was
+ * seen playing instead, titled like the page (a stream's own title is just its file name).
+ */
+async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource> {
+  try {
+    return await fetchMedia(link);
+  } catch (err) {
+    if (!found?.media.length || !/unsupported url/i.test(errorText(err))) throw err;
+    for (const media of found.media) {
+      try {
+        const source = await fetchMedia(media);
+        return { ...source, title: found.title || source.title };
+      } catch {
+        // An ad or a player that isn't the video: try the next guess.
+      }
+    }
+    throw err;
+  }
+}
+
 /** Finished exports as kept in the history: without what only a running job needs. */
 const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined });
 
@@ -197,8 +219,8 @@ export default function App() {
   /** A cookies.txt file yt-dlp uses for logins instead of Craftora's sign-in window. */
   const [cookieFile, setCookieFileState] = useState<string | null>(null);
   const [signInMessage, setSignInMessage] = useState<string | null>(null);
-  /** A link that failed because its website wants a login: offered as "Sign in to …". */
-  const [loginNeeded, setLoginNeeded] = useState<{ site: string; link: string } | null>(null);
+  /** A link that failed in a way the sign-in window can fix: a login, or a page yt-dlp doesn't know. */
+  const [pageAction, setPageAction] = useState<{ label: string; link: string } | null>(null);
   const [ytDlpUpdate, setYtDlpUpdate] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null });
   const urlRef = useRef<HTMLInputElement>(null);
 
@@ -357,15 +379,16 @@ export default function App() {
     }
   }, [queue.jobs, api, prepare]);
 
-  const fetchSource = async (link: string) => {
+  /** `found`: what "Fetch this video" saw the page play, tried when yt-dlp doesn't know the page. */
+  const fetchSource = async (link: string, found?: FoundPage) => {
     setUrl(link);
     setBusy(true);
     setError(null);
-    setLoginNeeded(null);
+    setPageAction(null);
     try {
       let source: MediaSource;
       if (inDesktopApp) {
-        source = await fetchMedia(link);
+        source = await fetchFirst(link, found);
       } else {
         // Browser preview: only the demo links resolve.
         await new Promise((resolve) => window.setTimeout(resolve, 400));
@@ -381,9 +404,18 @@ export default function App() {
       const text = errorText(err);
       // yt-dlp asks for a login as "Sign in to confirm…", "log in", "Use --cookies…".
       const needsLogin = /sign in|log ?in|cookies|private|members/i.test(text);
-      setError(text);
+      const unsupported = /unsupported url/i.test(text);
+      setError(
+        unsupported
+          ? found
+            ? "No video was found on this page. Start playing it in the window, then click Fetch this video again."
+            : "Craftora doesn't know this website yet, but it can find the video while the page plays."
+          : text,
+      );
       const site = siteOf(link);
-      if (needsLogin && inDesktopApp && site) setLoginNeeded({ site, link });
+      if (inDesktopApp && site && (needsLogin || unsupported)) {
+        setPageAction({ label: needsLogin ? `Sign in to ${site}` : "Find the video on the page", link });
+      }
     } finally {
       setBusy(false);
     }
@@ -400,7 +432,7 @@ export default function App() {
   fetchRef.current = fetchSource;
   useEffect(() => {
     if (!inDesktopApp) return;
-    const stop = onFetchPage((link) => void fetchRef.current(link));
+    const stop = onFetchPage((found) => void fetchRef.current(found.page, found));
     return () => void stop.then((unlisten) => unlisten());
   }, []);
 
@@ -635,11 +667,11 @@ export default function App() {
         fetching={busy}
         error={error}
         errorAction={
-          loginNeeded
+          pageAction
             ? {
-                label: `Sign in to ${loginNeeded.site}`,
-                // Opens the video's own page: log in there, then "Fetch this video".
-                onClick: () => void openSignIn(loginNeeded.link).catch((err) => setError(errorText(err))),
+                label: pageAction.label,
+                // Opens the video's own page: log in or play it there, then "Fetch this video".
+                onClick: () => void openSignIn(pageAction.link).catch((err) => setError(errorText(err))),
               }
             : undefined
         }

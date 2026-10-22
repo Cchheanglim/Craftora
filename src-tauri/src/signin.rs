@@ -140,7 +140,7 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
     let fetch = MenuItem::with_id(&app, FETCH_ITEM, "Fetch this video", true, None::<&str>).map_err(|e| e.to_string())?;
     let menu = Menu::with_items(&app, &[&fetch]).map_err(|e| e.to_string())?;
     WebviewWindowBuilder::new(&app, WINDOW, WebviewUrl::External(url))
-        .title("Craftora · sign in, open the video, then Fetch this video")
+        .title("Craftora · log in if needed, play the video, then click Fetch this video")
         .inner_size(900.0, 760.0)
         .menu(menu)
         .on_menu_event(|window, event| {

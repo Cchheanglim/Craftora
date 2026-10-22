@@ -46,9 +46,16 @@ export const setCookieFile = (file: string | null) => invoke<void>("set_cookie_f
 /** Opens a website or a video's page in a Craftora window, to log in and pick a video there. */
 export const openSignIn = (site: string) => invoke<void>("open_sign_in", { site });
 export const signOutEverywhere = () => invoke<void>("sign_out_everywhere");
-/** "Fetch this video" in the sign-in window: the link of the page it shows. */
-export const onFetchPage = (handler: (link: string) => void): Promise<UnlistenFn> =>
-  listen<string>("fetch-page", (e) => handler(e.payload));
+/** What "Fetch this video" saw in the sign-in window (`FoundPage` in src-tauri/src/signin.rs). */
+export interface FoundPage {
+  page: string;
+  title: string;
+  /** Video files and embedded players the page plays, best guesses first, each carrying the page. */
+  media: string[];
+}
+
+export const onFetchPage = (handler: (found: FoundPage) => void): Promise<UnlistenFn> =>
+  listen<FoundPage>("fetch-page", (e) => handler(e.payload));
 
 export async function fetchMedia(url: string): Promise<MediaSource> {
   try {
