@@ -257,12 +257,23 @@ export function Home({
 /** Signing in to websites for links that need a login, and keeping yt-dlp current. */
 function Links({ links }: { links: LinkSettings }) {
   const [site, setSite] = useState("");
+  const { ask, dialog } = useConfirm();
+  const signOut = async () => {
+    const ok = await ask({
+      title: "Sign out of all websites?",
+      message: "Craftora forgets every login made in its sign-in window. Videos that need a login can't be fetched until you sign in again.",
+      confirmLabel: "Sign out",
+      danger: true,
+    });
+    if (ok) links.onSignOut();
+  };
   const signIn = (e: FormEvent) => {
     e.preventDefault();
     if (site.trim()) links.onSignIn(site.trim());
   };
   return (
     <>
+      {dialog}
       <h2 className="section-label home__gap">Links</h2>
       <div className="home__about">
         <form className="home__about-row" onSubmit={signIn}>
@@ -280,7 +291,7 @@ function Links({ links }: { links: LinkSettings }) {
           <button type="submit" className="btn btn--secondary" disabled={!site.trim()}>
             Open
           </button>
-          <button type="button" className="btn btn--ghost" onClick={links.onSignOut}>
+          <button type="button" className="btn btn--ghost" onClick={() => void signOut()}>
             Sign out of all
           </button>
         </form>

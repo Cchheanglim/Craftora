@@ -4,6 +4,7 @@ import type { MediaItem } from "../project/model";
 import { formatClock } from "../lib/timecode";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
+import { useConfirm } from "./ConfirmDialog";
 import { beginMediaDrag } from "./TimelineEditor";
 import "./Sidebar.css";
 
@@ -67,6 +68,16 @@ export function Sidebar({
   onRemoveHistory,
   onClearHistory,
 }: SidebarProps) {
+  const { ask, dialog } = useConfirm();
+  const clearHistory = async () => {
+    const ok = await ask({
+      title: "Clear history?",
+      message: "Every link in History is removed for good. Your projects, media and exports aren't touched.",
+      confirmLabel: "Clear history",
+      danger: true,
+    });
+    if (ok) onClearHistory();
+  };
   const nav = [
     { id: "home" as const, label: "Home", icon: "logo" as const },
     { id: "editor" as const, label: "Editor", icon: "scissors" as const },
@@ -75,6 +86,7 @@ export function Sidebar({
 
   return (
     <nav className={collapsed ? "side is-collapsed" : "side"} aria-label="Main">
+      {dialog}
       <ul className="side__nav">
         {nav.map((item) => (
           <li key={item.id}>
@@ -174,7 +186,7 @@ export function Sidebar({
             <h2 id="history-title" className="section-label">
               History
             </h2>
-            <button type="button" className="btn btn--ghost" onClick={onClearHistory}>
+            <button type="button" className="btn btn--ghost" onClick={() => void clearHistory()}>
               Clear
             </button>
           </header>

@@ -82,8 +82,8 @@ FFmpeg (GPL build from BtbN) run as sidecars.
   without stacking seeks.
 - `components/`: `Preview` (move and resize pictures and text on the preview), `TimelineEditor`
   (drag, trim, scrub, **+ Track**, per-track magnet and remove), `Inspector`, `ExportPanel`
-  (Fast or Best quality, save folder), `AssistantPanel`, `FetchChoice` (after Fetch: edit now
-  or download first), `ConfirmDialog` (`useConfirm`, only for actions that can't be undone),
+  (Fast or Best quality, save folder), `AssistantPanel` (a fetched link goes straight onto the
+  timeline; it also downloads when nothing in it can preview), `ConfirmDialog` (`useConfirm`, only for actions that can't be undone),
   `Home` (projects, About and updates), `QueueDock`, `Sidebar` (media, download button).
 - `assistant/`: Gemini editing assistant. `tools.ts` (timeline description with short ids
   c1/m1/t1, one tool per action), `conversation.ts` (`runTurn`, shared by the hook and tests),

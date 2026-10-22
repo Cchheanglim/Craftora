@@ -69,7 +69,6 @@ import { ExportPanel } from "./components/ExportPanel";
 import { QueueDock } from "./components/QueueDock";
 import { Library } from "./components/Library";
 import { AssistantPanel } from "./components/AssistantPanel";
-import { FetchChoice, type FetchChoiceKind } from "./components/FetchChoice";
 import "./App.css";
 
 const DEMO = DEMO_SOURCES[0];
@@ -206,16 +205,6 @@ export default function App() {
     const stop = onPreviewCache((id, percent) => setCached((all) => ({ ...all, [id]: percent })));
     return () => void stop.then((unlisten) => unlisten());
   }, []);
-  /** A fetched link waiting for the user to choose how to work with it. */
-  const [fetched, setFetched] = useState<MediaSource | null>(null);
-  /** The choice made last time, highlighted in the next fetch's window. */
-  const [lastChoice, setLastChoice] = useState<FetchChoiceKind>(() => {
-    try {
-      return localStorage.getItem("craftora.afterFetch") === "download" ? "download" : "edit";
-    } catch {
-      return "edit";
-    }
-  });
   const [fastEncoder, setFastEncoder] = useState<string | null>(null);
   /** A cookies.txt file yt-dlp uses for logins instead of Craftora's sign-in window. */
   const [cookieFile, setCookieFileState] = useState<string | null>(null);
@@ -397,7 +386,10 @@ export default function App() {
         if (!found) throw new Error("Real links need the desktop app.");
         source = found;
       }
-      setFetched(source);
+      // Straight onto the timeline, after the last clip, ready to edit. With nothing the preview
+      // can play (some stream sites), it downloads too, so it can still be edited.
+      const item = importSource(source, true);
+      if (!source.previewUrl && inDesktopApp) downloadForEditing(item);
       if (found) void tellSignIn("Sent to Craftora ✓  You can close this window.").catch(() => {});
       const entry: FetchEntry = { url: link, title: source.title, thumbnail: source.thumbnail, fetchedAt: Date.now() };
       changeFetchHistory([entry, ...fetchHistory.filter((e) => e.url !== link)].slice(0, 50));
@@ -837,27 +829,6 @@ export default function App() {
       )}
 
       <QueueDock queue={queue} freshId={freshId} />
-      {fetched && (
-        <FetchChoice
-          source={fetched}
-          defaultFormat={mediaFromSource(fetched)[fetched.streams.some((s) => s.kind === "video") ? "videoFormat" : "audioFormat"]}
-          lastChoice={fetched.previewUrl ? lastChoice : "download"}
-          onCancel={() => setFetched(null)}
-          onChoose={(choice, format) => {
-            const item = importSource(fetched, project.clips.length === 0, format);
-            setFetched(null);
-            setLastChoice(choice);
-            try {
-              localStorage.setItem("craftora.afterFetch", choice);
-            } catch {
-              /* not essential */
-            }
-            if (choice !== "download") return;
-            if (inDesktopApp) downloadForEditing(item);
-            else setError("Downloading needs the desktop app; in this browser preview the video streams instead.");
-          }}
-        />
-      )}
       {dragging && (
         <div className="app__drop" role="status">
           <span>Drop to import into Media</span>
