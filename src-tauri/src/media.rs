@@ -221,6 +221,18 @@ fn preview(formats: &[Format]) -> (String, bool) {
     }
 }
 
+/// A file's length in seconds, read by FFprobe from its header (with the page its server wants).
+async fn probe_length(app: &AppHandle, file: &str, page: Option<&str>) -> Option<f64> {
+    let headers = page.map(|p| format!("Referer: {p}\r\n"));
+    let mut args = vec!["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1"];
+    if let Some(headers) = &headers {
+        args.extend(["-headers", headers]);
+    }
+    args.push(file);
+    let output = run_to_end(app, crate::local::FFPROBE, &args).await.ok()?;
+    String::from_utf8_lossy(&output.stdout).trim().parse().ok().filter(|d: &f64| *d > 0.0)
+}
+
 /// A stream playlist (HLS) for sites that only offer those: the master playlist when there is
 /// one, so the player picks the quality and finds the sound, otherwise the smallest video.
 fn hls_preview(formats: &[Format]) -> Option<String> {
@@ -269,10 +281,19 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
     if info.is_live == Some(true) {
         return Err("Live streams can't be trimmed yet. Try again once the stream has ended.".into());
     }
-    let duration = info
-        .duration
-        .filter(|d| *d > 0.0)
-        .ok_or("This link has no known length, so it can't be trimmed.")?;
+    // The page the site's servers want: the one a found video came from, or the Referer yt-dlp says
+    // they need. The length probe, the preview cache and the HLS relay send it (media_cache.rs).
+    let site_page = info.formats.iter().find_map(|f| f.http_headers.get("Referer").cloned());
+    let page = crate::signin::split_referer(&url).1.map(str::to_string).or(site_page);
+    let duration = match info.duration.filter(|d| *d > 0.0) {
+        Some(d) => d,
+        // Plain video-file links: yt-dlp doesn't open the file, so it reports no length.
+        None => match info.formats.iter().find_map(|f| f.url.as_deref()) {
+            Some(file) => probe_length(&app, file, page.as_deref()).await,
+            None => None,
+        }
+        .ok_or("This link has no known length, so it can't be trimmed.")?,
+    };
 
     let mut streams = video_streams(&info.formats, duration);
     streams.extend(audio_streams(&info.formats, duration));
@@ -286,10 +307,6 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         _ => hls_preview(&info.formats).map_or((String::new(), false, false), |url| (url, true, true)),
     };
     let preview_audio_url = if preview_has_audio || preview_url.is_empty() { String::new() } else { preview_audio(&info.formats) };
-    // The page the preview's servers want: the one a found video came from, or the Referer yt-dlp
-    // says the site's video servers need. The cache and the HLS relay send it (media_cache.rs).
-    let site_page = info.formats.iter().find_map(|f| f.http_headers.get("Referer").cloned());
-    let page = crate::signin::split_referer(&url).1.map(str::to_string).or(site_page);
     let with_page = |preview: String| match &page {
         Some(page) if !preview.is_empty() => format!("{preview}{}{page}", crate::signin::REFERER_MARK),
         _ => preview,
