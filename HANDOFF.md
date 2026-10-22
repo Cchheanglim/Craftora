@@ -16,7 +16,8 @@ for UI work, `PRODUCT.md` and `DESIGN.md`.
   Tailwind. Design rules: sharp near-square corners, no pill buttons, no purple or decorative
   gradients, no cursor or scroll effects, a dense dark utility look. Exceptions they chose:
   icon-only buttons are round glass circles (`.btn--icon`), and the logo is a glossy black cat
-  with a red collar biting a pen (master `icon-design/craftora-icon.svg`; style references in
+  with a red collar biting a pen (masters `docs/logo.svg` and `docs/logo.png`, regenerate the app
+  icons with `bun tauri icon docs/logo.png`; style references in
   `Refer/`, gitignored). The app opens at 110% zoom (`set_zoom` in `lib.rs`).
 - **Hates friction**: anything that makes them close their browser, answer a question window or
   click an extra button is a dealbreaker ("I will stop using it"). Prefer automatic behaviour.
