@@ -29,6 +29,8 @@ export interface MediaSource {
   previewHasAudio?: boolean;
   /** Separate sound stream to play in sync with a video-only preview (common on YouTube). */
   previewAudioUrl?: string;
+  /** `previewUrl` is a stream playlist (HLS), played through the relay in media_cache.rs. */
+  previewHls?: boolean;
   /**
    * Files on this PC the preview player can't open as they are (AC-3 sound, AVI, HEVC…):
    * which preview copy is still being made. Absent once the preview is ready.

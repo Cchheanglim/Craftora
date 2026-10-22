@@ -34,6 +34,8 @@ struct Format {
     filesize_approx: Option<f64>,
     url: Option<String>,
     protocol: Option<String>,
+    /// HLS formats: the master playlist that lists every quality and the sound.
+    manifest_url: Option<String>,
 }
 
 impl Format {
@@ -52,6 +54,9 @@ impl Format {
             .or_else(|| self.tbr.map(|kbps| kbps * 1000.0 / 8.0 * duration))
             .unwrap_or(0.0);
         bytes / 1_000_000.0
+    }
+    fn is_hls(&self) -> bool {
+        self.protocol.as_deref().is_some_and(|p| p.starts_with("m3u8"))
     }
     fn plays_in_webview(&self) -> bool {
         let direct = matches!(self.protocol.as_deref(), None | Some("https") | Some("http"));
@@ -87,6 +92,8 @@ pub struct MediaSource {
     pub(crate) preview_has_audio: bool,
     /// Separate sound stream played in sync with a video-only preview; empty when not needed.
     pub(crate) preview_audio_url: String,
+    /// `preview_url` is a stream playlist (HLS), played through the relay in media_cache.rs.
+    pub(crate) preview_hls: bool,
     /// Files on this PC: "audio" or "video" when a preview copy still has to be made
     /// (`make_preview`), empty otherwise.
     pub(crate) preview_proxy: &'static str,
@@ -210,6 +217,15 @@ fn preview(formats: &[Format]) -> (String, bool) {
     }
 }
 
+/// A stream playlist (HLS) for sites that only offer those: the master playlist when there is
+/// one, so the player picks the quality and finds the sound, otherwise the smallest video.
+fn hls_preview(formats: &[Format]) -> Option<String> {
+    let mut hls: Vec<&Format> = formats.iter().filter(|f| f.is_hls() && f.has_video()).collect();
+    hls.sort_by_key(|f| f.height.unwrap_or(480));
+    let first = hls.first()?;
+    first.manifest_url.clone().or_else(|| first.url.clone())
+}
+
 /// The sound stream to play next to a video-only preview: AAC (m4a) first, which every
 /// WebView decodes, then the highest bitrate.
 fn preview_audio(formats: &[Format]) -> String {
@@ -260,7 +276,11 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         return Err("No downloadable video or audio was found at this link.".into());
     }
 
-    let (preview_url, preview_has_audio) = preview(&info.formats);
+    let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats) {
+        (url, audio) if !url.is_empty() => (url, audio, false),
+        // Only stream playlists, which the WebView plays itself; the master one carries the sound.
+        _ => hls_preview(&info.formats).map_or((String::new(), false, false), |url| (url, true, true)),
+    };
     let preview_audio_url = if preview_has_audio || preview_url.is_empty() { String::new() } else { preview_audio(&info.formats) };
     // A video found by playing a page: the preview's server wants that page too (media_cache.rs).
     let page = crate::signin::split_referer(&url).1;
@@ -278,6 +298,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         preview_url,
         preview_has_audio,
         preview_audio_url,
+        preview_hls,
         preview_proxy: "",
         image: false,
         thumbnail: info.thumbnail.unwrap_or_default(),
