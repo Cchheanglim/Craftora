@@ -7,11 +7,62 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use tauri::webview::Cookie;
+use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuItem};
 use tauri::{AppHandle, Emitter, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 
 const WINDOW: &str = "sign-in";
 const FETCH_ITEM: &str = "fetch-page";
+
+/// A video file found by playing a page in the sign-in window carries that page after this mark,
+/// because servers that check where requests come from (the Referer) refuse it otherwise. The
+/// mark rides along in the link through projects, exports and downloads; yt-dlp never sees it.
+const REFERER_MARK: &str = "#craftora-referer=";
+
+/// Run in the sign-in window by "Fetch this video": what the page plays, best guesses first.
+/// Video elements' files, then streaming manifests and video files the page loaded, then
+/// embedded players (their pages are often ones yt-dlp knows).
+const FIND_MEDIA: &str = r#"(() => {
+  const media = [];
+  const add = (u) => { if (u && /^https?:/.test(u) && !media.includes(u)) media.push(u); };
+  document.querySelectorAll("video, audio, video source, audio source").forEach((e) => add(e.currentSrc || e.src));
+  const loaded = performance.getEntriesByType("resource").map((e) => e.name);
+  loaded.filter((u) => /\.(m3u8|mpd)(\?|$)/i.test(u)).forEach(add);
+  loaded.filter((u) => /\.(mp4|webm|m4v|mov)(\?|$)/i.test(u)).forEach(add);
+  document.querySelectorAll("iframe[src]").forEach((e) => add(e.src));
+  return { title: document.title, media: media.slice(0, 5) };
+})()"#;
+
+/// What "Fetch this video" sends to the main window.
+#[derive(Deserialize, Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct FoundPage {
+    #[serde(default)]
+    page: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    media: Vec<String>,
+}
+
+/// yt-dlp arguments that reach a link: the user's logins, the page it was found on (when it was
+/// found in the sign-in window), then the link itself. Keep the file until yt-dlp ends.
+pub(crate) async fn link_args(app: &AppHandle, link: &str) -> (Vec<String>, Option<TempCookies>) {
+    let (mut args, file) = cookie_args(app).await;
+    let (url, referer) = split_referer(link);
+    if let Some(page) = referer {
+        args.extend(["--referer".into(), page.into()]);
+    }
+    args.extend(["--".into(), url.into()]);
+    (args, file)
+}
+
+fn split_referer(link: &str) -> (&str, Option<&str>) {
+    match link.split_once(REFERER_MARK) {
+        Some((url, page)) => (url, Some(page)),
+        None => (link, None),
+    }
+}
 
 /// A cookie file that only exists while yt-dlp runs: it holds logins, so it doesn't linger.
 pub(crate) struct TempCookies(PathBuf);
@@ -58,7 +109,7 @@ fn netscape(cookies: &[Cookie]) -> String {
 }
 
 /// yt-dlp arguments for the user's sign-ins, plus the temporary file to keep until yt-dlp ends.
-pub(crate) async fn cookie_args(app: &AppHandle) -> (Vec<String>, Option<TempCookies>) {
+async fn cookie_args(app: &AppHandle) -> (Vec<String>, Option<TempCookies>) {
     if let Some(file) = crate::store::get_cookie_file(app.clone()) {
         return (vec!["--cookies".into(), file], None);
     }
@@ -75,8 +126,8 @@ pub(crate) async fn cookie_args(app: &AppHandle) -> (Vec<String>, Option<TempCoo
 }
 
 /// Opens a website (or a video's own page) in a Craftora window, where the user logs in and
-/// browses. Its menu bar's "Fetch this video" sends `fetch-page` with the page being shown, so
-/// the main window fetches it with the login.
+/// browses. Its menu bar's "Fetch this video" sends `fetch-page` with the page being shown and
+/// the media it plays, so the main window fetches it with the login.
 #[tauri::command]
 pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
     let site = site.trim();
@@ -96,15 +147,21 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
             if event.id() != FETCH_ITEM {
                 return;
             }
-            let app = window.app_handle();
-            // The page shown now, even after in-page navigation (YouTube changes videos without loading a page).
-            let Some(page) = app.get_webview_window(WINDOW).and_then(|w| w.url().ok()) else {
+            let app = window.app_handle().clone();
+            let Some(browser) = app.get_webview_window(WINDOW) else {
                 return;
             };
-            let _ = app.emit("fetch-page", page.to_string());
-            if let Some(main) = app.get_webview_window("main") {
-                let _ = main.set_focus();
-            }
+            // The page shown now, even after in-page navigation (YouTube changes videos without loading a page).
+            let page = browser.url().map(|u| u.to_string()).unwrap_or_default();
+            let _ = browser.eval_with_callback(FIND_MEDIA, move |json| {
+                let mut found: FoundPage = serde_json::from_str(&json).unwrap_or_default();
+                found.media = found.media.iter().map(|m| format!("{m}{REFERER_MARK}{page}")).collect();
+                found.page = page.clone();
+                let _ = app.emit("fetch-page", found);
+                if let Some(main) = app.get_webview_window("main") {
+                    let _ = main.set_focus();
+                }
+            });
         })
         .build()
         .map_err(|e| format!("Couldn't open the sign-in window: {e}"))?;
@@ -140,5 +197,12 @@ mod tests {
             "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tabc\n.www.youtube.com\tTRUE\t/\tFALSE\t0\tPREF\tx\n"
         );
         assert!(is_local("cmedia.localhost") && is_local("localhost") && !is_local(".youtube.com"));
+    }
+
+    #[test]
+    fn splits_the_page_off_found_media() {
+        let link = format!("https://cdn.example/v/index.m3u8?t=1{REFERER_MARK}https://site.example/watch?id=9#top");
+        assert_eq!(split_referer(&link), ("https://cdn.example/v/index.m3u8?t=1", Some("https://site.example/watch?id=9#top")));
+        assert_eq!(split_referer("https://youtu.be/x"), ("https://youtu.be/x", None));
     }
 }

@@ -233,9 +233,8 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
     }
 
     let mut args: Vec<String> = ["--dump-single-json", "--no-playlist", "--no-warnings", "--encoding", "utf-8"].map(String::from).to_vec();
-    let (cookies, _cookie_file) = crate::signin::cookie_args(&app).await;
-    args.extend(cookies);
-    args.extend(["--".into(), url.clone()]);
+    let (link, _cookie_file) = crate::signin::link_args(&app, &url).await;
+    args.extend(link);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let output = run_to_end(&app, YT_DLP, &args).await?;
 
