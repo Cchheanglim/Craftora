@@ -31,13 +31,19 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
 - Import video, audio and images (PNG, JPEG, WebP, BMP) from your PC: the **Import** button,
   `Ctrl+O`, or drag files onto the window. Imported files work offline. An image starts at
   5 seconds on the timeline; drag its edge to show it for longer.
-- Paste a link from YouTube or any of the [many sites yt-dlp supports](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md),
-  and choose the quality. Craftora then asks how you want to work with it: **Start editing
-  now** (only the parts you use are downloaded when you export) or **Download first, then
-  edit** (the whole video goes to `Videos\Craftora\Downloads` and edits like a file on your
-  PC: smoother and offline). Links already in Media have a download button too.
+- Paste a link from YouTube or any of the [many sites yt-dlp supports](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
+  and click **Fetch**: the video goes straight onto the timeline, ready to edit (only the parts
+  you use are downloaded when you export). The ⬇ button in Media downloads the whole video to
+  `Videos\Craftora\Downloads` for smoother, offline editing. Streams the preview can't play are
+  downloaded by themselves. Fetched links are kept in **History** in the sidebar.
+- **Links that need a login** (private, age-restricted, members-only): click **Sign in to …** on
+  the error. Craftora opens its own small browser window (separate from your own browser); log
+  in, then click **Fetch this video**. The login is remembered and only used for that website.
+  Pages yt-dlp doesn't know ("Unsupported URL") work the same way: open the page, play the
+  video, click **Fetch this video**.
 - Link previews are cached on your PC as they play: jumping back to any part already fetched
-  is instant. While a "Download first" link downloads, Media shows how much is ready to scrub.
+  is instant. Stream playlists (HLS) preview too, including from sites that only serve their
+  own pages.
 - Files the built-in player can't show (AC-3 or DTS sound, AVI, HEVC and similar) get a
   preview copy made in the background, once. Exports always use the original.
 
@@ -47,6 +53,7 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
   voice-overs, **Text** tracks hold titles. Add as many tracks as you like with **+ Track**.
 - The **magnet** on a track's header keeps its clips back to back (no gaps) and allows
   transitions; turn it off to place clips anywhere. Video 1 starts with it on.
+- Drag media from the sidebar onto any track. A video on an audio track uses just its sound.
 - Drag clips to move them and their edges to trim. Split at the playhead (`S`), delete, and
   undo or redo anything (`Ctrl+Z` / `Ctrl+Y`). Edges snap to the playhead and to other clips.
 - Drag the red playhead, or anywhere on the ruler, to move through the video.

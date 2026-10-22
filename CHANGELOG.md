@@ -1,5 +1,49 @@
 # What's new in Craftora
 
+## 0.3.0 (October 2026)
+
+**New**
+
+- **Fetch goes straight to the timeline.** Paste a link, click **Fetch**, and the video is on
+  the timeline, ready to edit. Videos the preview can't play are downloaded by themselves.
+- **History.** Every link you fetch is kept in the sidebar with its picture: click to fetch it
+  again, remove one, or clear them all.
+- **Pictures everywhere.** Media, History, Projects and Exports show a picture of each video.
+- **Links that need a login.** Click **Sign in to …** on the error: Craftora opens its own small
+  browser window (separate from your browser). Log in, then click **Fetch this video**. The login
+  is remembered and only used for that website. **Sign out of all** is under Home → Links.
+- **Pages yt-dlp doesn't know.** For "Unsupported URL", click **Find the video on the page**,
+  play the video in Craftora's window, then **Fetch this video**: Craftora finds what the page
+  plays.
+- **Edit streams before downloading.** Stream playlists (HLS) preview in the editor, including
+  from sites that only serve their videos to their own pages.
+- **Videos on audio tracks.** Drag a video onto an audio track to use just its sound.
+- **Update yt-dlp** button (Home → Links), for when a website stops working.
+- **New look.** A new logo, round icon buttons, and everything a little larger.
+
+**Faster**
+
+- **Fetching is about 3× faster** (a YouTube link: 12 s → 3 s): Craftora now ships yt-dlp
+  already unpacked, so it doesn't unpack itself on every run.
+- **Exports with link clips are about 3× faster**: cutting the downloaded part now uses your
+  graphics card.
+- Link previews keep one connection open instead of opening a new one for every piece.
+
+**Fixed**
+
+- **Dragging media onto the timeline works in the app** (it only worked in the browser preview).
+- **The preview no longer loads forever or runs on without the picture.** The timeline waits for
+  a loading video, says when a website is slow, and says clearly when a video can't play.
+- Plain video-file links no longer fail with "no known length".
+- **Security:** a website open in Craftora's sign-in window could use Craftora to read pages on
+  your home network (such as your router's settings). It can't any more.
+- "Are you sure?" before clearing History and signing out of all websites.
+
+**Removed**
+
+- The **Paste** button (use `Ctrl+V` in the link box), the sample links, the edit-or-download
+  window after each fetch, and the shortcuts list on Home.
+
 ## 0.2.0 (October 2026)
 
 **New**
