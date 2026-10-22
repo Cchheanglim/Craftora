@@ -23,6 +23,8 @@ interface SyncedMediaProps {
   onReady?: () => void;
   /** True while this element can't play the current spot yet (loading or seeking). */
   onLoading?: (on: boolean) => void;
+  /** The media can't be played at all (the server refused it, or the format is unsupported). */
+  onFailed?: () => void;
 }
 
 /** Seconds of drift tolerated while playing before re-seeking (seeking itself stutters). */
@@ -35,7 +37,7 @@ const MAX_RATE = 16;
  * A video or audio element that follows the editor's playhead: a layer, or the separate
  * sound stream of a video-only preview.
  */
-export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, reverse, className, style, onLoadedMetadata, onReady, onLoading }: SyncedMediaProps) {
+export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, reverse, className, style, onLoadedMetadata, onReady, onLoading, onFailed }: SyncedMediaProps) {
   const ref = useRef<HTMLVideoElement & HTMLAudioElement>(null);
   /**
    * Where the element should be. Seeks aren't stacked: while one is running, newer times
@@ -96,6 +98,12 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
     if (el && el.readyState >= 3 && !el.seeking) report.current?.(false);
   };
 
+  // A failed element never finishes loading: stop holding the clock and let the preview say so.
+  const failed = () => {
+    report.current?.(false);
+    onFailed?.();
+  };
+
   const onSeeked = () => {
     const el = ref.current;
     const t = target.current;
@@ -119,6 +127,7 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
       aria-hidden="true"
       onLoadedMetadata={onLoadedMetadata}
       onLoadedData={onReady}
+      onError={failed}
       onSeeking={loadingNow}
       onWaiting={loadingNow}
       onSeeked={onSeeked}
@@ -131,6 +140,7 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
       src={src}
       preload="auto"
       aria-hidden="true"
+      onError={failed}
       onSeeking={loadingNow}
       onWaiting={loadingNow}
       onSeeked={onSeeked}

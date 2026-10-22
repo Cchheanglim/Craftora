@@ -55,6 +55,9 @@ function placeAlong(offset: number, free: number): number {
 export function Preview({ project, api, playback, frame, duration, selectedId, onSelect }: PreviewProps) {
   const [muted, setMuted] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  /** Preview files that failed to load (refused by their server, or unplayable). */
+  const [failed, setFailed] = useState<Set<string>>(() => new Set());
+  const fail = (src: string) => setFailed((all) => (all.has(src) ? all : new Set(all).add(src)));
   const stageRef = useRef<HTMLDivElement>(null);
   const gestureRef = useRef<Gesture | null>(null);
   /** Set when a drag ends, so the click that follows doesn't count as a click on the screen. */
@@ -207,13 +210,13 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
       >
         <div ref={stageRef} className="preview__stage" style={{ "--aspect": stageAspect } as CSSProperties}>
           {pictures.some((c) => {
-            // A link with nothing the WebView can play (a stream playlist) would otherwise just be black.
+            // A link with nothing playable, or whose preview failed, would otherwise just be black.
             const source = mediaOf(c)?.source;
-            return mediaTime(c) !== null && source && !source.local && !source.previewUrl;
-          }) && <span className="preview__loading">This stream can't play in the preview. Download it with ⬇ in Media to watch and edit it.</span>}
+            return mediaTime(c) !== null && source && !source.local && (!source.previewUrl || failed.has(source.previewUrl));
+          }) && <span className="preview__loading">This video can't play in the preview. Download it with ⬇ in Media to watch and edit it.</span>}
           {pictures.map((clip) => {
             const media = mediaOf(clip);
-            if (!media?.source.previewUrl) return null;
+            if (!media?.source.previewUrl || failed.has(media.source.previewUrl)) return null;
             const t = mediaTime(clip);
             const separateSound = Boolean(media.source.previewAudioUrl);
             const isSelected = clip.id === selectedId && t !== null;
@@ -254,6 +257,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                       rate={rate}
                       reverse={clip.reverse}
                       onLoading={(on) => playback.setLoading(`${clip.id}:video`, on)}
+                      onFailed={() => fail(media.source.previewUrl)}
                       className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
                       style={style}
                       onLoadedMetadata={(e) => onShape(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
@@ -281,7 +285,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           {sounds.map((clip) => {
             const media = mediaOf(clip);
             const src = media?.source.previewAudioUrl || media?.source.previewUrl;
-            if (!src) return null;
+            if (!src || failed.has(src)) return null;
             return (
               <SyncedMedia
                 key={clip.id}
@@ -294,6 +298,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 rate={playback.speed * clip.speed}
                 reverse={clip.reverse}
                 onLoading={(on) => playback.setLoading(`${clip.id}:audio`, on)}
+                onFailed={() => fail(src)}
               />
             );
           })}
@@ -321,7 +326,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           })}
         </div>
         {nothingHere && duration > 0 && <p className="preview__note">Nothing on the timeline here</p>}
-        {playing && playback.waiting && <p className="preview__waiting">Loading…</p>}
+        {playing && playback.waiting && (
+          <p className="preview__waiting">
+            {playback.slow ? "Still loading from the website… Download it with ⬇ in Media for smooth editing." : "Loading…"}
+          </p>
+        )}
       </div>
 
       <div className="preview__transport" onClick={(e) => e.stopPropagation()}>

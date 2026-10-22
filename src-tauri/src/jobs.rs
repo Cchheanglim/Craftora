@@ -463,6 +463,12 @@ pub(crate) async fn download(app: &AppHandle, job_id: &str, request: &Download<'
         args.push(format!("*{start:.2}-{end:.2}"));
         if request.precise {
             args.push("--force-keyframes-at-cuts".into());
+            // Exact cuts re-encode the section. FFmpeg's default (slow x264 on the processor) took
+            // about 3x longer than the encoder exports use, the graphics card when there is one.
+            if !matches!(request.target, DownloadTarget::Audio(_)) {
+                let encoder = crate::encoders::for_render(app, crate::encoders::Quality::Fast).await;
+                args.extend(["--downloader-args".into(), format!("ffmpeg_o:{}", encoder.args(crate::encoders::Quality::Fast).join(" "))]);
+            }
         }
         // yt-dlp hands sections to FFmpeg and reports nothing until the end, so the queue
         // sat at 0%. FFmpeg's own progress (out_time_us=…) is read below instead.
