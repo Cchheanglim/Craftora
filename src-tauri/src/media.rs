@@ -223,7 +223,8 @@ fn preview(formats: &[Format]) -> (String, bool) {
 
 /// A file's length in seconds, read by FFprobe from its header (with the page its server wants).
 async fn probe_length(app: &AppHandle, file: &str, page: Option<&str>) -> Option<f64> {
-    let headers = page.map(|p| format!("Referer: {p}\r\n"));
+    // No line breaks from a page address: they would let it add headers of its own.
+    let headers = page.map(|p| format!("Referer: {}\r\n", p.replace(['\r', '\n'], "")));
     let mut args = vec!["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1"];
     if let Some(headers) = &headers {
         args.extend(["-headers", headers]);
