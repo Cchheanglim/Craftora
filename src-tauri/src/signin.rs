@@ -17,7 +17,7 @@ const FETCH_ITEM: &str = "fetch-page";
 /// A video file found by playing a page in the sign-in window carries that page after this mark,
 /// because servers that check where requests come from (the Referer) refuse it otherwise. The
 /// mark rides along in the link through projects, exports and downloads; yt-dlp never sees it.
-const REFERER_MARK: &str = "#craftora-referer=";
+pub(crate) const REFERER_MARK: &str = "#craftora-referer=";
 
 /// Run in the sign-in window by "Fetch this video": what the page plays, best guesses first.
 /// Video elements' files, then streaming manifests and video files the page loaded, then
@@ -57,7 +57,7 @@ pub(crate) async fn link_args(app: &AppHandle, link: &str) -> (Vec<String>, Opti
     (args, file)
 }
 
-fn split_referer(link: &str) -> (&str, Option<&str>) {
+pub(crate) fn split_referer(link: &str) -> (&str, Option<&str>) {
     match link.split_once(REFERER_MARK) {
         Some((url, page)) => (url, Some(page)),
         None => (link, None),
@@ -166,6 +166,27 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
         .build()
         .map_err(|e| format!("Couldn't open the sign-in window: {e}"))?;
     Ok(())
+}
+
+/// Shows a short message on top of the page in the sign-in window, such as "Sent to Craftora".
+#[tauri::command]
+pub async fn tell_sign_in(app: AppHandle, message: String) -> Result<(), String> {
+    let Some(window) = app.get_webview_window(WINDOW) else {
+        return Ok(());
+    };
+    let text = serde_json::to_string(&message).map_err(|e| e.to_string())?;
+    let js = format!(
+        r#"(() => {{
+  document.getElementById("craftora-note")?.remove();
+  const note = document.createElement("div");
+  note.id = "craftora-note";
+  note.textContent = {text};
+  note.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483647;padding:10px 16px;background:#18181a;color:#f5f5f7;border:1px solid #fa2d48;border-radius:6px;font:600 14px system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.5)";
+  document.documentElement.appendChild(note);
+  setTimeout(() => note.remove(), 12000);
+}})()"#
+    );
+    window.eval(js).map_err(|e| e.to_string())
 }
 
 /// Forgets every website login made in Craftora's sign-in window.

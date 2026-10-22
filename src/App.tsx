@@ -20,6 +20,7 @@ import {
   onFetchPage,
   type FoundPage,
   signOutEverywhere,
+  tellSignIn,
   updateYtDlp,
   type EngineStatus,
 } from "./lib/engine";
@@ -397,6 +398,7 @@ export default function App() {
         source = found;
       }
       setFetched(source);
+      if (found) void tellSignIn("Sent to Craftora ✓  You can close this window.").catch(() => {});
       const entry: FetchEntry = { url: link, title: source.title, thumbnail: source.thumbnail, fetchedAt: Date.now() };
       changeFetchHistory([entry, ...fetchHistory.filter((e) => e.url !== link)].slice(0, 50));
       setUrl("");
@@ -405,6 +407,7 @@ export default function App() {
       // yt-dlp asks for a login as "Sign in to confirm…", "log in", "Use --cookies…".
       const needsLogin = /sign in|log ?in|cookies|private|members/i.test(text);
       const unsupported = /unsupported url/i.test(text);
+      if (found) void tellSignIn("No video found yet. Play the video, then click Fetch this video again.").catch(() => {});
       setError(
         unsupported
           ? found
@@ -838,7 +841,7 @@ export default function App() {
         <FetchChoice
           source={fetched}
           defaultFormat={mediaFromSource(fetched)[fetched.streams.some((s) => s.kind === "video") ? "videoFormat" : "audioFormat"]}
-          lastChoice={lastChoice}
+          lastChoice={fetched.previewUrl ? lastChoice : "download"}
           onCancel={() => setFetched(null)}
           onChoose={(choice, format) => {
             const item = importSource(fetched, project.clips.length === 0, format);

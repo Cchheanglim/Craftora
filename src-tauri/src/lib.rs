@@ -66,6 +66,7 @@ pub fn run() {
             store::set_cookie_file,
             signin::open_sign_in,
             signin::sign_out_everywhere,
+            signin::tell_sign_in,
             assistant::assistant_has_key,
             assistant::assistant_set_key,
             encoders::export_encoder,
