@@ -92,6 +92,8 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # "Is this link safe?" (src-tauri/src/virustotal.rs). Optional: without it the check is hidden.
+          CRAFTORA_VT_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
         run: bun tauri build --bundles nsis
 
       - name: Find the installer

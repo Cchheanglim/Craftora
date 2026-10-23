@@ -68,17 +68,10 @@
   pointer-events: none;
 }
 
-.toolbar__notes {
+.toolbar__error {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-}
-
-.toolbar__error {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -102,25 +95,4 @@
 .toolbar__error svg {
   color: var(--danger);
   flex-shrink: 0;
-}
-
-.toolbar__note {
-  max-width: 640px;
-  white-space: normal;
-}
-
-.toolbar__note.is-ok svg {
-  color: var(--ok);
-}
-
-.toolbar__note.is-info svg {
-  color: var(--text-3);
-}
-
-.toolbar__note.is-warn {
-  border-color: var(--warn);
-}
-
-.toolbar__note.is-warn svg {
-  color: var(--warn);
 }

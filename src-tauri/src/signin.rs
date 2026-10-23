@@ -1,7 +1,7 @@
 //! Signing in to websites, for links that need a login (age-restricted, private, members-only).
-//! yt-dlp gets the sign-ins as a cookie file: one the user picked, or by default the ones made
-//! in Craftora's own sign-in window, which shares the app's WebView2 cookie store. (Borrowing a
-//! browser's logins needed that browser closed, which people won't do.)
+//! Logins are made in Craftora's own sign-in window, which shares the app's WebView2 cookie
+//! store, and reach yt-dlp as a temporary cookie file. (Borrowing a browser's logins needed that
+//! browser closed, and a user-picked cookie file confused people; both were removed.)
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -115,9 +115,6 @@ fn netscape(cookies: &[Cookie]) -> String {
 
 /// yt-dlp arguments for the user's sign-ins, plus the temporary file to keep until yt-dlp ends.
 async fn cookie_args(app: &AppHandle) -> (Vec<String>, Option<TempCookies>) {
-    if let Some(file) = crate::store::get_cookie_file(app.clone()) {
-        return (vec!["--cookies".into(), file], None);
-    }
     let cookies = web_cookies(app).await;
     let Ok(dir) = app.path().app_cache_dir() else {
         return (Vec::new(), None);

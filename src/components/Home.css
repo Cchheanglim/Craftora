@@ -253,3 +253,40 @@
   flex: 1;
   min-width: 0;
 }
+
+.home__verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  font-size: var(--text-sm);
+}
+
+.home__verdict svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.home__verdict.is-ok svg {
+  color: var(--ok);
+}
+
+.home__verdict.is-info svg {
+  color: var(--text-3);
+}
+
+.home__verdict.is-warn {
+  border-color: var(--warn);
+}
+
+.home__verdict.is-warn svg {
+  color: var(--warn);
+}
+
+.home__gap-sm {
+  margin-top: var(--space-2);
+}

@@ -40,9 +40,6 @@ export const engineStatus = () => invoke<EngineStatus>("engine_status");
 /** Updates the bundled yt-dlp; resolves with its answer ("Updated yt-dlp to …" or "up to date"). */
 export const updateYtDlp = () => invoke<string>("update_yt_dlp");
 
-/** A cookies.txt file yt-dlp uses for logins instead of Craftora's sign-in window, or null. */
-export const getCookieFile = () => invoke<string | null>("get_cookie_file");
-export const setCookieFile = (file: string | null) => invoke<void>("set_cookie_file", { file });
 
 /** Opens a website or a video's page in a Craftora window, to log in and pick a video there. */
 export const openSignIn = (site: string) => invoke<void>("open_sign_in", { site });
@@ -89,10 +86,9 @@ export interface SiteReport {
   /** 0 when VirusTotal has no report on the site yet. */
   total: number;
 }
-export const virusTotalHasKey = () => invoke<boolean>("virustotal_has_key");
-export const setVirusTotalKey = (key: string | null) => invoke<void>("virustotal_set_key", { key });
-/** Null when no VirusTotal key is saved. */
-export const checkSite = (link: string) => invoke<SiteReport | null>("check_site", { link });
+/** Whether this copy of Craftora was built with a VirusTotal key ("Is this link safe?"). */
+export const siteCheckAvailable = () => invoke<boolean>("site_check_available");
+export const checkSite = (link: string) => invoke<SiteReport>("check_site", { link });
 
 /** Carries the page a link's servers want (`REFERER_MARK` in src-tauri/src/signin.rs). */
 const PAGE_MARK = "#craftora-referer=";
@@ -174,16 +170,6 @@ export async function pickMediaFiles(): Promise<string[]> {
     ],
   });
   return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
-}
-
-export async function pickCookieFile(): Promise<string | null> {
-  const picked = await open({
-    multiple: false,
-    directory: false,
-    title: "Choose a cookie file (cookies.txt)",
-    filters: [{ name: "Cookie file", extensions: ["txt"] }],
-  });
-  return typeof picked === "string" ? picked : null;
 }
 
 export async function pickMediaFile(): Promise<string | null> {

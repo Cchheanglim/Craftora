@@ -4,6 +4,7 @@ import { formatClock } from "../lib/timecode";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { inDesktopApp, revealFile } from "../lib/engine";
 import { storeEdition, type Updates } from "../lib/updates";
+import { checkSite, type SiteReport } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
 import { useState, type FormEvent } from "react";
@@ -31,20 +32,12 @@ interface HomeProps {
 }
 
 export interface LinkSettings {
-  /** A cookies.txt file used instead of Craftora's sign-in window, or null. */
-  cookieFile: string | null;
-  onPickCookieFile: () => void;
-  onClearCookieFile: () => void;
   onSignIn: (site: string) => void;
   onSignOut: () => void;
   /** The answer to the last sign-in or sign-out. */
   signInMessage: string | null;
-  /** A VirusTotal key is saved: each fetch checks its website. */
-  vtKey: boolean;
-  onSaveVtKey: (key: string) => void;
-  onRemoveVtKey: () => void;
-  /** The answer to the last save or removal of the VirusTotal key. */
-  vtMessage: string | null;
+  /** This copy can ask VirusTotal whether a link's website is safe. */
+  siteChecks: boolean;
   /** Absent in the Store edition, whose install folder can't be changed. */
   onUpdateYtDlp?: () => void;
   updating: boolean;
@@ -285,24 +278,34 @@ export function Home({
   );
 }
 
-/** Signing in to websites for links that need a login, and keeping yt-dlp current. */
+/** VirusTotal's verdict on a website, in words. */
+function siteVerdict(report: SiteReport): { tone: "ok" | "info" | "warn"; text: string } {
+  if (report.total === 0) return { tone: "info", text: `VirusTotal has no report on ${report.site} yet, so there's no verdict.` };
+  const flagged = report.malicious + report.suspicious;
+  return flagged > 0
+    ? { tone: "warn", text: `${flagged} of ${report.total} security vendors flag ${report.site} as dangerous. Be careful with it.` }
+    : { tone: "ok", text: `${report.site} looks safe: none of ${report.total} security vendors flag it.` };
+}
+
+/** Signing in to websites for links that need a login, checking links, and keeping yt-dlp current. */
 function Links({ links }: { links: LinkSettings }) {
   const [site, setSite] = useState("");
-  const [vtKey, setVtKey] = useState("");
+  const [toCheck, setToCheck] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [verdict, setVerdict] = useState<{ tone: "ok" | "info" | "warn"; text: string } | null>(null);
   const { ask, dialog } = useConfirm();
-  const saveVtKey = (e: FormEvent) => {
+  const checkLink = async (e: FormEvent) => {
     e.preventDefault();
-    if (vtKey.trim()) links.onSaveVtKey(vtKey.trim());
-    setVtKey("");
-  };
-  const removeVtKey = async () => {
-    const ok = await ask({
-      title: "Remove the VirusTotal key?",
-      message: "Craftora stops checking websites with VirusTotal. You can add the key again at any time.",
-      confirmLabel: "Remove key",
-      danger: true,
-    });
-    if (ok) links.onRemoveVtKey();
+    if (!toCheck.trim() || checking) return;
+    setChecking(true);
+    setVerdict(null);
+    try {
+      setVerdict(siteVerdict(await checkSite(toCheck.trim())));
+    } catch (err) {
+      setVerdict({ tone: "warn", text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setChecking(false);
+    }
   };
   const signOut = async () => {
     const ok = await ask({
@@ -345,54 +348,36 @@ function Links({ links }: { links: LinkSettings }) {
           For restricted site, private or members-only videos. A window opens: log in, go to the video, then click Fetch this video at the top of the window. Your browser can stay open, and the login is remembered.
         </p>
         {links.signInMessage && <p className="home__muted">{links.signInMessage}</p>}
-        <div className="home__about-row">
-          {links.cookieFile ? (
-            <>
-              <span className="home__muted mono truncate">Using {links.cookieFile}</span>
-              <button type="button" className="btn btn--ghost" onClick={links.onClearCookieFile}>
-                Stop using
+        {links.siteChecks && (
+          <>
+            <form className="home__about-row home__gap-sm" onSubmit={checkLink}>
+              <label htmlFor="check-link" className="sr-only">
+                Link to check
+              </label>
+              <input
+                id="check-link"
+                className="field home__site"
+                value={toCheck}
+                onChange={(e) => setToCheck(e.target.value)}
+                placeholder="Paste a link to check"
+                spellCheck={false}
+              />
+              <button type="submit" className="btn btn--secondary" disabled={!toCheck.trim() || checking}>
+                {checking ? "Checking…" : "Check"}
               </button>
-            </>
-          ) : (
-            <button type="button" className="btn btn--ghost" onClick={links.onPickCookieFile}>
-              Use a cookie file instead…
-            </button>
-          )}
-        </div>
-        {links.vtKey ? (
-          <div className="home__about-row">
-            <span>
-              <Icon name="check" size={13} /> VirusTotal checks each website you fetch from.
-            </span>
-            <button type="button" className="btn btn--ghost" onClick={() => void removeVtKey()}>
-              Remove key
-            </button>
-          </div>
-        ) : (
-          <form className="home__about-row" onSubmit={saveVtKey}>
-            <label htmlFor="vt-key" className="sr-only">
-              VirusTotal API key
-            </label>
-            <input
-              id="vt-key"
-              type="password"
-              className="field home__site"
-              value={vtKey}
-              onChange={(e) => setVtKey(e.target.value)}
-              placeholder="VirusTotal API key (optional)"
-              spellCheck={false}
-              autoComplete="off"
-            />
-            <button type="submit" className="btn btn--secondary" disabled={!vtKey.trim()}>
-              Save
-            </button>
-          </form>
+            </form>
+            <p className="home__muted">
+              Not sure a link is safe? Paste it here before you fetch it: Craftora asks VirusTotal whether security vendors
+              flag its website. Only the website's name is sent, never the full link.
+            </p>
+            {verdict && (
+              <p className={`home__verdict is-${verdict.tone}`} role={verdict.tone === "warn" ? "alert" : "status"}>
+                <Icon name={verdict.tone === "ok" ? "check" : "alert"} size={14} />
+                {verdict.text}
+              </p>
+            )}
+          </>
         )}
-        <p className="home__muted">
-          With a free key from virustotal.com, Craftora asks VirusTotal about each website you fetch from and warns you if
-          security vendors flag it. Only the website's name is sent, never the video link. A free key allows about 500 checks a day.
-        </p>
-        {links.vtMessage && <p className="home__muted">{links.vtMessage}</p>}
         {links.onUpdateYtDlp && (
           <>
             <div className="home__about-row">

@@ -14,11 +14,10 @@ These are the only times Craftora goes online:
 - **Pictures of fetched videos.** When you fetch a video, Craftora downloads its picture once and
   keeps a small copy on your PC for History, Media, Projects and Exports. (Videos fetched with
   version 0.3.0 or earlier still load their picture from the website each time.)
-- **VirusTotal check (optional).** Off until you add your own VirusTotal API key under Home →
-  Links. Then, for each link you fetch, Craftora sends VirusTotal the website's name (for
-  example `youtube.com`), never the video's link. VirusTotal's
-  [terms and privacy policy](https://www.virustotal.com/gui/terms-of-service) apply. The key is
-  kept in Windows Credential Manager, and **Remove key** turns the check off.
+- **"Is this link safe?"** Only when you paste a link into the check box under Home → Links and
+  click **Check**: Craftora sends VirusTotal the website's name (for example `youtube.com`),
+  never the full link, using Craftora's own VirusTotal key. VirusTotal's
+  [terms and privacy policy](https://www.virustotal.com/gui/terms-of-service) apply.
 - **Updating yt-dlp.** The **Update yt-dlp** button (Home → Links) downloads the newest yt-dlp
   from GitHub.
 - **The AI assistant.** It is off until you add your own Gemini API key. Each message you send

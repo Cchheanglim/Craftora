@@ -62,7 +62,8 @@ for UI work, `PRODUCT.md` and `DESIGN.md`.
   WebView2 cookie store). Its menu bar **Fetch this video** reads the page with `FIND_MEDIA`
   (video elements, `.m3u8/.mpd/.mp4` resources, iframes, og:image) and sends `fetch-page`;
   `tell_sign_in` shows a "Sent to Craftora" banner. Each yt-dlp run gets the cookies as a
-  temporary cookies.txt (`link_args`, deleted after); a user cookie file overrides. Borrowing a
+  temporary cookies.txt (`link_args`, deleted after). A user-picked cookie file was removed
+  (confusing). Borrowing a
   browser's logins was removed (Brave/Chrome lock their cookie DB while open). Errors offer
   "Sign in to <site>" / "Find the video on the page" (`pageAction` in `App.tsx`).
 - **Pages that need their Referer:** a link can carry `#craftora-referer=<page>`
@@ -108,7 +109,8 @@ folder, resource) and FFmpeg/FFprobe (GPL build from BtbN, sidecars).
 - `components/`: `Preview`, `TimelineEditor` (drag, trim, scrub, + Track; `mediaDrag`),
   `Inspector`, `ExportPanel`, `AssistantPanel`, `ConfirmDialog` (`useConfirm`: delete project,
   cancel export, clear history, sign out of all, AI key), `Home` (projects, recent exports,
-  Links: sign-in, cookie file, Update yt-dlp; About), `QueueDock`, `Sidebar` (media, History),
+  Links: sign-in, "Is this link safe?", Update yt-dlp; About; Recent exports can be hidden),
+  `QueueDock`, `Sidebar` (media, History),
   `Thumb`, `Toolbar` (link box, Fetch, error action button).
 - `assistant/`: Gemini editing assistant (`tools.ts`, `conversation.ts`, `reliable.ts`,
   `useAssistant.ts`).
@@ -126,8 +128,10 @@ folder, resource) and FFmpeg/FFprobe (GPL build from BtbN, sidecars).
   `prefetch_media`) and the HLS relay `…/hls?u=` (`relay_playlist`; unit test). Main window only.
 - `media.rs`: `fetch_media` (yt-dlp JSON → formats, preview choice, `hls_preview`,
   `probe_length`). `signin.rs`: sign-in window, cookies, `REFERER_MARK`, `FIND_MEDIA`.
-- `local.rs` (open files, preview copies), `store.rs` (projects, history, settings incl.
-  cookie file), `assistant.rs` (Gemini key in Credential Manager), `engine.rs` (`command`,
+- `local.rs` (open files, preview copies), `store.rs` (projects, history, settings),
+  `assistant.rs` (Gemini key in Credential Manager), `virustotal.rs` ("Is this link safe?":
+  website reputation from VirusTotal with the project's key, built in from `CRAFTORA_VT_KEY`, a
+  GitHub secret `VIRUSTOTAL_API_KEY` in the release build; hidden when absent), `engine.rs` (`command`,
   engine status, `update_yt_dlp`).
 
 ## Running and checking

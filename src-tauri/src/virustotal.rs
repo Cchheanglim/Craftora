@@ -1,51 +1,27 @@
-//! An optional safety check of the websites links come from, with the user's own VirusTotal API
-//! key (kept in Windows Credential Manager, never sent to the UI). Only the website's name is
-//! looked up, never the video's link, so VirusTotal learns which sites the user fetches from but
-//! not what they watch.
+//! "Is this link safe?": asks VirusTotal what security vendors say about the website a link
+//! comes from. Only the website's name is looked up, never the video's link.
+//!
+//! The VirusTotal key is the project's own, added at build time from the `CRAFTORA_VT_KEY`
+//! environment variable (a GitHub secret in the release build), so it's never in the source.
+//! shortcut: a key built into the app can be extracted from it, and its free allowance (about
+//! 4 checks a minute, 500 a day) is shared by every user; move it behind a small server if
+//! either becomes a problem.
 
 use std::time::Duration;
 
-use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use tauri::Url;
 
-const SERVICE: &str = "Craftora";
-const ACCOUNT: &str = "virustotal-api-key";
+const KEY: Option<&str> = option_env!("CRAFTORA_VT_KEY");
 
-fn entry() -> Result<Entry, String> {
-    Entry::new(SERVICE, ACCOUNT).map_err(|e| format!("Couldn't reach Windows Credential Manager: {e}"))
+fn key() -> Option<&'static str> {
+    KEY.filter(|k| !k.trim().is_empty())
 }
 
-fn stored_key() -> Result<Option<String>, String> {
-    match entry()?.get_password() {
-        Ok(key) => Ok(Some(key)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(format!("Couldn't read the VirusTotal key: {e}")),
-    }
-}
-
+/// Whether this copy of Craftora was built with a VirusTotal key.
 #[tauri::command]
-pub fn virustotal_has_key() -> Result<bool, String> {
-    Ok(stored_key()?.is_some())
-}
-
-/// Saves the key, or forgets it with `None`.
-#[tauri::command]
-pub fn virustotal_set_key(key: Option<String>) -> Result<(), String> {
-    let entry = entry()?;
-    match key.as_deref().map(str::trim) {
-        Some(key) if !key.is_empty() => {
-            // VirusTotal keys are 64 hexadecimal characters.
-            if key.len() != 64 || !key.chars().all(|c| c.is_ascii_hexdigit()) {
-                return Err("That doesn't look like a VirusTotal API key (64 letters and numbers).".into());
-            }
-            entry.set_password(key).map_err(|e| format!("Couldn't save the VirusTotal key: {e}"))
-        }
-        _ => match entry.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(format!("Couldn't remove the VirusTotal key: {e}")),
-        },
-    }
+pub fn site_check_available() -> bool {
+    key().is_some()
 }
 
 /// What VirusTotal's security vendors say about a website.
@@ -104,16 +80,11 @@ fn report(site: String, body: &str) -> Result<SiteReport, String> {
     Ok(SiteReport { site, malicious: stats.malicious, suspicious: stats.suspicious, total })
 }
 
-/// The VirusTotal report on the website `link` comes from; None when no key is saved or the
-/// link has no website name.
+/// The VirusTotal report on the website `link` comes from.
 #[tauri::command]
-pub async fn check_site(link: String) -> Result<Option<SiteReport>, String> {
-    let Some(key) = stored_key()? else {
-        return Ok(None);
-    };
-    let Some(site) = site_of(&link) else {
-        return Ok(None);
-    };
+pub async fn check_site(link: String) -> Result<SiteReport, String> {
+    let key = key().ok_or("Website checks aren't set up in this copy of Craftora.")?;
+    let site = site_of(link.trim()).ok_or("That doesn't look like a link to a website. Paste one starting with https://")?;
     let response = reqwest::Client::new()
         .get(format!("https://www.virustotal.com/api/v3/domains/{site}"))
         .header("x-apikey", key)
@@ -122,11 +93,10 @@ pub async fn check_site(link: String) -> Result<Option<SiteReport>, String> {
         .await
         .map_err(|e| format!("Couldn't reach VirusTotal: {e}"))?;
     match response.status().as_u16() {
-        200 => report(site, &response.text().await.map_err(|e| e.to_string())?).map(Some),
-        404 => Ok(Some(SiteReport { site, malicious: 0, suspicious: 0, total: 0 })),
-        401 | 403 => Err("VirusTotal didn't accept the API key. Check it under Home → Links.".into()),
-        429 => Err("The VirusTotal key has used its free checks for now (about 4 a minute, 500 a day).".into()),
-        code => Err(format!("VirusTotal answered with error {code}.")),
+        200 => report(site, &response.text().await.map_err(|e| e.to_string())?),
+        404 => Ok(SiteReport { site, malicious: 0, suspicious: 0, total: 0 }),
+        429 => Err("Lots of people are checking links right now. Try again in a minute.".into()),
+        code => Err(format!("The website check isn't working right now (VirusTotal error {code}).")),
     }
 }
 

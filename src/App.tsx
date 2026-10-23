@@ -5,12 +5,8 @@ import {
   engineStatus,
   exportEncoder,
   fetchMedia,
-  checkSite,
-  getCookieFile,
   keptThumbnail,
-  setVirusTotalKey,
-  virusTotalHasKey,
-  type SiteReport,
+  siteCheckAvailable,
   inDesktopApp,
   makePreview,
   onPreviewCache,
@@ -20,8 +16,6 @@ import {
   pickFolder,
   pickMediaFiles,
   openSignIn,
-  pickCookieFile,
-  setCookieFile,
   onFetchPage,
   type FoundPage,
   signOutEverywhere,
@@ -175,18 +169,6 @@ async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource>
   }
 }
 
-type SiteNotice = { tone: "ok" | "info" | "warn"; text: string };
-
-/** VirusTotal's verdict on a website, in words for the note under the link box. */
-function siteVerdict(report: SiteReport | null): SiteNotice | null {
-  if (!report) return null;
-  if (report.total === 0) return { tone: "info", text: `VirusTotal has no report on ${report.site} yet.` };
-  const flagged = report.malicious + report.suspicious;
-  return flagged > 0
-    ? { tone: "warn", text: `VirusTotal: ${flagged} of ${report.total} security vendors flag ${report.site} as dangerous. Be careful with it.` }
-    : { tone: "ok", text: `VirusTotal: ${report.site} looks safe. None of ${report.total} security vendors flag it.` };
-}
-
 /** Finished exports as kept in the history: without what only a running job needs. */
 const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined });
 
@@ -224,21 +206,9 @@ export default function App() {
     return () => void stop.then((unlisten) => unlisten());
   }, []);
   const [fastEncoder, setFastEncoder] = useState<string | null>(null);
-  /** A cookies.txt file yt-dlp uses for logins instead of Craftora's sign-in window. */
-  const [cookieFile, setCookieFileState] = useState<string | null>(null);
   const [signInMessage, setSignInMessage] = useState<string | null>(null);
-  /** A VirusTotal key is saved; the last website verdict, and the last key message. */
-  const [vtKey, setVtKey] = useState(false);
-  const [siteNotice, setSiteNotice] = useState<SiteNotice | null>(null);
-  const [vtMessage, setVtMessage] = useState<string | null>(null);
-  /** The latest fetch's check, so an older, slower answer doesn't replace it. */
-  const siteCheck = useRef(0);
-  // A good or neutral verdict fades after a while; a warning stays until the next fetch.
-  useEffect(() => {
-    if (!siteNotice || siteNotice.tone === "warn") return;
-    const timer = window.setTimeout(() => setSiteNotice(null), 8000);
-    return () => window.clearTimeout(timer);
-  }, [siteNotice]);
+  /** This copy was built with a VirusTotal key, so Home → Links can check links. */
+  const [siteChecks, setSiteChecks] = useState(false);
   /** A link that failed in a way the sign-in window can fix: a login, or a page yt-dlp doesn't know. */
   const [pageAction, setPageAction] = useState<{ label: string; link: string } | null>(null);
   const [ytDlpUpdate, setYtDlpUpdate] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null });
@@ -262,8 +232,7 @@ export default function App() {
     if (inDesktopApp) {
       void engineStatus().then(setEngines);
       void exportEncoder().then(setFastEncoder).catch(() => setFastEncoder("the processor"));
-      void getCookieFile().then(setCookieFileState).catch(() => {});
-      void virusTotalHasKey().then(setVtKey).catch(() => {});
+      void siteCheckAvailable().then(setSiteChecks).catch(() => {});
     }
     void listProjects().then(setProjects).catch(() => setProjects([]));
     void loadHistory().then(setHistory);
@@ -406,14 +375,6 @@ export default function App() {
     setBusy(true);
     setError(null);
     setPageAction(null);
-    setSiteNotice(null);
-    // VirusTotal looks at the website alongside the fetch, without slowing it down.
-    const check = ++siteCheck.current;
-    if (inDesktopApp && vtKey) {
-      checkSite(link)
-        .then((report) => check === siteCheck.current && setSiteNotice(siteVerdict(report)))
-        .catch((err) => check === siteCheck.current && setSiteNotice({ tone: "warn", text: errorText(err) }));
-    }
     try {
       let source: MediaSource;
       if (inDesktopApp) {
@@ -453,12 +414,6 @@ export default function App() {
     } finally {
       setBusy(false);
     }
-  };
-
-  const chooseCookieFile = (file: string | null) => {
-    setCookieFile(file)
-      .then(() => setCookieFileState(file))
-      .catch((err) => setSignInMessage(errorText(err)));
   };
 
   // "Fetch this video" in the sign-in window fetches the page it shows, with the login.
@@ -696,9 +651,7 @@ export default function App() {
         onUrlChange={(next) => {
           setUrl(next);
           setError(null);
-          setSiteNotice(null);
         }}
-        notice={siteNotice}
         onFetch={(link) => void fetchSource(link)}
         fetching={busy}
         error={error}
@@ -772,9 +725,6 @@ export default function App() {
             links={
               inDesktopApp
                 ? {
-                    cookieFile,
-                    onPickCookieFile: () => void pickCookieFile().then((file) => file && chooseCookieFile(file)),
-                    onClearCookieFile: () => chooseCookieFile(null),
                     onSignIn: (site) => {
                       setSignInMessage(null);
                       openSignIn(site).catch((err) => setSignInMessage(errorText(err)));
@@ -784,22 +734,7 @@ export default function App() {
                         .then(() => setSignInMessage("Signed out of all websites."))
                         .catch((err) => setSignInMessage(errorText(err))),
                     signInMessage,
-                    vtKey,
-                    onSaveVtKey: (key) =>
-                      void setVirusTotalKey(key)
-                        .then(() => {
-                          setVtKey(true);
-                          setVtMessage("Saved. Your next fetch checks its website with VirusTotal.");
-                        })
-                        .catch((err) => setVtMessage(errorText(err))),
-                    onRemoveVtKey: () =>
-                      void setVirusTotalKey(null)
-                        .then(() => {
-                          setVtKey(false);
-                          setVtMessage("Removed. Websites aren't checked any more.");
-                        })
-                        .catch((err) => setVtMessage(errorText(err))),
-                    vtMessage,
+                    siteChecks,
                     onUpdateYtDlp: storeEdition ? undefined : refreshYtDlp,
                     updating: ytDlpUpdate.busy,
                     ytDlpMessage: ytDlpUpdate.message,

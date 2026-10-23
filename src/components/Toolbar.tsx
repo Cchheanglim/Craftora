@@ -8,8 +8,6 @@ interface ToolbarProps {
   onFetch: (url: string) => void;
   fetching: boolean;
   error: string | null;
-  /** A short note under the link box, such as VirusTotal's verdict on the website. */
-  notice?: { tone: "ok" | "info" | "warn"; text: string } | null;
   /** A button next to the error, such as "Sign in to youtube.com". */
   errorAction?: { label: string; onClick: () => void };
   /** Imports files from this PC; absent in the browser preview. */
@@ -31,7 +29,6 @@ export function Toolbar({
   onFetch,
   fetching,
   error,
-  notice,
   errorAction,
   onImport,
   inputRef,
@@ -86,26 +83,16 @@ export function Toolbar({
         <button type="submit" className="btn btn--secondary" disabled={fetching || !url.trim()}>
           {fetching ? "Fetching…" : "Fetch"}
         </button>
-        {(error || notice) && (
-          <div className="toolbar__notes">
-            {error && (
-              <p id="media-url-error" className="toolbar__error" role="alert">
-                <Icon name="alert" size={13} />
-                {error}
-                {errorAction && (
-                  <button type="button" className="btn btn--primary" onClick={errorAction.onClick}>
-                    {errorAction.label}
-                  </button>
-                )}
-              </p>
+        {error && (
+          <p id="media-url-error" className="toolbar__error" role="alert">
+            <Icon name="alert" size={13} />
+            {error}
+            {errorAction && (
+              <button type="button" className="btn btn--primary" onClick={errorAction.onClick}>
+                {errorAction.label}
+              </button>
             )}
-            {notice && (
-              <p className={`toolbar__error toolbar__note is-${notice.tone}`} role={notice.tone === "warn" ? "alert" : "status"}>
-                <Icon name={notice.tone === "ok" ? "check" : "alert"} size={13} />
-                {notice.text}
-              </p>
-            )}
-          </div>
+          </p>
         )}
       </form>
 
