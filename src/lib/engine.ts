@@ -8,6 +8,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { JobSpec, MediaSource, RenderSpec } from "../types";
+import { captureThumbnail } from "./thumbnail";
 
 export const inDesktopApp = "__TAURI_INTERNALS__" in window;
 
@@ -61,6 +62,38 @@ export interface FoundPage {
 export const onFetchPage = (handler: (found: FoundPage) => void): Promise<UnlistenFn> =>
   listen<FoundPage>("fetch-page", (e) => handler(e.payload));
 
+/**
+ * A video's picture as a small copy kept with the media: fetched once by Rust with the page it
+ * belongs to (some sites refuse their pictures to other pages), so the site isn't asked again
+ * each time it shows. Falls back to the picture's address.
+ */
+export async function keptThumbnail(url: string, link: string): Promise<string> {
+  try {
+    const bytes = await invoke<ArrayBuffer>("fetch_thumbnail", { url, link });
+    const local = URL.createObjectURL(new Blob([bytes]));
+    try {
+      return (await captureThumbnail(local, true)) ?? url;
+    } finally {
+      URL.revokeObjectURL(local);
+    }
+  } catch {
+    return url;
+  }
+}
+
+/** What VirusTotal's security vendors say about a website (`SiteReport` in virustotal.rs). */
+export interface SiteReport {
+  site: string;
+  malicious: number;
+  suspicious: number;
+  /** 0 when VirusTotal has no report on the site yet. */
+  total: number;
+}
+export const virusTotalHasKey = () => invoke<boolean>("virustotal_has_key");
+export const setVirusTotalKey = (key: string | null) => invoke<void>("virustotal_set_key", { key });
+/** Null when no VirusTotal key is saved. */
+export const checkSite = (link: string) => invoke<SiteReport | null>("check_site", { link });
+
 /** Carries the page a link's servers want (`REFERER_MARK` in src-tauri/src/signin.rs). */
 const PAGE_MARK = "#craftora-referer=";
 /** The HLS relay in src-tauri/src/media_cache.rs (Windows' address for the `cmedia` scheme). */
@@ -85,7 +118,8 @@ export async function fetchMedia(url: string): Promise<MediaSource> {
         ? `${HLS_RELAY}?u=${encodeURIComponent(source.previewUrl)}`
         : source.previewUrl;
     const previewAudioUrl = await cached(source.previewAudioUrl);
-    return { ...source, previewUrl, previewAudioUrl, previewCacheIds: ids };
+    const thumbnail = source.thumbnail ? await keptThumbnail(source.thumbnail, source.url) : undefined;
+    return { ...source, thumbnail, previewUrl, previewAudioUrl, previewCacheIds: ids };
   } catch (err) {
     throw new Error(message(err));
   }

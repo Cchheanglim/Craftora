@@ -39,6 +39,12 @@ export interface LinkSettings {
   onSignOut: () => void;
   /** The answer to the last sign-in or sign-out. */
   signInMessage: string | null;
+  /** A VirusTotal key is saved: each fetch checks its website. */
+  vtKey: boolean;
+  onSaveVtKey: (key: string) => void;
+  onRemoveVtKey: () => void;
+  /** The answer to the last save or removal of the VirusTotal key. */
+  vtMessage: string | null;
   /** Absent in the Store edition, whose install folder can't be changed. */
   onUpdateYtDlp?: () => void;
   updating: boolean;
@@ -94,6 +100,22 @@ export function Home({
   links,
 }: HomeProps) {
   const { ask, dialog } = useConfirm();
+  // Some people don't want their exports' pictures on the start screen; remembered.
+  const [hideRecent, setHideRecent] = useState(() => {
+    try {
+      return localStorage.getItem("craftora.hideRecent") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleRecent = (hide: boolean) => {
+    setHideRecent(hide);
+    try {
+      localStorage.setItem("craftora.hideRecent", hide ? "1" : "0");
+    } catch {
+      /* not essential */
+    }
+  };
   const deleteProject = async (p: ProjectEntry) => {
     const ok = await ask({
       title: `Delete “${p.name}”?`,
@@ -178,8 +200,17 @@ export function Home({
           </div>
 
           <div className="home__col">
-            <h2 className="section-label">Recent exports</h2>
-            {recent.length === 0 ? (
+            <div className="home__section-head">
+              <h2 className="section-label">Recent exports</h2>
+              {recent.length > 0 && (
+                <button type="button" className="btn btn--ghost" aria-pressed={hideRecent} onClick={() => toggleRecent(!hideRecent)}>
+                  {hideRecent ? "Show" : "Hide"}
+                </button>
+              )}
+            </div>
+            {hideRecent && recent.length > 0 ? (
+              <p className="home__muted">Hidden. Your exports are still in Exports and in your save folder.</p>
+            ) : recent.length === 0 ? (
               <p className="home__muted">
                 Nothing exported yet. Finished files land in <span className="mono">{outputDir}</span>.
               </p>
@@ -257,7 +288,22 @@ export function Home({
 /** Signing in to websites for links that need a login, and keeping yt-dlp current. */
 function Links({ links }: { links: LinkSettings }) {
   const [site, setSite] = useState("");
+  const [vtKey, setVtKey] = useState("");
   const { ask, dialog } = useConfirm();
+  const saveVtKey = (e: FormEvent) => {
+    e.preventDefault();
+    if (vtKey.trim()) links.onSaveVtKey(vtKey.trim());
+    setVtKey("");
+  };
+  const removeVtKey = async () => {
+    const ok = await ask({
+      title: "Remove the VirusTotal key?",
+      message: "Craftora stops checking websites with VirusTotal. You can add the key again at any time.",
+      confirmLabel: "Remove key",
+      danger: true,
+    });
+    if (ok) links.onRemoveVtKey();
+  };
   const signOut = async () => {
     const ok = await ask({
       title: "Sign out of all websites?",
@@ -313,6 +359,40 @@ function Links({ links }: { links: LinkSettings }) {
             </button>
           )}
         </div>
+        {links.vtKey ? (
+          <div className="home__about-row">
+            <span>
+              <Icon name="check" size={13} /> VirusTotal checks each website you fetch from.
+            </span>
+            <button type="button" className="btn btn--ghost" onClick={() => void removeVtKey()}>
+              Remove key
+            </button>
+          </div>
+        ) : (
+          <form className="home__about-row" onSubmit={saveVtKey}>
+            <label htmlFor="vt-key" className="sr-only">
+              VirusTotal API key
+            </label>
+            <input
+              id="vt-key"
+              type="password"
+              className="field home__site"
+              value={vtKey}
+              onChange={(e) => setVtKey(e.target.value)}
+              placeholder="VirusTotal API key (optional)"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button type="submit" className="btn btn--secondary" disabled={!vtKey.trim()}>
+              Save
+            </button>
+          </form>
+        )}
+        <p className="home__muted">
+          With a free key from virustotal.com, Craftora asks VirusTotal about each website you fetch from and warns you if
+          security vendors flag it. Only the website's name is sent, never the video link. A free key allows about 500 checks a day.
+        </p>
+        {links.vtMessage && <p className="home__muted">{links.vtMessage}</p>}
         {links.onUpdateYtDlp && (
           <>
             <div className="home__about-row">
