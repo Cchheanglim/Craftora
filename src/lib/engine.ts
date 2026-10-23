@@ -8,6 +8,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { JobSpec, MediaSource, RenderSpec } from "../types";
+import { captureThumbnail } from "./thumbnail";
 
 export const inDesktopApp = "__TAURI_INTERNALS__" in window;
 
@@ -39,9 +40,6 @@ export const engineStatus = () => invoke<EngineStatus>("engine_status");
 /** Updates the bundled yt-dlp; resolves with its answer ("Updated yt-dlp to …" or "up to date"). */
 export const updateYtDlp = () => invoke<string>("update_yt_dlp");
 
-/** A cookies.txt file yt-dlp uses for logins instead of Craftora's sign-in window, or null. */
-export const getCookieFile = () => invoke<string | null>("get_cookie_file");
-export const setCookieFile = (file: string | null) => invoke<void>("set_cookie_file", { file });
 
 /** Opens a website or a video's page in a Craftora window, to log in and pick a video there. */
 export const openSignIn = (site: string) => invoke<void>("open_sign_in", { site });
@@ -60,6 +58,37 @@ export interface FoundPage {
 
 export const onFetchPage = (handler: (found: FoundPage) => void): Promise<UnlistenFn> =>
   listen<FoundPage>("fetch-page", (e) => handler(e.payload));
+
+/**
+ * A video's picture as a small copy kept with the media: fetched once by Rust with the page it
+ * belongs to (some sites refuse their pictures to other pages), so the site isn't asked again
+ * each time it shows. Falls back to the picture's address.
+ */
+export async function keptThumbnail(url: string, link: string): Promise<string> {
+  try {
+    const bytes = await invoke<ArrayBuffer>("fetch_thumbnail", { url, link });
+    const local = URL.createObjectURL(new Blob([bytes]));
+    try {
+      return (await captureThumbnail(local, true)) ?? url;
+    } finally {
+      URL.revokeObjectURL(local);
+    }
+  } catch {
+    return url;
+  }
+}
+
+/** What VirusTotal's security vendors say about a website (`SiteReport` in virustotal.rs). */
+export interface SiteReport {
+  site: string;
+  malicious: number;
+  suspicious: number;
+  /** 0 when VirusTotal has no report on the site yet. */
+  total: number;
+}
+/** Whether this copy of Craftora was built with a VirusTotal key ("Is this link safe?"). */
+export const siteCheckAvailable = () => invoke<boolean>("site_check_available");
+export const checkSite = (link: string) => invoke<SiteReport>("check_site", { link });
 
 /** Carries the page a link's servers want (`REFERER_MARK` in src-tauri/src/signin.rs). */
 const PAGE_MARK = "#craftora-referer=";
@@ -85,7 +114,8 @@ export async function fetchMedia(url: string): Promise<MediaSource> {
         ? `${HLS_RELAY}?u=${encodeURIComponent(source.previewUrl)}`
         : source.previewUrl;
     const previewAudioUrl = await cached(source.previewAudioUrl);
-    return { ...source, previewUrl, previewAudioUrl, previewCacheIds: ids };
+    const thumbnail = source.thumbnail ? await keptThumbnail(source.thumbnail, source.url) : undefined;
+    return { ...source, thumbnail, previewUrl, previewAudioUrl, previewCacheIds: ids };
   } catch (err) {
     throw new Error(message(err));
   }
@@ -140,16 +170,6 @@ export async function pickMediaFiles(): Promise<string[]> {
     ],
   });
   return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
-}
-
-export async function pickCookieFile(): Promise<string | null> {
-  const picked = await open({
-    multiple: false,
-    directory: false,
-    title: "Choose a cookie file (cookies.txt)",
-    filters: [{ name: "Cookie file", extensions: ["txt"] }],
-  });
-  return typeof picked === "string" ? picked : null;
 }
 
 export async function pickMediaFile(): Promise<string | null> {

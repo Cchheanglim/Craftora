@@ -5,7 +5,8 @@ import {
   engineStatus,
   exportEncoder,
   fetchMedia,
-  getCookieFile,
+  keptThumbnail,
+  siteCheckAvailable,
   inDesktopApp,
   makePreview,
   onPreviewCache,
@@ -15,8 +16,6 @@ import {
   pickFolder,
   pickMediaFiles,
   openSignIn,
-  pickCookieFile,
-  setCookieFile,
   onFetchPage,
   type FoundPage,
   signOutEverywhere,
@@ -160,7 +159,8 @@ async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource>
     for (const media of found.media) {
       try {
         const source = await fetchMedia(media);
-        return { ...source, title: found.title || source.title, thumbnail: source.thumbnail || found.image || undefined };
+        const thumbnail = source.thumbnail || (found.image ? await keptThumbnail(found.image, found.page) : undefined);
+        return { ...source, title: found.title || source.title, thumbnail };
       } catch {
         // An ad or a player that isn't the video: try the next guess.
       }
@@ -206,9 +206,9 @@ export default function App() {
     return () => void stop.then((unlisten) => unlisten());
   }, []);
   const [fastEncoder, setFastEncoder] = useState<string | null>(null);
-  /** A cookies.txt file yt-dlp uses for logins instead of Craftora's sign-in window. */
-  const [cookieFile, setCookieFileState] = useState<string | null>(null);
   const [signInMessage, setSignInMessage] = useState<string | null>(null);
+  /** This copy was built with a VirusTotal key, so Home → Links can check links. */
+  const [siteChecks, setSiteChecks] = useState(false);
   /** A link that failed in a way the sign-in window can fix: a login, or a page yt-dlp doesn't know. */
   const [pageAction, setPageAction] = useState<{ label: string; link: string } | null>(null);
   const [ytDlpUpdate, setYtDlpUpdate] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null });
@@ -232,7 +232,7 @@ export default function App() {
     if (inDesktopApp) {
       void engineStatus().then(setEngines);
       void exportEncoder().then(setFastEncoder).catch(() => setFastEncoder("the processor"));
-      void getCookieFile().then(setCookieFileState).catch(() => {});
+      void siteCheckAvailable().then(setSiteChecks).catch(() => {});
     }
     void listProjects().then(setProjects).catch(() => setProjects([]));
     void loadHistory().then(setHistory);
@@ -414,12 +414,6 @@ export default function App() {
     } finally {
       setBusy(false);
     }
-  };
-
-  const chooseCookieFile = (file: string | null) => {
-    setCookieFile(file)
-      .then(() => setCookieFileState(file))
-      .catch((err) => setSignInMessage(errorText(err)));
   };
 
   // "Fetch this video" in the sign-in window fetches the page it shows, with the login.
@@ -731,9 +725,6 @@ export default function App() {
             links={
               inDesktopApp
                 ? {
-                    cookieFile,
-                    onPickCookieFile: () => void pickCookieFile().then((file) => file && chooseCookieFile(file)),
-                    onClearCookieFile: () => chooseCookieFile(null),
                     onSignIn: (site) => {
                       setSignInMessage(null);
                       openSignIn(site).catch((err) => setSignInMessage(errorText(err)));
@@ -743,6 +734,7 @@ export default function App() {
                         .then(() => setSignInMessage("Signed out of all websites."))
                         .catch((err) => setSignInMessage(errorText(err))),
                     signInMessage,
+                    siteChecks,
                     onUpdateYtDlp: storeEdition ? undefined : refreshYtDlp,
                     updating: ytDlpUpdate.busy,
                     ytDlpMessage: ytDlpUpdate.message,

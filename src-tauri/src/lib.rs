@@ -8,6 +8,7 @@ mod media;
 mod project;
 mod signin;
 mod store;
+mod virustotal;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -70,8 +71,9 @@ pub fn run() {
             store::save_history,
             store::get_output_dir,
             store::set_output_dir,
-            store::get_cookie_file,
-            store::set_cookie_file,
+            virustotal::site_check_available,
+            virustotal::check_site,
+            media::fetch_thumbnail,
             signin::open_sign_in,
             signin::sign_out_everywhere,
             signin::tell_sign_in,

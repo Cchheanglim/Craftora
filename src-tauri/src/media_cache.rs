@@ -68,7 +68,7 @@ impl Cached {
 
 /// One client for every request: it keeps connections open, so each piece of a preview doesn't
 /// pay for a new connection and TLS handshake (a new client per piece made scrubbing slow).
-fn client() -> &'static reqwest::Client {
+pub(crate) fn client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()

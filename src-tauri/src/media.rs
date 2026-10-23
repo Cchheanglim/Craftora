@@ -257,6 +257,37 @@ fn preview_audio(formats: &[Format]) -> String {
     candidates.first().and_then(|f| f.url.clone()).unwrap_or_default()
 }
 
+/// Pictures bigger than this aren't thumbnails.
+const MAX_THUMBNAIL_BYTES: u64 = 8 * 1024 * 1024;
+
+/// A video's picture, fetched once with the page it belongs to as Referer: some sites refuse
+/// their pictures to other pages ("hotlink protection"). The UI keeps a small copy, so the site
+/// isn't asked again each time the picture shows.
+#[tauri::command]
+pub async fn fetch_thumbnail(url: String, link: String) -> Result<tauri::ipc::Response, String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("Not a web picture.".into());
+    }
+    let (page, found_on) = crate::signin::split_referer(&link);
+    let response = crate::media_cache::client()
+        .get(&url)
+        .header(reqwest::header::REFERER, found_on.unwrap_or(page))
+        .send()
+        .await
+        .map_err(|e| format!("Couldn't load the picture: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("The picture's server answered {}.", response.status()));
+    }
+    if response.content_length().is_some_and(|n| n > MAX_THUMBNAIL_BYTES) {
+        return Err("The picture is too big.".into());
+    }
+    let bytes = response.bytes().await.map_err(|e| format!("The picture stopped loading: {e}"))?;
+    if bytes.len() as u64 > MAX_THUMBNAIL_BYTES {
+        return Err("The picture is too big.".into());
+    }
+    Ok(tauri::ipc::Response::new(bytes.to_vec()))
+}
+
 /// Runs `yt-dlp --dump-single-json` on a link and maps the result for the editor.
 #[tauri::command]
 pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, String> {

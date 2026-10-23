@@ -68,6 +68,9 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
   in, then click **Fetch this video**. The login is remembered and only used for that website.
   Pages yt-dlp doesn't know ("Unsupported URL") work the same way: open the page, play the
   video, click **Fetch this video**.
+- **Not sure a link is safe?** Paste it into the check box under Home → Links: Craftora asks
+  [VirusTotal](https://www.virustotal.com) whether security vendors flag its website (only the
+  website's name is sent, never the full link).
 - Link previews are cached on your PC as they play: jumping back to any part already fetched
   is instant. Stream playlists (HLS) preview too, including from sites that only serve their
   own pages.
