@@ -99,6 +99,9 @@ struct ClipSpec {
     mirror: bool,
     #[serde(default)]
     reverse: bool,
+    /// Cover size × the frame (what spills over is cut off by the frame) instead of fitting inside.
+    #[serde(default)]
+    fill: bool,
     /// Seconds of fade in and out (picture from/to transparent, sound from/to silence).
     #[serde(default)]
     fade_in: f64,
@@ -415,10 +418,11 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                     if !source.info.has_video {
                         continue;
                     }
-                    // Fits inside size × the frame, keeping its shape.
+                    // Fits inside size × the frame (or covers it, with `fill`), keeping its shape.
                     let (bw, bh) = (((w as f64) * clip.size).round().max(2.0), ((h as f64) * clip.size).round().max(2.0));
+                    let fit = if clip.fill { "increase" } else { "decrease" };
                     graph.push(format!(
-                        "[{k}:v]setpts=PTS-STARTPTS{},scale=w={bw}:h={bh}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,fps={fps},format=yuva420p{},setpts=PTS+{start}/TB[v{i}]",
+                        "[{k}:v]setpts=PTS-STARTPTS{},scale=w={bw}:h={bh}:force_original_aspect_ratio={fit}:force_divisible_by=2,setsar=1,fps={fps},format=yuva420p{},setpts=PTS+{start}/TB[v{i}]",
                         clip.picture_edits(),
                         clip.picture_fades()
                     ));
