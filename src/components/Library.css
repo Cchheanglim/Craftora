@@ -78,3 +78,51 @@
   font-size: 12px;
   color: var(--text-2);
 }
+
+.library__save {
+  margin-top: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  min-width: 0;
+}
+
+.library__save .mono {
+  color: var(--text);
+}
+
+.library__save .btn {
+  flex-shrink: 0;
+  margin-left: var(--space-2);
+}
+
+.library__toggle {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.library__toggle svg {
+  color: var(--text-3);
+  transition: transform var(--dur-fast) linear;
+}
+
+.library__toggle[aria-expanded="false"] svg {
+  transform: rotate(-90deg);
+}
+
+.library__count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--text-3);
+}
