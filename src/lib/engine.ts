@@ -85,6 +85,18 @@ export interface SiteReport {
   suspicious: number;
   /** 0 when VirusTotal has no report on the site yet. */
   total: number;
+  /** The vendors that flag the site, and what they call it ("phishing", "malware"…). */
+  flaggedBy: { vendor: string; verdict: string }[];
+  /** What kind of site it is ("video sharing"…). */
+  categories: string[];
+  /** VirusTotal's community score: below 0 means people found it harmful. */
+  reputation: number;
+  votesSafe: number;
+  votesDangerous: number;
+  /** Seconds since 1970, or null if never scanned. */
+  scannedAt: number | null;
+  /** The full report on VirusTotal's website. */
+  reportUrl: string;
 }
 /** Whether this copy of Craftora was built with a VirusTotal key ("Is this link safe?"). */
 export const siteCheckAvailable = () => invoke<boolean>("site_check_available");
