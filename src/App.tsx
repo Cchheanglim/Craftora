@@ -744,7 +744,14 @@ export default function App() {
             }
           />
         )}
-        {view === "library" && <Library jobs={exported} outputDir={outputDir} onOpenWorkspace={() => setView("editor")} />}
+        {view === "library" && (
+          <Library
+            jobs={exported}
+            outputDir={outputDir}
+            onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
+            onOpenWorkspace={() => setView("editor")}
+          />
+        )}
         {view === "editor" && (
           <div className="app__editor">
             <Preview
