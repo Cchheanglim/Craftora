@@ -68,6 +68,7 @@ import { ExportPanel } from "./components/ExportPanel";
 import { QueueDock } from "./components/QueueDock";
 import { Library } from "./components/Library";
 import { AssistantPanel } from "./components/AssistantPanel";
+import { TextMenu } from "./components/TextMenu";
 import "./App.css";
 
 const DEMO = DEMO_SOURCES[0];
@@ -821,6 +822,7 @@ export default function App() {
       )}
 
       <QueueDock queue={queue} freshId={freshId} />
+      <TextMenu />
       {dragging && (
         <div className="app__drop" role="status">
           <span>Drop to import into Media</span>

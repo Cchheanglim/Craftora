@@ -8,6 +8,7 @@
     "opener:default",
     "opener:allow-reveal-item-in-dir",
     "dialog:allow-open",
-    "core:window:allow-set-fullscreen"
+    "core:window:allow-set-fullscreen",
+    "clipboard-manager:allow-read-text"
   ]
 }
