@@ -161,6 +161,10 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onTransition,
             <input type="checkbox" checked={clip.mirror} onChange={(e) => onChange({ mirror: e.target.checked })} />
             <span>Mirror</span>
           </label>
+          <label className="option" title="Cover the whole frame, cutting off the edges, instead of showing black bars">
+            <input type="checkbox" checked={Boolean(clip.fill)} onChange={(e) => onChange({ fill: e.target.checked })} />
+            <span>Fill the frame</span>
+          </label>
           {!isImage && (
             <label className="option">
               <input type="checkbox" checked={clip.reverse} onChange={(e) => onChange({ reverse: e.target.checked })} />

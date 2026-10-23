@@ -120,6 +120,8 @@ export interface Clip {
    * "fit"). Text: letter height as a fraction of the frame.
    */
   size: number;
+  /** Video: cover the frame (cropping what spills over) instead of fitting inside it. */
+  fill?: boolean;
   /** Fractions of the free space, like `POSITIONS`. */
   x: number;
   y: number;

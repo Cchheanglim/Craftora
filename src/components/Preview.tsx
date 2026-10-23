@@ -403,8 +403,10 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, onPointer
   const keptH = 1 - top - bottom;
   const aspect = (videoAspect * keptW) / keptH;
 
-  // Size 1 fits the frame keeping the shape (FFmpeg: force_original_aspect_ratio=decrease).
-  const fitWidth = aspect >= stageAspect ? 1 : aspect / stageAspect;
+  // Size 1 fits the frame keeping the shape (FFmpeg: force_original_aspect_ratio=decrease), or
+  // with `fill` covers it, the frame cutting off what spills over (=increase).
+  const wider = aspect >= stageAspect;
+  const fitWidth = clip.fill ? (wider ? aspect / stageAspect : 1) : wider ? 1 : aspect / stageAspect;
   const box: CSSProperties = {
     width: `${fitWidth * clip.size * 100}%`,
     aspectRatio: String(aspect),

@@ -32,3 +32,16 @@ test("sound files stay off video tracks, pictures off audio tracks, nothing medi
   expect(moved("image", "audio-1")).not.toBe("audio-1");
   expect(moved("video", "text-1")).not.toBe("text-1");
 });
+
+test("a picture that fills the frame is rendered, not copied as it is", async () => {
+  const { planExport } = await import("../src/project/exportPlan");
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
+  const settings = { output: "video", videoContainer: "mp4", audioContainer: "mp3", cutMode: "fast", frameId: "vertical", quality: "fast" } as const;
+  expect(planExport(p, settings).kind).toBe("simple");
+  p = applyEdit(p, { type: "updateClip", clipId: "c", patch: { fill: true } });
+  const plan = planExport(p, settings);
+  expect(plan.kind).toBe("render");
+  expect(plan.kind === "render" && plan.spec.clips[0].fill).toBe(true);
+});

@@ -61,6 +61,7 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
     !clip.fadeIn &&
     !clip.fadeOut &&
     !isCropped(clip.crop) &&
+    !clip.fill &&
     clip.size >= 0.999 &&
     clip.start < 0.001;
   return media && !media.source.image && untouched && onVideoTrack ? { clip, media } : null;
@@ -160,6 +161,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       transitionOut: next ? transitionLength(c, next) : 0,
       transitionOutKind: next?.transition?.kind ?? "crossfade",
       size: c.size,
+      fill: Boolean(c.fill),
       x: c.x,
       y: c.y,
       text: c.text ?? "",

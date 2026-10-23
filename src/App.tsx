@@ -43,6 +43,7 @@ import { useQueue } from "./state/useQueue";
 import { storeEdition, useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
 import { useProject } from "./project/useProject";
+import { applyEdit } from "./project/actions";
 import { usePlayback } from "./project/usePlayback";
 import { cutModeApplies, frameOf, planExport } from "./project/exportPlan";
 import {
@@ -798,6 +799,13 @@ export default function App() {
               cutModeApplies={cutModeApplies(project, effective)}
               hasPicture={hasPicture}
               onAddToQueue={addToQueue}
+              onPreset={(frameId, fill) => {
+                setSettings((prev) => ({ ...prev, frameId }));
+                // Every picture on a video track fits or fills the new frame, as one undo step.
+                const pictures = project.clips.filter((c) => c.mediaId && project.tracks.find((t) => t.id === c.trackId)?.kind === "video");
+                const next = pictures.reduce((p, c) => applyEdit(p, { type: "updateClip", clipId: c.id, patch: { fill } }), project);
+                if (next !== project) api.commit(next, false);
+              }}
               queuedCount={queuedCount}
               outputDir={outputDir}
               onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}

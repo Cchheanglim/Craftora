@@ -21,9 +21,18 @@ interface ExportPanelProps {
   onChooseOutputDir?: () => void;
   /** What does the work for "Fast", e.g. "your NVIDIA graphics card"; null while checking. */
   fastEncoder: string | null;
+  /** A preset: picks the frame and sets every picture to fill it (or to fit). */
+  onPreset: (frameId: string, fill: boolean) => void;
   /** The selected clip's settings, shown above the export settings. */
   children?: ReactNode;
 }
+
+/** One click for the usual places a video goes. */
+const PRESETS = [
+  { label: "YouTube", detail: "16:9", frameId: "1080p", fill: false },
+  { label: "TikTok · Reels · Shorts", detail: "9:16", frameId: "vertical", fill: true },
+  { label: "Instagram post", detail: "1:1", frameId: "square", fill: true },
+];
 
 const VIDEO_CONTAINERS: VideoContainer[] = ["mp4", "mkv"];
 const AUDIO_CONTAINERS: AudioContainer[] = ["mp3", "wav", "flac"];
@@ -39,6 +48,7 @@ export function ExportPanel({
   outputDir,
   onChooseOutputDir,
   fastEncoder,
+  onPreset,
   children,
 }: ExportPanelProps) {
   const [copied, setCopied] = useState(false);
@@ -109,6 +119,21 @@ export function ExportPanel({
             )}
           </div>
         </fieldset>
+
+        {isVideo && hasPicture && (
+          <fieldset>
+            <legend className="section-label">Made for</legend>
+            <div className="export__presets">
+              {PRESETS.map((p) => (
+                <button key={p.frameId} type="button" className="export__preset" aria-pressed={settings.frameId === p.frameId} onClick={() => onPreset(p.frameId, p.fill)}>
+                  <strong>{p.label}</strong>
+                  <span>{p.detail}</span>
+                </button>
+              ))}
+            </div>
+            <p className="export__hint">Picks the frame. For upright and square ones, every picture fills the frame (edges cut off) instead of showing black bars.</p>
+          </fieldset>
+        )}
 
         {isVideo && plan.kind === "render" && (
           <div className="export__field">

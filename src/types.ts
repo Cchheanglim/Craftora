@@ -113,6 +113,8 @@ export interface RenderClip {
   volume: number;
   mirror: boolean;
   reverse: boolean;
+  /** Cover the frame instead of fitting inside it. */
+  fill: boolean;
   fadeIn: number;
   fadeOut: number;
   /** Fractions cut off each side: left, top, right, bottom. */
