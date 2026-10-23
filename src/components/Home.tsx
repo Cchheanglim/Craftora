@@ -228,7 +228,9 @@ export function Home({
             <h2 className="section-label home__gap">About</h2>
             <div className="home__about">
               <p>
-                Craftora{updates.version ? ` ${updates.version}` : ""} · MIT License · includes FFmpeg (GPL) and yt-dlp
+                Craftora{updates.version ? ` ${updates.version}` : ""}
+                {/* The number only changes at a release; dev runs already have the newer work. */}
+                {import.meta.env.DEV ? " (development build)" : ""} · MIT License · includes FFmpeg (GPL) and yt-dlp
               </p>
               {updates.available ? (
                 <>
