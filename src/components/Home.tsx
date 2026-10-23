@@ -281,12 +281,45 @@ export function Home({
 }
 
 /** VirusTotal's verdict on a website, in words. */
-function siteVerdict(report: SiteReport): { tone: "ok" | "info" | "warn"; text: string } {
-  if (report.total === 0) return { tone: "info", text: `VirusTotal has no report on ${report.site} yet, so there's no verdict.` };
+function siteVerdict(report: SiteReport): Verdict {
+  if (report.total === 0) return { tone: "info", text: `VirusTotal has no report on ${report.site} yet, so there's no verdict.`, report };
   const flagged = report.malicious + report.suspicious;
-  return flagged > 0
-    ? { tone: "warn", text: `${flagged} of ${report.total} security vendors flag ${report.site} as dangerous. Be careful with it.` }
-    : { tone: "ok", text: `${report.site} looks safe: none of ${report.total} security vendors flag it.` };
+  if (flagged === 0) return { tone: "ok", text: `${report.site} looks safe: none of ${report.total} security vendors flag it.`, report };
+  const kinds = [...new Set(report.flaggedBy.map((f) => f.verdict))].join(", ");
+  return { tone: "warn", text: `Be careful: ${flagged} of ${report.total} security vendors flag ${report.site}${kinds ? ` (${kinds})` : ""}.`, report };
+}
+
+type Verdict = { tone: "ok" | "info" | "warn"; text: string; report?: SiteReport };
+
+/** The details behind a verdict, in plain words. */
+function ReportDetails({ report }: { report: SiteReport }) {
+  const flagged = report.flaggedBy.map((f) => `${f.vendor} (${f.verdict})`).join(", ");
+  const votes = report.votesSafe + report.votesDangerous;
+  const rows: [string, string][] = [
+    ["What it is", report.categories.join(", ") || "Not sorted into a category yet"],
+    ["Flagged by", flagged || (report.total ? `Nobody, out of ${report.total} security vendors` : "Not scanned yet")],
+    ["People's votes", votes ? `${report.votesSafe} say safe · ${report.votesDangerous} say dangerous` : "No votes yet"],
+    [
+      "Reputation",
+      `${report.reputation}: ${report.reputation > 0 ? "trusted by VirusTotal's community" : report.reputation < 0 ? "reported as harmful by VirusTotal's community" : "neutral"}`,
+    ],
+    ["Last scanned", report.scannedAt ? ago(report.scannedAt * 1000) : "Never"],
+  ];
+  return (
+    <>
+      <dl className="home__report">
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <button type="button" className="home__report-link" onClick={() => void openUrl(report.reportUrl)}>
+        See the full report on VirusTotal
+      </button>
+    </>
+  );
 }
 
 /** Signing in to websites for links that need a login, checking links, and keeping yt-dlp current. */
@@ -294,7 +327,7 @@ function Links({ links }: { links: LinkSettings }) {
   const [site, setSite] = useState("");
   const [toCheck, setToCheck] = useState("");
   const [checking, setChecking] = useState(false);
-  const [verdict, setVerdict] = useState<{ tone: "ok" | "info" | "warn"; text: string } | null>(null);
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
   const { ask, dialog } = useConfirm();
   const checkLink = async (e: FormEvent) => {
     e.preventDefault();
@@ -373,10 +406,13 @@ function Links({ links }: { links: LinkSettings }) {
               flag its website. Only the website's name is sent, never the full link.
             </p>
             {verdict && (
-              <p className={`home__verdict is-${verdict.tone}`} role={verdict.tone === "warn" ? "alert" : "status"}>
+              <div className={`home__verdict is-${verdict.tone}`} role={verdict.tone === "warn" ? "alert" : "status"}>
                 <Icon name={verdict.tone === "ok" ? "check" : "alert"} size={14} />
-                {verdict.text}
-              </p>
+                <span>
+                  {verdict.text}
+                  {verdict.report && <ReportDetails report={verdict.report} />}
+                </span>
+              </div>
             )}
           </>
         )}

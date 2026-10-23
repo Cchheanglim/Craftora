@@ -290,3 +290,37 @@
 .home__gap-sm {
   margin-top: var(--space-2);
 }
+
+.home__report {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 6px;
+}
+
+.home__report > div {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+}
+
+.home__report dt {
+  color: var(--text-3);
+}
+
+.home__report dd {
+  margin: 0;
+}
+
+.home__report-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.home__report-link:hover {
+  color: var(--text);
+}
