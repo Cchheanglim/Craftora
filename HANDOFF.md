@@ -131,7 +131,8 @@ folder, resource) and FFmpeg/FFprobe (GPL build from BtbN, sidecars).
 - `local.rs` (open files, preview copies), `store.rs` (projects, history, settings),
   `assistant.rs` (Gemini key in Credential Manager), `virustotal.rs` ("Is this link safe?":
   website reputation from VirusTotal with the project's key, built in from `CRAFTORA_VT_KEY`, a
-  GitHub secret `VIRUSTOTAL_API_KEY` in the release build; hidden when absent), `engine.rs` (`command`,
+  GitHub secret `VIRUSTOTAL_API_KEY` in the release build, or `CRAFTORA_VT_KEY = …` in the
+  gitignored `.env`, read by `build.rs`; hidden when absent), `engine.rs` (`command`,
   engine status, `update_yt_dlp`).
 
 ## Running and checking
