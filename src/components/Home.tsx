@@ -93,6 +93,22 @@ export function Home({
   links,
 }: HomeProps) {
   const { ask, dialog } = useConfirm();
+  // A first-launch guide, shown until it's dismissed.
+  const [welcomed, setWelcomed] = useState(() => {
+    try {
+      return localStorage.getItem("craftora.welcomed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const dismissWelcome = () => {
+    setWelcomed(true);
+    try {
+      localStorage.setItem("craftora.welcomed", "1");
+    } catch {
+      /* not essential */
+    }
+  };
   // Some people don't want their exports' pictures on the start screen; remembered.
   const [hideRecent, setHideRecent] = useState(() => {
     try {
@@ -127,6 +143,46 @@ export function Home({
           <h1 id="home-title">Craftora</h1>
           <p>Bring in video and sound, cut them on the timeline, add text, and export a clean file. Files on this PC work offline.</p>
         </header>
+
+        {!welcomed && (
+          <section className="home__welcome" aria-labelledby="welcome-title">
+            <div className="home__welcome-head">
+              <h2 id="welcome-title">Welcome to Craftora</h2>
+              <button type="button" className="btn btn--icon" aria-label="Close the welcome guide" title="Close" onClick={dismissWelcome}>
+                <Icon name="x" size={14} />
+              </button>
+            </div>
+            <ol className="home__steps">
+              <li>
+                <strong>Bring in a video.</strong>
+                <span>Import files from your PC, or paste a link in the box at the top and click Fetch.</span>
+              </li>
+              <li>
+                <strong>Edit it on the timeline.</strong>
+                <span>Drag clips to move and trim them, press S to split, T to add text, and drag media onto any track.</span>
+              </li>
+              <li>
+                <strong>Export it.</strong>
+                <span>On the right, pick where it's going (YouTube, TikTok…) and click Add to queue.</span>
+              </li>
+            </ol>
+            <div className="home__welcome-actions">
+              {onImport && (
+                <button type="button" className="btn btn--primary" onClick={onImport} disabled={busy}>
+                  <Icon name="upload" size={14} />
+                  Import files
+                </button>
+              )}
+              <button type="button" className="btn btn--secondary" onClick={onPasteLink}>
+                <Icon name="link" size={14} />
+                Paste a link
+              </button>
+              <button type="button" className="btn btn--ghost" onClick={dismissWelcome}>
+                Got it
+              </button>
+            </div>
+          </section>
+        )}
 
         <div className="home__grid">
           <div className="home__col">
