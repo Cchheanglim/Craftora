@@ -68,6 +68,9 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
   in, then click **Fetch this video**. The login is remembered and only used for that website.
   Pages yt-dlp doesn't know ("Unsupported URL") work the same way: open the page, play the
   video, click **Fetch this video**.
+- **Is this website safe?** Add a free [VirusTotal](https://www.virustotal.com) API key under
+  Home → Links, and every fetch tells you whether security vendors flag the website (only the
+  website's name is sent, never the video link).
 - Link previews are cached on your PC as they play: jumping back to any part already fetched
   is instant. Stream playlists (HLS) preview too, including from sites that only serve their
   own pages.
