@@ -242,11 +242,15 @@ pub const IMAGE_DURATION: f64 = 24.0 * 3600.0;
 
 /// The picture stream of a still image file (PNG, JPEG, WebP, BMP), if this is one. FFmpeg
 /// reads these as a one-frame "video" with no length. Animated GIFs aren't included.
-fn still_image(probe: &Probe) -> Option<&ProbeStream> {
+fn still_image<'a>(probe: &'a Probe, path: &Path) -> Option<&'a ProbeStream> {
     let format = probe.format.format_name.as_deref().unwrap_or("");
-    let still = format == "image2" || ["png_pipe", "jpeg_pipe", "webp_pipe", "bmp_pipe", "tiff_pipe"].contains(&format);
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let by_format = format
+        .split(',')
+        .any(|f| f == "image2" || f == "mjpeg" || f == "gif" || f == "apng" || f.ends_with("_pipe"));
+    let by_ext = ["png", "jpg", "jpeg", "jfif", "webp", "bmp", "tif", "tiff", "avif", "ico"].contains(&ext.as_str());
     let picture = probe.streams.iter().find(|s| s.codec_type.as_deref() == Some("video"))?;
-    (still && !probe.streams.iter().any(|s| s.is_audio())).then_some(picture)
+    ((by_format || by_ext) && !probe.streams.iter().any(|s| s.is_audio())).then_some(picture)
 }
 
 /// "30000/1001" → 29.97
@@ -267,7 +271,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
     let path_text = path.to_string_lossy().into_owned();
     let probe = run_probe(&app, &path).await?;
 
-    if let Some(image) = still_image(&probe) {
+    if let Some(image) = still_image(&probe, &path) {
         allow_preview(&app, &path)?;
         opened.0.lock().unwrap().insert(path.clone());
         let size_mb = probe.format.size.as_deref().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0) / 1_000_000.0;

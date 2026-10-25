@@ -136,7 +136,7 @@ export function Sidebar({
                   }}
                   title="Drag onto the timeline, or press + to add at the end"
                 >
-                  <Thumb src={item.source.thumbnail} icon={item.source.image ? "image" : item.hasVideo ? "film" : "music"} />
+                  <Thumb src={item.source.thumbnail || (item.source.image ? item.source.previewUrl : undefined)} icon={item.source.image ? "image" : item.hasVideo ? "film" : "music"} />
                   <span className="side__file-text">
                     <span className="truncate">{item.name}</span>
                     <span className="side__file-meta">

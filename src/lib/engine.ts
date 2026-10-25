@@ -142,7 +142,7 @@ export const onPreviewCache = (handler: (id: string, percent: number) => void): 
 
 /** File types offered in the Open dialog; FFmpeg reads many more if dropped. */
 const MEDIA_EXTENSIONS = ["mp4", "mkv", "webm", "mov", "avi", "m4v", "wmv", "flv", "ts", "mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"];
-const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "bmp"];
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "jfif", "webp", "bmp", "gif", "avif", "tif", "tiff", "ico"];
 
 /** The preview plays files straight from disk through Tauri's asset protocol. */
 const assetUrl = (path: string) => (path ? convertFileSrc(path) : "");
@@ -151,7 +151,13 @@ const assetUrl = (path: string) => (path ? convertFileSrc(path) : "");
 export async function openLocal(path: string): Promise<MediaSource> {
   try {
     const source = await invoke<MediaSource>("open_local", { path });
-    return { ...source, previewUrl: assetUrl(source.previewUrl), previewAudioUrl: assetUrl(source.previewAudioUrl ?? "") };
+    const previewUrl = assetUrl(source.previewUrl);
+    return {
+      ...source,
+      previewUrl,
+      previewAudioUrl: assetUrl(source.previewAudioUrl ?? ""),
+      thumbnail: source.thumbnail || (source.image ? previewUrl : ""),
+    };
   } catch (err) {
     throw new Error(message(err));
   }
