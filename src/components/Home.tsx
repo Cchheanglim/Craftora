@@ -29,6 +29,7 @@ interface HomeProps {
   updates: Updates;
   /** Settings for fetching links; absent in the browser preview. */
   links?: LinkSettings;
+  onOpenWelcome: () => void;
 }
 
 export interface LinkSettings {
@@ -91,6 +92,7 @@ export function Home({
   outputDir,
   updates,
   links,
+  onOpenWelcome,
 }: HomeProps) {
   const { ask, dialog } = useConfirm();
   // Some people don't want their exports' pictures on the start screen; remembered.
@@ -263,15 +265,17 @@ export function Home({
                     : "Updates are checked in installed copies of Craftora, not in development runs."}
                 </p>
               )}
-              {inDesktopApp && (
-                <p className="home__links">
-                  {LINKS.map((link) => (
+              <p className="home__links">
+                <button type="button" onClick={onOpenWelcome}>
+                  Welcome guide
+                </button>
+                {inDesktopApp &&
+                  LINKS.map((link) => (
                     <button key={link.label} type="button" onClick={() => void openUrl(link.url)}>
                       {link.label}
                     </button>
                   ))}
-                </p>
-              )}
+              </p>
             </div>
           </div>
         </div>

@@ -736,6 +736,7 @@ export default function App() {
             recent={shownExports}
             outputDir={outputDir}
             updates={updates}
+            onOpenWelcome={() => setWelcoming(true)}
             links={
               inDesktopApp
                 ? {
