@@ -435,7 +435,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
 
 #[cfg(test)]
 mod tests {
-    use super::parse_mpd_duration;
+    use super::{parse_mpd_duration, Info};
 
     #[test]
     fn reads_dash_mpd_duration() {
@@ -443,5 +443,12 @@ mod tests {
         assert_eq!(parse_mpd_duration(xml), Some(3723.5));
         assert_eq!(parse_mpd_duration(r#"<MPD mediaPresentationDuration="PT95.25S">"#), Some(95.25));
         assert_eq!(parse_mpd_duration("<MPD type=\"dynamic\">"), None);
+    }
+
+    #[test]
+    fn accepts_null_chapters_from_yt_dlp() {
+        let json = br#"{"title":"Test","duration":12.0,"chapters":null,"formats":[]}"#;
+        let info: Info = serde_json::from_slice(json).unwrap();
+        assert!(info.chapters.is_none());
     }
 }
