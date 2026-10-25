@@ -26,14 +26,12 @@ export function captureThumbnail(previewUrl: string, image?: boolean): Promise<s
     const timer = window.setTimeout(() => done(image ? previewUrl : undefined), 10_000);
     if (image) {
       const img = new Image();
-      img.crossOrigin = "anonymous";
       img.onload = () => done(draw(img, img.naturalWidth, img.naturalHeight) ?? previewUrl);
       img.onerror = () => done(previewUrl);
       img.src = previewUrl;
       return;
     }
     const video = document.createElement("video");
-    video.crossOrigin = "anonymous";
     video.muted = true;
     video.preload = "auto";
     // One second in skips the black first frame most videos start with.

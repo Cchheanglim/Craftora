@@ -8,14 +8,21 @@ use tauri::AppHandle;
 use crate::engine::{last_error, run_to_end, YT_DLP};
 
 /// The subset of `yt-dlp --dump-single-json` that Craftora uses.
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Chapter {
     pub title: String,
-    #[serde(alias = "start_time")]
     pub start: f64,
-    #[serde(alias = "end_time")]
     pub end: f64,
+}
+
+#[derive(Deserialize)]
+struct RawChapter {
+    title: Option<String>,
+    #[serde(alias = "start_time")]
+    start: Option<f64>,
+    #[serde(alias = "end_time")]
+    end: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -27,7 +34,7 @@ struct Info {
     is_live: Option<bool>,
     thumbnail: Option<String>,
     #[serde(default)]
-    chapters: Vec<Chapter>,
+    chapters: Option<Vec<RawChapter>>,
     #[serde(default)]
     formats: Vec<Format>,
 }
@@ -409,7 +416,19 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         preview_proxy: "",
         image: false,
         thumbnail: info.thumbnail.unwrap_or_default(),
-        chapters: info.chapters.into_iter().filter(|c| c.end > c.start && c.start >= 0.0).collect(),
+        chapters: info
+            .chapters
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|c| {
+                let (start, end) = (c.start?, c.end?);
+                (end > start && start >= 0.0).then(|| Chapter {
+                    title: c.title.unwrap_or_else(|| "Chapter".into()),
+                    start,
+                    end,
+                })
+            })
+            .collect(),
         streams,
     })
 }

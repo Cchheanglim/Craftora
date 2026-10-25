@@ -109,7 +109,6 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
   // Streams through the relay play with hls.js: the WebView's own HLS player refuses the relay's
   // address, and only the relay can send the page those streams' servers want.
   const viaHls = src.startsWith(HLS_RELAY);
-  const allowCors = src.includes(".localhost/") || src.startsWith("data:") || src.startsWith("blob:");
   const failedRef = useRef(failed);
   failedRef.current = failed;
   useEffect(() => {
@@ -140,7 +139,6 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
     <video
       ref={ref}
       src={viaHls ? undefined : src}
-      crossOrigin={allowCors ? "anonymous" : undefined}
       className={className}
       style={style}
       preload="auto"
