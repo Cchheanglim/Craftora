@@ -154,6 +154,12 @@ export const TOOLS = [
   },
   {
     type: "function",
+    name: "duplicate_clip",
+    description: "Make a copy of a clip right after it on the same track. Returns the new clip's id.",
+    parameters: { type: "object", properties: { clip_id: { type: "string" } }, required: ["clip_id"] },
+  },
+  {
+    type: "function",
     name: "delete_clip",
     description: "Remove a clip. Main-track clips after it move up to close the gap.",
     parameters: { type: "object", properties: { clip_id: { type: "string" } }, required: ["clip_id"] },
@@ -297,6 +303,13 @@ export function runTool(name: string, args: Record<string, unknown>, ctx: ToolCo
       if (missing) return missing;
       const id = crypto.randomUUID();
       const outcome = edits([{ type: "splitClip", clipId: clip!.id, newClipId: id, at: args.at }], `Split ${String(args.clip_id)} at ${args.at.toFixed(1)} s`);
+      return outcome.result.ok ? { ...outcome, result: { ok: true, new_clip_id: ids.short(id, "c") } } : outcome;
+    }
+    case "duplicate_clip": {
+      const missing = needClip();
+      if (missing) return missing;
+      const id = crypto.randomUUID();
+      const outcome = edits([{ type: "duplicateClip", clipId: clip!.id, newClipId: id }], `Duplicated ${String(args.clip_id)}`);
       return outcome.result.ok ? { ...outcome, result: { ok: true, new_clip_id: ids.short(id, "c") } } : outcome;
     }
     case "delete_clip":

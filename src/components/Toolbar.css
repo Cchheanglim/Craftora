@@ -96,3 +96,11 @@
   color: var(--danger);
   flex-shrink: 0;
 }
+
+.toolbar__error.is-ok svg {
+  color: var(--ok);
+}
+
+.toolbar__error.is-info svg {
+  color: var(--text-3);
+}

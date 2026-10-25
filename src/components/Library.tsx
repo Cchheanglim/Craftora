@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Job } from "../types";
 import { formatSize } from "../project/exportPlan";
-import { revealFile } from "../lib/engine";
+import { openFile, revealFile } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
 import "./Library.css";
@@ -146,10 +146,16 @@ function ExportTable({ id, jobs, onHide }: { id: string; jobs: Job[]; onHide: (i
                 <td className="is-num">
                   <span className="library__actions">
                     {job.outputPath && (
-                      <button type="button" className="btn btn--ghost" onClick={() => void revealFile(job.outputPath!)}>
-                        <Icon name="folder" size={14} />
-                        Show in folder
-                      </button>
+                      <>
+                        <button type="button" className="btn btn--ghost" onClick={() => void openFile(job.outputPath!)}>
+                          <Icon name="play" size={13} />
+                          Play
+                        </button>
+                        <button type="button" className="btn btn--ghost" onClick={() => void revealFile(job.outputPath!)}>
+                          <Icon name="folder" size={14} />
+                          Show in folder
+                        </button>
+                      </>
                     )}
                     <button
                       type="button"

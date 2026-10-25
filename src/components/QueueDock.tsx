@@ -3,7 +3,7 @@ import type { Job } from "../types";
 import type { Queue } from "../state/useQueue";
 import { formatSize } from "../project/exportPlan";
 import { formatClock } from "../lib/timecode";
-import { revealFile } from "../lib/engine";
+import { openFile, revealFile } from "../lib/engine";
 import { Icon } from "./Icon";
 import { useConfirm } from "./ConfirmDialog";
 import "./QueueDock.css";
@@ -196,15 +196,26 @@ function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolea
           </button>
         )}
         {done && job.outputPath && (
-          <button
-            type="button"
-            className="btn btn--icon"
-            aria-label={`Show ${job.fileName} in folder`}
-            title="Show in folder"
-            onClick={() => void revealFile(job.outputPath!)}
-          >
-            <Icon name="folder" size={14} />
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn btn--icon"
+              aria-label={`Play ${job.fileName}`}
+              title="Play"
+              onClick={() => void openFile(job.outputPath!)}
+            >
+              <Icon name="play" size={13} />
+            </button>
+            <button
+              type="button"
+              className="btn btn--icon"
+              aria-label={`Show ${job.fileName} in folder`}
+              title="Show in folder"
+              onClick={() => void revealFile(job.outputPath!)}
+            >
+              <Icon name="folder" size={14} />
+            </button>
+          </>
         )}
         {done ? (
           <button type="button" className="btn btn--icon" aria-label={copied ? "Command copied" : `Copy command for ${job.title}`} onClick={copy}>

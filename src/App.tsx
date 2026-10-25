@@ -574,6 +574,12 @@ export default function App() {
     const clip = splitTarget();
     if (clip) api.edit({ type: "splitClip", clipId: clip.id, newClipId: crypto.randomUUID(), at: playback.time });
   };
+  const duplicate = () => {
+    if (!selectedId) return;
+    const newClipId = crypto.randomUUID();
+    api.edit({ type: "duplicateClip", clipId: selectedId, newClipId });
+    setSelectedId(newClipId);
+  };
   const remove = () => {
     if (!selectedId) return;
     api.edit({ type: "deleteClip", clipId: selectedId });
@@ -622,6 +628,7 @@ export default function App() {
     if (isTyping(e.target) || view !== "editor") return;
     if (ctrl && key === "z" && !e.shiftKey) return (e.preventDefault(), api.undo());
     if (ctrl && (key === "y" || (key === "z" && e.shiftKey))) return (e.preventDefault(), api.redo());
+    if (ctrl && key === "d") return (e.preventDefault(), duplicate());
     if (ctrl || e.altKey) return;
     const target = e.target as HTMLElement;
     const onButton = target.tagName === "BUTTON" || target.getAttribute("role") === "button";
@@ -786,6 +793,7 @@ export default function App() {
               selectedId={selectedId}
               onSelect={setSelectedId}
               onSplit={split}
+              onDuplicate={duplicate}
               onDelete={remove}
               onAddText={addText}
             />
@@ -841,6 +849,7 @@ export default function App() {
                   onCheckpoint={api.checkpoint}
                   onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
                   onSplit={split}
+                  onDuplicate={duplicate}
                   onDelete={remove}
                   canSplit={playback.time > selected.start && playback.time < clipEnd(selected)}
                 />

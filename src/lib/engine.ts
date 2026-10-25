@@ -246,6 +246,7 @@ export const onJobEvent = (handler: (event: JobEvent) => void): Promise<Unlisten
   listen<JobEvent>("job-event", (e) => handler(e.payload));
 
 export const revealFile = (path: string) => revealItemInDir(path);
+export const openFile = (path: string) => invoke<void>("open_file", { path });
 
 /** Makes the app window fill the screen (desktop app only). */
 export async function setWindowFullscreen(on: boolean): Promise<void> {

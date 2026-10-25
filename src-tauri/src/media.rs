@@ -221,7 +221,30 @@ fn preview(formats: &[Format]) -> (String, bool) {
     }
 }
 
-/// A file's length in seconds, read by FFprobe from its header (with the page its server wants).
+/// Reads `mediaPresentationDuration="PT1H2M3.5S"` from a DASH (.mpd) manifest.
+pub(crate) fn parse_mpd_duration(xml: &str) -> Option<f64> {
+    let after = xml.split("mediaPresentationDuration=\"").nth(1)?;
+    let iso = after.split('"').next()?.strip_prefix("PT")?;
+    let mut total = 0.0;
+    let mut num = String::new();
+    for ch in iso.chars() {
+        if ch.is_ascii_digit() || ch == '.' {
+            num.push(ch);
+        } else {
+            let v: f64 = num.parse().ok()?;
+            num.clear();
+            total += match ch {
+                'H' => v * 3600.0,
+                'M' => v * 60.0,
+                'S' => v,
+                _ => return None,
+            };
+        }
+    }
+    (total > 0.0).then_some(total)
+}
+
+/// A file's length in seconds, read by FFprobe from its header (or from a DASH manifest).
 async fn probe_length(app: &AppHandle, file: &str, page: Option<&str>) -> Option<f64> {
     // No line breaks from a page address: they would let it add headers of its own.
     let headers = page.map(|p| format!("Referer: {}\r\n", p.replace(['\r', '\n'], "")));
@@ -230,8 +253,23 @@ async fn probe_length(app: &AppHandle, file: &str, page: Option<&str>) -> Option
         args.extend(["-headers", headers]);
     }
     args.push(file);
-    let output = run_to_end(app, crate::local::FFPROBE, &args).await.ok()?;
-    String::from_utf8_lossy(&output.stdout).trim().parse().ok().filter(|d: &f64| *d > 0.0)
+    if let Some(d) = run_to_end(app, crate::local::FFPROBE, &args)
+        .await
+        .ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok())
+        .filter(|d: &f64| *d > 0.0)
+    {
+        return Some(d);
+    }
+    if !file.to_ascii_lowercase().contains(".mpd") {
+        return None;
+    }
+    let mut req = crate::media_cache::client().get(file);
+    if let Some(page) = page {
+        req = req.header(reqwest::header::REFERER, page);
+    }
+    let xml = req.send().await.ok()?.text().await.ok()?;
+    parse_mpd_duration(&xml)
 }
 
 /// A stream playlist (HLS) for sites that only offer those: the master playlist when there is
@@ -319,8 +357,8 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
     let page = crate::signin::split_referer(&url).1.map(str::to_string).or(site_page);
     let duration = match info.duration.filter(|d| *d > 0.0) {
         Some(d) => d,
-        // Plain video-file links: yt-dlp doesn't open the file, so it reports no length.
-        None => match info.formats.iter().find_map(|f| f.url.as_deref()) {
+        // Plain video-file and DASH (.mpd) links: yt-dlp doesn't open the file, so it reports no length.
+        None => match info.formats.iter().find_map(|f| f.manifest_url.as_deref().or(f.url.as_deref())) {
             Some(file) => probe_length(&app, file, page.as_deref()).await,
             None => None,
         }
@@ -359,4 +397,17 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         thumbnail: info.thumbnail.unwrap_or_default(),
         streams,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_mpd_duration;
+
+    #[test]
+    fn reads_dash_mpd_duration() {
+        let xml = r#"<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" mediaPresentationDuration="PT1H2M3.5S"></MPD>"#;
+        assert_eq!(parse_mpd_duration(xml), Some(3723.5));
+        assert_eq!(parse_mpd_duration(r#"<MPD mediaPresentationDuration="PT95.25S">"#), Some(95.25));
+        assert_eq!(parse_mpd_duration("<MPD type=\"dynamic\">"), None);
+    }
 }
