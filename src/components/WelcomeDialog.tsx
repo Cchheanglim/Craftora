@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import "./WelcomeDialog.css";
 
-const WELCOMED_KEY = "craftora.welcomed";
+const WELCOMED_KEY = "craftora.welcomeDialog";
 
 /** Whether the welcome guide was already closed once (it only shows on the first launch). */
 export function alreadyWelcomed(): boolean {

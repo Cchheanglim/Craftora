@@ -150,7 +150,7 @@ fn report_url(site: &str) -> String {
 pub async fn check_site(link: String) -> Result<SiteReport, String> {
     let key = key().ok_or("Website checks aren't set up in this copy of Craftora.")?;
     let site = site_of(link.trim()).ok_or("That doesn't look like a link to a website. Paste one starting with https://")?;
-    let response = reqwest::Client::new()
+    let response = crate::media_cache::client()
         .get(format!("https://www.virustotal.com/api/v3/domains/{site}"))
         .header("x-apikey", key)
         .timeout(Duration::from_secs(20))
