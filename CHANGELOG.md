@@ -1,5 +1,40 @@
 # What's new in Craftora
 
+## 0.3.1 (October 2026)
+
+**New**
+
+- **"Is this link safe?"** Paste a link into the check box under Home → Links and click
+  **Check**: Craftora asks [VirusTotal](https://www.virustotal.com) whether security vendors flag
+  its website, and shows what they say, people's votes and a link to the full report. Only the
+  website's name is sent, never the full link.
+- **Made for YouTube, TikTok or Instagram.** The Export panel has one-click presets: YouTube
+  (16:9), TikTok · Reels · Shorts (9:16) and Instagram post (1:1). The upright and square ones make
+  every picture fill the frame instead of showing black bars.
+- **Fill the frame.** A new option on any video or picture clip: it covers the whole frame,
+  cutting off the edges, instead of fitting inside with black bars.
+- **Hide exported files.** In Exports, click **Hide** on any file to take it off the list and off
+  Home's Recent exports. Hidden files wait under **Hidden**, folded away, with **Unhide** to bring
+  them back. The file itself stays in your save folder.
+- **Choose where exports are saved** from the Exports page (**Change**), and fold its list of
+  files away. Home's **Recent exports** can be hidden too.
+- **A welcome guide** pops up the first time you open Craftora: three steps to bring in a video,
+  edit it and export it. Close it once and it stays closed.
+- **Right-click menu for text.** Text boxes get Cut, Copy, Paste and Select all. The browser's
+  own menu (Back, Refresh, Print…) and the keys that reload or print the app are gone, so
+  Craftora no longer feels like a web page.
+
+**Faster**
+
+- **Video pictures are kept on your PC.** A fetched video's picture is downloaded once, so
+  History, Media, Projects and Exports no longer contact its website every time they show it.
+  Pictures from sites that refuse them to other pages now load too. (Videos fetched with 0.3.0
+  or earlier still load theirs from the website.)
+
+**Removed**
+
+- Choosing a cookie file (cookies.txt) for logins. Use **Sign in to …** instead.
+
 ## 0.3.0 (October 2026)
 
 **New**
