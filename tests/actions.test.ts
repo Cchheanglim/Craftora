@@ -45,3 +45,17 @@ test("a picture that fills the frame is rendered, not copied as it is", async ()
   expect(plan.kind).toBe("render");
   expect(plan.kind === "render" && plan.spec.clips[0].fill).toBe(true);
 });
+
+test("duplicating a clip places the copy right after it on magnetic and free tracks", () => {
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "c1", mediaId: media.id, at: 0 });
+  p = applyEdit(p, { type: "addClip", clipId: "c2", mediaId: media.id, at: 10 });
+  p = applyEdit(p, { type: "duplicateClip", clipId: "c1", newClipId: "copy" });
+  expect(p.clips.find((c) => c.id === "copy")?.start).toBe(10);
+  expect(p.clips.find((c) => c.id === "c2")?.start).toBe(20);
+
+  p = applyEdit(p, { type: "addText", clipId: "t1", at: 2, text: "Hi" });
+  p = applyEdit(p, { type: "duplicateClip", clipId: "t1", newClipId: "t2" });
+  expect(p.clips.find((c) => c.id === "t2")?.start).toBe(5);
+});

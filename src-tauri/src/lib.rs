@@ -72,6 +72,7 @@ pub fn run() {
             store::save_history,
             store::get_output_dir,
             store::set_output_dir,
+            store::open_file,
             virustotal::site_check_available,
             virustotal::check_site,
             media::fetch_thumbnail,

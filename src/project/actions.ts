@@ -42,6 +42,7 @@ export type EditAction =
   /** Moves one edge of a clip to a timeline time. */
   | { type: "trimClip"; clipId: string; edge: "start" | "end"; time: number }
   | { type: "splitClip"; clipId: string; newClipId: string; at: number }
+  | { type: "duplicateClip"; clipId: string; newClipId: string }
   | { type: "deleteClip"; clipId: string }
   | { type: "updateClip"; clipId: string; patch: ClipPatch }
   /** 0.25–4; the clip gets shorter or longer on the timeline. */
@@ -331,6 +332,19 @@ export function applyEdit(p: Project, action: EditAction): Project {
       first = fitFades({ ...first, fadeOut: 0 });
       second = fitFades({ ...second, fadeIn: 0, transition: undefined });
       return { ...p, clips: p.clips.flatMap((c) => (c.id === clip.id ? [first, second] : [c])) };
+    }
+
+    case "duplicateClip": {
+      const clip = p.clips.find((c) => c.id === action.clipId);
+      const track = clip ? p.tracks.find((t) => t.id === clip.trackId) : undefined;
+      if (!clip || !track) return p;
+      const copy: Clip = { ...clip, id: action.newClipId, transition: undefined };
+      if (track.magnetic) {
+        const index = packedTrack(p, track.id).findIndex(({ clip: c }) => c.id === clip.id);
+        return insertAt(p, track.id, copy, index === -1 ? Infinity : index + 1);
+      }
+      const next = { ...copy, start: round(clipEnd(clip)) };
+      return settle({ ...p, clips: p.clips.flatMap((c) => (c.id === clip.id ? [c, next] : [c])) });
     }
 
     case "deleteClip":

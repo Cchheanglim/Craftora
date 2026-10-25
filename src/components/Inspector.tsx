@@ -50,12 +50,13 @@ interface InspectorProps {
   onCheckpoint: () => void;
   onFormat: (format: { videoFormat?: string; audioFormat?: string }) => void;
   onSplit: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
   canSplit: boolean;
 }
 
 /** Settings for the selected clip. */
-export function Inspector({ clip, track, media, onChange, onSpeed, onTransition, onCheckpoint, onFormat, onSplit, onDelete, canSplit }: InspectorProps) {
+export function Inspector({ clip, track, media, onChange, onSpeed, onTransition, onCheckpoint, onFormat, onSplit, onDuplicate, onDelete, canSplit }: InspectorProps) {
   const isText = !clip.mediaId;
   const isImage = Boolean(media?.source.image);
   const isPicture = track.kind === "video";
@@ -275,6 +276,10 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onTransition,
         <button type="button" className="btn btn--secondary" onClick={onSplit} disabled={!canSplit} title="Split at the playhead (S)">
           <Icon name="scissors" size={14} />
           Split
+        </button>
+        <button type="button" className="btn btn--secondary" onClick={onDuplicate} title="Duplicate (Ctrl+D)">
+          <Icon name="copy" size={14} />
+          Duplicate
         </button>
         <button type="button" className="btn btn--secondary" onClick={onDelete} title="Delete (Delete)">
           <Icon name="trash" size={14} />

@@ -2,7 +2,7 @@ import type { Job } from "../types";
 import type { ProjectEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { inDesktopApp, revealFile } from "../lib/engine";
+import { inDesktopApp, openFile, revealFile } from "../lib/engine";
 import { storeEdition, type Updates } from "../lib/updates";
 import { checkSite, type SiteReport } from "../lib/engine";
 import { Icon } from "./Icon";
@@ -216,9 +216,14 @@ export function Home({
                     <Thumb src={job.thumbnail} icon={job.kind === "audio" ? "music" : "film"} />
                     <span className="truncate mono">{job.outputPath?.split(/[\\/]/).pop() ?? job.fileName}</span>
                     {job.outputPath && (
-                      <button type="button" className="btn btn--icon" aria-label={`Show ${job.fileName} in folder`} title="Show in folder" onClick={() => void revealFile(job.outputPath!)}>
-                        <Icon name="folder" size={14} />
-                      </button>
+                      <>
+                        <button type="button" className="btn btn--icon" aria-label={`Play ${job.fileName}`} title="Play" onClick={() => void openFile(job.outputPath!)}>
+                          <Icon name="play" size={13} />
+                        </button>
+                        <button type="button" className="btn btn--icon" aria-label={`Show ${job.fileName} in folder`} title="Show in folder" onClick={() => void revealFile(job.outputPath!)}>
+                          <Icon name="folder" size={14} />
+                        </button>
+                      </>
                     )}
                   </li>
                 ))}
@@ -285,7 +290,7 @@ export function Home({
 }
 
 /** VirusTotal's verdict on a website, in words. */
-function siteVerdict(report: SiteReport): Verdict {
+export function siteVerdict(report: SiteReport): Verdict {
   if (report.total === 0) return { tone: "info", text: `VirusTotal has no report on ${report.site} yet, so there's no verdict.`, report };
   const flagged = report.malicious + report.suspicious;
   if (flagged === 0) return { tone: "ok", text: `${report.site} looks safe: none of ${report.total} security vendors flag it.`, report };
@@ -293,7 +298,7 @@ function siteVerdict(report: SiteReport): Verdict {
   return { tone: "warn", text: `Be careful: ${flagged} of ${report.total} security vendors flag ${report.site}${kinds ? ` (${kinds})` : ""}.`, report };
 }
 
-type Verdict = { tone: "ok" | "info" | "warn"; text: string; report?: SiteReport };
+export type Verdict = { tone: "ok" | "info" | "warn"; text: string; report?: SiteReport };
 
 /** The details behind a verdict, in plain words. */
 function ReportDetails({ report }: { report: SiteReport }) {

@@ -51,6 +51,7 @@ interface TimelineEditorProps {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onSplit: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
   onAddText: () => void;
 }
@@ -79,6 +80,7 @@ export function TimelineEditor({
   selectedId,
   onSelect,
   onSplit,
+  onDuplicate,
   onDelete,
   onAddText,
 }: TimelineEditorProps) {
@@ -313,6 +315,10 @@ export function TimelineEditor({
         <button type="button" className="btn btn--ghost" title="Split at the playhead (S)" onClick={onSplit} disabled={!canSplit}>
           <Icon name="scissors" size={14} />
           Split
+        </button>
+        <button type="button" className="btn btn--ghost" title="Duplicate the selected clip (Ctrl+D)" onClick={onDuplicate} disabled={!selected}>
+          <Icon name="copy" size={14} />
+          Duplicate
         </button>
         <button type="button" className="btn btn--ghost" title="Delete the selected clip (Delete)" onClick={onDelete} disabled={!selected}>
           <Icon name="trash" size={14} />

@@ -162,3 +162,19 @@ pub fn set_output_dir(app: AppHandle, path: Option<String>) -> Result<String, St
     write_settings(&app, &settings)?;
     get_output_dir(app)
 }
+
+/// Opens an exported media file in the PC's default player.
+#[tauri::command]
+pub fn open_file(app: AppHandle, path: String) -> Result<(), String> {
+    let file = Path::new(&path);
+    let media = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "mp4" | "mkv" | "webm" | "mov" | "mp3" | "m4a" | "wav" | "flac" | "opus"));
+    if !media || !file.is_file() {
+        return Err("That exported file isn't there any more.".into());
+    }
+    tauri_plugin_opener::OpenerExt::opener(&app)
+        .open_path(&path, None::<&str>)
+        .map_err(|e| format!("Couldn't open the file: {e}"))
+}
