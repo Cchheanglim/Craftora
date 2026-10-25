@@ -17,6 +17,8 @@ export interface Track {
   name: string;
   /** Clips stay back to back with no gaps (CapCut's "main track magnet"); allows transitions. */
   magnetic?: boolean;
+  /** Silences every clip on this track in both the preview and the export. */
+  muted?: boolean;
 }
 
 export type Position =
@@ -280,4 +282,55 @@ export function mediaFromSource(source: MediaSource): MediaItem {
     videoFormat: (video.find((s) => s.label.startsWith("1080p")) ?? video[0])?.id ?? "",
     audioFormat: audio[0]?.id ?? "",
   };
+}
+
+/** Loudness bars (0–100) across a media item: real FFmpeg peaks for local files, or a steady wave for links. */
+export function peaksFor(media: MediaItem | undefined): number[] {
+  if (!media || !media.hasAudio || media.source.image) return [];
+  if (media.source.peaks?.length) return media.source.peaks;
+  const seed = [...(media.id + media.name)].reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 17);
+  return Array.from({ length: 240 }, (_, i) => {
+    const x = Math.sin(i * 0.43 + seed) * 0.5 + Math.cos(i * 0.17 - seed * 0.3) * 0.35 + Math.sin(i * 1.13 + seed) * 0.15;
+    const phrase = (i + Math.abs(seed)) % 28 < 3 ? 0.08 : 1;
+    return Math.round(Math.min(100, Math.max(4, (Math.abs(x) * 82 + 18) * phrase)));
+  });
+}
+
+/** `bars` loudness values (0–100) for the part of `media` that `clip` plays, with volume and fades. */
+export function clipPeaks(clip: Clip, media: MediaItem | undefined, bars: number, muted = false): number[] {
+  const full = peaksFor(media);
+  if (!full.length || bars <= 0 || muted || clip.volume <= 0) return Array.from({ length: Math.max(0, bars) }, () => 4);
+  const total = Math.max(0.1, media?.source.duration || clip.out);
+  const len = clipLength(clip);
+  return Array.from({ length: bars }, (_, i) => {
+    const u = (i + 0.5) / bars;
+    const mediaT = clip.reverse ? clip.out - u * (clip.out - clip.in) : clip.in + u * (clip.out - clip.in);
+    const idx = Math.min(full.length - 1, Math.max(0, Math.floor((mediaT / total) * full.length)));
+    const fade = fadeAt(clip, clip.start + u * len);
+    return Math.max(4, Math.min(100, Math.round(full[idx] * clip.volume * fade)));
+  });
+}
+
+/** Finds quiet stretches `[start, end]` (in media seconds) from a media item's loudness bars. */
+export function silencesFromPeaks(media: MediaItem, start: number, end: number): [number, number][] {
+  const full = peaksFor(media);
+  const total = media.source.duration;
+  if (!full.length || total <= 0 || end <= start) return [];
+  const step = total / full.length;
+  const out: [number, number][] = [];
+  let quietStart: number | null = null;
+  for (let i = 0; i < full.length; i++) {
+    const t0 = i * step;
+    const t1 = (i + 1) * step;
+    if (t1 <= start || t0 >= end) continue;
+    if (full[i] <= 12) {
+      quietStart ??= Math.max(start, t0);
+    } else if (quietStart !== null) {
+      const qEnd = Math.min(end, t0);
+      if (qEnd - quietStart >= 0.35) out.push([quietStart, qEnd]);
+      quietStart = null;
+    }
+  }
+  if (quietStart !== null && end - quietStart >= 0.35) out.push([quietStart, end]);
+  return out;
 }

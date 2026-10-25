@@ -195,17 +195,19 @@ function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolea
             <Icon name="rotate" size={14} />
           </button>
         )}
+        {done && !job.prefetch && job.outputPath && (
+          <button
+            type="button"
+            className="btn btn--icon"
+            aria-label={`Play ${job.fileName}`}
+            title="Play"
+            onClick={() => void openFile(job.outputPath!)}
+          >
+            <Icon name="play" size={14} />
+          </button>
+        )}
         {done && job.outputPath && (
           <>
-            <button
-              type="button"
-              className="btn btn--icon"
-              aria-label={`Play ${job.fileName}`}
-              title="Play"
-              onClick={() => void openFile(job.outputPath!)}
-            >
-              <Icon name="play" size={13} />
-            </button>
             <button
               type="button"
               className="btn btn--icon"

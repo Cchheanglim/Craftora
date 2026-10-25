@@ -148,7 +148,7 @@ function ExportTable({ id, jobs, onHide }: { id: string; jobs: Job[]; onHide: (i
                     {job.outputPath && (
                       <>
                         <button type="button" className="btn btn--ghost" onClick={() => void openFile(job.outputPath!)}>
-                          <Icon name="play" size={13} />
+                          <Icon name="play" size={14} />
                           Play
                         </button>
                         <button type="button" className="btn btn--ghost" onClick={() => void revealFile(job.outputPath!)}>

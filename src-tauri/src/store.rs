@@ -178,3 +178,27 @@ pub fn open_file(app: AppHandle, path: String) -> Result<(), String> {
         .open_path(&path, None::<&str>)
         .map_err(|e| format!("Couldn't open the file: {e}"))
 }
+
+/// Saves a PNG snapshot of the preview into the export folder and opens it for the editor.
+#[tauri::command]
+pub fn save_snapshot(
+    app: AppHandle,
+    opened: tauri::State<'_, crate::local::OpenedFiles>,
+    bytes: Vec<u8>,
+    title: String,
+) -> Result<String, String> {
+    if bytes.len() < 8 || bytes.len() > MAX_FILE_BYTES || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err("Couldn't save the snapshot.".into());
+    }
+    let dir = crate::jobs::output_dir(&app)?;
+    let tmp = dir.join(format!(".craftora-snap-{}.png", std::process::id()));
+    std::fs::write(&tmp, &bytes).map_err(|e| format!("Couldn't save the snapshot: {e}"))?;
+    let stem = format!("{}_snapshot", crate::jobs::safe_stem(&title));
+    let saved = crate::jobs::deliver(&tmp, &dir, &stem, "png").inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })?;
+    let normalized = crate::local::normalize(&saved)?;
+    crate::local::allow_preview(&app, &normalized)?;
+    opened.allow(normalized.clone());
+    Ok(normalized.to_string_lossy().into_owned())
+}

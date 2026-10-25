@@ -52,7 +52,8 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
   if (project.clips.length !== 1) return null;
   const [clip] = project.clips;
   const media = project.media.find((m) => m.id === clip.mediaId);
-  const onVideoTrack = project.tracks.find((t) => t.id === clip.trackId)?.kind === "video";
+  const track = project.tracks.find((t) => t.id === clip.trackId);
+  const onVideoTrack = track?.kind === "video" && !track.muted;
   const untouched =
     clip.volume === 1 &&
     !clip.mirror &&
@@ -150,7 +151,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       in: c.in,
       out: c.out,
       speed: c.mediaId ? c.speed : 1,
-      volume: c.volume,
+      volume: track?.muted ? 0 : c.volume,
       mirror: c.mirror,
       reverse: c.reverse,
       fadeIn: c.fadeIn,

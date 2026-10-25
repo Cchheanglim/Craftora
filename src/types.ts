@@ -42,6 +42,10 @@ export interface MediaSource {
   thumbnail?: string;
   /** Links: the preview streams' ids in the disk cache (src-tauri/src/media_cache.rs). */
   previewCacheIds?: string[];
+  /** ~240 loudness bars (0–100) across the audio, for the radio wave under the video and on clips. */
+  peaks?: number[];
+  /** Chapters from yt-dlp (e.g. YouTube chapters), in media seconds. */
+  chapters?: { title: string; start: number; end: number }[];
   streams: StreamOption[];
 }
 
