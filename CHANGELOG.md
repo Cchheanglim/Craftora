@@ -8,6 +8,17 @@
   Home → Links: Craftora asks [VirusTotal](https://www.virustotal.com) whether security vendors
   flag its website, and shows what they say, people's votes and a link to the full report. Only
   the website's name is sent, never the full link.
+- **Audio radio wave under the video and on timeline clips.** An interactive audio wave bar sits
+  right under the preview screen (click or drag it to jump through the video), and every video
+  and audio clip shows its sound wave along the bottom.
+- **One-click "Cut silences".** Automatically finds and removes silent pauses in any video or
+  audio clip (from the timeline toolbar, clip settings, or the AI assistant) as one `Ctrl+Z` undo step.
+- **Mute any track.** Click the speaker icon on any video or audio track header to mute or unmute
+  that whole track in both the preview and the export.
+- **Snapshot current frame.** Click the camera button under the preview to save the current frame
+  as a PNG in your export folder and add it to **Media**.
+- **YouTube chapters.** Fetched links with chapters show chapter ticks on the timeline and offer
+  **Split chapters** to cut the clip into one clip per chapter.
 - **Duplicate clips (`Ctrl+D`).** Make a copy of the selected clip right after it on the same
   track, from the timeline toolbar, the clip settings panel, `Ctrl+D`, or the AI assistant.
 - **Play exported files.** Click **Play** on any finished export in Library, Home's Recent exports,

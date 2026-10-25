@@ -85,8 +85,8 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
   transitions; turn it off to place clips anywhere. Video 1 starts with it on.
 - Drag media from the sidebar onto any track. A video on an audio track uses just its sound.
 - Drag clips to move them and their edges to trim. Split at the playhead (`S`), duplicate
-  (`Ctrl+D`), delete, and undo or redo anything (`Ctrl+Z` / `Ctrl+Y`). Edges snap to the playhead
-  and to other clips.
+  (`Ctrl+D`), **cut silences** in one click, **split by chapters**, mute any track, delete, and
+  undo or redo anything (`Ctrl+Z` / `Ctrl+Y`). Edges snap to the playhead and to other clips.
 - Drag the red playhead, or anywhere on the ruler, to move through the video.
 
 **Shape each clip** (select it; settings are on the right)

@@ -59,3 +59,28 @@ test("duplicating a clip places the copy right after it on magnetic and free tra
   p = applyEdit(p, { type: "duplicateClip", clipId: "t1", newClipId: "t2" });
   expect(p.clips.find((c) => c.id === "t2")?.start).toBe(5);
 });
+
+test("cutting silences, splitting by chapters, and muting a track update the timeline", async () => {
+  const { planExport } = await import("../src/project/exportPlan");
+  const media = mediaFromSource({
+    ...source("video"),
+    chapters: [
+      { title: "Intro", start: 0, end: 4 },
+      { title: "Main", start: 4, end: 10 },
+    ],
+  });
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "c1", mediaId: media.id, at: 0 });
+  p = applyEdit(p, { type: "splitByChapters", clipId: "c1" });
+  expect(p.clips.length).toBe(2);
+  expect(p.clips[0].out).toBe(4);
+  expect(p.clips[1].in).toBe(4);
+
+  p = applyEdit(p, { type: "cutSilences", clipId: p.clips[1].id, ranges: [[5, 7]] });
+  expect(p.clips.length).toBe(3);
+
+  p = applyEdit(p, { type: "setTrackMuted", trackId: "video-1", muted: true });
+  const settings = { output: "video", videoContainer: "mp4", audioContainer: "mp3", cutMode: "fast", frameId: "1080p", quality: "fast" } as const;
+  const plan = planExport(p, settings);
+  expect(plan.kind === "render" && plan.spec.clips.every((c) => c.volume === 0)).toBe(true);
+});

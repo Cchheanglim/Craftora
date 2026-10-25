@@ -393,21 +393,16 @@ pub(crate) fn parse_silences(stderr: &str, offset: f64, max_end: f64) -> Vec<(f6
     for line in stderr.lines() {
         if let Some(rest) = line.split("silence_start: ").nth(1) {
             start = rest.split_whitespace().next().and_then(|s| s.parse::<f64>().ok()).map(|t| (offset + t).max(offset));
-        } else if let Some(rest) = line.split("silence_end: ").nth(1) {
-            if let (Some(s), Some(e)) = (
-                start.take(),
-                rest.split_whitespace().next().and_then(|s| s.parse::<f64>().ok()).map(|t| (offset + t).min(max_end)),
-            ) {
-                if e > s {
-                    out.push((s, e));
-                }
-            }
+        } else if let Some(rest) = line.split("silence_end: ").nth(1)
+            && let Some(s) = start.take()
+            && let Some(e) = rest.split_whitespace().next().and_then(|v| v.parse::<f64>().ok()).map(|t| (offset + t).min(max_end))
+            && e > s
+        {
+            out.push((s, e));
         }
     }
-    if let Some(s) = start {
-        if max_end - s >= 0.4 {
-            out.push((s, max_end));
-        }
+    if let Some(s) = start.filter(|s| max_end - *s >= 0.4) {
+        out.push((s, max_end));
     }
     out
 }

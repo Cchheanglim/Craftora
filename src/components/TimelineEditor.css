@@ -48,7 +48,7 @@
 }
 
 .tl__heads {
-  width: 136px;
+  width: 158px;
   flex-shrink: 0;
   border-right: 1px solid var(--line);
   background: var(--bg-panel);
@@ -60,11 +60,11 @@
 }
 
 .tl__head {
-  height: 40px;
+  height: 44px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
+  gap: 4px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--line-soft);
   font-size: var(--text-xs);
   color: var(--text-2);
@@ -189,7 +189,7 @@
 
 .tl__lane {
   position: relative;
-  height: 40px;
+  height: 44px;
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -256,10 +256,46 @@
 }
 
 .tl__label {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-width: 0;
   padding: 0 8px;
   pointer-events: none;
+}
+
+/* The audio wave along the bottom of video and audio clips. */
+.tl__wave {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 2px;
+  height: 42%;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(1px, 1fr);
+  align-items: end;
+  gap: 1.5px;
+  pointer-events: none;
+}
+
+.tl__wave > span {
+  min-height: 1.5px;
+  border-radius: 1px;
+  background: rgb(255 255 255 / 0.28);
+}
+
+.tl__clip.is-audio .tl__wave {
+  height: 52%;
+}
+
+.tl__chapter {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 7px;
+  background: rgb(255 255 255 / 0.65);
+  z-index: 2;
 }
 
 /* Speed and reverse, at the clip's right end. */
