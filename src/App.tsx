@@ -324,19 +324,12 @@ export default function App() {
       if (format && item.hasVideo) item.videoFormat = format;
       else if (format) item.audioFormat = format;
       api.edit({ type: "importMedia", item });
-      if (place) {
-        const clipId = crypto.randomUUID();
-        api.edit({ type: "addClip", clipId, mediaId: item.id });
-        setSelectedId(clipId);
-      } else if (!leftOpen) {
-        setLeftOpen(true);
-        remember("craftora.left", true);
-      }
+      if (place) api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId: item.id });
       prepare(item.id, source);
       setView("editor");
       return item;
     },
-    [api, prepare, leftOpen],
+    [api, prepare],
   );
 
   // Files on this PC get a picture of their first frame and their real FFmpeg audio wave.
