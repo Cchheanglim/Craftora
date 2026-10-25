@@ -13,14 +13,17 @@ interface LibraryProps {
   /** Picks the folder new exports are saved in; absent in the browser preview. */
   onChooseOutputDir?: () => void;
   onOpenWorkspace: () => void;
+  /** Hides an export from the list (and from Home), or shows it again. The file isn't touched. */
+  onHide: (id: string, hidden: boolean) => void;
 }
 
 const HIDDEN_KEY = "craftora.hideExports";
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace }: LibraryProps) {
-  const finished = jobs;
+export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace, onHide }: LibraryProps) {
+  const shown = jobs.filter((j) => !j.hidden);
+  const hidden = jobs.filter((j) => j.hidden);
   // The list can be folded away, so its pictures don't show; remembered.
   const [open, setOpen] = useState(() => {
     try {
@@ -37,6 +40,8 @@ export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace }:
       /* not essential */
     }
   };
+  // Hidden files stay folded away each time the page opens, so they're out of sight by default.
+  const [hiddenOpen, setHiddenOpen] = useState(false);
 
   return (
     <section className="library" aria-labelledby="library-title">
@@ -55,7 +60,7 @@ export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace }:
         </div>
       </header>
 
-      {finished.length === 0 ? (
+      {jobs.length === 0 ? (
         <div className="library__empty">
           <p>No finished files yet.</p>
           <button type="button" className="btn btn--secondary" onClick={onOpenWorkspace}>
@@ -64,53 +69,105 @@ export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace }:
           </button>
         </div>
       ) : (
-        <button type="button" className="library__toggle" aria-expanded={open} aria-controls="library-files" onClick={toggle}>
-          <Icon name="chevronDown" size={14} />
-          Exported files <span className="library__count">{finished.length}</span>
-        </button>
+        <>
+          <div className="library__group">
+            <button type="button" className="library__toggle" aria-expanded={open} aria-controls="library-files" onClick={toggle}>
+              <Icon name="chevronDown" size={14} />
+              Exported files <span className="library__count">{shown.length}</span>
+            </button>
+            {open &&
+              (shown.length === 0 ? (
+                <p className="library__muted" id="library-files">
+                  Every export is hidden. They're under Hidden below.
+                </p>
+              ) : (
+                <ExportTable id="library-files" jobs={shown} onHide={onHide} />
+              ))}
+          </div>
+
+          {hidden.length > 0 && (
+            <div className="library__group">
+              <button
+                type="button"
+                className="library__toggle"
+                aria-expanded={hiddenOpen}
+                aria-controls="library-hidden"
+                onClick={() => setHiddenOpen(!hiddenOpen)}
+              >
+                <Icon name="chevronDown" size={14} />
+                Hidden <span className="library__count">{hidden.length}</span>
+              </button>
+              {hiddenOpen && (
+                <>
+                  <p className="library__muted">Hidden here and on Home. The files are still in your save folder.</p>
+                  <ExportTable id="library-hidden" jobs={hidden} onHide={onHide} />
+                </>
+              )}
+            </div>
+          )}
+        </>
       )}
-      {finished.length > 0 && open && (
-        <div className="library__table-wrap" id="library-files">
-          <table className="library__table">
-            <thead>
-              <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Details</th>
-                <th scope="col" className="is-num">
-                  Size
-                </th>
-                <th scope="col">Finished</th>
-                <th scope="col">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {finished.map((job) => (
-                <tr key={job.id}>
-                  <td>
-                    <span className="library__name">
-                      <Thumb src={job.thumbnail} icon={job.kind === "audio" ? "music" : "film"} />
-                      <span className="mono truncate">{job.outputPath?.split(/[\\/]/).pop() ?? job.fileName}</span>
-                    </span>
-                  </td>
-                  <td className="library__detail">{job.summary}</td>
-                  <td className="mono is-num">{formatSize(job.sizeMb)}</td>
-                  <td className="library__detail">{job.finishedAt ? dateFormat.format(job.finishedAt) : ""}</td>
-                  <td className="is-num">
+    </section>
+  );
+}
+
+/** A list of exports; hidden ones offer Unhide instead of Hide. */
+function ExportTable({ id, jobs, onHide }: { id: string; jobs: Job[]; onHide: (id: string, hidden: boolean) => void }) {
+  return (
+    <div className="library__table-wrap" id={id}>
+      <table className="library__table">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Details</th>
+            <th scope="col" className="is-num">
+              Size
+            </th>
+            <th scope="col">Finished</th>
+            <th scope="col">
+              <span className="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {jobs.map((job) => {
+            const name = job.outputPath?.split(/[\\/]/).pop() ?? job.fileName;
+            return (
+              <tr key={job.id}>
+                <td>
+                  <span className="library__name">
+                    <Thumb src={job.thumbnail} icon={job.kind === "audio" ? "music" : "film"} />
+                    <span className="mono truncate">{name}</span>
+                  </span>
+                </td>
+                <td className="library__detail">{job.summary}</td>
+                <td className="mono is-num">{formatSize(job.sizeMb)}</td>
+                <td className="library__detail">{job.finishedAt ? dateFormat.format(job.finishedAt) : ""}</td>
+                <td className="is-num">
+                  <span className="library__actions">
                     {job.outputPath && (
                       <button type="button" className="btn btn--ghost" onClick={() => void revealFile(job.outputPath!)}>
                         <Icon name="folder" size={14} />
                         Show in folder
                       </button>
                     )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      aria-label={`${job.hidden ? "Unhide" : "Hide"} ${name}`}
+                      title={job.hidden ? "Show it in the list and on Home again" : "Hide it from this list and from Home (the file stays)"}
+                      onClick={() => onHide(job.id, !job.hidden)}
+                    >
+                      <Icon name={job.hidden ? "eye" : "eyeOff"} size={14} />
+                      {job.hidden ? "Unhide" : "Hide"}
+                    </button>
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }

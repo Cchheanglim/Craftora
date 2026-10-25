@@ -126,3 +126,21 @@
   font-weight: 400;
   color: var(--text-3);
 }
+
+/* "Exported files" and "Hidden": a fold-away heading and its list. */
+.library__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.library__muted {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.library__actions {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}

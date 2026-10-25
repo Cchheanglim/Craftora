@@ -70,6 +70,7 @@ import { QueueDock } from "./components/QueueDock";
 import { Library } from "./components/Library";
 import { AssistantPanel } from "./components/AssistantPanel";
 import { TextMenu } from "./components/TextMenu";
+import { WelcomeDialog, alreadyWelcomed } from "./components/WelcomeDialog";
 import "./App.css";
 
 const DEMO = DEMO_SOURCES[0];
@@ -215,6 +216,8 @@ export default function App() {
   const [pageAction, setPageAction] = useState<{ label: string; link: string } | null>(null);
   const [ytDlpUpdate, setYtDlpUpdate] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null });
   const urlRef = useRef<HTMLInputElement>(null);
+  /** The first-launch guide is open (it shows until it's closed once). */
+  const [welcoming, setWelcoming] = useState(() => !alreadyWelcomed());
 
   const api = useProject(() => (inDesktopApp ? emptyProject() : demoProject()));
   const { project } = api;
@@ -271,6 +274,14 @@ export default function App() {
     setHistory(next);
     void saveHistory(next).catch(() => {});
   }, [queue.jobs, history]);
+
+  /** Hides a finished export from Exports and Home, or shows it again; the file isn't touched. */
+  const setExportHidden = (id: string, hidden: boolean) => {
+    if (!history) return;
+    const next = history.map((j) => (j.id === id ? { ...j, hidden: hidden || undefined } : j));
+    setHistory(next);
+    void saveHistory(next).catch(() => {});
+  };
 
   const toggleLeft = useCallback(() => setLeftOpen((o) => (remember("craftora.left", !o), !o)), []);
   const toggleRight = useCallback(() => setRightOpen((o) => (remember("craftora.right", !o), !o)), []);
@@ -642,6 +653,7 @@ export default function App() {
   }, []);
 
   const exported = history ?? [];
+  const shownExports = exported.filter((j) => !j.hidden);
   const usedMedia = new Set(project.clips.map((c) => c.mediaId).filter((id): id is string => Boolean(id)));
   const showPanel = view === "editor" && rightOpen;
   const selectedTrack = selected ? project.tracks.find((t) => t.id === selected.trackId) : undefined;
@@ -684,7 +696,7 @@ export default function App() {
         view={view}
         onViewChange={setView}
         collapsed={!leftOpen}
-        libraryCount={exported.length}
+        libraryCount={shownExports.length}
         engines={engines}
         media={project.media}
         preparing={preparing}
@@ -721,7 +733,7 @@ export default function App() {
             onOpenProject={(id) => (id === projectId ? setView("editor") : void openProject(id))}
             onNewProject={newProject}
             onDeleteProject={(id) => void removeProject(id)}
-            recent={exported}
+            recent={shownExports}
             outputDir={outputDir}
             updates={updates}
             links={
@@ -748,6 +760,7 @@ export default function App() {
         {view === "library" && (
           <Library
             jobs={exported}
+            onHide={setExportHidden}
             outputDir={outputDir}
             onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
             onOpenWorkspace={() => setView("editor")}
@@ -838,6 +851,14 @@ export default function App() {
 
       <QueueDock queue={queue} freshId={freshId} />
       <TextMenu />
+      {welcoming && (
+        <WelcomeDialog
+          onImport={inDesktopApp ? () => void importFiles() : undefined}
+          onPasteLink={() => urlRef.current?.focus()}
+          busy={busy}
+          onClose={() => setWelcoming(false)}
+        />
+      )}
       {dragging && (
         <div className="app__drop" role="status">
           <span>Drop to import into Media</span>
