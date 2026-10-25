@@ -58,6 +58,7 @@ pub fn run() {
             media::fetch_media,
             local::open_local,
             local::make_preview,
+            local::local_thumbnail,
             local::audio_peaks,
             local::detect_silences,
             jobs::start_job,

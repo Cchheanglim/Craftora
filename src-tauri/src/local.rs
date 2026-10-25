@@ -76,7 +76,15 @@ async fn run_probe(app: &AppHandle, path: &Path) -> Result<Probe, String> {
     let output = run_to_end(
         app,
         FFPROBE,
-        &["-v", "error", "-print_format", "json", "-show_format", "-show_streams", &path_text],
+        &[
+            "-v", "error",
+            "-probesize", "5M",
+            "-analyzeduration", "1M",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            &path_text,
+        ],
     )
     .await?;
     if !output.status.success() {
@@ -411,6 +419,69 @@ pub(crate) fn parse_silences(stderr: &str, offset: f64, max_end: f64) -> Vec<(f6
     out
 }
 
+/// Encodes bytes as standard base64 for `data:image/jpeg;base64,…` thumbnails.
+pub(crate) fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as usize;
+        let b1 = *chunk.get(1).unwrap_or(&0) as usize;
+        let b2 = *chunk.get(2).unwrap_or(&0) as usize;
+        out.push(TABLE[b0 >> 2] as char);
+        out.push(TABLE[((b0 & 0x03) << 4) | (b1 >> 4)] as char);
+        out.push(if chunk.len() > 1 { TABLE[((b1 & 0x0f) << 2) | (b2 >> 6)] as char } else { '=' });
+        out.push(if chunk.len() > 2 { TABLE[b2 & 0x3f] as char } else { '=' });
+    }
+    out
+}
+
+/// Extracts a JPEG preview frame from an opened local video or image as a `data:` URL.
+#[tauri::command]
+pub async fn local_thumbnail(app: AppHandle, opened: State<'_, OpenedFiles>, path: String, image: bool) -> Result<String, String> {
+    let path = normalize(Path::new(&path))?;
+    if !opened.contains(&path) {
+        return Err("Open the file first.".into());
+    }
+    let input = path.to_string_lossy();
+    let scale = if image { "scale='min(960,iw)':-2" } else { "scale='min(480,iw)':-2" };
+    let mut output = if !image {
+        run_to_end(
+            &app,
+            FFMPEG,
+            &[
+                "-hide_banner", "-v", "error", "-ss", "0.5", "-i", &input,
+                "-frames:v", "1", "-vf", scale, "-q:v", "5", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
+            ],
+        )
+        .await?
+    } else {
+        run_to_end(
+            &app,
+            FFMPEG,
+            &[
+                "-hide_banner", "-v", "error", "-i", &input,
+                "-frames:v", "1", "-vf", scale, "-q:v", "4", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
+            ],
+        )
+        .await?
+    };
+    if !image && (!output.status.success() || output.stdout.is_empty()) {
+        output = run_to_end(
+            &app,
+            FFMPEG,
+            &[
+                "-hide_banner", "-v", "error", "-i", &input,
+                "-frames:v", "1", "-vf", scale, "-q:v", "5", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
+            ],
+        )
+        .await?;
+    }
+    if !output.status.success() || output.stdout.is_empty() {
+        return Err("Couldn't read a preview frame from this file.".into());
+    }
+    Ok(format!("data:image/jpeg;base64,{}", base64_encode(&output.stdout)))
+}
+
 /// Reads ~240 loudness bars (0–100) across an opened file's audio for the radio wave.
 #[tauri::command]
 pub async fn audio_peaks(app: AppHandle, opened: State<'_, OpenedFiles>, path: String) -> Result<Vec<u8>, String> {
@@ -422,7 +493,7 @@ pub async fn audio_peaks(app: AppHandle, opened: State<'_, OpenedFiles>, path: S
     let output = run_to_end(
         &app,
         FFMPEG,
-        &["-hide_banner", "-v", "error", "-i", &input, "-vn", "-ac", "1", "-ar", "400", "-f", "s8", "pipe:1"],
+        &["-hide_banner", "-v", "error", "-t", "600", "-i", &input, "-vn", "-ac", "1", "-ar", "100", "-f", "s8", "pipe:1"],
     )
     .await?;
     Ok(peaks_from_pcm(&output.stdout, 240))
@@ -472,7 +543,13 @@ pub async fn detect_silences(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_silences, peaks_from_pcm};
+    use super::{base64_encode, parse_silences, peaks_from_pcm};
+
+    #[test]
+    fn encodes_bytes_to_base64() {
+        assert_eq!(base64_encode(b"Craftora"), "Q3JhZnRvcmE=");
+        assert_eq!(base64_encode(&[0xff, 0xd8, 0xff]), "/9j/");
+    }
 
     #[test]
     fn summarises_pcm_into_normalised_peaks() {
