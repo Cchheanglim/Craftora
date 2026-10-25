@@ -147,8 +147,39 @@ const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "jfif", "webp", "bmp", "gif", "a
 /** The preview plays files straight from disk through Tauri's asset protocol. */
 const assetUrl = (path: string) => (path ? convertFileSrc(path) : "");
 
-/** Reads a file on this PC with ffprobe. Works offline. */
-export async function openLocal(path: string): Promise<MediaSource> {
+interface QuickLocal {
+  path: string;
+  title: string;
+  sizeMb: number;
+  kind: "video" | "audio" | "image";
+  ext: string;
+}
+
+function browserProbe(url: string, kind: "video" | "audio"): Promise<{ duration: number; width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const el = document.createElement(kind);
+    const done = (val: { duration: number; width: number; height: number } | null) => {
+      window.clearTimeout(timer);
+      el.removeAttribute("src");
+      el.load();
+      resolve(val);
+    };
+    const timer = window.setTimeout(() => done(null), 1500);
+    el.preload = "metadata";
+    el.onloadedmetadata = () => {
+      const duration = el.duration;
+      if (!Number.isFinite(duration) || duration <= 0) return done(null);
+      const width = kind === "video" ? (el as HTMLVideoElement).videoWidth : 0;
+      const height = kind === "video" ? (el as HTMLVideoElement).videoHeight : 0;
+      done({ duration, width, height });
+    };
+    el.onerror = () => done(null);
+    el.src = url;
+  });
+}
+
+/** Reads a file on this PC with ffprobe (used when the WebView can't open the container directly). */
+export async function probeLocal(path: string): Promise<MediaSource> {
   try {
     const source = await invoke<MediaSource>("open_local", { path });
     const previewUrl = assetUrl(source.previewUrl);
@@ -156,8 +187,62 @@ export async function openLocal(path: string): Promise<MediaSource> {
       ...source,
       previewUrl,
       previewAudioUrl: assetUrl(source.previewAudioUrl ?? ""),
-      thumbnail: source.thumbnail || (source.image ? previewUrl : ""),
+      thumbnail: source.thumbnail || (source.image ? previewUrl : previewUrl ? `${previewUrl}#t=0.5` : ""),
     };
+  } catch (err) {
+    throw new Error(message(err));
+  }
+}
+
+/** Opens a file on this PC immediately using the WebView's own media reader, falling back to ffprobe when needed. */
+export async function openLocal(path: string): Promise<MediaSource> {
+  try {
+    const quick = await invoke<QuickLocal>("allow_local", { path });
+    const previewUrl = assetUrl(quick.path);
+    const detail = quick.ext.toUpperCase() || "Local";
+    if (quick.kind === "image") {
+      return {
+        url: quick.path,
+        title: quick.title,
+        uploader: "On this PC",
+        duration: 86400,
+        local: true,
+        previewUrl,
+        previewHasAudio: false,
+        previewAudioUrl: "",
+        previewHls: false,
+        previewProxy: "",
+        image: true,
+        thumbnail: previewUrl,
+        chapters: [],
+        streams: [{ id: "local:image", kind: "video", label: "Image", detail, sizeMb: quick.sizeMb }],
+      };
+    }
+    const fast = await browserProbe(previewUrl, quick.kind);
+    if (fast && (quick.kind === "audio" || fast.height > 0)) {
+      const streams: MediaSource["streams"] = [];
+      if (fast.height > 0) {
+        streams.push({ id: "local:video", kind: "video", label: `${fast.height}p`, detail, sizeMb: quick.sizeMb });
+      }
+      streams.push({ id: "local:audio", kind: "audio", label: "Original audio", detail, sizeMb: quick.sizeMb });
+      return {
+        url: quick.path,
+        title: quick.title,
+        uploader: "On this PC",
+        duration: fast.duration,
+        local: true,
+        previewUrl,
+        previewHasAudio: true,
+        previewAudioUrl: "",
+        previewHls: false,
+        previewProxy: "",
+        image: false,
+        thumbnail: fast.height > 0 ? `${previewUrl}#t=0.5` : "",
+        chapters: [],
+        streams,
+      };
+    }
+    return await probeLocal(quick.path);
   } catch (err) {
     throw new Error(message(err));
   }

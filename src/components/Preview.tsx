@@ -326,7 +326,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           {pictures.map((clip) => {
             const media = mediaOf(clip);
             const canPlay = Boolean(media?.source.previewUrl && !failed.has(media.source.previewUrl));
-            const poster = media?.source.thumbnail;
+            const poster = media?.source.thumbnail && !media.source.thumbnail.includes("#t=") ? media.source.thumbnail : undefined;
             if (!media || (!canPlay && !poster)) return null;
             const t = mediaTime(clip);
             const separateSound = Boolean(media.source.previewAudioUrl);

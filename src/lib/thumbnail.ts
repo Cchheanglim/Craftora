@@ -26,14 +26,16 @@ export function captureThumbnail(previewUrl: string, image?: boolean): Promise<s
     const timer = window.setTimeout(() => done(), 10_000);
     if (image) {
       const img = new Image();
+      img.crossOrigin = "anonymous";
       img.onload = () => done(draw(img, img.naturalWidth, img.naturalHeight));
       img.onerror = () => done();
       img.src = previewUrl;
       return;
     }
     const video = document.createElement("video");
+    video.crossOrigin = "anonymous";
     video.muted = true;
-    video.preload = "auto";
+    video.preload = "metadata";
     // One second in skips the black first frame most videos start with.
     video.onloadedmetadata = () => (video.currentTime = Math.min(1, video.duration / 2 || 0));
     video.onseeked = () => {

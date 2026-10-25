@@ -359,17 +359,17 @@ export default function App() {
       if (!s.local || s.thumbnail?.startsWith("data:") || !(m.hasVideo || s.image) || thumbTried.current.has(m.id)) continue;
       if (!inDesktopApp && (s.previewProxy || !s.previewUrl)) continue;
       thumbTried.current.add(m.id);
-      const task = inDesktopApp ? localThumbnail(s.url, Boolean(s.image)) : captureThumbnail(s.previewUrl, s.image);
-      void task
-        .then((thumbnail) => {
-          const current = projectRef.current.media.find((x) => x.id === m.id);
-          if (thumbnail && current) {
-            api.refreshMedia(m.id, {
-              source: { ...current.source, thumbnail, ...(current.source.image ? { previewUrl: thumbnail } : {}) },
-            });
-          }
-        })
-        .catch(() => {});
+      const task = (s.previewUrl ? captureThumbnail(s.previewUrl, s.image) : Promise.resolve(undefined)).then(
+        (thumb) => thumb ?? (inDesktopApp ? localThumbnail(s.url, Boolean(s.image)).catch(() => undefined) : undefined),
+      );
+      void task.then((thumbnail) => {
+        const current = projectRef.current.media.find((x) => x.id === m.id);
+        if (thumbnail && current) {
+          api.refreshMedia(m.id, {
+            source: { ...current.source, thumbnail, ...(current.source.image ? { previewUrl: thumbnail } : {}) },
+          });
+        }
+      });
     }
   }, [project.media, api]);
 

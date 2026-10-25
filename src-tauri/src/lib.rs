@@ -56,6 +56,7 @@ pub fn run() {
             engine::engine_status,
             engine::update_yt_dlp,
             media::fetch_media,
+            local::allow_local,
             local::open_local,
             local::make_preview,
             local::local_thumbnail,
