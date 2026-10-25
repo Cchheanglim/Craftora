@@ -12,6 +12,7 @@ import {
   onPreviewCache,
   prefetchPreview,
   onFileDrop,
+  localThumbnail,
   audioPeaks,
   detectSilences,
   openLocal,
@@ -341,23 +342,34 @@ export default function App() {
       const s = m.source;
       if (!s.local || s.image || !m.hasAudio || s.peaks?.length || peaksTried.current.has(m.id)) continue;
       peaksTried.current.add(m.id);
-      void audioPeaks(s.url)
-        .then((peaks) => {
-          const current = projectRef.current.media.find((x) => x.id === m.id);
-          if (peaks.length && current) api.refreshMedia(m.id, { source: { ...current.source, peaks } });
-        })
-        .catch(() => {});
+      // Wait briefly so the thumbnail and first video frame open without disk contention.
+      window.setTimeout(() => {
+        void audioPeaks(s.url)
+          .then((peaks) => {
+            const current = projectRef.current.media.find((x) => x.id === m.id);
+            if (peaks.length && current) api.refreshMedia(m.id, { source: { ...current.source, peaks } });
+          })
+          .catch(() => {});
+      }, 300);
     }
   }, [project.media, api]);
   useEffect(() => {
     for (const m of project.media) {
       const s = m.source;
-      if (!s.local || s.thumbnail?.startsWith("data:") || s.previewProxy || !s.previewUrl || !(m.hasVideo || s.image) || thumbTried.current.has(m.id)) continue;
+      if (!s.local || s.thumbnail?.startsWith("data:") || !(m.hasVideo || s.image) || thumbTried.current.has(m.id)) continue;
+      if (!inDesktopApp && (s.previewProxy || !s.previewUrl)) continue;
       thumbTried.current.add(m.id);
-      void captureThumbnail(s.previewUrl, s.image).then((thumbnail) => {
-        const current = projectRef.current.media.find((x) => x.id === m.id);
-        if (thumbnail && current) api.refreshMedia(m.id, { source: { ...current.source, thumbnail } });
-      });
+      const task = inDesktopApp ? localThumbnail(s.url, Boolean(s.image)) : captureThumbnail(s.previewUrl, s.image);
+      void task
+        .then((thumbnail) => {
+          const current = projectRef.current.media.find((x) => x.id === m.id);
+          if (thumbnail && current) {
+            api.refreshMedia(m.id, {
+              source: { ...current.source, thumbnail, ...(current.source.image ? { previewUrl: thumbnail } : {}) },
+            });
+          }
+        })
+        .catch(() => {});
     }
   }, [project.media, api]);
 
@@ -475,14 +487,15 @@ export default function App() {
     const failed: string[] = [];
     // Only the first file goes straight onto an empty timeline; the rest wait in Media.
     let place = project.clips.length === 0;
-    for (const path of paths) {
-      try {
-        importSource(await openLocal(path), place);
+    const results = await Promise.allSettled(paths.map((path) => openLocal(path)));
+    results.forEach((res, i) => {
+      if (res.status === "fulfilled") {
+        importSource(res.value, place);
         place = false;
-      } catch (err) {
-        failed.push(`${path.split(/[\\/]/).pop()}: ${errorText(err)}`);
+      } else {
+        failed.push(`${paths[i].split(/[\\/]/).pop()}: ${errorText(res.reason)}`);
       }
-    }
+    });
     if (failed.length) setError(failed.join("  "));
     setBusy(false);
   };

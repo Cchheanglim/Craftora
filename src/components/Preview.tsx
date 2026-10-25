@@ -325,7 +325,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           }) && <span className="preview__loading">This video can't play in the preview. Download it with ⬇ in Media to watch and edit it.</span>}
           {pictures.map((clip) => {
             const media = mediaOf(clip);
-            if (!media?.source.previewUrl || failed.has(media.source.previewUrl)) return null;
+            const canPlay = Boolean(media?.source.previewUrl && !failed.has(media.source.previewUrl));
+            const poster = media?.source.thumbnail;
+            if (!media || (!canPlay && !poster)) return null;
             const t = mediaTime(clip);
             const separateSound = Boolean(media.source.previewAudioUrl);
             const isSelected = clip.id === selectedId && t !== null;
@@ -338,17 +340,21 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 visible={t !== null}
                 opacity={t === null ? 0 : mix(clip).picture}
                 selected={isSelected}
+                poster={poster}
                 onPointerDown={beginGesture(clip, "move")}
                 handles={isSelected ? handles(clip) : null}
               >
                 {(onShape, style, onReady) =>
                   media.source.image ? (
                     <img
-                      src={media.source.previewUrl}
+                      src={(canPlay ? media.source.previewUrl : poster) || poster}
                       alt=""
                       className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
                       style={style}
                       draggable={false}
+                      onError={() => {
+                        if (canPlay) fail(media.source.previewUrl);
+                      }}
                       onLoad={(e) => {
                         onShape(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight);
                         onReady();
@@ -356,22 +362,24 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                     />
                   ) : (
                   <>
-                    <SyncedMedia
-                      kind="video"
-                      src={media.source.previewUrl}
-                      time={t}
-                      playing={running}
-                      volume={clip.volume * mix(clip).sound}
-                      muted={muted || trackMuted(clip) || separateSound}
-                      rate={rate}
-                      reverse={clip.reverse}
-                      onLoading={(on) => playback.setLoading(`${clip.id}:video`, on)}
-                      onFailed={() => fail(media.source.previewUrl)}
-                      className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
-                      style={style}
-                      onLoadedMetadata={(e) => onShape(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
-                      onReady={onReady}
-                    />
+                    {canPlay && (
+                      <SyncedMedia
+                        kind="video"
+                        src={media.source.previewUrl}
+                        time={t}
+                        playing={running}
+                        volume={clip.volume * mix(clip).sound}
+                        muted={muted || trackMuted(clip) || separateSound}
+                        rate={rate}
+                        reverse={clip.reverse}
+                        onLoading={(on) => playback.setLoading(`${clip.id}:video`, on)}
+                        onFailed={() => fail(media.source.previewUrl)}
+                        className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
+                        style={style}
+                        onLoadedMetadata={(e) => onShape(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
+                        onReady={onReady}
+                      />
+                    )}
                     {separateSound && (
                       <SyncedMedia
                         kind="audio"
@@ -525,6 +533,7 @@ interface PictureLayerProps {
   visible: boolean;
   opacity: number;
   selected: boolean;
+  poster?: string;
   onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
   handles: ReactNode;
   /** Renders the picture: a video or an image. It reports its pixel size and when it's ready. */
@@ -535,7 +544,7 @@ interface PictureLayerProps {
  * One picture on the stage, placed like the export: fitted inside the frame, scaled by its
  * size, at its position. The crop is a window onto the video.
  */
-function PictureLayer({ clip, stageAspect, visible, opacity, selected, onPointerDown, handles, children }: PictureLayerProps) {
+function PictureLayer({ clip, stageAspect, visible, opacity, selected, poster, onPointerDown, handles, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
@@ -570,6 +579,20 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, onPointer
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
     >
       <div className="preview__crop">
+        {!ready && poster && (
+          <img
+            src={poster}
+            alt=""
+            className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
+            style={video}
+            draggable={false}
+            onLoad={(e) => {
+              if (e.currentTarget.naturalWidth && e.currentTarget.naturalHeight) {
+                setVideoAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight);
+              }
+            }}
+          />
+        )}
         {children(
           (width, height) => {
             if (width && height) setVideoAspect(width / height);
@@ -578,7 +601,7 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, onPointer
           () => setReady(true),
         )}
       </div>
-      {visible && !ready && <span className="preview__loading">Loading video…</span>}
+      {visible && !ready && !poster && <span className="preview__loading">Loading video…</span>}
       {handles}
     </div>
   );
