@@ -23,11 +23,11 @@ export function captureThumbnail(previewUrl: string, image?: boolean): Promise<s
       window.clearTimeout(timer);
       resolve(value);
     };
-    const timer = window.setTimeout(() => done(image ? previewUrl : undefined), 10_000);
+    const timer = window.setTimeout(() => done(), 10_000);
     if (image) {
       const img = new Image();
-      img.onload = () => done(draw(img, img.naturalWidth, img.naturalHeight) ?? previewUrl);
-      img.onerror = () => done(previewUrl);
+      img.onload = () => done(draw(img, img.naturalWidth, img.naturalHeight));
+      img.onerror = () => done();
       img.src = previewUrl;
       return;
     }

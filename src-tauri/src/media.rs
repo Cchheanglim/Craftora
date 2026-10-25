@@ -379,7 +379,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
     let duration = match info.duration.filter(|d| *d > 0.0) {
         Some(d) => d,
         // Plain video-file and DASH (.mpd) links: yt-dlp doesn't open the file, so it reports no length.
-        None => match info.formats.iter().find_map(|f| f.manifest_url.as_deref().or(f.url.as_deref())) {
+        None => match info.formats.iter().find_map(|f| f.url.as_deref().or(f.manifest_url.as_deref())) {
             Some(file) => probe_length(&app, file, page.as_deref()).await,
             None => None,
         }
