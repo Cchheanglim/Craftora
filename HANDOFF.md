@@ -48,12 +48,18 @@ for UI work, `PRODUCT.md` and `DESIGN.md`.
   (untested). Risk: Store policy 11.2 (copyright complaints about downloading).
 - **Code signing:** none (SignPath declined). Options in `RELEASING.md` → "Code signing".
 - **Open questions:** "two videos together play no sound" was never reproduced (may have been the
-  old 8 s give-up in the clock); DASH (`.mpd`) links fail ("no known length") and can't preview.
+  old 8 s give-up in the clock).
 
 ### Done on 2026-10-22..25 (v0.3.1)
-- **VirusTotal link check** (`virustotal.rs`, `Home.tsx`): "Is this link safe?" under Home →
-  Links checks the domain reputation via VirusTotal (`CRAFTORA_VT_KEY` at build time from `.env`
-  or GitHub secret `VIRUSTOTAL_API_KEY`).
+- **VirusTotal link check** (`virustotal.rs`, `Home.tsx`, `Toolbar.tsx`): "Is this link safe?" in
+  the top link bar (**Check** button) and under Home → Links checks the domain reputation via
+  VirusTotal (`CRAFTORA_VT_KEY` at build time from `.env` or GitHub secret `VIRUSTOTAL_API_KEY`).
+- **Duplicate clip (`Ctrl+D`)**: `duplicateClip` action (`actions.ts`), toolbar & inspector
+  buttons, `Ctrl+D` shortcut, and `duplicate_clip` AI tool (`assistant/tools.ts`).
+- **Play exported files**: `open_file` command (`store.rs`) and **Play** buttons in `Library.tsx`,
+  `Home.tsx` (`Recent exports`), and `QueueDock.tsx`.
+- **DASH (`.mpd`) length probing** (`media.rs`): probes `manifest_url` before segment `url` and
+  parses `mediaPresentationDuration="PT…"` when FFprobe has no duration.
 - **Fill the frame & export presets**: `Clip.fill` covers the frame (`force_original_aspect_ratio=increase`);
   Export panel has "Made for" presets (YouTube 16:9, TikTok/Reels/Shorts 9:16, Instagram 1:1).
 - **Library & hiding exports** (`Library.tsx`, `App.tsx`): change output folder from Library,

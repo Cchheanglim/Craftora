@@ -4,10 +4,14 @@
 
 **New**
 
-- **"Is this link safe?"** Paste a link into the check box under Home → Links and click
-  **Check**: Craftora asks [VirusTotal](https://www.virustotal.com) whether security vendors flag
-  its website, and shows what they say, people's votes and a link to the full report. Only the
-  website's name is sent, never the full link.
+- **"Is this link safe?"** Click **Check** next to the top link box, or paste a link under
+  Home → Links: Craftora asks [VirusTotal](https://www.virustotal.com) whether security vendors
+  flag its website, and shows what they say, people's votes and a link to the full report. Only
+  the website's name is sent, never the full link.
+- **Duplicate clips (`Ctrl+D`).** Make a copy of the selected clip right after it on the same
+  track, from the timeline toolbar, the clip settings panel, `Ctrl+D`, or the AI assistant.
+- **Play exported files.** Click **Play** on any finished export in Library, Home's Recent exports,
+  or the Queue to open it in your default media player.
 - **Made for YouTube, TikTok or Instagram.** The Export panel has one-click presets: YouTube
   (16:9), TikTok · Reels · Shorts (9:16) and Instagram post (1:1). The upright and square ones make
   every picture fill the frame instead of showing black bars.
@@ -30,6 +34,11 @@
   History, Media, Projects and Exports no longer contact its website every time they show it.
   Pictures from sites that refuse them to other pages now load too. (Videos fetched with 0.3.0
   or earlier still load theirs from the website.)
+
+**Fixed**
+
+- **DASH (`.mpd`) links** no longer fail to fetch with "This link has no known length": Craftora
+  now reads the stream length from the DASH manifest.
 
 **Removed**
 
