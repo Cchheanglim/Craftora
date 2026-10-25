@@ -16,6 +16,7 @@ import {
   audioPeaks,
   detectSilences,
   openLocal,
+  probeLocal,
   pickFolder,
   saveSnapshot,
   pickMediaFiles,
@@ -340,36 +341,52 @@ export default function App() {
     if (!inDesktopApp) return;
     for (const m of project.media) {
       const s = m.source;
-      if (!s.local || s.image || !m.hasAudio || s.peaks?.length || peaksTried.current.has(m.id)) continue;
+      if (!s.local || s.image || peaksTried.current.has(m.id)) continue;
       peaksTried.current.add(m.id);
-      // Wait briefly so the thumbnail and first video frame open without disk contention.
+      // Wait until the video is already open in the editor before running background ffprobe/ffmpeg tasks.
       window.setTimeout(() => {
-        void audioPeaks(s.url)
-          .then((peaks) => {
+        void probeLocal(s.url)
+          .then((fresh) => {
             const current = projectRef.current.media.find((x) => x.id === m.id);
-            if (peaks.length && current) api.refreshMedia(m.id, { source: { ...current.source, peaks } });
+            if (!current) return;
+            const next = {
+              ...fresh,
+              duration: current.source.duration,
+              thumbnail: current.source.thumbnail || fresh.thumbnail,
+              peaks: current.source.peaks,
+            };
+            api.refreshMedia(m.id, { source: next, hasAudio: fresh.previewHasAudio !== false });
+            prepare(m.id, next);
           })
           .catch(() => {});
-      }, 300);
+        if (m.hasAudio && !s.peaks?.length) {
+          void audioPeaks(s.url)
+            .then((peaks) => {
+              const current = projectRef.current.media.find((x) => x.id === m.id);
+              if (peaks.length && current) api.refreshMedia(m.id, { source: { ...current.source, peaks } });
+            })
+            .catch(() => {});
+        }
+      }, 1500);
     }
-  }, [project.media, api]);
+  }, [project.media, api, prepare]);
   useEffect(() => {
     for (const m of project.media) {
       const s = m.source;
       if (!s.local || s.thumbnail?.startsWith("data:") || !(m.hasVideo || s.image) || thumbTried.current.has(m.id)) continue;
       if (!inDesktopApp && (s.previewProxy || !s.previewUrl)) continue;
       thumbTried.current.add(m.id);
-      const task = inDesktopApp ? localThumbnail(s.url, Boolean(s.image)) : captureThumbnail(s.previewUrl, s.image);
-      void task
-        .then((thumbnail) => {
-          const current = projectRef.current.media.find((x) => x.id === m.id);
-          if (thumbnail && current) {
-            api.refreshMedia(m.id, {
-              source: { ...current.source, thumbnail, ...(current.source.image ? { previewUrl: thumbnail } : {}) },
-            });
-          }
-        })
-        .catch(() => {});
+      const task = (s.previewUrl ? captureThumbnail(s.previewUrl, s.image) : Promise.resolve(undefined)).then(
+        (thumb) => thumb ?? (inDesktopApp ? localThumbnail(s.url, Boolean(s.image)).catch(() => undefined) : undefined),
+      );
+      void task.then((thumbnail) => {
+        const current = projectRef.current.media.find((x) => x.id === m.id);
+        if (thumbnail && current) {
+          api.refreshMedia(m.id, {
+            source: { ...current.source, thumbnail, ...(current.source.image ? { previewUrl: thumbnail } : {}) },
+          });
+        }
+      });
     }
   }, [project.media, api]);
 

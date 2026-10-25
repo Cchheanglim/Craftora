@@ -268,6 +268,45 @@ fn frame_rate(text: &str) -> Option<f64> {
     (den > 0.0 && num > 0.0).then(|| num / den)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickLocal {
+    pub path: String,
+    pub title: String,
+    pub size_mb: f64,
+    pub kind: &'static str,
+    pub ext: String,
+}
+
+/// Authorises a local file for the preview player and returns its basic file info immediately,
+/// without waiting for ffprobe to start.
+#[tauri::command]
+pub fn allow_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: String) -> Result<QuickLocal, String> {
+    let raw = PathBuf::from(path);
+    if !raw.is_file() {
+        return Err("That file doesn't exist or isn't a file.".into());
+    }
+    let path = normalize(&raw)?;
+    let meta = std::fs::metadata(&path).map_err(|e| format!("Couldn't read the file: {e}"))?;
+    allow_preview(&app, &path)?;
+    opened.allow(path.clone());
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let kind = if ["png", "jpg", "jpeg", "jfif", "webp", "bmp", "tif", "tiff", "avif", "ico"].contains(&ext.as_str()) {
+        "image"
+    } else if ["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"].contains(&ext.as_str()) {
+        "audio"
+    } else {
+        "video"
+    };
+    Ok(QuickLocal {
+        path: path.to_string_lossy().into_owned(),
+        title: path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Untitled".into()),
+        size_mb: meta.len() as f64 / 1_000_000.0,
+        kind,
+        ext,
+    })
+}
+
 /// Reads a local file with ffprobe and describes it for the editor.
 #[tauri::command]
 pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: String) -> Result<MediaSource, String> {
