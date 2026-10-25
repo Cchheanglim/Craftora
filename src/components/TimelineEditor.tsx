@@ -115,7 +115,7 @@ export function TimelineEditor({
     return () => observer.disconnect();
   }, []);
 
-  const fit = () => setPps(Math.min(MAX_PPS, Math.max(MIN_PPS, (viewWidth - 40) / Math.max(duration, 5))));
+  const fit = () => setPps(Math.min(MAX_PPS, Math.max(MIN_PPS, (viewWidth - 40) / Math.max(duration * 1.5, 15))));
 
   // Fit the first time something lands on the timeline.
   useEffect(() => {
@@ -141,6 +141,8 @@ export function TimelineEditor({
     const rect = contentRef.current!.getBoundingClientRect();
     return Math.max(0, (clientX - rect.left) / pps);
   };
+  const getTimeAt = (clientX: number, g: Extract<Gesture, { kind: "clip" }>) =>
+    contentRef.current ? timeAt(clientX) : g.originEdge + (clientX - g.originX) / pps;
 
   /** Snaps to the playhead and to other clips' edges when within a few pixels. */
   const snap = (t: number, ignore: string) => {
@@ -200,7 +202,13 @@ export function TimelineEditor({
       const trackId = lane && fitsTrack(project, clip, lane) ? lane.id : (ghostRef.current?.trackId ?? clip.trackId);
       setGhost({ clipId: clip.id, start: Math.max(0, start), trackId });
     } else {
-      api.editLive({ type: "trimClip", clipId: clip.id, edge: g.mode, time: snap(g.originEdge + dt, clip.id) });
+      const scroller = scrollRef.current;
+      if (scroller) {
+        const r = scroller.getBoundingClientRect();
+        if (e.clientX > r.right - 36) scroller.scrollLeft += 14;
+        else if (e.clientX < r.left + 36) scroller.scrollLeft = Math.max(0, scroller.scrollLeft - 14);
+      }
+      api.editLive({ type: "trimClip", clipId: clip.id, edge: g.mode, time: snap(getTimeAt(e.clientX, g), clip.id) });
     }
   };
 
@@ -529,7 +537,16 @@ export function TimelineEditor({
                             const frac = (clip.reverse ? clip.out - ch.start : ch.start - clip.in) / Math.max(0.1, clip.out - clip.in);
                             return <span key={ch.start} className="tl__chapter" style={{ left: `${frac * 100}%` }} title={ch.title} />;
                           })}
-                        <span className="tl__trim is-start" onPointerDown={beginDrag(clip, "start")} aria-hidden="true" />
+                        <span className="tl__trim is-start" title="Drag to trim start" onPointerDown={beginDrag(clip, "start")} aria-hidden="true" />
+                        {(media?.source.thumbnail || (media?.source.image && media.source.previewUrl)) && (
+                          <img
+                            className="tl__thumb"
+                            src={media.source.thumbnail || media.source.previewUrl}
+                            alt=""
+                            draggable={false}
+                            aria-hidden="true"
+                          />
+                        )}
                         <span className="tl__label truncate">
                           {media?.missing && "Missing · "}
                           {label}
@@ -540,7 +557,7 @@ export function TimelineEditor({
                             {clip.speed !== 1 ? `${clip.speed}×` : ""}
                           </span>
                         )}
-                        <span className="tl__trim is-end" onPointerDown={beginDrag(clip, "end")} aria-hidden="true" />
+                        <span className="tl__trim is-end" title="Drag to change duration" onPointerDown={beginDrag(clip, "end")} aria-hidden="true" />
                       </div>
                     );
                   })}

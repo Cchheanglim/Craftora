@@ -84,3 +84,12 @@ test("cutting silences, splitting by chapters, and muting a track update the tim
   const plan = planExport(p, settings);
   expect(plan.kind === "render" && plan.spec.clips.every((c) => c.volume === 0)).toBe(true);
 });
+
+test("an image clip can be extended to any duration on the timeline", () => {
+  const media = mediaFromSource(source("image"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "img", mediaId: media.id, at: 0 });
+  expect(p.clips[0].out).toBe(5);
+  p = applyEdit(p, { type: "trimClip", clipId: "img", edge: "end", time: 25 });
+  expect(p.clips[0].out).toBe(25);
+});

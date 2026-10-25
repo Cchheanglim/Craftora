@@ -324,12 +324,19 @@ export default function App() {
       if (format && item.hasVideo) item.videoFormat = format;
       else if (format) item.audioFormat = format;
       api.edit({ type: "importMedia", item });
-      if (place) api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId: item.id });
+      if (place) {
+        const clipId = crypto.randomUUID();
+        api.edit({ type: "addClip", clipId, mediaId: item.id });
+        setSelectedId(clipId);
+      } else if (!leftOpen) {
+        setLeftOpen(true);
+        remember("craftora.left", true);
+      }
       prepare(item.id, source);
       setView("editor");
       return item;
     },
-    [api, prepare],
+    [api, prepare, leftOpen],
   );
 
   // Files on this PC get a picture of their first frame and their real FFmpeg audio wave.
@@ -352,7 +359,7 @@ export default function App() {
   useEffect(() => {
     for (const m of project.media) {
       const s = m.source;
-      if (!s.local || s.thumbnail || s.previewProxy || !s.previewUrl || !(m.hasVideo || s.image) || thumbTried.current.has(m.id)) continue;
+      if (!s.local || s.thumbnail?.startsWith("data:") || s.previewProxy || !s.previewUrl || !(m.hasVideo || s.image) || thumbTried.current.has(m.id)) continue;
       thumbTried.current.add(m.id);
       void captureThumbnail(s.previewUrl, s.image).then((thumbnail) => {
         const current = projectRef.current.media.find((x) => x.id === m.id);
@@ -573,7 +580,9 @@ export default function App() {
   };
 
   const addMedia = (mediaId: string) => {
-    api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId, at: playback.time });
+    const clipId = crypto.randomUUID();
+    api.edit({ type: "addClip", clipId, mediaId, at: playback.time });
+    setSelectedId(clipId);
     setView("editor");
   };
 
@@ -914,6 +923,17 @@ export default function App() {
                   track={selectedTrack}
                   media={project.media.find((m) => m.id === selected.mediaId)}
                   onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
+                  onDuration={
+                    !selected.mediaId || project.media.find((m) => m.id === selected.mediaId)?.source.image
+                      ? (seconds, live) =>
+                          (live ? api.editLive : api.edit)({
+                            type: "trimClip",
+                            clipId: selected.id,
+                            edge: "end",
+                            time: selected.start + Math.max(0.2, seconds),
+                          })
+                      : undefined
+                  }
                   onSpeed={(speed) => api.edit({ type: "setSpeed", clipId: selected.id, speed })}
                   onTransition={
                     selectedTrack.magnetic && previousOnTrack(project, selected)
