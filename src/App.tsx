@@ -12,8 +12,11 @@ import {
   onPreviewCache,
   prefetchPreview,
   onFileDrop,
+  audioPeaks,
+  detectSilences,
   openLocal,
   pickFolder,
+  saveSnapshot,
   pickMediaFiles,
   openSignIn,
   onFetchPage,
@@ -55,6 +58,7 @@ import {
   previousOnTrack,
   projectDuration,
   projectName,
+  silencesFromPeaks,
   upgradeProject,
   type MediaItem,
   type Project,
@@ -200,6 +204,7 @@ export default function App() {
   const [outputDir, setOutputDirState] = useState(DEFAULT_OUTPUT_DIR);
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
+  const [cuttingSilences, setCuttingSilences] = useState(false);
   const [rightTab, setRightTab] = useState<"edit" | "assistant">("edit");
   /** How much of each link preview is cached on disk (by cache id), 0–100. */
   const [cached, setCached] = useState<Record<string, number>>({});
@@ -327,8 +332,23 @@ export default function App() {
     [api, prepare],
   );
 
-  // Files on this PC get a picture of their first frame once their preview plays here.
+  // Files on this PC get a picture of their first frame and their real FFmpeg audio wave.
   const thumbTried = useRef(new Set<string>());
+  const peaksTried = useRef(new Set<string>());
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    for (const m of project.media) {
+      const s = m.source;
+      if (!s.local || s.image || !m.hasAudio || s.peaks?.length || peaksTried.current.has(m.id)) continue;
+      peaksTried.current.add(m.id);
+      void audioPeaks(s.url)
+        .then((peaks) => {
+          const current = projectRef.current.media.find((x) => x.id === m.id);
+          if (peaks.length && current) api.refreshMedia(m.id, { source: { ...current.source, peaks } });
+        })
+        .catch(() => {});
+    }
+  }, [project.media, api]);
   useEffect(() => {
     for (const m of project.media) {
       const s = m.source;
@@ -580,6 +600,56 @@ export default function App() {
     api.edit({ type: "duplicateClip", clipId: selectedId, newClipId });
     setSelectedId(newClipId);
   };
+  const cutSilences = async () => {
+    const clip = project.clips.find((c) => c.id === selectedId);
+    const media = clip?.mediaId ? project.media.find((m) => m.id === clip.mediaId) : undefined;
+    if (!clip || !media || !media.hasAudio || media.source.image || cuttingSilences) return;
+    setCuttingSilences(true);
+    setError(null);
+    try {
+      const ranges =
+        inDesktopApp && media.source.local
+          ? await detectSilences(media.source.url, clip.in, clip.out)
+          : silencesFromPeaks(media, clip.in, clip.out);
+      if (ranges.length === 0) {
+        setError(media.source.local || !inDesktopApp ? "No silent pauses were found in this clip." : "Download this link first (⬇ in Media) so Craftora can scan its sound for silences.");
+        return;
+      }
+      api.edit({ type: "cutSilences", clipId: clip.id, ranges });
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setCuttingSilences(false);
+    }
+  };
+  const takeSnapshot = async (bytes: Uint8Array) => {
+    setError(null);
+    try {
+      if (inDesktopApp) {
+        const path = await saveSnapshot(Array.from(bytes), projectName(project));
+        importSource(await openLocal(path), false);
+      } else {
+        const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "image/png" }));
+        importSource(
+          {
+            url,
+            title: `${projectName(project)}_snapshot`,
+            uploader: "Snapshot",
+            duration: 86400,
+            local: true,
+            previewUrl: url,
+            previewHasAudio: false,
+            image: true,
+            thumbnail: url,
+            streams: [{ id: "local:image", kind: "video", label: "Image", detail: "PNG", sizeMb: bytes.byteLength / 1_000_000 }],
+          },
+          false,
+        );
+      }
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
   const remove = () => {
     if (!selectedId) return;
     api.edit({ type: "deleteClip", clipId: selectedId });
@@ -785,6 +855,7 @@ export default function App() {
               duration={duration}
               selectedId={selectedId}
               onSelect={setSelectedId}
+              onSnapshot={takeSnapshot}
             />
             <TimelineEditor
               project={project}
@@ -795,6 +866,8 @@ export default function App() {
               onSelect={setSelectedId}
               onSplit={split}
               onDuplicate={duplicate}
+              onCutSilences={() => void cutSilences()}
+              cuttingSilences={cuttingSilences}
               onDelete={remove}
               onAddText={addText}
             />
@@ -851,6 +924,20 @@ export default function App() {
                   onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
                   onSplit={split}
                   onDuplicate={duplicate}
+                  onCutSilences={
+                    selected.mediaId && project.media.find((m) => m.id === selected.mediaId)?.hasAudio && !project.media.find((m) => m.id === selected.mediaId)?.source.image
+                      ? () => void cutSilences()
+                      : undefined
+                  }
+                  cuttingSilences={cuttingSilences}
+                  onSplitChapters={
+                    selected.mediaId &&
+                    project.media
+                      .find((m) => m.id === selected.mediaId)
+                      ?.source.chapters?.some((ch) => ch.start > selected.in + 0.2 && ch.start < selected.out - 0.2)
+                      ? () => api.edit({ type: "splitByChapters", clipId: selected.id })
+                      : undefined
+                  }
                   onDelete={remove}
                   canSplit={playback.time > selected.start && playback.time < clipEnd(selected)}
                 />

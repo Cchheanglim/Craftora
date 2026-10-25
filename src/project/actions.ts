@@ -212,12 +212,12 @@ function settle(p: Project): Project {
 function trim(clip: Clip, edge: "start" | "end", time: number, sourceLength: number | null): Clip {
   const { speed } = clip;
   if (sourceLength === null) {
-    // Text: no media behind it, so only the minimum length limits it.
+    // Text and still images: no media length behind them, so only the minimum length limits them.
     if (edge === "start") {
       const t = clamp(time, 0, clipEnd(clip) - MIN_CLIP);
-      return { ...clip, start: round(t), out: round(clip.out - (t - clip.start)) };
+      return { ...clip, start: round(t), in: 0, out: round(clipEnd(clip) - t) };
     }
-    return { ...clip, out: round(Math.max(MIN_CLIP, time - clip.start)) };
+    return { ...clip, in: 0, out: round(Math.max(MIN_CLIP, time - clip.start)) };
   }
   // Forward clips use the media from `in` to `out`; reversed ones from `out` back to `in`,
   // so the timeline's left edge is `in` for one and `out` for the other.

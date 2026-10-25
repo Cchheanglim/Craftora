@@ -9,6 +9,7 @@ import {
   SPEEDS,
   clipEnd,
   projectDuration,
+  silencesFromPeaks,
   type Position,
   type Project,
 } from "../project/model";
@@ -82,9 +83,16 @@ export function describe(p: Project, playhead: number, ids: ShortIds): string {
       ...(m.source.image ? { image: true } : { length: r2(m.source.duration) }),
       video: m.hasVideo,
       sound: m.hasAudio,
+      ...(m.source.chapters?.length ? { chapters: m.source.chapters.length } : {}),
     })),
     // Listed top to bottom: higher video tracks are drawn over lower ones.
-    tracks: p.tracks.map((t) => ({ id: ids.short(t.id, "t"), name: t.name, kind: t.kind, ...(t.magnetic ? { magnetic: true } : {}) })),
+    tracks: p.tracks.map((t) => ({
+      id: ids.short(t.id, "t"),
+      name: t.name,
+      kind: t.kind,
+      ...(t.magnetic ? { magnetic: true } : {}),
+      ...(t.muted ? { muted: true } : {}),
+    })),
     clips,
   });
 }
@@ -157,6 +165,24 @@ export const TOOLS = [
     name: "duplicate_clip",
     description: "Make a copy of a clip right after it on the same track. Returns the new clip's id.",
     parameters: { type: "object", properties: { clip_id: { type: "string" } }, required: ["clip_id"] },
+  },
+  {
+    type: "function",
+    name: "cut_silences",
+    description: "Find and remove silent pauses inside a video or audio clip, splitting it into the spoken/loud parts back to back.",
+    parameters: { type: "object", properties: { clip_id: { type: "string" } }, required: ["clip_id"] },
+  },
+  {
+    type: "function",
+    name: "split_by_chapters",
+    description: "Split a clip at each of its video chapters (e.g. YouTube chapters).",
+    parameters: { type: "object", properties: { clip_id: { type: "string" } }, required: ["clip_id"] },
+  },
+  {
+    type: "function",
+    name: "set_track_muted",
+    description: "Mute or unmute a video or audio track.",
+    parameters: { type: "object", properties: { track_id: { type: "string" }, muted: { type: "boolean" } }, required: ["track_id", "muted"] },
   },
   {
     type: "function",
@@ -312,6 +338,27 @@ export function runTool(name: string, args: Record<string, unknown>, ctx: ToolCo
       const outcome = edits([{ type: "duplicateClip", clipId: clip!.id, newClipId: id }], `Duplicated ${String(args.clip_id)}`);
       return outcome.result.ok ? { ...outcome, result: { ok: true, new_clip_id: ids.short(id, "c") } } : outcome;
     }
+    case "cut_silences": {
+      const missing = needClip();
+      if (missing) return missing;
+      const media = p.media.find((m) => m.id === clip!.mediaId);
+      if (!media || !media.hasAudio || media.source.image) return fail(p, "That clip has no sound to scan for silences.");
+      const ranges = silencesFromPeaks(media, clip!.in, clip!.out);
+      if (ranges.length === 0) return fail(p, "No silent pauses were found in that clip.");
+      return edits([{ type: "cutSilences", clipId: clip!.id, ranges }], `Cut ${ranges.length} silent pause${ranges.length === 1 ? "" : "s"} from ${String(args.clip_id)}`);
+    }
+    case "split_by_chapters": {
+      const missing = needClip();
+      if (missing) return missing;
+      return edits([{ type: "splitByChapters", clipId: clip!.id }], `Split ${String(args.clip_id)} by its chapters`);
+    }
+    case "set_track_muted": {
+      const trackId = ids.long(args.track_id);
+      if (!trackId || !p.tracks.some((t) => t.id === trackId)) return fail(p, `Unknown track id ${String(args.track_id)}.`);
+      if (typeof args.muted !== "boolean") return fail(p, "set_track_muted needs muted: true or false.");
+      const name = p.tracks.find((t) => t.id === trackId)!.name;
+      return edits([{ type: "setTrackMuted", trackId, muted: args.muted }], `${args.muted ? "Muted" : "Unmuted"} ${name}`);
+    }
     case "delete_clip":
       return needClip() ?? edits([{ type: "deleteClip", clipId: clip!.id }], `Deleted ${String(args.clip_id)}`);
     case "update_clip": {
@@ -394,6 +441,6 @@ How the timeline works:
 Rules:
 - Use only ids that appear in the timeline or in tool results.
 - Make the fewest edits that do what was asked. Don't change things the user didn't mention.
-- You can't see or hear the media, only its names and lengths. If a request needs that (for example "cut the silences" or "find the funny part"), say so and suggest what the user can tell you instead (times, or which clip).
+- You can cut silent pauses with cut_silences, split videos by chapters with split_by_chapters, and mute tracks with set_track_muted, but you can't see the picture (for example "find the funny part"): if a request needs watching the video, say so and ask which time or clip.
 - If the request is unclear or would delete a lot, ask first instead of editing.
 - Every change can be undone with Ctrl+Z; mention that only if the user seems worried.`;

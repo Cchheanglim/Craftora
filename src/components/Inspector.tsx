@@ -51,12 +51,31 @@ interface InspectorProps {
   onFormat: (format: { videoFormat?: string; audioFormat?: string }) => void;
   onSplit: () => void;
   onDuplicate: () => void;
+  onCutSilences?: () => void;
+  cuttingSilences?: boolean;
+  onSplitChapters?: () => void;
   onDelete: () => void;
   canSplit: boolean;
 }
 
 /** Settings for the selected clip. */
-export function Inspector({ clip, track, media, onChange, onSpeed, onTransition, onCheckpoint, onFormat, onSplit, onDuplicate, onDelete, canSplit }: InspectorProps) {
+export function Inspector({
+  clip,
+  track,
+  media,
+  onChange,
+  onSpeed,
+  onTransition,
+  onCheckpoint,
+  onFormat,
+  onSplit,
+  onDuplicate,
+  onCutSilences,
+  cuttingSilences,
+  onSplitChapters,
+  onDelete,
+  canSplit,
+}: InspectorProps) {
   const isText = !clip.mediaId;
   const isImage = Boolean(media?.source.image);
   const isPicture = track.kind === "video";
@@ -269,6 +288,29 @@ export function Inspector({ clip, track, media, onChange, onSpeed, onTransition,
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {(onCutSilences || onSplitChapters) && (
+        <div className="insp__pair">
+          {onCutSilences && (
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={onCutSilences}
+              disabled={cuttingSilences}
+              title="Find and remove silent pauses in this clip"
+            >
+              <Icon name="waveform" size={14} />
+              {cuttingSilences ? "Cutting silences…" : "Cut silences"}
+            </button>
+          )}
+          {onSplitChapters && (
+            <button type="button" className="btn btn--secondary" onClick={onSplitChapters} title="Split this clip at each chapter mark">
+              <Icon name="scissors" size={14} />
+              Split chapters
+            </button>
+          )}
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { TRANSITION_KINDS, clipEnd, clipLength, trackOrder, transitionLength, type Clip, type Project, type Track, type TrackKind } from "../project/model";
+import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, trackOrder, transitionLength, type Clip, type Project, type Track, type TrackKind } from "../project/model";
 import { fitsTrack, packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -52,6 +52,8 @@ interface TimelineEditorProps {
   onSelect: (id: string | null) => void;
   onSplit: () => void;
   onDuplicate: () => void;
+  onCutSilences: () => void;
+  cuttingSilences?: boolean;
   onDelete: () => void;
   onAddText: () => void;
 }
@@ -81,6 +83,8 @@ export function TimelineEditor({
   onSelect,
   onSplit,
   onDuplicate,
+  onCutSilences,
+  cuttingSilences,
   onDelete,
   onAddText,
 }: TimelineEditorProps) {
@@ -270,7 +274,9 @@ export function TimelineEditor({
   for (let t = 0; t * pps < contentWidth; t += step) ticks.push(t);
 
   const selected = project.clips.find((c) => c.id === selectedId);
+  const selectedMedia = selected?.mediaId ? project.media.find((m) => m.id === selected.mediaId) : undefined;
   const canSplit = selected && playback.time > selected.start && playback.time < clipEnd(selected);
+  const canCutSilences = Boolean(selected && selectedMedia?.hasAudio && !selectedMedia.source.image);
 
   // While a clip is being moved: it follows the pointer, and on a magnetic track the other
   // clips close up behind it and open a gap where it would land.
@@ -319,6 +325,16 @@ export function TimelineEditor({
         <button type="button" className="btn btn--ghost" title="Duplicate the selected clip (Ctrl+D)" onClick={onDuplicate} disabled={!selected}>
           <Icon name="copy" size={14} />
           Duplicate
+        </button>
+        <button
+          type="button"
+          className="btn btn--ghost"
+          title="Find and cut out silent pauses in the selected clip"
+          onClick={onCutSilences}
+          disabled={!canCutSilences || cuttingSilences}
+        >
+          <Icon name="waveform" size={14} />
+          {cuttingSilences ? "Cutting…" : "Cut silences"}
         </button>
         <button type="button" className="btn btn--ghost" title="Delete the selected clip (Delete)" onClick={onDelete} disabled={!selected}>
           <Icon name="trash" size={14} />
@@ -379,6 +395,18 @@ export function TimelineEditor({
               <div key={track.id} className={`tl__head is-${track.kind}`}>
                 <Icon name={TRACK_ICON[track.kind]} size={13} />
                 <span className="truncate">{track.name}</span>
+                {track.kind !== "text" && (
+                  <button
+                    type="button"
+                    className="tl__head-btn"
+                    aria-pressed={Boolean(track.muted)}
+                    aria-label={track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`}
+                    title={track.muted ? "Track is muted. Click to unmute." : "Mute this track"}
+                    onClick={() => api.edit({ type: "setTrackMuted", trackId: track.id, muted: !track.muted })}
+                  >
+                    <Icon name={track.muted ? "volumeOff" : "volume"} size={12} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className="tl__head-btn"
@@ -488,6 +516,19 @@ export function TimelineEditor({
                             aria-hidden="true"
                           />
                         )}
+                        {media?.hasAudio && !media.source.image && (
+                          <span className="tl__wave" aria-hidden="true">
+                            {clipPeaks(clip, media, Math.min(96, Math.max(8, Math.round((length * pps) / 5))), Boolean(track.muted)).map((h, i) => (
+                              <span key={i} style={{ height: `${h}%` }} />
+                            ))}
+                          </span>
+                        )}
+                        {media?.source.chapters
+                          ?.filter((ch) => ch.start > clip.in + 0.2 && ch.start < clip.out - 0.2)
+                          .map((ch) => {
+                            const frac = (clip.reverse ? clip.out - ch.start : ch.start - clip.in) / Math.max(0.1, clip.out - clip.in);
+                            return <span key={ch.start} className="tl__chapter" style={{ left: `${frac * 100}%` }} title={ch.title} />;
+                          })}
                         <span className="tl__trim is-start" onPointerDown={beginDrag(clip, "start")} aria-hidden="true" />
                         <span className="tl__label truncate">
                           {media?.missing && "Missing · "}
