@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { clipEnd, fadeAt, mediaTimeAt, trackOrder, transitionMix, type Clip, type Project } from "../project/model";
+import { clipEnd, fadeAt, mediaTimeAt, peaksFor, trackOrder, transitionMix, type Clip, type Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
@@ -25,6 +25,56 @@ interface PreviewProps {
   duration: number;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /** Saves a PNG snapshot of the current preview frame and imports it into Media. */
+  onSnapshot?: (bytes: Uint8Array) => Promise<void>;
+}
+
+const WAVE_BARS = 140;
+
+/** Draws the visible preview stage onto a canvas and encodes it as a PNG. */
+async function captureStagePng(stage: HTMLElement, width: number, height: number): Promise<Uint8Array | null> {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(0, 0, width, height);
+  const sr = stage.getBoundingClientRect();
+  if (!sr.width || !sr.height) return null;
+  const sx = width / sr.width;
+  const sy = height / sr.height;
+  for (const pic of stage.querySelectorAll<HTMLElement>(".preview__picture")) {
+    if (pic.style.visibility === "hidden") continue;
+    const media = pic.querySelector<HTMLVideoElement | HTMLImageElement>("video, img");
+    const crop = pic.querySelector<HTMLElement>(".preview__crop");
+    if (!media || !crop) continue;
+    const cr = crop.getBoundingClientRect();
+    const mr = media.getBoundingClientRect();
+    ctx.save();
+    ctx.globalAlpha = Number(pic.style.opacity || 1);
+    ctx.beginPath();
+    ctx.rect((cr.left - sr.left) * sx, (cr.top - sr.top) * sy, cr.width * sx, cr.height * sy);
+    ctx.clip();
+    const mx = (mr.left - sr.left) * sx;
+    const my = (mr.top - sr.top) * sy;
+    const mw = mr.width * sx;
+    const mh = mr.height * sy;
+    if (media.classList.contains("is-mirrored")) {
+      ctx.translate(mx + mw, my);
+      ctx.scale(-1, 1);
+      ctx.drawImage(media, 0, 0, mw, mh);
+    } else {
+      ctx.drawImage(media, mx, my, mw, mh);
+    }
+    ctx.restore();
+  }
+  try {
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+  } catch {
+    return null;
+  }
 }
 
 type Corner = "nw" | "ne" | "sw" | "se";
@@ -52,9 +102,10 @@ function placeAlong(offset: number, free: number): number {
 }
 
 /** Plays the timeline: every clip's media follows the playhead, stacked like the export. */
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot }: PreviewProps) {
   const [muted, setMuted] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [snapping, setSnapping] = useState(false);
   /** Preview files that failed to load (refused by their server, or unplayable). */
   const [failed, setFailed] = useState<Set<string>>(() => new Set());
   const fail = (src: string) => setFailed((all) => (all.has(src) ? all : new Set(all).add(src)));
@@ -93,6 +144,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
 
   const trackIndex = new Map(project.tracks.map((t, i) => [t.id, i]));
   const trackKind = (c: Clip) => project.tracks.find((t) => t.id === c.trackId)?.kind;
+  const trackMuted = (c: Clip) => Boolean(project.tracks.find((t) => t.id === c.trackId)?.muted);
   const mediaOf = (c: Clip) => project.media.find((m) => m.id === c.mediaId);
   const active = (c: Clip) => time >= c.start && time < clipEnd(c);
   const mediaTime = (c: Clip) => (active(c) ? mediaTimeAt(c, time) : null);
@@ -117,6 +169,63 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const nothingHere = !project.clips.some(active);
   const selected = project.clips.find((c) => c.id === selectedId);
   const editable = (c?: Clip) => Boolean(c && trackKind(c) !== "audio");
+
+  // The combined radio wave across the timeline, shown right under the video.
+  const timelineWave = useMemo(() => {
+    if (duration <= 0) return [];
+    const audible = project.clips.filter((c) => {
+      const t = project.tracks.find((tr) => tr.id === c.trackId);
+      const m = project.media.find((x) => x.id === c.mediaId);
+      return c.mediaId && t && t.kind !== "text" && !t.muted && c.volume > 0 && m?.hasAudio && !m.source.image;
+    });
+    const mediaPeaks = new Map(project.media.map((m) => [m.id, peaksFor(m)]));
+    return Array.from({ length: WAVE_BARS }, (_, i) => {
+      const t = ((i + 0.5) / WAVE_BARS) * duration;
+      let sum = 0;
+      for (const c of audible) {
+        if (t < c.start || t >= clipEnd(c)) continue;
+        const full = mediaPeaks.get(c.mediaId!);
+        const m = project.media.find((x) => x.id === c.mediaId);
+        if (!full?.length || !m) continue;
+        const mt = mediaTimeAt(c, t);
+        const idx = Math.min(full.length - 1, Math.max(0, Math.floor((mt / Math.max(0.1, m.source.duration)) * full.length)));
+        sum += full[idx] * c.volume * fadeAt(c, t);
+      }
+      return Math.max(6, Math.min(100, Math.round(sum)));
+    });
+  }, [project.clips, project.media, project.tracks, duration]);
+
+  const scrubWave = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || duration <= 0) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const seekAt = (clientX: number) => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0) playback.seek(clamp((clientX - r.left) / r.width, 0, 1) * duration);
+    };
+    playback.pause();
+    seekAt(e.clientX);
+    const move = (ev: PointerEvent) => seekAt(ev.clientX);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
+
+  const takeSnapshot = async () => {
+    if (!onSnapshot || !stageRef.current || snapping) return;
+    setSnapping(true);
+    try {
+      const bytes = await captureStagePng(stageRef.current, frame.width, frame.height);
+      if (bytes) await onSnapshot(bytes);
+    } finally {
+      setSnapping(false);
+    }
+  };
 
   // Moving and resizing follow the pointer on the window, like the timeline.
   const onPointerMove = useRef<(e: PointerEvent) => void>(() => {});
@@ -253,7 +362,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                       time={t}
                       playing={running}
                       volume={clip.volume * mix(clip).sound}
-                      muted={muted || separateSound}
+                      muted={muted || trackMuted(clip) || separateSound}
                       rate={rate}
                       reverse={clip.reverse}
                       onLoading={(on) => playback.setLoading(`${clip.id}:video`, on)}
@@ -270,7 +379,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         time={t}
                         playing={running}
                         volume={clip.volume * mix(clip).sound}
-                        muted={muted}
+                        muted={muted || trackMuted(clip)}
                         rate={rate}
                         reverse={clip.reverse}
                         onLoading={(on) => playback.setLoading(`${clip.id}:audio`, on)}
@@ -294,7 +403,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 time={mediaTime(clip)}
                 playing={running}
                 volume={clip.volume * mix(clip).sound}
-                muted={muted}
+                muted={muted || trackMuted(clip)}
                 rate={playback.speed * clip.speed}
                 reverse={clip.reverse}
                 onLoading={(on) => playback.setLoading(`${clip.id}:audio`, on)}
@@ -333,6 +442,26 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
         )}
       </div>
 
+      {timelineWave.length > 0 && (
+        <div
+          className="preview__wave"
+          role="slider"
+          aria-label="Audio wave"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(duration)}
+          aria-valuenow={Math.round(time)}
+          title="Click or drag along the audio wave to jump through the video"
+          onPointerDown={scrubWave}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {timelineWave.map((h, i) => {
+            const barTime = ((i + 0.5) / timelineWave.length) * duration;
+            const past = barTime <= time;
+            return <span key={i} className={past ? "is-past" : undefined} style={{ height: `${muted ? 8 : h}%` }} />;
+          })}
+        </div>
+      )}
+
       <div className="preview__transport" onClick={(e) => e.stopPropagation()}>
         <div className="preview__buttons">
           <button type="button" className="btn btn--icon" aria-label="Previous frame" onClick={() => playback.seek(time - FRAME)}>
@@ -360,6 +489,18 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               </option>
             ))}
           </select>
+          {onSnapshot && (
+            <button
+              type="button"
+              className="btn btn--icon"
+              aria-label="Save snapshot of current frame"
+              title="Snapshot: save this frame as a PNG and add it to Media"
+              disabled={nothingHere || snapping}
+              onClick={() => void takeSnapshot()}
+            >
+              <Icon name="camera" />
+            </button>
+          )}
           <button type="button" className="btn btn--icon" aria-label={muted ? "Unmute" : "Mute"} aria-pressed={muted} onClick={() => setMuted((m) => !m)}>
             <Icon name={muted ? "volumeOff" : "volume"} />
           </button>

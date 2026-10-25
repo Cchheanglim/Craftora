@@ -247,6 +247,9 @@ export const onJobEvent = (handler: (event: JobEvent) => void): Promise<Unlisten
 
 export const revealFile = (path: string) => revealItemInDir(path);
 export const openFile = (path: string) => invoke<void>("open_file", { path });
+export const audioPeaks = (path: string) => invoke<number[]>("audio_peaks", { path });
+export const detectSilences = (path: string, start: number, end: number) => invoke<[number, number][]>("detect_silences", { path, start, end });
+export const saveSnapshot = (bytes: number[], title: string) => invoke<string>("save_snapshot", { bytes, title });
 
 /** Makes the app window fill the screen (desktop app only). */
 export async function setWindowFullscreen(on: boolean): Promise<void> {

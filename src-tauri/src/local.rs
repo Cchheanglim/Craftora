@@ -23,6 +23,9 @@ impl OpenedFiles {
     pub fn contains(&self, path: &Path) -> bool {
         self.0.lock().unwrap().contains(path)
     }
+    pub fn allow(&self, path: PathBuf) {
+        self.0.lock().unwrap().insert(path);
+    }
 }
 
 #[derive(Deserialize)]
@@ -162,7 +165,7 @@ fn proxy_path(app: &AppHandle, path: &Path, kind: Proxy) -> Result<PathBuf, Stri
 }
 
 /// Lets the preview player read `path` through the asset protocol.
-fn allow_preview(app: &AppHandle, path: &Path) -> Result<(), String> {
+pub(crate) fn allow_preview(app: &AppHandle, path: &Path) -> Result<(), String> {
     app.asset_protocol_scope()
         .allow_file(path)
         .map_err(|e| format!("Couldn't allow the preview to read the file: {e}"))
@@ -284,6 +287,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
             preview_proxy: "",
             image: true,
             thumbnail: String::new(),
+            chapters: Vec::new(),
             streams: vec![Stream { id: "local:image".into(), kind: "video", label, detail: codec_name(image.codec_name.as_deref()), size_mb }],
             url: path_text,
         });
@@ -359,7 +363,128 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
         preview_proxy: if cached.is_some() { "" } else { kind.name() },
         image: false,
         thumbnail: String::new(),
+        chapters: Vec::new(),
         streams,
         url: path_text,
     })
+}
+
+/// Summarises signed 8-bit mono PCM samples into `bins` loudness bars (0–100).
+pub(crate) fn peaks_from_pcm(bytes: &[u8], bins: usize) -> Vec<u8> {
+    if bytes.is_empty() || bins == 0 {
+        return Vec::new();
+    }
+    let count = bins.min(bytes.len());
+    let raw: Vec<u8> = (0..count)
+        .map(|i| {
+            let a = i * bytes.len() / count;
+            let b = ((i + 1) * bytes.len() / count).max(a + 1);
+            bytes[a..b].iter().map(|&s| (s as i8).unsigned_abs()).max().unwrap_or(0)
+        })
+        .collect();
+    let peak = (*raw.iter().max().unwrap_or(&1)).max(1) as u32;
+    raw.into_iter().map(|v| ((v as u32 * 100) / peak).min(100) as u8).collect()
+}
+
+/// Reads `silence_start` / `silence_end` lines from FFmpeg's `silencedetect` filter.
+pub(crate) fn parse_silences(stderr: &str, offset: f64, max_end: f64) -> Vec<(f64, f64)> {
+    let mut out = Vec::new();
+    let mut start: Option<f64> = None;
+    for line in stderr.lines() {
+        if let Some(rest) = line.split("silence_start: ").nth(1) {
+            start = rest.split_whitespace().next().and_then(|s| s.parse::<f64>().ok()).map(|t| (offset + t).max(offset));
+        } else if let Some(rest) = line.split("silence_end: ").nth(1) {
+            if let (Some(s), Some(e)) = (
+                start.take(),
+                rest.split_whitespace().next().and_then(|s| s.parse::<f64>().ok()).map(|t| (offset + t).min(max_end)),
+            ) {
+                if e > s {
+                    out.push((s, e));
+                }
+            }
+        }
+    }
+    if let Some(s) = start {
+        if max_end - s >= 0.4 {
+            out.push((s, max_end));
+        }
+    }
+    out
+}
+
+/// Reads ~240 loudness bars (0–100) across an opened file's audio for the radio wave.
+#[tauri::command]
+pub async fn audio_peaks(app: AppHandle, opened: State<'_, OpenedFiles>, path: String) -> Result<Vec<u8>, String> {
+    let path = normalize(Path::new(&path))?;
+    if !opened.contains(&path) {
+        return Err("Open the file first.".into());
+    }
+    let input = path.to_string_lossy();
+    let output = run_to_end(
+        &app,
+        FFMPEG,
+        &["-hide_banner", "-v", "error", "-i", &input, "-vn", "-ac", "1", "-ar", "400", "-f", "s8", "pipe:1"],
+    )
+    .await?;
+    Ok(peaks_from_pcm(&output.stdout, 240))
+}
+
+/// Finds silent stretches `[start, end]` (in media seconds) inside `[start, end]` of an opened file.
+#[tauri::command]
+pub async fn detect_silences(
+    app: AppHandle,
+    opened: State<'_, OpenedFiles>,
+    path: String,
+    start: f64,
+    end: f64,
+) -> Result<Vec<(f64, f64)>, String> {
+    let path = normalize(Path::new(&path))?;
+    if !opened.contains(&path) {
+        return Err("Open the file first.".into());
+    }
+    let s = start.max(0.0);
+    let e = end.max(s + 0.2);
+    let ss = format!("{s:.3}");
+    let to = format!("{e:.3}");
+    let input = path.to_string_lossy();
+    let output = run_to_end(
+        &app,
+        FFMPEG,
+        &[
+            "-hide_banner",
+            "-nostats",
+            "-ss",
+            &ss,
+            "-to",
+            &to,
+            "-i",
+            &input,
+            "-vn",
+            "-af",
+            "aresample=first_pts=0,silencedetect=n=-35dB:d=0.4",
+            "-f",
+            "null",
+            "-",
+        ],
+    )
+    .await?;
+    Ok(parse_silences(&String::from_utf8_lossy(&output.stderr), s, e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_silences, peaks_from_pcm};
+
+    #[test]
+    fn summarises_pcm_into_normalised_peaks() {
+        let pcm = [0u8, 10, 20, 40, 256u16.wrapping_sub(80) as u8, 0, 0, 0];
+        let peaks = peaks_from_pcm(&pcm, 2);
+        assert_eq!(peaks, vec![50, 100]);
+    }
+
+    #[test]
+    fn parses_ffmpeg_silencedetect_lines() {
+        let log = "[silencedetect @ 00] silence_start: 1.25\n[silencedetect @ 00] silence_end: 2.75 | silence_duration: 1.50\n[silencedetect @ 00] silence_start: 4.00\n";
+        assert_eq!(parse_silences(log, 10.0, 15.0), vec![(11.25, 12.75), (14.0, 15.0)]);
+    }
 }

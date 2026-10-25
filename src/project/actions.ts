@@ -43,6 +43,8 @@ export type EditAction =
   | { type: "trimClip"; clipId: string; edge: "start" | "end"; time: number }
   | { type: "splitClip"; clipId: string; newClipId: string; at: number }
   | { type: "duplicateClip"; clipId: string; newClipId: string }
+  | { type: "cutSilences"; clipId: string; ranges: [number, number][] }
+  | { type: "splitByChapters"; clipId: string }
   | { type: "deleteClip"; clipId: string }
   | { type: "updateClip"; clipId: string; patch: ClipPatch }
   /** 0.25–4; the clip gets shorter or longer on the timeline. */
@@ -55,6 +57,8 @@ export type EditAction =
   | { type: "removeTrack"; trackId: string }
   /** Magnet on: the track's clips close up and stay back to back. */
   | { type: "setMagnetic"; trackId: string; magnetic: boolean }
+  /** Silences or restores a track's clips in both the preview and the export. */
+  | { type: "setTrackMuted"; trackId: string; muted: boolean }
   /** Tidies up after a drag: no overlapping clips on a track, magnetic tracks packed. */
   | { type: "settle" };
 
@@ -347,6 +351,72 @@ export function applyEdit(p: Project, action: EditAction): Project {
       return settle({ ...p, clips: p.clips.flatMap((c) => (c.id === clip.id ? [c, next] : [c])) });
     }
 
+    case "cutSilences": {
+      const clip = p.clips.find((c) => c.id === action.clipId);
+      if (!clip || isStill(p, clip) || action.ranges.length === 0) return p;
+      const minMedia = MIN_CLIP * clip.speed;
+      const sorted = action.ranges
+        .map(([s, e]): [number, number] => [Math.max(clip.in, s + 0.04), Math.min(clip.out, e - 0.04)])
+        .filter(([s, e]) => e - s >= 0.25)
+        .sort((a, b) => a[0] - b[0]);
+      if (sorted.length === 0) return p;
+      const kept: [number, number][] = [];
+      let cursor = clip.in;
+      for (const [s, e] of sorted) {
+        if (s > cursor && s - cursor >= minMedia) kept.push([round(cursor), round(s)]);
+        cursor = Math.max(cursor, e);
+      }
+      if (clip.out - cursor >= minMedia) kept.push([round(cursor), round(clip.out)]);
+      if (kept.length === 0 || (kept.length === 1 && kept[0][0] === clip.in && kept[0][1] === clip.out)) return p;
+      const ordered = clip.reverse ? [...kept].reverse() : kept;
+      let t = clip.start;
+      const pieces: Clip[] = ordered.map(([segIn, segOut], i) => {
+        const piece = fitFades({
+          ...clip,
+          id: i === 0 ? clip.id : `${clip.id}-cut-${i}-${Math.round(segIn * 100)}`,
+          start: round(t),
+          in: segIn,
+          out: segOut,
+          fadeIn: i === 0 ? clip.fadeIn : 0,
+          fadeOut: i === ordered.length - 1 ? clip.fadeOut : 0,
+          transition: i === 0 ? clip.transition : undefined,
+        });
+        t += clipLength(piece);
+        return piece;
+      });
+      return settle({ ...p, clips: p.clips.flatMap((c) => (c.id === clip.id ? pieces : [c])) });
+    }
+
+    case "splitByChapters": {
+      const clip = p.clips.find((c) => c.id === action.clipId);
+      const media = clip ? p.media.find((m) => m.id === clip.mediaId) : undefined;
+      if (!clip || !media?.source.chapters?.length || isStill(p, clip)) return p;
+      const minMedia = MIN_CLIP * clip.speed;
+      const cuts = [...new Set(media.source.chapters.map((ch) => round(ch.start)))]
+        .filter((t) => t > clip.in + minMedia && t < clip.out - minMedia)
+        .sort((a, b) => a - b);
+      if (cuts.length === 0) return p;
+      const points = [clip.in, ...cuts, clip.out];
+      const ranges = points.slice(0, -1).map((s, i): [number, number] => [s, points[i + 1]]);
+      const ordered = clip.reverse ? [...ranges].reverse() : ranges;
+      let t = clip.start;
+      const pieces: Clip[] = ordered.map(([segIn, segOut], i) => {
+        const piece = fitFades({
+          ...clip,
+          id: i === 0 ? clip.id : `${clip.id}-ch-${i}`,
+          start: round(t),
+          in: segIn,
+          out: segOut,
+          fadeIn: i === 0 ? clip.fadeIn : 0,
+          fadeOut: i === ordered.length - 1 ? clip.fadeOut : 0,
+          transition: i === 0 ? clip.transition : undefined,
+        });
+        t += clipLength(piece);
+        return piece;
+      });
+      return settle({ ...p, clips: p.clips.flatMap((c) => (c.id === clip.id ? pieces : [c])) });
+    }
+
     case "deleteClip":
       return packMagnetic({ ...p, clips: p.clips.filter((c) => c.id !== action.clipId) });
 
@@ -395,6 +465,10 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const clips = action.magnetic ? p.clips : p.clips.map((c) => (c.trackId === track.id ? { ...c, transition: undefined } : c));
       return packMagnetic({ ...p, tracks, clips });
     }
+
+    case "setTrackMuted":
+      if (!p.tracks.some((t) => t.id === action.trackId && t.kind !== "text")) return p;
+      return { ...p, tracks: p.tracks.map((t) => (t.id === action.trackId ? { ...t, muted: action.muted || undefined } : t)) };
 
     case "settle":
       return settle(p);

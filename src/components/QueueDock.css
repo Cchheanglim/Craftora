@@ -39,7 +39,8 @@
 .queue__actions {
   margin-left: auto;
   display: flex;
-  gap: 2px;
+  align-items: center;
+  gap: 4px;
 }
 
 .queue__actions svg {
@@ -69,7 +70,7 @@
 
 .queue__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(200px, 260px) 64px 72px;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 260px) 64px 108px;
   gap: var(--space-4);
   align-items: center;
   height: 44px;
@@ -210,6 +211,12 @@
 
 .queue__row-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 2px;
+  gap: 4px;
+}
+
+.queue__row-actions .btn--icon {
+  width: 30px;
+  height: 30px;
 }

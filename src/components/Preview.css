@@ -144,6 +144,35 @@
   color: var(--text-3);
 }
 
+/* The radio wave under the video: shows the timeline's sound and scrubs on click/drag. */
+.preview__wave {
+  height: 24px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(1px, 1fr);
+  align-items: center;
+  gap: 2px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+.preview__wave > span {
+  min-height: 2px;
+  border-radius: 1px;
+  background: rgb(255 255 255 / 0.22);
+  transition: height 80ms linear, background-color 80ms linear;
+  pointer-events: none;
+}
+
+.preview__wave > span.is-past {
+  background: var(--accent);
+}
+
 .preview__transport {
   display: flex;
   align-items: center;

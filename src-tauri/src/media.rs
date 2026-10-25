@@ -8,6 +8,16 @@ use tauri::AppHandle;
 use crate::engine::{last_error, run_to_end, YT_DLP};
 
 /// The subset of `yt-dlp --dump-single-json` that Craftora uses.
+#[derive(Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Chapter {
+    pub title: String,
+    #[serde(alias = "start_time")]
+    pub start: f64,
+    #[serde(alias = "end_time")]
+    pub end: f64,
+}
+
 #[derive(Deserialize)]
 struct Info {
     title: Option<String>,
@@ -16,6 +26,8 @@ struct Info {
     duration: Option<f64>,
     is_live: Option<bool>,
     thumbnail: Option<String>,
+    #[serde(default)]
+    chapters: Vec<Chapter>,
     #[serde(default)]
     formats: Vec<Format>,
 }
@@ -106,6 +118,8 @@ pub struct MediaSource {
     /// Links: the site's picture for the video; empty when there is none.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub(crate) thumbnail: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) chapters: Vec<Chapter>,
     pub(crate) streams: Vec<Stream>,
 }
 
@@ -395,6 +409,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         preview_proxy: "",
         image: false,
         thumbnail: info.thumbnail.unwrap_or_default(),
+        chapters: info.chapters.into_iter().filter(|c| c.end > c.start && c.start >= 0.0).collect(),
         streams,
     })
 }
