@@ -165,4 +165,6 @@ export interface Job {
   thumbnail?: string;
   finishedAt?: number;
   error?: string;
+  /** Hidden by the user from Exports' main list and Home's recent exports; the file stays. */
+  hidden?: boolean;
 }
