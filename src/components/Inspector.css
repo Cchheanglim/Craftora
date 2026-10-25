@@ -82,9 +82,29 @@
 /* A range with its label on the left and its value on the right. */
 .insp__slider {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) 48px;
+  grid-template-columns: 56px minmax(0, 1fr) 58px;
   align-items: center;
   gap: var(--space-2);
+}
+
+.insp__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.insp__num input {
+  width: 44px;
+  padding: 2px 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--text);
+  font: inherit;
+  text-align: right;
 }
 
 .insp__slider > label {

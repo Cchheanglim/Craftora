@@ -44,6 +44,8 @@ interface InspectorProps {
   media?: MediaItem;
   /** Applies a change; `live` skips the undo step (use after `checkpoint`). */
   onChange: (patch: ClipPatch, live?: boolean) => void;
+  /** Still images and text: sets how many seconds the clip stays on screen. */
+  onDuration?: (seconds: number, live?: boolean) => void;
   onSpeed: (speed: number) => void;
   /** Video 1 clips after the first: set the transition into this clip (`live` as in onChange). */
   onTransition?: (transition: Transition | null, live?: boolean) => void;
@@ -64,6 +66,7 @@ export function Inspector({
   track,
   media,
   onChange,
+  onDuration,
   onSpeed,
   onTransition,
   onCheckpoint,
@@ -103,6 +106,38 @@ export function Inspector({
           <Icon name="alert" size={13} />
           This file can't be found. Put it back where it was, or remove the clip.
         </p>
+      )}
+
+      {onDuration && (
+        <div className="insp__slider">
+          <label htmlFor="insp-duration">Duration</label>
+          <input
+            id="insp-duration"
+            type="range"
+            min={0.5}
+            max={Math.max(30, Math.ceil(length))}
+            step={0.5}
+            value={length}
+            onPointerDown={onCheckpoint}
+            onKeyDown={onCheckpoint}
+            onChange={(e) => onDuration(Number(e.target.value), true)}
+          />
+          <label className="insp__num mono" aria-label="Duration in seconds">
+            <input
+              type="number"
+              min={0.2}
+              max={3600}
+              step={0.5}
+              value={Math.round(length * 10) / 10}
+              onFocus={onCheckpoint}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (Number.isFinite(v) && v >= 0.2) onDuration(v, true);
+              }}
+            />
+            <span>s</span>
+          </label>
+        </div>
       )}
 
       {isText && (

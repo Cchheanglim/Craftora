@@ -336,13 +336,37 @@
   background: linear-gradient(to left, rgb(0 0 0 / 0.55), transparent);
 }
 
-.tl__trim {
+.tl__thumb {
   position: relative;
   z-index: 1;
+  width: 24px;
+  height: 22px;
+  margin-left: 8px;
+  border-radius: 3px;
+  object-fit: cover;
   flex-shrink: 0;
-  align-self: stretch;
-  width: 7px;
+  pointer-events: none;
+}
+
+.tl__trim {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 8px;
   cursor: ew-resize;
+}
+
+.tl__trim.is-start {
+  left: 0;
+}
+
+.tl__trim.is-end {
+  right: 0;
+}
+
+.tl__clip:hover .tl__trim {
+  background: rgb(255 255 255 / 0.35);
 }
 
 .tl__clip.is-selected .tl__trim {
