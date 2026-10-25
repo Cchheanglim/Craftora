@@ -1,6 +1,6 @@
 # Handoff: where Craftora stands
 
-Updated 2026-10-22 for a fresh Claude Code session. Read this first, then `README.md`
+Updated 2026-10-25 for a fresh session. Read this first, then `README.md`
 (features, setup), `CHANGELOG.md` (what each version added), `RELEASING.md` (how to ship) and,
 for UI work, `PRODUCT.md` and `DESIGN.md`.
 
@@ -32,19 +32,17 @@ for UI work, `PRODUCT.md` and `DESIGN.md`.
   **After `bun add`, their running dev server answers 504 "Outdated Optimize Dep" for the new
   package and the app window goes blank: tell them to restart `bun tauri dev`.**
 
-## Status (2026-10-22)
+## Status (2026-10-25)
 
-- **v0.3.0 is prepared, not released:** version bumped in `package.json`,
+- **v0.3.1 is prepared, not released:** version bumped in `package.json`,
   `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `Cargo.lock`; `CHANGELOG.md`,
-  `README.md`, `PRIVACY.md` (sign-in window, pictures, Update yt-dlp, IP) and
-  `THIRD_PARTY_NOTICES.md` (hls.js, Apache-2.0) updated. A production `vite build` was checked:
-  no test or private links ship; demo data (three archive.org Blender films) is only used by the
-  browser preview (`inDesktopApp` gates every use in `App.tsx`). Next: the owner commits, merges,
-  tags `v0.3.0`, and **publishes the workflow's draft** (see Releasing). Not yet done: a full
-  release build and test install with the new yt-dlp folder and hls.js.
-- **GitHub releases:** v0.1.0 and v0.2.0 are published. The first v0.2.0 release was made by hand
-  with no files; the owner was told to delete it and publish the build's draft instead. A stray
-  tag **v1.0.0** points at an old commit; suggest deleting it. Not confirmed either was done.
+  `README.md` and `PRIVACY.md` updated. Next: the owner commits, merges into `main`, tags
+  `v0.3.1`, pushes the tag, and **publishes the workflow's draft** (see Releasing). Make sure
+  the `VIRUSTOTAL_API_KEY` secret is set in GitHub Actions secrets so the release includes the
+  VirusTotal link safety check.
+- **GitHub releases:** v0.1.0, v0.2.0 and v0.3.0 are published with all assets (`setup.exe`,
+  `.sig`, `latest.json`, FFmpeg source). A stray local tag `v1.0.0` exists only on the owner's PC
+  (not on GitHub).
 - **Microsoft Store:** 0.1.0 (MSIX) was submitted on 2026-10-15. Identity `Cchheanglim.Craftora`
   (`src-tauri/msix/store-identity.json`). `scripts/make-msix.ps1` now copies the `yt-dlp` folder
   (untested). Risk: Store policy 11.2 (copyright complaints about downloading).
@@ -52,7 +50,22 @@ for UI work, `PRODUCT.md` and `DESIGN.md`.
 - **Open questions:** "two videos together play no sound" was never reproduced (may have been the
   old 8 s give-up in the clock); DASH (`.mpd`) links fail ("no known length") and can't preview.
 
-### Done on 2026-10-21/22 (all committed except the release prep)
+### Done on 2026-10-22..25 (v0.3.1)
+- **VirusTotal link check** (`virustotal.rs`, `Home.tsx`): "Is this link safe?" under Home →
+  Links checks the domain reputation via VirusTotal (`CRAFTORA_VT_KEY` at build time from `.env`
+  or GitHub secret `VIRUSTOTAL_API_KEY`).
+- **Fill the frame & export presets**: `Clip.fill` covers the frame (`force_original_aspect_ratio=increase`);
+  Export panel has "Made for" presets (YouTube 16:9, TikTok/Reels/Shorts 9:16, Instagram 1:1).
+- **Library & hiding exports** (`Library.tsx`, `App.tsx`): change output folder from Library,
+  foldable "Exported files" list, and per-file **Hide / Unhide** (`Job.hidden`) that hides an
+  export from the main list and from Home's Recent exports into a folded **Hidden** section.
+- **Welcome guide** (`WelcomeDialog.tsx`): animated first-launch modal dialog (`craftora.welcomed`).
+- **Right-click text menu** (`TextMenu.tsx`, `tauri-plugin-clipboard-manager`): Cut/Copy/Paste/Select all
+  on text inputs; browser context menu and reload/print shortcuts disabled.
+- **Thumbnails kept on disk** (`fetch_thumbnail` in `media.rs`, `keptThumbnail` in `engine.ts`):
+  fetched once with Referer and stored as a small data URL.
+
+### Done on 2026-10-21/22 (v0.3.0)
 - **Fetching:** a fetched link goes straight onto the timeline (the edit-or-download window was
   removed); if nothing previews (`previewUrl` empty) it also downloads. Fetch **History** in the
   sidebar (localStorage `craftora.fetchHistory`), thumbnails everywhere (`Thumb`,
@@ -111,7 +124,7 @@ folder, resource) and FFmpeg/FFprobe (GPL build from BtbN, sidecars).
   cancel export, clear history, sign out of all, AI key), `Home` (projects, recent exports,
   Links: sign-in, "Is this link safe?", Update yt-dlp; About; Recent exports can be hidden),
   `QueueDock`, `Sidebar` (media, History),
-  `Thumb`, `Toolbar` (link box, Fetch, error action button).
+  `Thumb`, `Toolbar` (link box, Fetch, error action button), `TextMenu`, `WelcomeDialog`, `Library`.
 - `assistant/`: Gemini editing assistant (`tools.ts`, `conversation.ts`, `reliable.ts`,
   `useAssistant.ts`).
 - `lib/engine.ts` (Rust bridge; `fetchMedia` turns previews into cache, relay or direct URLs),

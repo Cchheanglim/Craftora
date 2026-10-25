@@ -91,7 +91,8 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
 **Shape each clip** (select it; settings are on the right)
 - Move and resize any video or text **directly on the preview**: drag to move, drag a corner
   to resize.
-- Crop, mirror, reverse, change speed (0.25× to 4×), fade in and out, and set the volume.
+- Crop, mirror, reverse, **fill the frame** (cutting off the edges instead of showing black
+  bars), change speed (0.25× to 4×), fade in and out, and set the volume.
 - **Transitions** between clips on a magnetic track: crossfade or dip to black.
 - Text: words, size, colour and place.
 
@@ -101,7 +102,8 @@ uses Google's Gemini with your own API key; see [The AI assistant](#the-ai-assis
 
 **Export**
 - MP4 or MKV video, or audio only (MP3, WAV, FLAC), in 16:9, 9:16 (Shorts and Reels), 1:1
-  or 4:3.
+  or 4:3. **Made for** gives one-click presets for YouTube, TikTok · Reels · Shorts and
+  Instagram (upright and square ones make every picture fill the frame).
 - **Fast** export uses your graphics card (NVIDIA, Intel or AMD) when the PC has one, which is
   several times quicker; **Best quality** uses the processor for smaller files.
 - Exports run in a queue at the bottom while you keep editing. Choose the save folder next
@@ -113,7 +115,9 @@ uses Google's Gemini with your own API key; see [The AI assistant](#the-ai-assis
 
 **Your work is kept**
 - Projects save themselves as you edit. Open, start or delete them on the Home screen.
-- Finished exports are listed under **Exports**, even after you restart.
+- Finished exports are listed under **Exports**, even after you restart. Any export can be
+  hidden from the list and from Home (**Hide**, kept under **Hidden** until you click
+  **Unhide**; the file stays in your save folder).
 
 ### How export works
 
