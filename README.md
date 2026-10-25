@@ -68,9 +68,9 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
   in, then click **Fetch this video**. The login is remembered and only used for that website.
   Pages yt-dlp doesn't know ("Unsupported URL") work the same way: open the page, play the
   video, click **Fetch this video**.
-- **Not sure a link is safe?** Paste it into the check box under Home → Links: Craftora asks
-  [VirusTotal](https://www.virustotal.com) whether security vendors flag its website (only the
-  website's name is sent, never the full link).
+- **Not sure a link is safe?** Click **Check** next to the top link box, or paste it under Home →
+  Links: Craftora asks [VirusTotal](https://www.virustotal.com) whether security vendors flag its
+  website (only the website's name is sent, never the full link).
 - Link previews are cached on your PC as they play: jumping back to any part already fetched
   is instant. Stream playlists (HLS) preview too, including from sites that only serve their
   own pages.
@@ -84,8 +84,9 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
 - The **magnet** on a track's header keeps its clips back to back (no gaps) and allows
   transitions; turn it off to place clips anywhere. Video 1 starts with it on.
 - Drag media from the sidebar onto any track. A video on an audio track uses just its sound.
-- Drag clips to move them and their edges to trim. Split at the playhead (`S`), delete, and
-  undo or redo anything (`Ctrl+Z` / `Ctrl+Y`). Edges snap to the playhead and to other clips.
+- Drag clips to move them and their edges to trim. Split at the playhead (`S`), duplicate
+  (`Ctrl+D`), delete, and undo or redo anything (`Ctrl+Z` / `Ctrl+Y`). Edges snap to the playhead
+  and to other clips.
 - Drag the red playhead, or anywhere on the ruler, to move through the video.
 
 **Shape each clip** (select it; settings are on the right)
@@ -153,6 +154,7 @@ Google. The assistant can't watch or listen to your media, so it can't find sile
 |---|---|
 | `Space` | Play / pause |
 | `S` | Split at the playhead |
+| `Ctrl+D` | Duplicate the selected clip |
 | `Delete` | Delete the selected clip |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `I` / `O` | Trim the selected clip's start / end to the playhead |

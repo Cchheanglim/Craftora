@@ -685,6 +685,7 @@ export default function App() {
               }
             : undefined
         }
+        canCheckSite={inDesktopApp && siteChecks}
         onImport={inDesktopApp ? () => void importFiles() : undefined}
         inputRef={urlRef}
         leftOpen={leftOpen}
