@@ -3,7 +3,7 @@ import type { Job } from "../types";
 import type { Queue } from "../state/useQueue";
 import { formatSize } from "../project/exportPlan";
 import { formatClock } from "../lib/timecode";
-import { openFile, revealFile } from "../lib/engine";
+import { openFile, revealFile, stopRecording } from "../lib/engine";
 import { Icon } from "./Icon";
 import { useConfirm } from "./ConfirmDialog";
 import "./QueueDock.css";
@@ -150,6 +150,11 @@ function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolea
             <Icon name="check" size={14} />
             Finished <span>· {job.finishedAt ? ago(job.finishedAt) : ""}</span>
           </span>
+        ) : job.record && job.status === "downloading" ? (
+          // Stop keeps everything recorded so far, so it needs no "are you sure?".
+          <button type="button" className="btn btn--icon" aria-label={`Stop recording ${job.title}`} title="Stop recording" onClick={() => void stopRecording(job.id)}>
+            <Icon name="stop" size={14} />
+          </button>
         ) : failed ? (
           <span className="queue__failed" title={job.error}>
             <Icon name="alert" size={14} />
@@ -265,6 +270,7 @@ function statusText(job: Job): string {
         return `Downloading · ${mb(job.downloadedBytes)}${of}${speed}`;
       }
       if (job.spec) return "Downloading…";
+      if (job.record) return "Recording live";
       return `Downloading · ${formatSize((job.sizeMb * (job.progress ?? 0)) / 100)} of ${formatSize(job.sizeMb)}`;
     }
     case "encoding":
