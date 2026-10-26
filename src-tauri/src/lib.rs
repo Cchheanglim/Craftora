@@ -2,6 +2,7 @@ mod assistant;
 mod encoders;
 mod engine;
 mod jobs;
+mod live;
 mod local;
 mod media_cache;
 mod media;
@@ -22,6 +23,7 @@ pub fn run() {
         .manage(jobs::Jobs::default())
         .manage(local::OpenedFiles::default())
         .manage(media_cache::MediaCache::default())
+        .manage(live::Recordings::default())
         // Link previews play through a disk cache, so scrubbing what's fetched is instant.
         .register_asynchronous_uri_scheme_protocol("cmedia", |ctx, request, responder| {
             // Only Craftora's own window. Every window gets every custom scheme, and a website in
@@ -56,6 +58,8 @@ pub fn run() {
             engine::engine_status,
             engine::update_yt_dlp,
             media::fetch_media,
+            live::record_live,
+            live::stop_recording,
             local::allow_local,
             local::open_local,
             local::make_preview,

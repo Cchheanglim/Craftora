@@ -340,6 +340,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
             thumbnail: String::new(),
             chapters: Vec::new(),
             streams: vec![Stream { id: "local:image".into(), kind: "video", label, detail: codec_name(image.codec_name.as_deref()), size_mb }],
+            live: false,
             url: path_text,
         });
     }
@@ -416,6 +417,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
         thumbnail: String::new(),
         chapters: Vec::new(),
         streams,
+        live: false,
         url: path_text,
     })
 }
