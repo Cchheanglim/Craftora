@@ -3,8 +3,10 @@
 //! store, and reach yt-dlp as a temporary cookie file. (Borrowing a browser's logins needed that
 //! browser closed, and a user-picked cookie file confused people; both were removed.)
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use tauri::webview::Cookie;
 use serde::{Deserialize, Serialize};
@@ -19,20 +21,82 @@ const FETCH_ITEM: &str = "fetch-page";
 /// mark rides along in the link through projects, exports and downloads; yt-dlp never sees it.
 pub(crate) const REFERER_MARK: &str = "#craftora-referer=";
 
+/// Runs in every page and every embedded frame of the sign-in window from the moment it opens
+/// (on Windows every frame gets it), so no stream is missed. It notes each stream playlist and
+/// video file loaded (playlists whose address doesn't say so by their type or first line,
+/// `#EXTM3U`), and each video that starts playing and how: a file, the site's own stream player,
+/// or a direct live connection (WebRTC), which has no address to fetch. The browser's own list keeps only the first 250 things a page loads (a shop's pictures can fill
+/// it) and never shows what a player in an embedded frame does, so frames pass all this to the page.
+const WATCH_MEDIA: &str = r#"(() => {
+  if (window.__craftoraMedia) return;
+  const seen = (window.__craftoraMedia = []);
+  const playing = (window.__craftoraPlaying = []);
+  const tell = (data) => { if (window.top !== window) try { window.top.postMessage(data, "*"); } catch {} };
+  const MEDIA_URL = /\.(m3u8|mpd|mp4|webm|m4v|mov)(\?|$)/i;
+  const PLAYLIST_TYPE = /mpegurl|dash\+xml/i;
+  const isPlaylist = (type, start) => PLAYLIST_TYPE.test(type) || /^\s*(#EXTM3U|(<\?xml[^>]*>\s*)?<MPD)/.test(start);
+  const keep = (u, sure) => {
+    if (typeof u !== "string" || !/^https?:/.test(u) || !(sure || MEDIA_URL.test(u)) || seen.includes(u) || seen.length >= 100) return;
+    seen.push(u);
+    tell({ craftoraMedia: u });
+  };
+  const note = (what) => {
+    if (playing.includes(what) || playing.length >= 10) return;
+    playing.push(what);
+    tell({ craftoraPlaying: what });
+  };
+  window.addEventListener("message", (e) => {
+    keep(e.data?.craftoraMedia, true);
+    if (typeof e.data?.craftoraPlaying === "string") note(e.data.craftoraPlaying);
+  });
+  document.addEventListener("playing", (e) => {
+    const v = e.target;
+    const how = v.srcObject ? "webrtc" : /^blob:/.test(v.currentSrc) ? "player" : "file";
+    note(how + (window.top === window ? "" : " in a frame from " + location.hostname));
+  }, true);
+  const fetch0 = window.fetch;
+  if (fetch0) window.fetch = function (...args) {
+    const answer = fetch0.apply(this, args);
+    answer.then((r) => {
+      const type = r.headers.get("content-type") || "";
+      if (PLAYLIST_TYPE.test(type)) keep(r.url, true);
+      else if (!MEDIA_URL.test(r.url) && /^(text\/plain|application\/octet-stream|)(;|$)/i.test(type))
+        r.clone().text().then((t) => isPlaylist(type, t.slice(0, 80)) && keep(r.url, true), () => {});
+    }, () => {});
+    return answer;
+  };
+  const send0 = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function (...args) {
+    this.addEventListener("load", () => {
+      try {
+        const start = this.responseType === "" || this.responseType === "text" ? this.responseText.slice(0, 80) : "";
+        if (isPlaylist(this.getResponseHeader("content-type") || "", start)) keep(this.responseURL, true);
+      } catch {}
+    });
+    return send0.apply(this, args);
+  };
+  try { performance.setResourceTimingBufferSize(100000); } catch {}
+  try { new PerformanceObserver((list) => list.getEntries().forEach((e) => keep(e.name))).observe({ type: "resource", buffered: true }); } catch {}
+})()"#;
+
 /// Run in the sign-in window by "Fetch this video": what the page plays, best guesses first.
-/// Video elements' files, then streaming manifests and video files the page loaded, then
-/// embedded players (their pages are often ones yt-dlp knows).
+/// Video elements' files, then streaming manifests and video files the page (or a frame in it)
+/// loaded, then embedded players (their pages are often ones yt-dlp knows). `playing` says how
+/// videos were seen playing, for the message when nothing can be fetched.
 const FIND_MEDIA: &str = r#"(() => {
   const media = [];
   const add = (u) => { if (u && /^https?:/.test(u) && !media.includes(u)) media.push(u); };
   document.querySelectorAll("video, audio, video source, audio source").forEach((e) => add(e.currentSrc || e.src));
-  const loaded = performance.getEntriesByType("resource").map((e) => e.name);
-  loaded.filter((u) => /\.(m3u8|mpd)(\?|$)/i.test(u)).forEach(add);
+  const watched = window.__craftoraMedia || [];
+  const loaded = [...watched, ...performance.getEntriesByType("resource").map((e) => e.name)];
+  loaded.filter((u) => /\.(m3u8|mpd)(\?|$)/i.test(u) || (watched.includes(u) && !/\.(mp4|webm|m4v|mov)(\?|$)/i.test(u))).forEach(add);
   loaded.filter((u) => /\.(mp4|webm|m4v|mov)(\?|$)/i.test(u)).forEach(add);
   document.querySelectorAll("iframe[src]").forEach((e) => add(e.src));
   const meta = (name) => document.querySelector(`meta[property="${name}"], meta[name="${name}"]`)?.content;
   const image = meta("og:image") || meta("twitter:image") || document.querySelector("video[poster]")?.poster || "";
-  return { title: document.title, image: /^https?:/.test(image) ? image : "", media: media.slice(0, 5) };
+  const playing = [...(window.__craftoraPlaying || [])];
+  if ([...document.querySelectorAll("video")].some((v) => v.srcObject)) playing.push("webrtc");
+  return { title: document.title, image: /^https?:/.test(image) ? image : "", media: media.slice(0, 5), playing, agent: navigator.userAgent };
 })()"#;
 
 /// What "Fetch this video" sends to the main window.
@@ -48,6 +112,13 @@ struct FoundPage {
     image: String,
     #[serde(default)]
     media: Vec<String>,
+    /// How videos were seen playing: "file", "player" (the site's stream player) or "webrtc" (no
+    /// address), each maybe followed by " in a frame from <host>".
+    #[serde(default)]
+    playing: Vec<String>,
+    /// The window's browser name, kept for posing as it (`BROWSER_AGENT`); not sent on.
+    #[serde(default, skip_serializing)]
+    agent: String,
 }
 
 /// yt-dlp arguments that reach a link: the user's logins, the page it was found on (when it was
@@ -58,8 +129,37 @@ pub(crate) async fn link_args(app: &AppHandle, link: &str) -> (Vec<String>, Opti
     if let Some(page) = referer {
         args.extend(["--referer".into(), page.into()]);
     }
+    if bot_checked(url) {
+        // Look like the browser that passed the site's check: its kind of connection, and its
+        // name, which the check's cookie (in the cookie file) belongs to.
+        args.extend(["--impersonate".into(), "chrome".into()]);
+        let agent = BROWSER_AGENT.lock().unwrap().clone();
+        if !agent.is_empty() {
+            args.extend(["--user-agent".into(), agent]);
+        }
+    }
     args.extend(["--".into(), url.into()]);
     (args, file)
+}
+
+/// Sites whose bot check (Cloudflare's) turned yt-dlp away; yt-dlp then poses as a browser there.
+static CHALLENGED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+/// The sign-in window's browser name (User-Agent), seen by "Fetch this video".
+static BROWSER_AGENT: Mutex<String> = Mutex::new(String::new());
+
+fn host_of(link: &str) -> Option<String> {
+    Url::parse(split_referer(link).0).ok()?.host_str().map(str::to_string)
+}
+
+/// Remembers that `link`'s site turned yt-dlp away with a bot check. True the first time, so the
+/// caller tries again as a browser.
+pub(crate) fn note_bot_check(link: &str) -> bool {
+    host_of(link).is_some_and(|host| CHALLENGED.lock().unwrap().insert(host))
+}
+
+/// Whether `link`'s site checks for bots: then only yt-dlp (posing as a browser) gets through.
+pub(crate) fn bot_checked(link: &str) -> bool {
+    host_of(link).is_some_and(|host| CHALLENGED.lock().unwrap().contains(&host))
 }
 
 pub(crate) fn split_referer(link: &str) -> (&str, Option<&str>) {
@@ -144,6 +244,7 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
     WebviewWindowBuilder::new(&app, WINDOW, WebviewUrl::External(url))
         .title("Craftora · log in if needed, play the video, then click Fetch this video")
         .inner_size(900.0, 760.0)
+        .initialization_script_for_all_frames(WATCH_MEDIA)
         .menu(menu)
         .on_menu_event(|window, event| {
             if event.id() != FETCH_ITEM {
@@ -157,6 +258,9 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
             let page = browser.url().map(|u| u.to_string()).unwrap_or_default();
             let _ = browser.eval_with_callback(FIND_MEDIA, move |json| {
                 let mut found: FoundPage = serde_json::from_str(&json).unwrap_or_default();
+                if !found.agent.is_empty() {
+                    *BROWSER_AGENT.lock().unwrap() = std::mem::take(&mut found.agent);
+                }
                 found.media = found.media.iter().map(|m| format!("{m}{REFERER_MARK}{page}")).collect();
                 found.page = page.clone();
                 let _ = app.emit("fetch-page", found);

@@ -150,6 +150,17 @@ const errorText = (err: unknown) => (err instanceof Error ? err.message : String
 /** The project's picture for lists: the first media that has one. */
 const coverOf = (project: Project) => project.media.find((m) => m.source.thumbnail)?.source.thumbnail;
 
+/** Why "Fetch this video" found nothing, from how the page was seen playing. */
+function notFoundMessage(found: FoundPage): string {
+  const playing = found.playing ?? [];
+  const seen = playing.length ? ` (Craftora saw: ${playing.join("; ")})` : "";
+  if (playing.some((p) => p.startsWith("webrtc")))
+    return `This page plays its video over a direct live connection (WebRTC), which has no link Craftora can fetch.${seen}`;
+  if (playing.length)
+    return `A video is playing, but Craftora couldn't see where it comes from.${seen}`;
+  return "No video was playing when you clicked Fetch this video. Press play in the window, wait until the video moves, then click Fetch this video again.";
+}
+
 /** "youtube.com" for a link, or null when it doesn't parse. */
 function siteOf(link: string): string | null {
   try {
@@ -168,16 +179,19 @@ async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource>
     return await fetchMedia(link);
   } catch (err) {
     if (!found?.media.length || !/unsupported url/i.test(errorText(err))) throw err;
+    let firstProblem: unknown;
     for (const media of found.media) {
       try {
         const source = await fetchMedia(media);
         const thumbnail = source.thumbnail || (found.image ? await keptThumbnail(found.image, found.page) : undefined);
         return { ...source, title: found.title || source.title, thumbnail };
-      } catch {
+      } catch (problem) {
         // An ad or a player that isn't the video: try the next guess.
+        firstProblem ??= problem;
       }
     }
-    throw err;
+    // Something was found but wouldn't open: say why, rather than "nothing found".
+    throw new Error(`A video was found on this page, but it couldn't be opened: ${errorText(firstProblem)}`);
   }
 }
 
@@ -477,8 +491,9 @@ export default function App() {
         .then((local) => {
           const item = projectRef.current.media.find((m) => m.id === mediaId);
           if (!item) return;
-          // Keep the link's length so clip times stay exactly where they were (a recording has its own).
-          const duration = item.source.live ? local.duration : item.source.duration;
+          // Keep the link's length so clip times stay exactly where they were (a recording, or a
+          // link whose length wasn't known, takes the file's).
+          const duration = item.source.live || !item.source.duration ? local.duration : item.source.duration;
           api.refreshMedia(mediaId, { source: { ...local, duration }, missing: false });
           prepare(mediaId, local);
         })
@@ -505,8 +520,9 @@ export default function App() {
       }
       // Straight onto the timeline, after the last clip, ready to edit. With nothing the preview
       // can play (some stream sites), it downloads too, so it can still be edited.
-      // A live stream goes to Media only: drag in the parts you want as they're recorded.
-      const item = importSource(source, !source.live);
+      // A live stream goes to Media only: drag in the parts you want as they're recorded. So does a
+      // video with no known length yet (behind a site's bot check): it downloads first.
+      const item = importSource(source, !source.live && source.duration > 0);
       if (source.live && inDesktopApp) recordForEditing(item);
       else if (!source.previewUrl && inDesktopApp) downloadForEditing(item);
       if (found) void tellSignIn("Sent to Craftora ✓  You can close this window.").catch(() => {});
@@ -522,7 +538,7 @@ export default function App() {
       setError(
         unsupported
           ? found
-            ? "No video was found on this page. Start playing it in the window, then click Fetch this video again."
+            ? notFoundMessage(found)
             : "Craftora doesn't know this website yet, but it can find the video while the page plays."
           : text,
       );
