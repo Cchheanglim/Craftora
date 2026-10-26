@@ -3,8 +3,10 @@
 //! store, and reach yt-dlp as a temporary cookie file. (Borrowing a browser's logins needed that
 //! browser closed, and a user-picked cookie file confused people; both were removed.)
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use tauri::webview::Cookie;
 use serde::{Deserialize, Serialize};
@@ -94,7 +96,7 @@ const FIND_MEDIA: &str = r#"(() => {
   const image = meta("og:image") || meta("twitter:image") || document.querySelector("video[poster]")?.poster || "";
   const playing = [...(window.__craftoraPlaying || [])];
   if ([...document.querySelectorAll("video")].some((v) => v.srcObject)) playing.push("webrtc");
-  return { title: document.title, image: /^https?:/.test(image) ? image : "", media: media.slice(0, 5), playing };
+  return { title: document.title, image: /^https?:/.test(image) ? image : "", media: media.slice(0, 5), playing, agent: navigator.userAgent };
 })()"#;
 
 /// What "Fetch this video" sends to the main window.
@@ -114,6 +116,9 @@ struct FoundPage {
     /// address), each maybe followed by " in a frame from <host>".
     #[serde(default)]
     playing: Vec<String>,
+    /// The window's browser name, kept for posing as it (`BROWSER_AGENT`); not sent on.
+    #[serde(default, skip_serializing)]
+    agent: String,
 }
 
 /// yt-dlp arguments that reach a link: the user's logins, the page it was found on (when it was
@@ -124,8 +129,37 @@ pub(crate) async fn link_args(app: &AppHandle, link: &str) -> (Vec<String>, Opti
     if let Some(page) = referer {
         args.extend(["--referer".into(), page.into()]);
     }
+    if bot_checked(url) {
+        // Look like the browser that passed the site's check: its kind of connection, and its
+        // name, which the check's cookie (in the cookie file) belongs to.
+        args.extend(["--impersonate".into(), "chrome".into()]);
+        let agent = BROWSER_AGENT.lock().unwrap().clone();
+        if !agent.is_empty() {
+            args.extend(["--user-agent".into(), agent]);
+        }
+    }
     args.extend(["--".into(), url.into()]);
     (args, file)
+}
+
+/// Sites whose bot check (Cloudflare's) turned yt-dlp away; yt-dlp then poses as a browser there.
+static CHALLENGED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+/// The sign-in window's browser name (User-Agent), seen by "Fetch this video".
+static BROWSER_AGENT: Mutex<String> = Mutex::new(String::new());
+
+fn host_of(link: &str) -> Option<String> {
+    Url::parse(split_referer(link).0).ok()?.host_str().map(str::to_string)
+}
+
+/// Remembers that `link`'s site turned yt-dlp away with a bot check. True the first time, so the
+/// caller tries again as a browser.
+pub(crate) fn note_bot_check(link: &str) -> bool {
+    host_of(link).is_some_and(|host| CHALLENGED.lock().unwrap().insert(host))
+}
+
+/// Whether `link`'s site checks for bots: then only yt-dlp (posing as a browser) gets through.
+pub(crate) fn bot_checked(link: &str) -> bool {
+    host_of(link).is_some_and(|host| CHALLENGED.lock().unwrap().contains(&host))
 }
 
 pub(crate) fn split_referer(link: &str) -> (&str, Option<&str>) {
@@ -224,6 +258,9 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
             let page = browser.url().map(|u| u.to_string()).unwrap_or_default();
             let _ = browser.eval_with_callback(FIND_MEDIA, move |json| {
                 let mut found: FoundPage = serde_json::from_str(&json).unwrap_or_default();
+                if !found.agent.is_empty() {
+                    *BROWSER_AGENT.lock().unwrap() = std::mem::take(&mut found.agent);
+                }
                 found.media = found.media.iter().map(|m| format!("{m}{REFERER_MARK}{page}")).collect();
                 found.page = page.clone();
                 let _ = app.emit("fetch-page", found);

@@ -491,8 +491,9 @@ export default function App() {
         .then((local) => {
           const item = projectRef.current.media.find((m) => m.id === mediaId);
           if (!item) return;
-          // Keep the link's length so clip times stay exactly where they were (a recording has its own).
-          const duration = item.source.live ? local.duration : item.source.duration;
+          // Keep the link's length so clip times stay exactly where they were (a recording, or a
+          // link whose length wasn't known, takes the file's).
+          const duration = item.source.live || !item.source.duration ? local.duration : item.source.duration;
           api.refreshMedia(mediaId, { source: { ...local, duration }, missing: false });
           prepare(mediaId, local);
         })
@@ -519,8 +520,9 @@ export default function App() {
       }
       // Straight onto the timeline, after the last clip, ready to edit. With nothing the preview
       // can play (some stream sites), it downloads too, so it can still be edited.
-      // A live stream goes to Media only: drag in the parts you want as they're recorded.
-      const item = importSource(source, !source.live);
+      // A live stream goes to Media only: drag in the parts you want as they're recorded. So does a
+      // video with no known length yet (behind a site's bot check): it downloads first.
+      const item = importSource(source, !source.live && source.duration > 0);
       if (source.live && inDesktopApp) recordForEditing(item);
       else if (!source.previewUrl && inDesktopApp) downloadForEditing(item);
       if (found) void tellSignIn("Sent to Craftora ✓  You can close this window.").catch(() => {});

@@ -350,6 +350,34 @@ pub async fn fetch_thumbnail(url: String, link: String) -> Result<tauri::ipc::Re
     Ok(tauri::ipc::Response::new(bytes.to_vec()))
 }
 
+/// What yt-dlp says a link contains. A site whose bot check turns yt-dlp away is tried once more
+/// with yt-dlp posing as a browser (and remembered, so downloads from it do the same).
+async fn read_link(app: &AppHandle, url: &str) -> Result<Info, String> {
+    let mut retried = false;
+    loop {
+        let mut args: Vec<String> = ["--dump-single-json", "--no-playlist", "--no-warnings", "--encoding", "utf-8"].map(String::from).to_vec();
+        let (link, _cookie_file) = crate::signin::link_args(app, url).await;
+        args.extend(link);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let output = run_to_end(app, YT_DLP, &args).await?;
+        if output.status.success() {
+            return serde_json::from_slice(&output.stdout).map_err(|e| format!("Unexpected answer from yt-dlp: {e}"));
+        }
+        let error = last_error(&String::from_utf8_lossy(&output.stderr)).unwrap_or_else(|| "yt-dlp couldn't read this link.".into());
+        if retried || !is_bot_check(&error) || !crate::signin::note_bot_check(url) {
+            return Err(error);
+        }
+        retried = true;
+    }
+}
+
+/// yt-dlp's words for "a bot check turned me away", such as "Got HTTP Error 403 caused by
+/// Cloudflare anti-bot challenge; try again with --extractor-args "generic:impersonate"".
+fn is_bot_check(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    error.contains("anti-bot") || error.contains("impersonat")
+}
+
 /// Runs `yt-dlp --dump-single-json` on a link and maps the result for the editor.
 #[tauri::command]
 pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, String> {
@@ -358,19 +386,10 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         return Err("That doesn't look like a web link. Paste a link starting with https://".into());
     }
 
-    let mut args: Vec<String> = ["--dump-single-json", "--no-playlist", "--no-warnings", "--encoding", "utf-8"].map(String::from).to_vec();
-    let (link, _cookie_file) = crate::signin::link_args(&app, &url).await;
-    args.extend(link);
-    let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let output = run_to_end(&app, YT_DLP, &args).await?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(last_error(&stderr).unwrap_or_else(|| "yt-dlp couldn't read this link.".into()));
-    }
-
-    let info: Info = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("Unexpected answer from yt-dlp: {e}"))?;
+    let info = read_link(&app, &url).await?;
+    // Behind a bot check only yt-dlp (posing as a browser) gets through: there's no length probe
+    // or preview, so the video is downloaded first and edits as a file on this PC.
+    let bot_checked = crate::signin::bot_checked(&url);
 
     if info.is_live == Some(true) {
         // Nothing to preview or trim until `record_live` has saved the first part.
@@ -397,14 +416,17 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
     let site_page = info.formats.iter().find_map(|f| f.http_headers.get("Referer").cloned());
     let page = crate::signin::split_referer(&url).1.map(str::to_string).or(site_page);
     let duration = match info.duration.filter(|d| *d > 0.0) {
-        Some(d) => d,
+        Some(d) => Some(d),
+        None if bot_checked => None,
         // Plain video-file and DASH (.mpd) links: yt-dlp doesn't open the file, so it reports no length.
         None => match info.formats.iter().find_map(|f| f.url.as_deref().or(f.manifest_url.as_deref())) {
             Some(file) => probe_length(&app, file, page.as_deref()).await,
             None => None,
-        }
-        .ok_or("This link has no known length, so it can't be trimmed.")?,
+        },
     };
+    // No known length: 0 and no preview, so the editor downloads it first and reads the file's.
+    let download_first = duration.is_none() || bot_checked;
+    let duration = duration.unwrap_or(0.0);
 
     let mut streams = video_streams(&info.formats, duration);
     streams.extend(audio_streams(&info.formats, duration));
@@ -413,6 +435,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
     }
 
     let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats) {
+        _ if download_first => (String::new(), true, false),
         (url, audio) if !url.is_empty() => (url, audio, false),
         // Only stream playlists, which the WebView plays itself; the master one carries the sound.
         _ => hls_preview(&info.formats).map_or((String::new(), false, false), |url| (url, true, true)),
@@ -457,15 +480,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
 /// What to record from a live link: FFmpeg inputs (the best stream with picture and sound, or
 /// picture and sound as two inputs), each with the headers its server wants.
 pub(crate) async fn live_inputs(app: &AppHandle, url: &str) -> Result<Vec<(String, BTreeMap<String, String>)>, String> {
-    let mut args: Vec<String> = ["--dump-single-json", "--no-playlist", "--no-warnings", "--encoding", "utf-8"].map(String::from).to_vec();
-    let (link, _cookie_file) = crate::signin::link_args(app, url).await;
-    args.extend(link);
-    let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let output = run_to_end(app, YT_DLP, &args).await?;
-    if !output.status.success() {
-        return Err(last_error(&String::from_utf8_lossy(&output.stderr)).unwrap_or_else(|| "yt-dlp couldn't read this link.".into()));
-    }
-    let info: Info = serde_json::from_slice(&output.stdout).map_err(|e| format!("Unexpected answer from yt-dlp: {e}"))?;
+    let info = read_link(app, url).await?;
     if info.is_live != Some(true) {
         return Err("This stream isn't live any more. Fetch the link again to edit the saved video.".into());
     }
@@ -490,7 +505,13 @@ fn pick_live(formats: &[Format]) -> Option<Vec<(String, BTreeMap<String, String>
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_mpd_duration, Info};
+    use super::{is_bot_check, parse_mpd_duration, Info};
+
+    #[test]
+    fn knows_a_bot_check_answer() {
+        assert!(is_bot_check(r#"[generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again with --extractor-args "generic:impersonate""#));
+        assert!(!is_bot_check("[generic] Unsupported URL: https://shop.example/"));
+    }
 
     #[test]
     fn reads_dash_mpd_duration() {
