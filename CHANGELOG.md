@@ -1,5 +1,15 @@
 # What's new in Craftora
 
+## Next version
+
+**New**
+
+- **Edit a live stream while it's still live.** Paste the link to a stream that's on right now
+  (your own shop's site, YouTube, Twitch…). Craftora records it and puts it in **Media**, and its
+  length keeps growing as it records. Drag in the moments you want and export them while the stream
+  goes on. Click **Stop recording** in the Queue (or just end the stream) and the whole recording
+  becomes a normal video file in `Videos\Craftora\Downloads`.
+
 ## 0.3.1 (October 2026)
 
 **New**
