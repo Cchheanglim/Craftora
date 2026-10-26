@@ -150,6 +150,17 @@ const errorText = (err: unknown) => (err instanceof Error ? err.message : String
 /** The project's picture for lists: the first media that has one. */
 const coverOf = (project: Project) => project.media.find((m) => m.source.thumbnail)?.source.thumbnail;
 
+/** Why "Fetch this video" found nothing, from how the page was seen playing. */
+function notFoundMessage(found: FoundPage): string {
+  const playing = found.playing ?? [];
+  const seen = playing.length ? ` (Craftora saw: ${playing.join("; ")})` : "";
+  if (playing.some((p) => p.startsWith("webrtc")))
+    return `This page plays its video over a direct live connection (WebRTC), which has no link Craftora can fetch.${seen}`;
+  if (playing.length)
+    return `A video is playing, but Craftora couldn't see where it comes from.${seen}`;
+  return "No video was playing when you clicked Fetch this video. Press play in the window, wait until the video moves, then click Fetch this video again.";
+}
+
 /** "youtube.com" for a link, or null when it doesn't parse. */
 function siteOf(link: string): string | null {
   try {
@@ -168,16 +179,19 @@ async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource>
     return await fetchMedia(link);
   } catch (err) {
     if (!found?.media.length || !/unsupported url/i.test(errorText(err))) throw err;
+    let firstProblem: unknown;
     for (const media of found.media) {
       try {
         const source = await fetchMedia(media);
         const thumbnail = source.thumbnail || (found.image ? await keptThumbnail(found.image, found.page) : undefined);
         return { ...source, title: found.title || source.title, thumbnail };
-      } catch {
+      } catch (problem) {
         // An ad or a player that isn't the video: try the next guess.
+        firstProblem ??= problem;
       }
     }
-    throw err;
+    // Something was found but wouldn't open: say why, rather than "nothing found".
+    throw new Error(`A video was found on this page, but it couldn't be opened: ${errorText(firstProblem)}`);
   }
 }
 
@@ -521,10 +535,8 @@ export default function App() {
       if (found) void tellSignIn("No video found yet. Play the video, then click Fetch this video again.").catch(() => {});
       setError(
         unsupported
-          ? found?.webrtc && !found.media.length
-            ? "This page plays its video over a direct live connection (WebRTC), which has no link Craftora can fetch."
-            : found
-            ? "No video was found on this page. Start playing it in the window, then click Fetch this video again."
+          ? found
+            ? notFoundMessage(found)
             : "Craftora doesn't know this website yet, but it can find the video while the page plays."
           : text,
       );

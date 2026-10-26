@@ -20,47 +20,81 @@ const FETCH_ITEM: &str = "fetch-page";
 pub(crate) const REFERER_MARK: &str = "#craftora-referer=";
 
 /// Runs in every page and every embedded frame of the sign-in window from the moment it opens
-/// (on Windows every frame gets it): notes each stream playlist and video file loaded, so none
-/// is missed. The browser's own list keeps only the first 250 things a page loads (a shop's
-/// pictures can fill it), and it never shows what a player in an embedded frame loads, so frames
-/// pass what they see to the page. A video playing with no address (WebRTC) is noted too.
+/// (on Windows every frame gets it), so no stream is missed. It notes each stream playlist and
+/// video file loaded (playlists whose address doesn't say so by their type or first line,
+/// `#EXTM3U`), and each video that starts playing and how: a file, the site's own stream player,
+/// or a direct live connection (WebRTC), which has no address to fetch. The browser's own list keeps only the first 250 things a page loads (a shop's pictures can fill
+/// it) and never shows what a player in an embedded frame does, so frames pass all this to the page.
 const WATCH_MEDIA: &str = r#"(() => {
   if (window.__craftoraMedia) return;
   const seen = (window.__craftoraMedia = []);
+  const playing = (window.__craftoraPlaying = []);
   const tell = (data) => { if (window.top !== window) try { window.top.postMessage(data, "*"); } catch {} };
-  const keep = (u) => {
-    if (typeof u !== "string" || !/^https?:/.test(u) || !/\.(m3u8|mpd|mp4|webm|m4v|mov)(\?|$)/i.test(u) || seen.includes(u) || seen.length >= 100) return;
+  const MEDIA_URL = /\.(m3u8|mpd|mp4|webm|m4v|mov)(\?|$)/i;
+  const PLAYLIST_TYPE = /mpegurl|dash\+xml/i;
+  const isPlaylist = (type, start) => PLAYLIST_TYPE.test(type) || /^\s*(#EXTM3U|(<\?xml[^>]*>\s*)?<MPD)/.test(start);
+  const keep = (u, sure) => {
+    if (typeof u !== "string" || !/^https?:/.test(u) || !(sure || MEDIA_URL.test(u)) || seen.includes(u) || seen.length >= 100) return;
     seen.push(u);
     tell({ craftoraMedia: u });
   };
+  const note = (what) => {
+    if (playing.includes(what) || playing.length >= 10) return;
+    playing.push(what);
+    tell({ craftoraPlaying: what });
+  };
   window.addEventListener("message", (e) => {
-    keep(e.data?.craftoraMedia);
-    if (e.data?.craftoraWebrtc === true) window.__craftoraWebrtc = true;
+    keep(e.data?.craftoraMedia, true);
+    if (typeof e.data?.craftoraPlaying === "string") note(e.data.craftoraPlaying);
   });
   document.addEventListener("playing", (e) => {
-    if (!e.target.srcObject) return;
-    window.__craftoraWebrtc = true;
-    tell({ craftoraWebrtc: true });
+    const v = e.target;
+    const how = v.srcObject ? "webrtc" : /^blob:/.test(v.currentSrc) ? "player" : "file";
+    note(how + (window.top === window ? "" : " in a frame from " + location.hostname));
   }, true);
+  const fetch0 = window.fetch;
+  if (fetch0) window.fetch = function (...args) {
+    const answer = fetch0.apply(this, args);
+    answer.then((r) => {
+      const type = r.headers.get("content-type") || "";
+      if (PLAYLIST_TYPE.test(type)) keep(r.url, true);
+      else if (!MEDIA_URL.test(r.url) && /^(text\/plain|application\/octet-stream|)(;|$)/i.test(type))
+        r.clone().text().then((t) => isPlaylist(type, t.slice(0, 80)) && keep(r.url, true), () => {});
+    }, () => {});
+    return answer;
+  };
+  const send0 = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function (...args) {
+    this.addEventListener("load", () => {
+      try {
+        const start = this.responseType === "" || this.responseType === "text" ? this.responseText.slice(0, 80) : "";
+        if (isPlaylist(this.getResponseHeader("content-type") || "", start)) keep(this.responseURL, true);
+      } catch {}
+    });
+    return send0.apply(this, args);
+  };
   try { performance.setResourceTimingBufferSize(100000); } catch {}
   try { new PerformanceObserver((list) => list.getEntries().forEach((e) => keep(e.name))).observe({ type: "resource", buffered: true }); } catch {}
 })()"#;
 
 /// Run in the sign-in window by "Fetch this video": what the page plays, best guesses first.
 /// Video elements' files, then streaming manifests and video files the page (or a frame in it)
-/// loaded, then embedded players (their pages are often ones yt-dlp knows).
+/// loaded, then embedded players (their pages are often ones yt-dlp knows). `playing` says how
+/// videos were seen playing, for the message when nothing can be fetched.
 const FIND_MEDIA: &str = r#"(() => {
   const media = [];
   const add = (u) => { if (u && /^https?:/.test(u) && !media.includes(u)) media.push(u); };
   document.querySelectorAll("video, audio, video source, audio source").forEach((e) => add(e.currentSrc || e.src));
-  const loaded = [...(window.__craftoraMedia || []), ...performance.getEntriesByType("resource").map((e) => e.name)];
-  loaded.filter((u) => /\.(m3u8|mpd)(\?|$)/i.test(u)).forEach(add);
+  const watched = window.__craftoraMedia || [];
+  const loaded = [...watched, ...performance.getEntriesByType("resource").map((e) => e.name)];
+  loaded.filter((u) => /\.(m3u8|mpd)(\?|$)/i.test(u) || (watched.includes(u) && !/\.(mp4|webm|m4v|mov)(\?|$)/i.test(u))).forEach(add);
   loaded.filter((u) => /\.(mp4|webm|m4v|mov)(\?|$)/i.test(u)).forEach(add);
   document.querySelectorAll("iframe[src]").forEach((e) => add(e.src));
   const meta = (name) => document.querySelector(`meta[property="${name}"], meta[name="${name}"]`)?.content;
   const image = meta("og:image") || meta("twitter:image") || document.querySelector("video[poster]")?.poster || "";
-  const webrtc = window.__craftoraWebrtc === true || [...document.querySelectorAll("video")].some((v) => v.srcObject);
-  return { title: document.title, image: /^https?:/.test(image) ? image : "", media: media.slice(0, 5), webrtc };
+  const playing = [...(window.__craftoraPlaying || [])];
+  if ([...document.querySelectorAll("video")].some((v) => v.srcObject)) playing.push("webrtc");
+  return { title: document.title, image: /^https?:/.test(image) ? image : "", media: media.slice(0, 5), playing };
 })()"#;
 
 /// What "Fetch this video" sends to the main window.
@@ -76,9 +110,10 @@ struct FoundPage {
     image: String,
     #[serde(default)]
     media: Vec<String>,
-    /// A video plays with no address (WebRTC), which can't be fetched.
+    /// How videos were seen playing: "file", "player" (the site's stream player) or "webrtc" (no
+    /// address), each maybe followed by " in a frame from <host>".
     #[serde(default)]
-    webrtc: bool,
+    playing: Vec<String>,
 }
 
 /// yt-dlp arguments that reach a link: the user's logins, the page it was found on (when it was

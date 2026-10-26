@@ -9,6 +9,10 @@
   length keeps growing as it records. Drag in the moments you want and export them while the stream
   goes on. Click **Stop recording** in the Queue (or just end the stream) and the whole recording
   becomes a normal video file in `Videos\Craftora\Downloads`.
+- **"Fetch this video" finds more videos.** It now sees players embedded from another site (such as
+  a streaming service's player on your shop page) and pages with lots of pictures, and it finds a
+  finished stream's replay too. If a page plays its video over a direct live connection (WebRTC),
+  Craftora says so instead of asking you to play it again.
 
 ## 0.3.1 (October 2026)
 
