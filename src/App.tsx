@@ -381,11 +381,8 @@ export default function App() {
       );
       void task.then((thumbnail) => {
         const current = projectRef.current.media.find((x) => x.id === m.id);
-        if (thumbnail && current) {
-          api.refreshMedia(m.id, {
-            source: { ...current.source, thumbnail, ...(current.source.image ? { previewUrl: thumbnail } : {}) },
-          });
-        }
+        // Only the list picture: an image keeps its full-size previewUrl (Preview falls back to this if it can't load).
+        if (thumbnail && current) api.refreshMedia(m.id, { source: { ...current.source, thumbnail } });
       });
     }
   }, [project.media, api]);
