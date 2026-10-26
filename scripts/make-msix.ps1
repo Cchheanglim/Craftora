@@ -54,6 +54,8 @@ $msixVersion = "$appVersion.0"
 if (-not $SkipBuild) {
   Write-Host "Building Craftora $appVersion (Store edition)..."
   $env:VITE_STORE_BUILD = "1"
+  # Keeps this PC's user folder (Windows user name) out of the program's built-in file paths.
+  $env:CARGO_ENCODED_RUSTFLAGS = "--remap-path-prefix=$env:USERPROFILE=~"
   try {
     Push-Location $root
     & bun tauri build --no-bundle
@@ -61,6 +63,7 @@ if (-not $SkipBuild) {
   } finally {
     Pop-Location
     Remove-Item Env:VITE_STORE_BUILD -ErrorAction SilentlyContinue
+    Remove-Item Env:CARGO_ENCODED_RUSTFLAGS -ErrorAction SilentlyContinue
   }
 }
 
