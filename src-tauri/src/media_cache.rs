@@ -260,10 +260,14 @@ fn reply(status: StatusCode, body: Vec<u8>) -> Response<Vec<u8>> {
 const RELAY: &str = "http://cmedia.localhost/hls";
 
 /// Answers the preview's request for `http://cmedia.localhost/<id>` with part of the stream,
-/// or for `…/hls?u=<address>` with a relayed piece of a stream playlist.
+/// for `…/hls?u=<address>` with a relayed piece of a stream playlist, or for `…/rec/<id>/<file>`
+/// with part of a live recording (live.rs).
 pub async fn serve(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
     if request.uri().path() == "/hls" {
         return relay_hls(&request).await;
+    }
+    if let Some(rest) = request.uri().path().strip_prefix("/rec/") {
+        return crate::live::serve(app, rest);
     }
     let id = request.uri().path().trim_start_matches('/').to_string();
     let Some(entry) = entry(app, &id) else {

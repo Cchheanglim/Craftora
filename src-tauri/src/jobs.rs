@@ -134,7 +134,7 @@ impl Jobs {
         }
     }
 
-    fn is_cancelled(&self, id: &str) -> bool {
+    pub(crate) fn is_cancelled(&self, id: &str) -> bool {
         self.0.lock().unwrap().get(id).is_none_or(|j| j.cancelled)
     }
 
@@ -149,6 +149,13 @@ impl Jobs {
             kill_tree(child);
         }
         true
+    }
+
+    /// Asks a recording's FFmpeg to finish ("q"), so it closes its files and the job ends
+    /// normally with what it saved. `cancel` instead throws the work away.
+    pub(crate) fn stop(&self, id: &str) -> bool {
+        let mut jobs = self.0.lock().unwrap();
+        jobs.get_mut(id).and_then(|j| j.child.as_mut()).is_some_and(|child| child.write(b"q").is_ok())
     }
 
     /// Forgets the job; returns whether it had been cancelled.
@@ -564,7 +571,7 @@ fn progress_from_fields(id: &str, fields: &str) -> JobEvent {
 }
 
 /// Runs a sidecar, feeding each output line to `on_line` and emitting the events it returns.
-async fn run_streaming(
+pub(crate) async fn run_streaming(
     app: &AppHandle,
     id: &str,
     program: &str,

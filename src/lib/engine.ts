@@ -21,7 +21,7 @@ export type JobEvent =
   | {
       kind: "progress";
       id: string;
-      phase: "downloading" | "processing" | "cutting" | "encoding";
+      phase: "downloading" | "processing" | "cutting" | "encoding" | "recording";
       percent: number | null;
       downloadedBytes: number | null;
       totalBytes: number | null;
@@ -106,6 +106,17 @@ export const checkSite = (link: string) => invoke<SiteReport>("check_site", { li
 const PAGE_MARK = "#craftora-referer=";
 /** The HLS relay in src-tauri/src/media_cache.rs (Windows' address for the `cmedia` scheme). */
 export const HLS_RELAY = "http://cmedia.localhost/hls";
+/** Where the preview plays live recordings in progress (src-tauri/src/live.rs). */
+export const RECORDINGS = "http://cmedia.localhost/rec/";
+export const recordingUrl = (jobId: string) => `${RECORDINGS}${jobId}/index.m3u8`;
+
+/** Starts recording a live link as job `id`; resolves with the growing playlist's path. */
+export const recordLive = (spec: { id: string; url: string; title: string }) =>
+  invoke<string>("record_live", { spec }).catch((err) => Promise.reject(new Error(message(err))));
+/** Ends a recording and keeps it: the job finishes with the whole video as an MP4. */
+export const stopRecording = (id: string) => invoke<boolean>("stop_recording", { id });
+/** Lets the preview and exports read a file on this PC without probing it. */
+export const allowLocal = (path: string) => invoke("allow_local", { path });
 
 export async function fetchMedia(url: string): Promise<MediaSource> {
   try {

@@ -128,6 +128,9 @@ pub struct MediaSource {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) chapters: Vec<Chapter>,
     pub(crate) streams: Vec<Stream>,
+    /// A stream that is live now: no length yet; the editor records it (live.rs).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) live: bool,
 }
 
 pub(crate) fn codec_name(codec: Option<&str>) -> String {
@@ -370,7 +373,24 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         .map_err(|e| format!("Unexpected answer from yt-dlp: {e}"))?;
 
     if info.is_live == Some(true) {
-        return Err("Live streams can't be trimmed yet. Try again once the stream has ended.".into());
+        // Nothing to preview or trim until `record_live` has saved the first part.
+        return Ok(MediaSource {
+            url,
+            title: info.title.unwrap_or_else(|| "Live stream".into()),
+            uploader: info.uploader.or(info.channel).unwrap_or_default(),
+            duration: 0.0,
+            local: false,
+            preview_url: String::new(),
+            preview_has_audio: true,
+            preview_audio_url: String::new(),
+            preview_hls: false,
+            preview_proxy: "",
+            image: false,
+            thumbnail: info.thumbnail.unwrap_or_default(),
+            chapters: Vec::new(),
+            streams: vec![Stream { id: "live".into(), kind: "video", label: "Live".into(), detail: "Recording".into(), size_mb: 0.0 }],
+            live: true,
+        });
     }
     // The page the site's servers want: the one a found video came from, or the Referer yt-dlp says
     // they need. The length probe, the preview cache and the HLS relay send it (media_cache.rs).
@@ -430,7 +450,42 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
             })
             .collect(),
         streams,
+        live: false,
     })
+}
+
+/// What to record from a live link: FFmpeg inputs (the best stream with picture and sound, or
+/// picture and sound as two inputs), each with the headers its server wants.
+pub(crate) async fn live_inputs(app: &AppHandle, url: &str) -> Result<Vec<(String, BTreeMap<String, String>)>, String> {
+    let mut args: Vec<String> = ["--dump-single-json", "--no-playlist", "--no-warnings", "--encoding", "utf-8"].map(String::from).to_vec();
+    let (link, _cookie_file) = crate::signin::link_args(app, url).await;
+    args.extend(link);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = run_to_end(app, YT_DLP, &args).await?;
+    if !output.status.success() {
+        return Err(last_error(&String::from_utf8_lossy(&output.stderr)).unwrap_or_else(|| "yt-dlp couldn't read this link.".into()));
+    }
+    let info: Info = serde_json::from_slice(&output.stdout).map_err(|e| format!("Unexpected answer from yt-dlp: {e}"))?;
+    if info.is_live != Some(true) {
+        return Err("This stream isn't live any more. Fetch the link again to edit the saved video.".into());
+    }
+    pick_live(&info.formats).ok_or_else(|| "No stream to record was found at this link.".into())
+}
+
+fn pick_live(formats: &[Format]) -> Option<Vec<(String, BTreeMap<String, String>)>> {
+    let input = |f: &Format| Some((f.url.clone()?, f.http_headers.clone()));
+    let quality = |f: &&Format| (f.height.unwrap_or(0), f.tbr.unwrap_or(0.0) as u64);
+    let usable = || formats.iter().filter(|f| f.url.is_some() && f.protocol.as_deref() != Some("mhtml"));
+    if let Some(both) = usable().filter(|f| f.has_video() && f.has_audio()).max_by_key(quality) {
+        return Some(vec![input(both)?]);
+    }
+    let video = usable().filter(|f| f.has_video()).max_by_key(quality);
+    let audio = usable().filter(|f| f.has_audio()).max_by_key(|f| f.abr.or(f.tbr).unwrap_or(0.0) as u64);
+    match (video, audio) {
+        (Some(v), Some(a)) => Some(vec![input(v)?, input(a)?]),
+        (Some(only), None) | (None, Some(only)) => Some(vec![input(only)?]),
+        (None, None) => None,
+    }
 }
 
 #[cfg(test)]

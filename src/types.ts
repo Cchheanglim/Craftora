@@ -47,6 +47,8 @@ export interface MediaSource {
   /** Chapters from yt-dlp (e.g. YouTube chapters), in media seconds. */
   chapters?: { title: string; start: number; end: number }[];
   streams: StreamOption[];
+  /** Live now: no length yet. Recorded while it plays (src-tauri/src/live.rs); `duration` grows. */
+  live?: boolean;
 }
 
 /** The output frame for timeline renders. */
@@ -158,8 +160,10 @@ export interface Job {
   render?: RenderSpec;
   /** A whole link downloaded so it can be edited like a file on this PC ("Download first"). */
   prefetch?: { mediaId: string; url: string; format: string; title: string; audioOnly: boolean };
+  /** A live link being recorded into this media item; Stop keeps the recording. */
+  record?: { mediaId: string };
   /** "processing" while yt-dlp merges or converts after downloading. */
-  phase?: "downloading" | "processing" | "cutting" | "encoding";
+  phase?: "downloading" | "processing" | "cutting" | "encoding" | "recording";
   downloadedBytes?: number;
   totalBytes?: number;
   speedBps?: number;

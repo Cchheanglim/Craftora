@@ -141,6 +141,7 @@ export function Sidebar({
                     <span className="truncate">{item.name}</span>
                     <span className="side__file-meta">
                       {item.source.image ? "Image" : <span className="mono">{formatClock(item.source.duration)}</span>}
+                      {item.source.live && " · recording live"}
                       {item.missing
                         ? " · file not found"
                         : downloading.has(item.id)

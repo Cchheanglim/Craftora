@@ -56,7 +56,7 @@ function applyEngineEvent(jobs: Job[], event: JobEvent): Job[] {
   switch (event.kind) {
     case "progress":
       return update(jobs, event.id, {
-        status: event.phase === "downloading" ? "downloading" : "encoding",
+        status: event.phase === "downloading" || event.phase === "recording" ? "downloading" : "encoding",
         phase: event.phase,
         progress: event.percent,
         downloadedBytes: event.downloadedBytes ?? undefined,
@@ -126,7 +126,8 @@ export function useQueue(initial: Job[], real: boolean) {
   // Real mode: start waiting jobs, oldest first, while a slot is free.
   useEffect(() => {
     if (!real) return;
-    let free = MAX_RUNNING - jobs.filter(isRunning).length;
+    // A live recording runs for hours: it doesn't take a download slot.
+    let free = MAX_RUNNING - jobs.filter((j) => isRunning(j) && !j.record).length;
     for (const job of [...jobs].reverse()) {
       if (free <= 0) break;
       if (job.status !== "waiting" || !(job.spec || job.render || job.prefetch)) continue;

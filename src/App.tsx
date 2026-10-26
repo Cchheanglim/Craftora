@@ -17,6 +17,9 @@ import {
   detectSilences,
   openLocal,
   probeLocal,
+  recordLive,
+  recordingUrl,
+  allowLocal,
   pickFolder,
   saveSnapshot,
   pickMediaFiles,
@@ -275,7 +278,7 @@ export default function App() {
     if (!history) return;
     const known = new Set(history.map((j) => j.id));
     // Exports only: downloads for editing aren't exports.
-    const added = queue.jobs.filter((j) => j.status === "finished" && !j.prefetch && !known.has(j.id)).map(forHistory);
+    const added = queue.jobs.filter((j) => j.status === "finished" && !j.prefetch && !j.record && !known.has(j.id)).map(forHistory);
     if (added.length === 0) return;
     const next = [...added, ...history].slice(0, 500);
     setHistory(next);
@@ -341,7 +344,8 @@ export default function App() {
     if (!inDesktopApp) return;
     for (const m of project.media) {
       const s = m.source;
-      if (!s.local || s.image || peaksTried.current.has(m.id)) continue;
+      // A recording in progress isn't probed: it keeps growing, and its playlist plays as it is.
+      if (!s.local || s.image || s.live || peaksTried.current.has(m.id)) continue;
       peaksTried.current.add(m.id);
       // Wait until the video is already open in the editor before running background ffprobe/ffmpeg tasks.
       window.setTimeout(() => {
@@ -409,19 +413,73 @@ export default function App() {
     });
   };
 
+  /** A live link is recorded while it plays, so it can be edited before the stream ends. */
+  const recordForEditing = (item: MediaItem) => {
+    const id = crypto.randomUUID();
+    queue.add({
+      id,
+      title: item.name,
+      summary: "Live stream · edit what's recorded while it plays",
+      kind: "video",
+      status: "downloading",
+      phase: "recording",
+      progress: null,
+      needsEncode: false,
+      sizeMb: 0,
+      fileName: item.name,
+      command: `ffmpeg -i <live stream of "${item.source.url}"> -c copy -f hls index.m3u8`,
+      record: { mediaId: item.id },
+    });
+    recordLive({ id, url: item.source.url, title: item.name })
+      .then((path) => recordings.current.set(id, { mediaId: item.id, path }))
+      .catch((err) => {
+        queue.remove(id);
+        setError(`Couldn't record the live stream: ${errorText(err)}`);
+      });
+  };
+
+  // Live recordings: every few seconds the media's length catches up with the parts saved so far.
+  // From the first part on, the preview plays the recording and exports read it like a local file.
+  const recordings = useRef(new Map<string, { mediaId: string; path: string }>());
+  const recordingIds = queue.jobs.filter((j) => j.record && j.status === "downloading").map((j) => j.id).join();
+  useEffect(() => {
+    if (!recordingIds) return;
+    const catchUp = async () => {
+      for (const id of recordingIds.split(",")) {
+        const rec = recordings.current.get(id);
+        const item = rec && projectRef.current.media.find((m) => m.id === rec.mediaId);
+        if (!rec || !item?.source.live) continue;
+        const playlist = await fetch(recordingUrl(id)).then((r) => (r.ok ? r.text() : "")).catch(() => "");
+        const seconds = [...playlist.matchAll(/#EXTINF:([\d.]+)/g)].reduce((sum, m) => sum + Number(m[1]), 0);
+        if (seconds <= item.source.duration) continue;
+        if (!item.source.local) await allowLocal(rec.path).catch(() => {});
+        const current = projectRef.current.media.find((m) => m.id === rec.mediaId);
+        if (!current) continue;
+        api.refreshMedia(current.id, {
+          source: { ...current.source, url: rec.path, local: true, previewUrl: recordingUrl(id), previewHls: true, duration: seconds },
+        });
+      }
+    };
+    const timer = window.setInterval(() => void catchUp(), 3000);
+    return () => window.clearInterval(timer);
+  }, [recordingIds, api]);
+
   // A finished "download for editing" takes over its link: the media becomes the local file.
+  // A finished live recording does the same with the whole recorded MP4.
   const swapped = useRef(new Set<string>());
   useEffect(() => {
     for (const job of queue.jobs) {
-      if (!job.prefetch || job.status !== "finished" || !job.outputPath || swapped.current.has(job.id)) continue;
+      const target = job.prefetch ?? job.record;
+      if (!target || job.status !== "finished" || !job.outputPath || swapped.current.has(job.id)) continue;
       swapped.current.add(job.id);
-      const { mediaId } = job.prefetch;
+      const { mediaId } = target;
       openLocal(job.outputPath)
         .then((local) => {
           const item = projectRef.current.media.find((m) => m.id === mediaId);
           if (!item) return;
-          // Keep the link's length so clip times stay exactly where they were.
-          api.refreshMedia(mediaId, { source: { ...local, duration: item.source.duration }, missing: false });
+          // Keep the link's length so clip times stay exactly where they were (a recording has its own).
+          const duration = item.source.live ? local.duration : item.source.duration;
+          api.refreshMedia(mediaId, { source: { ...local, duration }, missing: false });
           prepare(mediaId, local);
         })
         .catch((err) => setError(`The download finished but couldn't be opened: ${errorText(err)}`));
@@ -447,8 +505,10 @@ export default function App() {
       }
       // Straight onto the timeline, after the last clip, ready to edit. With nothing the preview
       // can play (some stream sites), it downloads too, so it can still be edited.
-      const item = importSource(source, true);
-      if (!source.previewUrl && inDesktopApp) downloadForEditing(item);
+      // A live stream goes to Media only: drag in the parts you want as they're recorded.
+      const item = importSource(source, !source.live);
+      if (source.live && inDesktopApp) recordForEditing(item);
+      else if (!source.previewUrl && inDesktopApp) downloadForEditing(item);
       if (found) void tellSignIn("Sent to Craftora ✓  You can close this window.").catch(() => {});
       const entry: FetchEntry = { url: link, title: source.title, thumbnail: source.thumbnail, fetchedAt: Date.now() };
       changeFetchHistory([entry, ...fetchHistory.filter((e) => e.url !== link)].slice(0, 50));
