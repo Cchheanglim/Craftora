@@ -5,32 +5,6 @@ GitHub Actions builds the Windows installer from this repository
 release. Installed copies find new versions
 through the `latest.json` file attached to the newest published release.
 
-## One-time setup
-
-### 1. The update key (done once, keep it forever)
-
-Updates are only installed if they're signed with Craftora's private update key. It was
-generated on the owner's PC in `C:\Users\chhea\.tauri\`:
-
-| File | What it is |
-|---|---|
-| `craftora-updater.key` | The private key. **Back it up.** If it's lost, installed copies can never update again. Never commit it. |
-| `craftora-updater.password.txt` | Its password. Move it into a password manager, then delete the file. |
-| `craftora-updater.key.pub` | The public key; already in `src-tauri/tauri.conf.json`. |
-
-Add both to GitHub: repository **Settings → Secrets and variables → Actions → Secrets →
-New repository secret**:
-
-| Secret name | Value |
-|---|---|
-| `TAURI_SIGNING_PRIVATE_KEY` | The whole content of `craftora-updater.key` |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The content of `craftora-updater.password.txt` |
-
-### 2. Two-factor authentication
-
-Turn on two-factor authentication for your GitHub account (**Settings → Password and
-authentication**). The update key is only as safe as the account that holds it.
-
 ## Code signing
 
 The installer isn't code-signed, so Windows SmartScreen warns that the publisher is unknown
