@@ -6,6 +6,7 @@ mod live;
 mod local;
 mod media_cache;
 mod media;
+mod page_fetch;
 mod project;
 mod signin;
 mod store;

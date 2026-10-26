@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuItem};
 use tauri::{AppHandle, Emitter, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 
-const WINDOW: &str = "sign-in";
+pub(crate) const WINDOW: &str = "sign-in";
 const FETCH_ITEM: &str = "fetch-page";
 
 /// A video file found by playing a page in the sign-in window carries that page after this mark,

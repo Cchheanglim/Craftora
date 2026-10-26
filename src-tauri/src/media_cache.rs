@@ -319,7 +319,7 @@ async fn relay_hls(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     };
     let mut answer = Response::builder().status(status).header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
     if body.starts_with(b"#EXTM3U") {
-        let playlist = relay_playlist(&String::from_utf8_lossy(&body), &base, page);
+        let playlist = relay_playlist(&String::from_utf8_lossy(&body), &base, page, RELAY);
         return answer.header(header::CONTENT_TYPE, "application/vnd.apple.mpegurl").body(playlist.into_bytes()).unwrap_or_default();
     }
     if let Some(value) = content_type {
@@ -333,8 +333,9 @@ async fn relay_hls(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
 
 /// Points every address in a playlist (variants, segments, `URI="…"` keys and maps) back at the
 /// relay, resolved against the playlist's own address and carrying the page it came from.
-fn relay_playlist(text: &str, base: &Url, page: Option<&str>) -> String {
-    let relay = |address: &str| -> String {
+/// Points every address in a stream playlist at `relay` (as `?u=<address>`), made absolute.
+pub(crate) fn relay_playlist(text: &str, base: &Url, page: Option<&str>, relay: &str) -> String {
+    let point = |address: &str| -> String {
         let Ok(absolute) = base.join(address.trim()) else {
             return address.to_string();
         };
@@ -342,18 +343,18 @@ fn relay_playlist(text: &str, base: &Url, page: Option<&str>) -> String {
             Some(page) => format!("{absolute}{}{page}", crate::signin::REFERER_MARK),
             None => absolute.to_string(),
         };
-        Url::parse_with_params(RELAY, &[("u", target)]).map_or_else(|_| address.to_string(), |u| u.to_string())
+        Url::parse_with_params(relay, &[("u", target)]).map_or_else(|_| address.to_string(), |u| u.to_string())
     };
     text.lines()
         .map(|line| {
             if line.trim().is_empty() {
                 String::new()
             } else if !line.starts_with('#') {
-                relay(line)
+                point(line)
             } else if let Some(start) = line.find("URI=\"") {
                 let rest = &line[start + 5..];
                 match rest.find('"') {
-                    Some(end) => format!("{}URI=\"{}\"{}", &line[..start], relay(&rest[..end]), &rest[end + 1..]),
+                    Some(end) => format!("{}URI=\"{}\"{}", &line[..start], point(&rest[..end]), &rest[end + 1..]),
                     None => line.to_string(),
                 }
             } else {
@@ -430,7 +431,7 @@ mod tests {
     fn relays_every_playlist_address() {
         let base = Url::parse("https://cdn.example/v/master.m3u8").unwrap();
         let text = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",IV=0x1\nlow/index.m3u8\nhttps://other.example/seg1.ts\n";
-        let out = relay_playlist(text, &base, Some("https://site.example/watch"));
+        let out = relay_playlist(text, &base, Some("https://site.example/watch"), RELAY);
         let lines: Vec<&str> = out.lines().collect();
         let relayed = |address: &str| {
             let target = format!("{address}{}https://site.example/watch", crate::signin::REFERER_MARK);

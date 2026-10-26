@@ -36,7 +36,15 @@ pub async fn record_live(app: AppHandle, recordings: State<'_, Recordings>, spec
     if !is_web_link(&spec.url) {
         return Err("Only web links can be recorded.".into());
     }
-    let inputs = crate::media::live_inputs(&app, &spec.url).await?;
+    let mut inputs = crate::media::live_inputs(&app, &spec.url).await?;
+    // Behind a bot check FFmpeg can't get in, so it reads the stream through the page window.
+    let through_page = crate::signin::bot_checked(&spec.url);
+    if through_page {
+        for (url, headers) in &mut inputs {
+            *url = crate::page_fetch::relayed(&app, url)?;
+            headers.clear();
+        }
+    }
     let dir = downloads_dir(&app)?;
     let stem = safe_stem(&spec.title);
     let short_id: String = safe_stem(&spec.id).chars().take(8).collect();
@@ -44,7 +52,7 @@ pub async fn record_live(app: AppHandle, recordings: State<'_, Recordings>, spec
     std::fs::create_dir_all(&folder).map_err(|e| format!("Couldn't create the recording folder: {e}"))?;
     recordings.0.lock().unwrap().insert(spec.id.clone(), folder.clone());
 
-    let args = record_args(&inputs);
+    let args = record_args(&inputs, through_page);
     let (task_app, id) = (app.clone(), spec.id.clone());
     let task_folder = folder.clone();
     let started = spawn_job(app.clone(), spec.id.clone(), async move {
@@ -68,9 +76,13 @@ pub fn stop_recording(jobs: State<'_, Jobs>, id: String) -> bool {
     jobs.stop(&id)
 }
 
-fn record_args(inputs: &[(String, BTreeMap<String, String>)]) -> Vec<String> {
+fn record_args(inputs: &[(String, BTreeMap<String, String>)], through_page: bool) -> Vec<String> {
     let mut args: Vec<String> = ["-hide_banner", "-nostats", "-loglevel", "error"].map(String::from).to_vec();
     for (url, headers) in inputs {
+        if through_page {
+            // Relayed parts' addresses end in the relay's query, not ".ts".
+            args.extend(["-allowed_extensions", "ALL", "-allowed_segment_extensions", "ALL", "-extension_picky", "0"].map(String::from));
+        }
         // FFmpeg wants "Name: value\r\n" lines; a value with a line break would add a header.
         let lines: String = headers
             .iter()
@@ -160,7 +172,7 @@ mod tests {
     #[test]
     fn records_picture_and_sound_from_separate_inputs() {
         let headers = BTreeMap::from([("Referer".to_string(), "https://shop.example/".to_string()), ("Bad".to_string(), "a\r\nX: y".to_string())]);
-        let args = record_args(&[("https://v.example/v.m3u8".into(), headers), ("https://v.example/a.m3u8".into(), BTreeMap::new())]);
+        let args = record_args(&[("https://v.example/v.m3u8".into(), headers), ("https://v.example/a.m3u8".into(), BTreeMap::new())], false);
         let joined = args.join(" ");
         assert!(joined.contains("-headers Referer: https://shop.example/\r\n -i https://v.example/v.m3u8 -i https://v.example/a.m3u8"));
         assert!(!joined.contains("X: y"));
