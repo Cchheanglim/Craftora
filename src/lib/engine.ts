@@ -54,6 +54,8 @@ export interface FoundPage {
   image: string;
   /** Video files and embedded players the page plays, best guesses first, each carrying the page. */
   media: string[];
+  /** A video plays with no address (WebRTC): there's nothing to fetch. */
+  webrtc?: boolean;
 }
 
 export const onFetchPage = (handler: (found: FoundPage) => void): Promise<UnlistenFn> =>

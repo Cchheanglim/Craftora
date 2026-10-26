@@ -521,7 +521,9 @@ export default function App() {
       if (found) void tellSignIn("No video found yet. Play the video, then click Fetch this video again.").catch(() => {});
       setError(
         unsupported
-          ? found
+          ? found?.webrtc && !found.media.length
+            ? "This page plays its video over a direct live connection (WebRTC), which has no link Craftora can fetch."
+            : found
             ? "No video was found on this page. Start playing it in the window, then click Fetch this video again."
             : "Craftora doesn't know this website yet, but it can find the video while the page plays."
           : text,
