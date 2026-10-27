@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { Job } from "../types";
-import { cancelJob, downloadMedia, onJobEvent, startJob, startRender, type JobEvent } from "../lib/engine";
+import { cancelJob, discardDownload, downloadMedia, onJobEvent, pauseJob, startJob, startRender, type JobEvent } from "../lib/engine";
+import { loadPausedDownloads, savePausedDownloads } from "../lib/storage";
 
 /** How many jobs may download or encode at the same time. */
 const MAX_RUNNING = 2;
@@ -76,6 +77,8 @@ function applyEngineEvent(jobs: Job[], event: JobEvent): Job[] {
       return update(jobs, event.id, { status: "failed", error: event.message });
     case "cancelled":
       return jobs.filter((j) => j.id !== event.id);
+    case "paused":
+      return update(jobs, event.id, { status: "paused", speedBps: undefined, etaSeconds: undefined });
   }
 }
 
@@ -114,7 +117,15 @@ function simulateTick(jobs: Job[], now: number): Job[] {
  * simulated so the UI can be explored in a browser.
  */
 export function useQueue(initial: Job[], real: boolean) {
-  const [jobs, dispatch] = useReducer(reducer, initial);
+  // Real mode also brings back downloads paused before Craftora was last closed.
+  const [jobs, dispatch] = useReducer(reducer, real ? [...loadPausedDownloads(), ...initial] : initial);
+  const jobsRef = useRef(jobs);
+  jobsRef.current = jobs;
+
+  const paused = real ? JSON.stringify(jobs.filter((j) => j.prefetch && j.status === "paused")) : "";
+  useEffect(() => {
+    if (real) savePausedDownloads(JSON.parse(paused));
+  }, [real, paused]);
 
   // Real mode: follow the engine's progress events.
   useEffect(() => {
@@ -148,21 +159,33 @@ export function useQueue(initial: Job[], real: boolean) {
 
   const cancel = useCallback(
     (id: string) => {
+      const job = jobsRef.current.find((j) => j.id === id);
       if (real) void cancelJob(id);
+      // A paused download isn't running: its saved parts are removed here.
+      if (real && job?.prefetch && job.status === "paused") void discardDownload(id).catch(() => {});
       dispatch({ type: "remove", id });
+    },
+    [real],
+  );
+  const pause = useCallback(
+    (id: string) => {
+      // Real downloads stop now and say "paused" when they have (a `paused` engine event).
+      if (real) void pauseJob(id);
+      else dispatch({ type: "pause", id });
     },
     [real],
   );
 
   return {
     jobs,
-    /** Real jobs can be cancelled but not paused; yt-dlp section downloads can't resume. */
+    /** Demo jobs pause; real ones too when they're whole downloads (exports' sections can't resume). */
     canPause: !real,
+    canPauseJob: useCallback((job: Job) => !real || Boolean(job.prefetch), [real]),
     add: useCallback((job: Job) => dispatch({ type: "add", job }), []),
     cancel,
     retry: useCallback((id: string) => dispatch({ type: "retry", id }), []),
     remove: useCallback((id: string) => dispatch({ type: "remove", id }), []),
-    pause: useCallback((id: string) => dispatch({ type: "pause", id }), []),
+    pause,
     resume: useCallback((id: string) => dispatch({ type: "resume", id }), []),
     pauseAll: useCallback(() => dispatch({ type: "pauseAll" }), []),
     resumeAll: useCallback(() => dispatch({ type: "resumeAll" }), []),

@@ -127,11 +127,11 @@ impl Jobs {
     }
 
     /// Keeps the running process so it can be killed. Returns the child back
-    /// when the job was cancelled before the process started.
+    /// when the job was cancelled or paused before the process started.
     fn attach(&self, id: &str, child: CommandChild) -> Option<CommandChild> {
         let mut jobs = self.0.lock().unwrap();
         match jobs.get_mut(id) {
-            Some(job) if !job.cancelled => {
+            Some(job) if !job.cancelled && !job.paused => {
                 job.child = Some(child);
                 None
             }

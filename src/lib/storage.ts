@@ -29,6 +29,7 @@ export const DEFAULT_OUTPUT_DIR = "Videos\\Craftora";
 const BROWSER_PROJECTS = "craftora.projects";
 const BROWSER_HISTORY = "craftora.history";
 const FETCH_HISTORY = "craftora.fetchHistory";
+const PAUSED_DOWNLOADS = "craftora.pausedDownloads";
 
 const message = (err: unknown) => (typeof err === "string" ? err : err instanceof Error ? err.message : String(err));
 
@@ -113,6 +114,10 @@ export interface FetchEntry {
 // store.rs next to the export history if it ever needs to survive a reset of the app's web data.
 export const loadFetchHistory = (): FetchEntry[] => browserRead<FetchEntry[]>(FETCH_HISTORY, []);
 export const saveFetchHistory = (entries: FetchEntry[]) => browserWrite(FETCH_HISTORY, entries);
+
+/** Paused downloads, so they wait in the queue after Craftora is closed (their parts stay on disk). */
+export const loadPausedDownloads = (): Job[] => browserRead<Job[]>(PAUSED_DOWNLOADS, []);
+export const savePausedDownloads = (jobs: Job[]) => browserWrite(PAUSED_DOWNLOADS, jobs);
 
 export async function getOutputDir(): Promise<string> {
   return inDesktopApp ? call<string>("get_output_dir") : DEFAULT_OUTPUT_DIR;
