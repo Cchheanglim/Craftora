@@ -524,7 +524,7 @@ export default function App() {
       // video with no known length yet (behind a site's bot check): it downloads first.
       const item = importSource(source, !source.live && source.duration > 0);
       if (source.live && inDesktopApp) recordForEditing(item);
-      else if (!source.previewUrl && inDesktopApp) downloadForEditing(item);
+      else if ((!source.previewUrl || source.downloadFirst) && inDesktopApp) downloadForEditing(item);
       if (found) void tellSignIn("Sent to Craftora ✓  You can close this window.").catch(() => {});
       const entry: FetchEntry = { url: link, title: source.title, thumbnail: source.thumbnail, fetchedAt: Date.now() };
       changeFetchHistory([entry, ...fetchHistory.filter((e) => e.url !== link)].slice(0, 50));

@@ -264,7 +264,7 @@ const RELAY: &str = "http://cmedia.localhost/hls";
 /// with part of a live recording (live.rs).
 pub async fn serve(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
     if request.uri().path() == "/hls" {
-        return relay_hls(&request).await;
+        return relay_hls(app, &request).await;
     }
     if let Some(rest) = request.uri().path().strip_prefix("/rec/") {
         return crate::live::serve(app, rest);
@@ -290,7 +290,7 @@ pub async fn serve(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Vec<u
 /// Fetches a playlist, segment or key of a stream playlist for the preview. Done here rather than
 /// by the WebView so the request carries the page the video was found on (servers refuse it
 /// otherwise); playlists come back with every address pointing here again.
-async fn relay_hls(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+async fn relay_hls(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     let query = request.uri().query().unwrap_or_default();
     let target = Url::parse(&format!("{RELAY}?{query}"))
         .ok()
@@ -300,6 +300,21 @@ async fn relay_hls(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
         return reply(StatusCode::BAD_REQUEST, b"Not a stream address".to_vec());
     };
     let (url, page) = crate::signin::split_referer(&target);
+    // A site whose bot check turns Craftora away: the page window, which passed it, fetches instead.
+    if crate::signin::bot_checked(url) {
+        let (app, address) = (app.clone(), url.to_string());
+        let fetched = tauri::async_runtime::spawn_blocking(move || crate::page_fetch::page_fetch(&app, &address)).await;
+        let Ok(Ok((status, kind, body))) = fetched else {
+            return reply(StatusCode::BAD_GATEWAY, b"Couldn't reach the stream through the page window".to_vec());
+        };
+        let answer = Response::builder().status(status).header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+        if body.starts_with(b"#EXTM3U") {
+            let base = Url::parse(url).expect("checked above");
+            let playlist = relay_playlist(&String::from_utf8_lossy(&body), &base, page, RELAY);
+            return answer.header(header::CONTENT_TYPE, "application/vnd.apple.mpegurl").body(playlist.into_bytes()).unwrap_or_default();
+        }
+        return answer.header(header::CONTENT_TYPE, kind).body(body).unwrap_or_default();
+    }
     let mut outgoing = client().get(url);
     if let Some(page) = page {
         outgoing = outgoing.header(header::REFERER, page);

@@ -49,6 +49,8 @@ export interface MediaSource {
   streams: StreamOption[];
   /** Live now: no length yet. Recorded while it plays (src-tauri/src/live.rs); `duration` grows. */
   live?: boolean;
+  /** Download the whole video before exporting (its site's bot check blocks FFmpeg); it still previews. */
+  downloadFirst?: boolean;
 }
 
 /** The output frame for timeline renders. */

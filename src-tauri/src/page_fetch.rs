@@ -93,7 +93,7 @@ struct Fetched {
 }
 
 /// Has the page window fetch `url`: its status, content type and body.
-fn page_fetch(app: &AppHandle, url: &str) -> Result<(u16, String, Vec<u8>), String> {
+pub(crate) fn page_fetch(app: &AppHandle, url: &str) -> Result<(u16, String, Vec<u8>), String> {
     let window = app
         .get_webview_window(crate::signin::WINDOW)
         .ok_or("Keep Craftora's window with the stream's page open while it records.")?;
