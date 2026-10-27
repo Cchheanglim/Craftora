@@ -79,6 +79,50 @@ function ago(ms: number): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(ms);
 }
 
+/** Saved projects, most recent first, to open or delete (Home and the Projects page). */
+export function ProjectList({
+  projects,
+  currentId,
+  onOpenProject,
+  onDeleteProject,
+}: Pick<HomeProps, "projects" | "currentId" | "onOpenProject" | "onDeleteProject">) {
+  const { ask, dialog } = useConfirm();
+  const deleteProject = async (p: ProjectEntry) => {
+    const ok = await ask({
+      title: `Delete “${p.name}”?`,
+      message: "The project and its edits are deleted for good. Your video files and finished exports aren't touched.",
+      confirmLabel: "Delete project",
+      danger: true,
+    });
+    if (ok) onDeleteProject(p.id);
+  };
+  if (projects.length === 0) return <p className="home__muted">Your projects save themselves as you edit and show up here.</p>;
+  return (
+    <>
+      {dialog}
+      <ul className="home__projects">
+        {projects.map((p) => (
+          <li key={p.id} className={p.id === currentId ? "is-current" : undefined}>
+            <button type="button" className="home__project" onClick={() => onOpenProject(p.id)}>
+              <Thumb src={p.thumbnail} icon="scissors" />
+              <span className="home__project-text">
+                <span className="truncate">{p.name}</span>
+                <span className="home__project-meta">
+                  {p.clips} clip{p.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(p.duration)}</span> · {ago(p.savedAt)}
+                </span>
+              </span>
+              {p.id === currentId && <span className="home__open">Open now</span>}
+            </button>
+            <button type="button" className="btn btn--icon home__delete" aria-label={`Delete ${p.name}`} title="Delete project" onClick={() => void deleteProject(p)}>
+              <Icon name="trash" size={14} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 export function Home({
   onImport,
   onPasteLink,
@@ -94,7 +138,6 @@ export function Home({
   links,
   onOpenWelcome,
 }: HomeProps) {
-  const { ask, dialog } = useConfirm();
   // Some people don't want their exports' pictures on the start screen; remembered.
   const [hideRecent, setHideRecent] = useState(() => {
     try {
@@ -111,19 +154,9 @@ export function Home({
       /* not essential */
     }
   };
-  const deleteProject = async (p: ProjectEntry) => {
-    const ok = await ask({
-      title: `Delete “${p.name}”?`,
-      message: "The project and its edits are deleted for good. Your video files and finished exports aren't touched.",
-      confirmLabel: "Delete project",
-      danger: true,
-    });
-    if (ok) onDeleteProject(p.id);
-  };
 
   return (
     <section className="home" aria-labelledby="home-title">
-      {dialog}
       <div className="home__inner">
         <header className="home__head">
           <h1 id="home-title">Craftora</h1>
@@ -163,35 +196,7 @@ export function Home({
                 New project
               </button>
             </div>
-            {projects.length === 0 ? (
-              <p className="home__muted">Your projects save themselves as you edit and show up here.</p>
-            ) : (
-              <ul className="home__projects">
-                {projects.map((p) => (
-                  <li key={p.id} className={p.id === currentId ? "is-current" : undefined}>
-                    <button type="button" className="home__project" onClick={() => onOpenProject(p.id)}>
-                      <Thumb src={p.thumbnail} icon="scissors" />
-                      <span className="home__project-text">
-                        <span className="truncate">{p.name}</span>
-                        <span className="home__project-meta">
-                          {p.clips} clip{p.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(p.duration)}</span> · {ago(p.savedAt)}
-                        </span>
-                      </span>
-                      {p.id === currentId && <span className="home__open">Open now</span>}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn--icon home__delete"
-                      aria-label={`Delete ${p.name}`}
-                      title="Delete project"
-                      onClick={() => void deleteProject(p)}
-                    >
-                      <Icon name="trash" size={14} />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <ProjectList projects={projects} currentId={currentId} onOpenProject={onOpenProject} onDeleteProject={onDeleteProject} />
           </div>
 
           <div className="home__col">

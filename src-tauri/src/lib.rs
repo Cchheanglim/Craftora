@@ -75,6 +75,7 @@ pub fn run() {
             jobs::cancel_job,
             jobs::pause_job,
             jobs::discard_download,
+            jobs::list_downloads,
             jobs::download_media,
             media_cache::cache_media,
             media_cache::prefetch_media,
