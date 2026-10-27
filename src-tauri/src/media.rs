@@ -131,6 +131,10 @@ pub struct MediaSource {
     /// A stream that is live now: no length yet; the editor records it (live.rs).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(crate) live: bool,
+    /// Download the whole video before exporting: its site's bot check lets only yt-dlp (posing as
+    /// a browser) and the page window in, not FFmpeg. The preview can still play meanwhile.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) download_first: bool,
 }
 
 pub(crate) fn codec_name(codec: Option<&str>) -> String {
@@ -409,6 +413,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
             chapters: Vec::new(),
             streams: vec![Stream { id: "live".into(), kind: "video", label: "Live".into(), detail: "Recording".into(), size_mb: 0.0 }],
             live: true,
+            download_first: false,
         });
     }
     // The page the site's servers want: the one a found video came from, or the Referer yt-dlp says
@@ -425,7 +430,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         },
     };
     // No known length: 0 and no preview, so the editor downloads it first and reads the file's.
-    let download_first = duration.is_none() || bot_checked;
+    let length_known = duration.is_some();
     let duration = duration.unwrap_or(0.0);
 
     let mut streams = video_streams(&info.formats, duration);
@@ -435,7 +440,10 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
     }
 
     let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats) {
-        _ if download_first => (String::new(), true, false),
+        _ if !length_known => (String::new(), true, false),
+        // Behind a bot check only stream playlists preview: the relay fetches them through the
+        // page window (media_cache.rs), while the byte cache for files would be turned away.
+        _ if bot_checked => hls_preview(&info.formats).map_or((String::new(), false, false), |url| (url, true, true)),
         (url, audio) if !url.is_empty() => (url, audio, false),
         // Only stream playlists, which the WebView plays itself; the master one carries the sound.
         _ => hls_preview(&info.formats).map_or((String::new(), false, false), |url| (url, true, true)),
@@ -474,6 +482,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
             .collect(),
         streams,
         live: false,
+        download_first: bot_checked,
     })
 }
 
