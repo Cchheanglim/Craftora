@@ -3,8 +3,8 @@ import type { Job } from "../types";
 import { cancelJob, discardDownload, downloadMedia, onJobEvent, pauseJob, startJob, startRender, type JobEvent } from "../lib/engine";
 import { loadPausedDownloads, savePausedDownloads } from "../lib/storage";
 
-/** How many jobs may download or encode at the same time. */
-const MAX_RUNNING = 2;
+/** How many jobs may download or encode at the same time, unless Settings says otherwise. */
+export const MAX_RUNNING = 2;
 
 type Action =
   | { type: "add"; job: Job }
@@ -116,7 +116,7 @@ function simulateTick(jobs: Job[], now: number): Job[] {
  * The export queue. With `real`, jobs run through the Rust engine; otherwise they are
  * simulated so the UI can be explored in a browser.
  */
-export function useQueue(initial: Job[], real: boolean) {
+export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING) {
   // Real mode also brings back downloads paused before Craftora was last closed.
   const [jobs, dispatch] = useReducer(reducer, real ? [...loadPausedDownloads(), ...initial] : initial);
   const jobsRef = useRef(jobs);
@@ -138,7 +138,7 @@ export function useQueue(initial: Job[], real: boolean) {
   useEffect(() => {
     if (!real) return;
     // A live recording runs for hours: it doesn't take a download slot.
-    let free = MAX_RUNNING - jobs.filter((j) => isRunning(j) && !j.record).length;
+    let free = maxRunning - jobs.filter((j) => isRunning(j) && !j.record).length;
     for (const job of [...jobs].reverse()) {
       if (free <= 0) break;
       if (job.status !== "waiting" || !(job.spec || job.render || job.prefetch)) continue;
@@ -147,7 +147,7 @@ export function useQueue(initial: Job[], real: boolean) {
       const run = job.prefetch ? downloadMedia({ id: job.id, ...job.prefetch }) : job.render ? startRender(job.render) : startJob(job.spec!);
       run.catch((err: Error) => dispatch({ type: "failed", id: job.id, message: err.message }));
     }
-  }, [jobs, real]);
+  }, [jobs, real, maxRunning]);
 
   // Demo mode: simulated progress.
   const simulating = !real && jobs.some((j) => isRunning(j) || j.status === "waiting");

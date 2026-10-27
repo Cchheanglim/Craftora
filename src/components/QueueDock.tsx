@@ -102,7 +102,7 @@ export function QueueDock({ queue, freshId }: QueueDockProps) {
   );
 }
 
-function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolean }) {
+export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolean }) {
   const [copied, setCopied] = useState(false);
   const { ask, dialog } = useConfirm();
   const cancel = async () => {

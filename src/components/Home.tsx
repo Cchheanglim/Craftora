@@ -27,8 +27,6 @@ interface HomeProps {
   recent: Job[];
   outputDir: string;
   updates: Updates;
-  /** Settings for fetching links; absent in the browser preview. */
-  links?: LinkSettings;
   onOpenWelcome: () => void;
 }
 
@@ -135,7 +133,6 @@ export function Home({
   recent,
   outputDir,
   updates,
-  links,
   onOpenWelcome,
 }: HomeProps) {
   // Some people don't want their exports' pictures on the start screen; remembered.
@@ -235,7 +232,6 @@ export function Home({
               </ul>
             )}
 
-            {links && <Links links={links} />}
 
             <h2 className="section-label home__gap">About</h2>
             <div className="home__about">
@@ -337,7 +333,7 @@ function ReportDetails({ report }: { report: SiteReport }) {
 }
 
 /** Signing in to websites for links that need a login, checking links, and keeping yt-dlp current. */
-function Links({ links }: { links: LinkSettings }) {
+export function Links({ links }: { links: LinkSettings }) {
   const [site, setSite] = useState("");
   const [toCheck, setToCheck] = useState("");
   const [checking, setChecking] = useState(false);

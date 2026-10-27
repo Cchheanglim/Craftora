@@ -8,7 +8,7 @@ import { useConfirm } from "./ConfirmDialog";
 import { beginMediaDrag } from "./TimelineEditor";
 import "./Sidebar.css";
 
-export type View = "home" | "editor" | "library";
+export type View = "home" | "editor" | "projects" | "media" | "downloads" | "library" | "settings";
 
 /** "youtube.com" for a link; the link itself when it doesn't parse (yt-dlp takes some without https://). */
 function siteOf(url: string): string {
@@ -24,6 +24,8 @@ interface SidebarProps {
   onViewChange: (view: View) => void;
   collapsed: boolean;
   libraryCount: number;
+  /** Downloads running, waiting or paused. */
+  downloadsCount: number;
   /** "browser" in a plain browser tab, where downloads are simulated. */
   engines: EngineStatus | "checking" | "browser";
   media: MediaItem[];
@@ -53,6 +55,7 @@ export function Sidebar({
   onViewChange,
   collapsed,
   libraryCount,
+  downloadsCount,
   engines,
   media,
   preparing,
@@ -81,7 +84,11 @@ export function Sidebar({
   const nav = [
     { id: "home" as const, label: "Home", icon: "logo" as const },
     { id: "editor" as const, label: "Editor", icon: "scissors" as const },
+    { id: "projects" as const, label: "Projects", icon: "grid" as const },
+    { id: "media" as const, label: "Media library", icon: "image" as const },
+    { id: "downloads" as const, label: "Downloads", icon: "download" as const, count: downloadsCount },
     { id: "library" as const, label: "Exports", icon: "folder" as const, count: libraryCount },
+    { id: "settings" as const, label: "Settings", icon: "sliders" as const },
   ];
 
   return (
