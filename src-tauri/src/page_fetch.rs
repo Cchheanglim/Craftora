@@ -116,11 +116,42 @@ struct PageAnswer {
     error: String,
 }
 
+/// Opens the page window again (minimized) on the page it last fetched from, after it was closed,
+/// and waits for the page to load and get past the site's bot check.
+fn reopen(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+    let _turn = ONE_AT_A_TIME.lock().unwrap();
+    if let Some(window) = app.get_webview_window(crate::signin::WINDOW) {
+        return Ok(window);
+    }
+    let page = crate::signin::last_page().ok_or("Open the video's page in Craftora again and click Fetch this video.")?;
+    tauri::async_runtime::block_on(crate::signin::open_sign_in(app.clone(), page))?;
+    let window = app.get_webview_window(crate::signin::WINDOW).ok_or("Couldn't open the video's page again.")?;
+    let _ = window.minimize();
+    // Cloudflare's check page is titled "Just a moment..." until it lets the browser through.
+    let ready = r#"document.readyState === "complete" && !/just a moment/i.test(document.title)"#;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(300));
+        let (tx, rx) = mpsc::channel();
+        window
+            .eval_with_callback(ready, move |json| {
+                let _ = tx.send(json);
+            })
+            .map_err(|e| e.to_string())?;
+        if rx.recv_timeout(Duration::from_secs(10)).is_ok_and(|json| json == "true") {
+            return Ok(window);
+        }
+    }
+    Err("The video's page took too long to open again.".into())
+}
+
 /// Has the page window fetch `url`, or with `range` ("bytes=a-b") just that piece of it.
 pub(crate) fn page_fetch(app: &AppHandle, url: &str, range: Option<&str>) -> Result<Fetched, String> {
-    let window = app
-        .get_webview_window(crate::signin::WINDOW)
-        .ok_or("Keep Craftora's window with the stream's page open while it records.")?;
+    let window = match app.get_webview_window(crate::signin::WINDOW) {
+        Some(window) => window,
+        None => reopen(app)?,
+    };
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let address = serde_json::to_string(url).map_err(|e| e.to_string())?;

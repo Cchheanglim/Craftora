@@ -526,7 +526,11 @@ export default function App() {
       const item = importSource(source, !source.live && source.duration > 0);
       if (source.live && inDesktopApp) recordForEditing(item);
       else if ((!source.previewUrl || source.downloadFirst) && inDesktopApp) downloadForEditing(item);
-      if (found) void tellSignIn("Sent to Craftora ✓  You can close this window.").catch(() => {});
+      // A bot-checked site's video plays and downloads through this window: keep it (minimized is fine).
+      if (found)
+        void tellSignIn(
+          source.downloadFirst ? "Sent to Craftora ✓  Keep this window open (minimize it): Craftora plays this video through it." : "Sent to Craftora ✓  You can close this window.",
+        ).catch(() => {});
       const entry: FetchEntry = { url: link, title: source.title, thumbnail: source.thumbnail, fetchedAt: Date.now() };
       changeFetchHistory([entry, ...fetchHistory.filter((e) => e.url !== link)].slice(0, 50));
       setUrl("");

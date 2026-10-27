@@ -424,6 +424,9 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
     // be open on its page; a link pasted straight into Craftora never opened it. It opens minimized.
     // shortcut: no wait for the page to load; the preview is asked for later, when it has.
     let page = page.or_else(|| bot_checked.then(|| crate::signin::split_referer(&url).0.to_string()));
+    if let Some(page) = page.as_ref().filter(|_| bot_checked) {
+        crate::signin::remember_page(page);
+    }
     if let Some(page) = page.as_ref().filter(|_| bot_checked && app.get_webview_window(crate::signin::WINDOW).is_none())
         && crate::signin::open_sign_in(app.clone(), page.clone()).await.is_ok()
         && let Some(window) = app.get_webview_window(crate::signin::WINDOW)
