@@ -146,6 +146,16 @@ pub(crate) async fn link_args(app: &AppHandle, link: &str) -> (Vec<String>, Opti
 static CHALLENGED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 /// The sign-in window's browser name (User-Agent), seen by "Fetch this video".
 static BROWSER_AGENT: Mutex<String> = Mutex::new(String::new());
+/// The page the sign-in window last fetched from, to open it again if it was closed (page_fetch.rs).
+static LAST_PAGE: Mutex<String> = Mutex::new(String::new());
+
+pub(crate) fn remember_page(page: &str) {
+    *LAST_PAGE.lock().unwrap() = page.to_string();
+}
+
+pub(crate) fn last_page() -> Option<String> {
+    Some(LAST_PAGE.lock().unwrap().clone()).filter(|p| !p.is_empty())
+}
 
 fn host_of(link: &str) -> Option<String> {
     Url::parse(split_referer(link).0).ok()?.host_str().map(str::to_string)
@@ -256,6 +266,7 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
             };
             // The page shown now, even after in-page navigation (YouTube changes videos without loading a page).
             let page = browser.url().map(|u| u.to_string()).unwrap_or_default();
+            remember_page(&page);
             let _ = browser.eval_with_callback(FIND_MEDIA, move |json| {
                 let mut found: FoundPage = serde_json::from_str(&json).unwrap_or_default();
                 if !found.agent.is_empty() {

@@ -256,6 +256,7 @@ export function ExportPanel({
           </span>
           <kbd>Ctrl ↵</kbd>
         </button>
+        {plan.kind === "empty" && <p className="export__hint">{plan.reason}</p>}
       </div>
     </aside>
   );

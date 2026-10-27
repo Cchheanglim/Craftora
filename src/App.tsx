@@ -408,8 +408,9 @@ export default function App() {
   /** Queues a whole link to download, so it edits like a file on this PC. */
   const downloadForEditing = (item: MediaItem) => {
     if (!inDesktopApp || item.source.local) return;
-    // Meanwhile, fill the preview's cache from the start, so scrubbing what's done is instant.
-    for (const id of item.source.previewCacheIds ?? []) void prefetchPreview(id).catch(() => {});
+    // Meanwhile, fill the preview's cache from the start, so scrubbing what's done is instant. Not
+    // through the page window (bot-checked sites): that would fetch the whole video twice.
+    if (!item.source.downloadFirst) for (const id of item.source.previewCacheIds ?? []) void prefetchPreview(id).catch(() => {});
     const format = item.hasVideo ? item.videoFormat : item.audioFormat;
     const stream = item.source.streams.find((s) => s.id === format);
     queue.add({
@@ -525,7 +526,11 @@ export default function App() {
       const item = importSource(source, !source.live && source.duration > 0);
       if (source.live && inDesktopApp) recordForEditing(item);
       else if ((!source.previewUrl || source.downloadFirst) && inDesktopApp) downloadForEditing(item);
-      if (found) void tellSignIn("Sent to Craftora ✓  You can close this window.").catch(() => {});
+      // A bot-checked site's video plays and downloads through this window: keep it (minimized is fine).
+      if (found)
+        void tellSignIn(
+          source.downloadFirst ? "Sent to Craftora ✓  Keep this window open (minimize it): Craftora plays this video through it." : "Sent to Craftora ✓  You can close this window.",
+        ).catch(() => {});
       const entry: FetchEntry = { url: link, title: source.title, thumbnail: source.thumbnail, fetchedAt: Date.now() };
       changeFetchHistory([entry, ...fetchHistory.filter((e) => e.url !== link)].slice(0, 50));
       setUrl("");

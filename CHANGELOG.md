@@ -16,7 +16,11 @@
 - **Works with sites that block bots.** When a site's bot check (such as Cloudflare's) turns the
   download away, Craftora tries again as a browser, downloads the video and edits it from your PC.
   A live stream from such a site records through Craftora's page window, so keep that window open
-  while it records.
+  while it records. These videos preview right away while they download, and Export unlocks once
+  the download is done (their links often expire, so Craftora exports the downloaded copy).
+- **Pause a download and finish it later.** Click pause on a "Download for editing" in the Queue.
+  It keeps what it has, waits there even after you close Craftora, and continues where it stopped
+  when you click resume.
 
 ## 0.3.1 (October 2026)
 

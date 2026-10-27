@@ -106,8 +106,8 @@ function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolea
   const [copied, setCopied] = useState(false);
   const { ask, dialog } = useConfirm();
   const cancel = async () => {
-    // A job that hasn't started loses nothing; a running one loses its progress.
-    const running = job.status === "downloading" || job.status === "encoding";
+    // A job that hasn't started loses nothing; a running one (or a paused download) loses its progress.
+    const running = job.status === "downloading" || job.status === "encoding" || (job.status === "paused" && Boolean(job.prefetch));
     const ok =
       !running ||
       (await ask({
@@ -185,7 +185,7 @@ function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolea
       <span className="queue__size mono">{done ? formatSize(job.sizeMb) : `~${formatSize(job.sizeMb)}`}</span>
 
       <div className="queue__row-actions">
-        {queue.canPause && isActive(job) && (
+        {queue.canPauseJob(job) && isActive(job) && (
           <button type="button" className="btn btn--icon" aria-label={`Pause ${job.title}`} onClick={() => queue.pause(job.id)}>
             <Icon name="pause" size={14} />
           </button>

@@ -80,6 +80,9 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   const container = isVideo ? settings.videoContainer : settings.audioContainer;
   const duration = projectDuration(project);
   if (project.clips.length === 0) return { kind: "empty", reason: "Add something to the timeline first." };
+  // Its site only lets the download in (bot check, or a link that expires): export the downloaded copy.
+  const waiting = project.media.find((m) => m.source.downloadFirst && !m.source.local && project.clips.some((c) => c.mediaId === m.id));
+  if (waiting) return { kind: "empty", reason: `Export unlocks when “${waiting.name}” finishes downloading (see the Queue).` };
 
   const single = singleUntouched(project);
   if (single && cutModeApplies(project, settings)) {

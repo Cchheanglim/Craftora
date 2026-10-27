@@ -30,7 +30,8 @@ export type JobEvent =
     }
   | { kind: "done"; id: string; path: string; sizeBytes: number }
   | { kind: "failed"; id: string; message: string }
-  | { kind: "cancelled"; id: string };
+  | { kind: "cancelled"; id: string }
+  | { kind: "paused"; id: string };
 
 /** Rust commands reject with a plain message string. */
 const message = (err: unknown) => (typeof err === "string" ? err : err instanceof Error ? err.message : String(err));
@@ -348,6 +349,11 @@ export async function downloadMedia(spec: { id: string; url: string; format: str
 
 /** What encodes "Fast" exports on this PC, e.g. "your NVIDIA graphics card". */
 export const exportEncoder = () => invoke<string>("export_encoder");
+
+/** Pauses a "download for editing", keeping what it saved; starting it again continues it. */
+export const pauseJob = (id: string) => invoke<boolean>("pause_job", { id });
+/** Throws away what a paused download saved. */
+export const discardDownload = (id: string) => invoke<void>("discard_download", { id });
 
 export const onJobEvent = (handler: (event: JobEvent) => void): Promise<UnlistenFn> =>
   listen<JobEvent>("job-event", (e) => handler(e.payload));

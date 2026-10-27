@@ -98,6 +98,10 @@ pub(crate) enum JobEvent {
     Cancelled {
         id: String,
     },
+    /// A download stopped by `pause_job`: what it saved waits in its working folder.
+    Paused {
+        id: String,
+    },
 }
 
 /// Jobs currently running, so they can be cancelled.
@@ -108,6 +112,7 @@ pub struct Jobs(Mutex<HashMap<String, Running>>);
 struct Running {
     child: Option<CommandChild>,
     cancelled: bool,
+    paused: bool,
 }
 
 impl Jobs {
@@ -122,11 +127,11 @@ impl Jobs {
     }
 
     /// Keeps the running process so it can be killed. Returns the child back
-    /// when the job was cancelled before the process started.
+    /// when the job was cancelled or paused before the process started.
     fn attach(&self, id: &str, child: CommandChild) -> Option<CommandChild> {
         let mut jobs = self.0.lock().unwrap();
         match jobs.get_mut(id) {
-            Some(job) if !job.cancelled => {
+            Some(job) if !job.cancelled && !job.paused => {
                 job.child = Some(child);
                 None
             }
@@ -158,9 +163,27 @@ impl Jobs {
         jobs.get_mut(id).and_then(|j| j.child.as_mut()).is_some_and(|child| child.write(b"q").is_ok())
     }
 
-    /// Forgets the job; returns whether it had been cancelled.
-    fn finish(&self, id: &str) -> bool {
-        self.0.lock().unwrap().remove(id).is_some_and(|j| j.cancelled)
+    /// Stops a download but keeps what it saved, to continue later (`pause_job`).
+    fn pause(&self, id: &str) -> bool {
+        let child = {
+            let mut jobs = self.0.lock().unwrap();
+            let Some(job) = jobs.get_mut(id) else { return false };
+            job.paused = true;
+            job.child.take()
+        };
+        if let Some(child) = child {
+            kill_tree(child);
+        }
+        true
+    }
+
+    fn is_paused(&self, id: &str) -> bool {
+        self.0.lock().unwrap().get(id).is_some_and(|j| j.paused)
+    }
+
+    /// Forgets the job; returns whether it had been cancelled, and whether paused.
+    fn finish(&self, id: &str) -> (bool, bool) {
+        self.0.lock().unwrap().remove(id).map_or((false, false), |j| (j.cancelled, j.paused))
     }
 }
 
@@ -190,9 +213,10 @@ pub(crate) fn spawn_job(
     }
     tauri::async_runtime::spawn(async move {
         let result = work.await;
-        let cancelled = app.state::<Jobs>().finish(&id);
+        let (cancelled, paused) = app.state::<Jobs>().finish(&id);
         let event = match result {
             _ if cancelled => JobEvent::Cancelled { id },
+            _ if paused => JobEvent::Paused { id },
             Ok(path) => {
                 let size_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
                 JobEvent::Done { id, path: path.to_string_lossy().into_owned(), size_bytes }
@@ -231,6 +255,23 @@ pub async fn start_job(app: AppHandle, spec: JobSpec) -> Result<(), String> {
 #[tauri::command]
 pub fn cancel_job(jobs: State<'_, Jobs>, id: String) -> bool {
     jobs.cancel(&id)
+}
+
+/// Pauses a "download for editing"; starting it again with the same id continues it, even after
+/// Craftora was closed.
+#[tauri::command]
+pub fn pause_job(jobs: State<'_, Jobs>, id: String) -> bool {
+    jobs.pause(&id)
+}
+
+/// Throws away what a paused download saved (cancelling it from the queue).
+#[tauri::command]
+pub fn discard_download(app: AppHandle, id: String) -> Result<(), String> {
+    let work = downloads_dir(&app)?.join(format!("{WORK_PREFIX}{}", safe_stem(&id)));
+    match std::fs::remove_dir_all(&work) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(format!("Couldn't remove the paused download: {e}")),
+        _ => Ok(()),
+    }
 }
 
 pub(crate) fn is_web_link(url: &str) -> bool {
@@ -272,6 +313,8 @@ pub(crate) fn work_dir(dir: &Path, job_id: &str) -> Result<PathBuf, String> {
 }
 
 const WORK_PREFIX: &str = ".craftora-";
+/// In a paused download's working folder: keep it at startup (`clean_work_dirs`).
+const PAUSED_MARK: &str = "paused";
 
 /// Moves a finished file from the working folder into `dir` as `stem.ext`, or
 /// `stem (2).ext`… if that's taken. The name is claimed only now, when the file is complete,
@@ -306,7 +349,8 @@ pub(crate) fn clean_work_dirs(app: &AppHandle) {
         let Ok(entries) = std::fs::read_dir(&dir) else { continue };
         for entry in entries.flatten() {
             let is_ours = entry.file_name().to_string_lossy().starts_with(WORK_PREFIX);
-            if is_ours && entry.file_type().is_ok_and(|t| t.is_dir()) {
+            let paused = entry.path().join(PAUSED_MARK).exists();
+            if is_ours && !paused && entry.file_type().is_ok_and(|t| t.is_dir()) {
                 let _ = std::fs::remove_dir_all(entry.path());
             }
         }
@@ -347,7 +391,9 @@ pub async fn download_media(app: AppHandle, spec: MediaDownload) -> Result<(), S
     let task_app = app.clone();
     spawn_job(app, spec.id.clone(), async move {
         let dir = downloads_dir(&task_app)?;
+        // A paused download continues here: yt-dlp picks up the parts it already saved.
         let work = work_dir(&dir, &spec.id)?;
+        let _ = std::fs::remove_file(work.join(PAUSED_MARK));
         let request = Download {
             url: &spec.url,
             format: &spec.format,
@@ -356,14 +402,28 @@ pub async fn download_media(app: AppHandle, spec: MediaDownload) -> Result<(), S
             // MP4 (or M4A) plays in the preview without a preview copy.
             target: if spec.audio_only { DownloadTarget::Audio("m4a") } else { DownloadTarget::Video("mp4") },
         };
-        let result = match download(&task_app, &spec.id, &request, &work, "download").await {
+        let mut downloaded = download(&task_app, &spec.id, &request, &work, "download").await;
+        // After a restart Craftora no longer knows the site checks for bots: learn it again, once.
+        if let Err(e) = &downloaded
+            && crate::media::is_bot_check(e)
+            && crate::signin::note_bot_check(&spec.url)
+        {
+            downloaded = download(&task_app, &spec.id, &request, &work, "download").await;
+        }
+        let result = match downloaded {
             Ok(file) => {
                 let ext = file.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_else(|| "mp4".into());
                 deliver(&file, &dir, &safe_stem(&spec.title), &ext)
             }
+            // Signed links (a pass in the address) stop working after a while.
+            Err(e) if e.contains("401") => Err("This link has expired. Fetch its page again in Craftora to download it.".into()),
             Err(e) => Err(e),
         };
-        let _ = std::fs::remove_dir_all(&work);
+        if task_app.state::<Jobs>().is_paused(&spec.id) {
+            let _ = std::fs::write(work.join(PAUSED_MARK), b"");
+        } else {
+            let _ = std::fs::remove_dir_all(&work);
+        }
         result
     })
 }

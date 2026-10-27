@@ -124,30 +124,65 @@ fn read_at(path: &PathBuf, offset: u64, len: u64) -> std::io::Result<Vec<u8>> {
 }
 
 /// Fetches `[start, start + len)` from the internet into the cache; returns the bytes.
+/// Cloudflare's bot check answering instead of the site: 403 or 503 with `cf-mitigated: challenge`.
+fn turned_away(response: &reqwest::Response) -> bool {
+    matches!(response.status().as_u16(), 403 | 503) && response.headers().get("cf-mitigated").is_some_and(|v| v == "challenge")
+}
+
+#[cfg(not(test))]
+async fn page_piece(url: String, range: String) -> Result<crate::page_fetch::Fetched, String> {
+    let app = APP.get().cloned().ok_or("Craftora isn't ready yet.")?;
+    tauri::async_runtime::spawn_blocking(move || crate::page_fetch::page_fetch(&app, &url, Some(&range)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Unit tests leave the page window out: linking any of the app's window code makes Windows refuse
+/// to start the test program (it lacks the app's Common Controls manifest).
+#[cfg(test)]
+async fn page_piece(_: String, _: String) -> Result<crate::page_fetch::Fetched, String> {
+    Err("No page window in tests.".into())
+}
+
+/// The app, for `page_piece`; kept here rather than in each cache entry (see the note above).
+static APP: OnceLock<AppHandle> = OnceLock::new();
+
 async fn fetch(entry: &Entry, start: u64, len: u64) -> Result<Vec<u8>, String> {
     let end = start + len - 1;
     // Videos found by playing a page are refused without that page as the Referer.
     let (url, page) = crate::signin::split_referer(&entry.url);
-    let mut request = client().get(url).header(header::RANGE, format!("bytes={start}-{end}"));
-    if let Some(page) = page {
-        request = request.header(header::REFERER, page);
-    }
-    let response = request
-        .send()
-        .await
-        .map_err(|e| format!("Couldn't reach the video: {e}"))?;
-    if response.status() != StatusCode::PARTIAL_CONTENT {
-        return Err(format!("The video's server answered {} instead of part of the file.", response.status()));
-    }
     // "bytes 0-1048575/123456789": the total is after the slash.
-    let total = response
-        .headers()
-        .get(header::CONTENT_RANGE)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.rsplit('/').next())
-        .and_then(|t| t.parse::<u64>().ok());
-    let content_type = response.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_string);
-    let bytes = response.bytes().await.map_err(|e| format!("The video stopped downloading: {e}"))?.to_vec();
+    let total_of = |range: &str| range.rsplit('/').next().and_then(|t| t.parse::<u64>().ok());
+    let (total, content_type, bytes) = match () {
+        // A site whose bot check turns Craftora away: the page window, which passed it, fetches.
+        _ if crate::signin::bot_checked(url) => {
+            let fetched = page_piece(url.to_string(), format!("bytes={start}-{end}")).await?;
+            if fetched.status != 206 {
+                return Err(format!("The video's server answered {} instead of part of the file.", fetched.status));
+            }
+            (fetched.range.as_deref().and_then(total_of), Some(fetched.kind), fetched.body)
+        }
+        _ => {
+            let mut request = client().get(url).header(header::RANGE, format!("bytes={start}-{end}"));
+            if let Some(page) = page {
+                request = request.header(header::REFERER, page);
+            }
+            let response = request
+                .send()
+                .await
+                .map_err(|e| format!("Couldn't reach the video: {e}"))?;
+            if turned_away(&response) && crate::signin::note_bot_check(url) {
+                return Box::pin(fetch(entry, start, len)).await;
+            }
+            if response.status() != StatusCode::PARTIAL_CONTENT {
+                return Err(format!("The video's server answered {} instead of part of the file.", response.status()));
+            }
+            let total = response.headers().get(header::CONTENT_RANGE).and_then(|v| v.to_str().ok()).and_then(total_of);
+            let content_type = response.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_string);
+            let bytes = response.bytes().await.map_err(|e| format!("The video stopped downloading: {e}"))?.to_vec();
+            (total, content_type, bytes)
+        }
+    };
     write_at(&entry.path, start, &bytes).map_err(|e| format!("Couldn't save to the cache: {e}"))?;
     let mut state = entry.state.lock().unwrap();
     if total.is_some() {
@@ -177,6 +212,7 @@ pub fn cache_media(app: AppHandle, cache: State<'_, MediaCache>, url: String) ->
     let id = format!("{:016x}", hasher.finish());
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("streams");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create the cache folder: {e}"))?;
+    let _ = APP.set(app.clone());
     let mut entries = cache.0.lock().unwrap();
     entries.entry(id.clone()).or_insert_with(|| {
         let path = dir.join(format!("{id}.bin"));
@@ -303,17 +339,21 @@ async fn relay_hls(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<
     // A site whose bot check turns Craftora away: the page window, which passed it, fetches instead.
     if crate::signin::bot_checked(url) {
         let (app, address) = (app.clone(), url.to_string());
-        let fetched = tauri::async_runtime::spawn_blocking(move || crate::page_fetch::page_fetch(&app, &address)).await;
-        let Ok(Ok((status, kind, body))) = fetched else {
+        let range = request.headers().get(header::RANGE).and_then(|v| v.to_str().ok()).map(str::to_string);
+        let fetched = tauri::async_runtime::spawn_blocking(move || crate::page_fetch::page_fetch(&app, &address, range.as_deref())).await;
+        let Ok(Ok(fetched)) = fetched else {
             return reply(StatusCode::BAD_GATEWAY, b"Couldn't reach the stream through the page window".to_vec());
         };
-        let answer = Response::builder().status(status).header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-        if body.starts_with(b"#EXTM3U") {
+        let mut answer = Response::builder().status(fetched.status).header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+        if fetched.body.starts_with(b"#EXTM3U") {
             let base = Url::parse(url).expect("checked above");
-            let playlist = relay_playlist(&String::from_utf8_lossy(&body), &base, page, RELAY);
+            let playlist = relay_playlist(&String::from_utf8_lossy(&fetched.body), &base, page, RELAY);
             return answer.header(header::CONTENT_TYPE, "application/vnd.apple.mpegurl").body(playlist.into_bytes()).unwrap_or_default();
         }
-        return answer.header(header::CONTENT_TYPE, kind).body(body).unwrap_or_default();
+        if let Some(piece) = fetched.range {
+            answer = answer.header(header::CONTENT_RANGE, piece);
+        }
+        return answer.header(header::CONTENT_TYPE, fetched.kind).body(fetched.body).unwrap_or_default();
     }
     let mut outgoing = client().get(url);
     if let Some(page) = page {
@@ -325,6 +365,10 @@ async fn relay_hls(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<
     let Ok(response) = outgoing.send().await else {
         return reply(StatusCode::BAD_GATEWAY, b"Couldn't reach the stream".to_vec());
     };
+    // Its own bot check (the video may live on another address than its page): through the page.
+    if turned_away(&response) && crate::signin::note_bot_check(url) {
+        return Box::pin(relay_hls(app, request)).await;
+    }
     let status = response.status();
     let base = response.url().clone();
     let content_type = response.headers().get(header::CONTENT_TYPE).cloned();

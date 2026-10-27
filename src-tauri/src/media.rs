@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::engine::{last_error, run_to_end, YT_DLP};
 
@@ -377,7 +377,7 @@ async fn read_link(app: &AppHandle, url: &str) -> Result<Info, String> {
 
 /// yt-dlp's words for "a bot check turned me away", such as "Got HTTP Error 403 caused by
 /// Cloudflare anti-bot challenge; try again with --extractor-args "generic:impersonate"".
-fn is_bot_check(error: &str) -> bool {
+pub(crate) fn is_bot_check(error: &str) -> bool {
     let error = error.to_ascii_lowercase();
     error.contains("anti-bot") || error.contains("impersonat")
 }
@@ -420,11 +420,28 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
     // they need. The length probe, the preview cache and the HLS relay send it (media_cache.rs).
     let site_page = info.formats.iter().find_map(|f| f.http_headers.get("Referer").cloned());
     let page = crate::signin::split_referer(&url).1.map(str::to_string).or(site_page);
+    // A bot-checked video previews (and is measured) through the page window, so that window must
+    // be open on its page; a link pasted straight into Craftora never opened it. It opens minimized.
+    // shortcut: no wait for the page to load; the preview is asked for later, when it has.
+    let page = page.or_else(|| bot_checked.then(|| crate::signin::split_referer(&url).0.to_string()));
+    if let Some(page) = page.as_ref().filter(|_| bot_checked) {
+        crate::signin::remember_page(page);
+    }
+    if let Some(page) = page.as_ref().filter(|_| bot_checked && app.get_webview_window(crate::signin::WINDOW).is_none())
+        && crate::signin::open_sign_in(app.clone(), page.clone()).await.is_ok()
+        && let Some(window) = app.get_webview_window(crate::signin::WINDOW)
+    {
+        let _ = window.minimize();
+    }
     let duration = match info.duration.filter(|d| *d > 0.0) {
         Some(d) => Some(d),
-        None if bot_checked => None,
         // Plain video-file and DASH (.mpd) links: yt-dlp doesn't open the file, so it reports no length.
+        // Behind a bot check FFprobe reads it through the page window (page_fetch.rs).
         None => match info.formats.iter().find_map(|f| f.url.as_deref().or(f.manifest_url.as_deref())) {
+            Some(file) if bot_checked => match crate::page_fetch::relayed(&app, file) {
+                Ok(through_page) => probe_length(&app, &through_page, None).await,
+                Err(_) => None,
+            },
             Some(file) => probe_length(&app, file, page.as_deref()).await,
             None => None,
         },
@@ -441,9 +458,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
 
     let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats) {
         _ if !length_known => (String::new(), true, false),
-        // Behind a bot check only stream playlists preview: the relay fetches them through the
-        // page window (media_cache.rs), while the byte cache for files would be turned away.
-        _ if bot_checked => hls_preview(&info.formats).map_or((String::new(), false, false), |url| (url, true, true)),
+        // Behind a bot check the byte cache and the stream relay fetch through the page window.
         (url, audio) if !url.is_empty() => (url, audio, false),
         // Only stream playlists, which the WebView plays itself; the master one carries the sound.
         _ => hls_preview(&info.formats).map_or((String::new(), false, false), |url| (url, true, true)),
