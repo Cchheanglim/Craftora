@@ -1,6 +1,6 @@
 import { useEffect, useRef, type CSSProperties, type SyntheticEvent } from "react";
 import Hls from "hls.js";
-import { HLS_RELAY, RECORDINGS } from "../lib/engine";
+import { HLS_RELAY, RECORDINGS, noteDiagnostic } from "../lib/engine";
 
 interface SyncedMediaProps {
   kind: "video" | "audio";
@@ -118,6 +118,8 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
     // connection, and through the relay it can stay there. It still steps down if needed.
     const player = new Hls({ abrEwmaDefaultEstimate: 5_000_000 });
     player.on(Hls.Events.ERROR, (_event, data) => {
+      if (data.fatal || data.response?.code)
+        noteDiagnostic(`preview player: ${data.fatal ? "stopped" : "problem"}: ${data.details}${data.response?.code ? ` (answered ${data.response.code})` : ""} ${data.url ?? ""}`);
       if (data.fatal) failedRef.current();
     });
     player.loadSource(src);

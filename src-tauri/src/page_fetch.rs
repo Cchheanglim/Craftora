@@ -150,7 +150,10 @@ fn reopen(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
 pub(crate) fn page_fetch(app: &AppHandle, url: &str, range: Option<&str>) -> Result<Fetched, String> {
     let window = match app.get_webview_window(crate::signin::WINDOW) {
         Some(window) => window,
-        None => reopen(app)?,
+        None => {
+            crate::diag::note("page window was closed: opening it again");
+            reopen(app).inspect_err(|e| crate::diag::note(format!("page window: {e}")))?
+        }
     };
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
@@ -187,6 +190,7 @@ pub(crate) fn page_fetch(app: &AppHandle, url: &str, range: Option<&str>) -> Res
         let json = rx.recv_timeout(Duration::from_secs(10)).map_err(|_| "The page window stopped answering.".to_string())?;
         let Ok(answer) = serde_json::from_str::<PageAnswer>(&json) else { continue };
         if !answer.error.is_empty() {
+            crate::diag::note(format!("page window fetch {url}: {}", answer.error));
             return Err(format!("The page couldn't load the stream: {}", answer.error));
         }
         let body = crate::local::base64_decode(&answer.body).ok_or("The page sent back something unreadable.")?;
@@ -199,6 +203,7 @@ pub(crate) fn page_fetch(app: &AppHandle, url: &str, range: Option<&str>) -> Res
         };
         return Ok(Fetched { status: answer.status, kind, range, body });
     }
+    crate::diag::note(format!("page window fetch {url}: no answer in 30 s"));
     Err("The page took too long to load part of the stream.".into())
 }
 

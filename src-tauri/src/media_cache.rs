@@ -341,9 +341,17 @@ async fn relay_hls(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<
         let (app, address) = (app.clone(), url.to_string());
         let range = request.headers().get(header::RANGE).and_then(|v| v.to_str().ok()).map(str::to_string);
         let fetched = tauri::async_runtime::spawn_blocking(move || crate::page_fetch::page_fetch(&app, &address, range.as_deref())).await;
-        let Ok(Ok(fetched)) = fetched else {
-            return reply(StatusCode::BAD_GATEWAY, b"Couldn't reach the stream through the page window".to_vec());
+        let fetched = match fetched {
+            Ok(Ok(fetched)) => fetched,
+            Ok(Err(e)) => {
+                crate::diag::note(format!("preview relay (page window) {url}: {e}"));
+                return reply(StatusCode::BAD_GATEWAY, b"Couldn't reach the stream through the page window".to_vec());
+            }
+            Err(e) => return reply(StatusCode::BAD_GATEWAY, e.to_string().into_bytes()),
         };
+        if fetched.status >= 400 {
+            crate::diag::note(format!("preview relay (page window) {url}: answered {}", fetched.status));
+        }
         let mut answer = Response::builder().status(fetched.status).header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
         if fetched.body.starts_with(b"#EXTM3U") {
             let base = Url::parse(url).expect("checked above");
@@ -367,7 +375,11 @@ async fn relay_hls(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<
     };
     // Its own bot check (the video may live on another address than its page): through the page.
     if turned_away(&response) && crate::signin::note_bot_check(url) {
+        crate::diag::note(format!("preview relay {url}: bot check, switching to the page window"));
         return Box::pin(relay_hls(app, request)).await;
+    }
+    if response.status().as_u16() >= 400 {
+        crate::diag::note(format!("preview relay {url}: answered {}", response.status()));
     }
     let status = response.status();
     let base = response.url().clone();
@@ -458,7 +470,10 @@ async fn answer(entry: &Entry, start: u64, wanted_end: Option<u64>) -> Response<
             }
             match fetch(entry, start, len.max(1)).await {
                 Ok(bytes) => Ok(bytes),
-                Err(message) => return reply(StatusCode::BAD_GATEWAY, message.into_bytes()),
+                Err(message) => {
+                    crate::diag::note(format!("preview file {}: {message}", entry.url));
+                    return reply(StatusCode::BAD_GATEWAY, message.into_bytes());
+                }
             }
         }
     };

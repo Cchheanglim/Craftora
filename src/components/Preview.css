@@ -53,6 +53,18 @@
   pointer-events: none;
 }
 
+.preview__failed {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+/* The message lets clicks through to the picture; its button takes them. */
+.preview__failed .btn {
+  pointer-events: auto;
+}
+
 .preview__video {
   position: absolute;
   display: block;

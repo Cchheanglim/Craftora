@@ -7,6 +7,7 @@ import { formatTimecode } from "../lib/timecode";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
 import { SyncedMedia } from "./SyncedMedia";
+import { CopyReport } from "./CopyReport";
 import "./Preview.css";
 
 const FRAME = 1 / 30;
@@ -322,7 +323,14 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             // A link with nothing playable, or whose preview failed, would otherwise just be black.
             const source = mediaOf(c)?.source;
             return mediaTime(c) !== null && source && !source.local && (!source.previewUrl || failed.has(source.previewUrl));
-          }) && <span className="preview__loading">This video can't play in the preview. Download it with ⬇ in Media to watch and edit it.</span>}
+          }) && (
+            <span className="preview__loading">
+              <span className="preview__failed">
+                This video can't play in the preview. Download it with ⬇ in Media to watch and edit it.
+                <CopyReport />
+              </span>
+            </span>
+          )}
           {pictures.map((clip) => {
             const media = mediaOf(clip);
             const canPlay = Boolean(media?.source.previewUrl && !failed.has(media.source.previewUrl));
