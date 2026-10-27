@@ -303,17 +303,21 @@ async fn relay_hls(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<
     // A site whose bot check turns Craftora away: the page window, which passed it, fetches instead.
     if crate::signin::bot_checked(url) {
         let (app, address) = (app.clone(), url.to_string());
-        let fetched = tauri::async_runtime::spawn_blocking(move || crate::page_fetch::page_fetch(&app, &address)).await;
-        let Ok(Ok((status, kind, body))) = fetched else {
+        let range = request.headers().get(header::RANGE).and_then(|v| v.to_str().ok()).map(str::to_string);
+        let fetched = tauri::async_runtime::spawn_blocking(move || crate::page_fetch::page_fetch(&app, &address, range.as_deref())).await;
+        let Ok(Ok(fetched)) = fetched else {
             return reply(StatusCode::BAD_GATEWAY, b"Couldn't reach the stream through the page window".to_vec());
         };
-        let answer = Response::builder().status(status).header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-        if body.starts_with(b"#EXTM3U") {
+        let mut answer = Response::builder().status(fetched.status).header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+        if fetched.body.starts_with(b"#EXTM3U") {
             let base = Url::parse(url).expect("checked above");
-            let playlist = relay_playlist(&String::from_utf8_lossy(&body), &base, page, RELAY);
+            let playlist = relay_playlist(&String::from_utf8_lossy(&fetched.body), &base, page, RELAY);
             return answer.header(header::CONTENT_TYPE, "application/vnd.apple.mpegurl").body(playlist.into_bytes()).unwrap_or_default();
         }
-        return answer.header(header::CONTENT_TYPE, kind).body(body).unwrap_or_default();
+        if let Some(piece) = fetched.range {
+            answer = answer.header(header::CONTENT_RANGE, piece);
+        }
+        return answer.header(header::CONTENT_TYPE, fetched.kind).body(fetched.body).unwrap_or_default();
     }
     let mut outgoing = client().get(url);
     if let Some(page) = page {
