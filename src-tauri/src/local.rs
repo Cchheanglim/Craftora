@@ -341,6 +341,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
             chapters: Vec::new(),
             streams: vec![Stream { id: "local:image".into(), kind: "video", label, detail: codec_name(image.codec_name.as_deref()), size_mb }],
             live: false,
+            download_first: false,
             url: path_text,
         });
     }
@@ -418,6 +419,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
         chapters: Vec::new(),
         streams,
         live: false,
+        download_first: false,
         url: path_text,
     })
 }
@@ -474,6 +476,31 @@ pub(crate) fn base64_encode(bytes: &[u8]) -> String {
         out.push(if chunk.len() > 2 { TABLE[b2 & 0x3f] as char } else { '=' });
     }
     out
+}
+
+/// Decodes standard base64 (the page window's answers in page_fetch.rs); None if it isn't.
+pub(crate) fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    let value = |c: u8| match c {
+        b'A'..=b'Z' => Some(c - b'A'),
+        b'a'..=b'z' => Some(c - b'a' + 26),
+        b'0'..=b'9' => Some(c - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    };
+    let digits: Vec<u8> = text.bytes().filter(|&c| c != b'=').collect();
+    let mut out = Vec::with_capacity(digits.len() * 3 / 4);
+    for chunk in digits.chunks(4) {
+        if chunk.len() == 1 {
+            return None;
+        }
+        let mut n = 0u32;
+        for (i, &c) in chunk.iter().enumerate() {
+            n |= u32::from(value(c)?) << (18 - 6 * i);
+        }
+        out.extend_from_slice(&n.to_be_bytes()[1..chunk.len()]);
+    }
+    Some(out)
 }
 
 /// Extracts a JPEG preview frame from an opened local video or image as a `data:` URL.
@@ -584,12 +611,20 @@ pub async fn detect_silences(
 
 #[cfg(test)]
 mod tests {
-    use super::{base64_encode, parse_silences, peaks_from_pcm};
+    use super::{base64_decode, base64_encode, parse_silences, peaks_from_pcm};
 
     #[test]
     fn encodes_bytes_to_base64() {
         assert_eq!(base64_encode(b"Craftora"), "Q3JhZnRvcmE=");
         assert_eq!(base64_encode(&[0xff, 0xd8, 0xff]), "/9j/");
+    }
+
+    #[test]
+    fn decodes_base64_back() {
+        for bytes in [&b""[..], b"C", b"Cr", b"Cra", b"Craftora", &[0xff, 0x00, 0x80, 0x7f]] {
+            assert_eq!(base64_decode(&base64_encode(bytes)).as_deref(), Some(bytes));
+        }
+        assert_eq!(base64_decode("no!"), None);
     }
 
     #[test]

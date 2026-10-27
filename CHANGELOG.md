@@ -13,6 +13,10 @@
   a streaming service's player on your shop page) and pages with lots of pictures, and it finds a
   finished stream's replay too. If a page plays its video over a direct live connection (WebRTC),
   Craftora says so instead of asking you to play it again.
+- **Works with sites that block bots.** When a site's bot check (such as Cloudflare's) turns the
+  download away, Craftora tries again as a browser, downloads the video and edits it from your PC.
+  A live stream from such a site records through Craftora's page window, so keep that window open
+  while it records.
 
 ## 0.3.1 (October 2026)
 
