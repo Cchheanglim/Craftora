@@ -357,16 +357,53 @@ pub(crate) fn clean_work_dirs(app: &AppHandle) {
     }
 }
 
-/// `Videos\Craftora\Downloads`: whole links downloaded to edit like files on this PC.
+/// `Downloads` in the save folder (`Videos\Craftora\Downloads` by default): whole links downloaded
+/// to edit like files on this PC, and live recordings.
 pub(crate) fn downloads_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .video_dir()
-        .map_err(|e| format!("Couldn't find your Videos folder: {e}"))?
-        .join("Craftora")
-        .join("Downloads");
+    let dir = output_dir(app)?.join("Downloads");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create {}: {e}", dir.display()))?;
     Ok(dir)
+}
+
+/// The Downloads folder and the finished downloads in it, newest first (the Downloads page).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Downloads {
+    folder: String,
+    files: Vec<DownloadedFile>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadedFile {
+    name: String,
+    path: String,
+    size_bytes: u64,
+    /// Milliseconds since 1970.
+    modified_ms: u64,
+}
+
+#[tauri::command]
+pub fn list_downloads(app: AppHandle) -> Result<Downloads, String> {
+    let dir = downloads_dir(&app)?;
+    let entries = std::fs::read_dir(&dir).map_err(|e| format!("Couldn't read {}: {e}", dir.display()))?;
+    // Working folders of downloads in progress (and other hidden files) aren't finished downloads.
+    let mut files: Vec<DownloadedFile> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()) && !e.file_name().to_string_lossy().starts_with('.'))
+        .filter_map(|e| {
+            let meta = e.metadata().ok()?;
+            let modified = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?;
+            Some(DownloadedFile {
+                name: e.file_name().to_string_lossy().into_owned(),
+                path: e.path().to_string_lossy().into_owned(),
+                size_bytes: meta.len(),
+                modified_ms: modified.as_millis() as u64,
+            })
+        })
+        .collect();
+    files.sort_by_key(|f| std::cmp::Reverse(f.modified_ms));
+    Ok(Downloads { folder: dir.to_string_lossy().into_owned(), files })
 }
 
 /// A whole link to download before editing ("Download first").
