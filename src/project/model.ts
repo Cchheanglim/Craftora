@@ -284,16 +284,13 @@ export function mediaFromSource(source: MediaSource): MediaItem {
   };
 }
 
-/** Loudness bars (0–100) across a media item: real FFmpeg peaks for local files, or a steady wave for links. */
+/**
+ * Loudness bars (0–100) across a media item: real FFmpeg peaks, measured once it's a file on this
+ * PC. None for a link until then (a made-up wave didn't match the sound, and fooled Cut silences).
+ */
 export function peaksFor(media: MediaItem | undefined): number[] {
   if (!media || !media.hasAudio || media.source.image) return [];
-  if (media.source.peaks?.length) return media.source.peaks;
-  const seed = [...(media.id + media.name)].reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 17);
-  return Array.from({ length: 240 }, (_, i) => {
-    const x = Math.sin(i * 0.43 + seed) * 0.5 + Math.cos(i * 0.17 - seed * 0.3) * 0.35 + Math.sin(i * 1.13 + seed) * 0.15;
-    const phrase = (i + Math.abs(seed)) % 28 < 3 ? 0.08 : 1;
-    return Math.round(Math.min(100, Math.max(4, (Math.abs(x) * 82 + 18) * phrase)));
-  });
+  return media.source.peaks ?? [];
 }
 
 /** `bars` loudness values (0–100) for the part of `media` that `clip` plays, with volume and fades. */
