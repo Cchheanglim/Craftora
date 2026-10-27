@@ -93,3 +93,14 @@ test("an image clip can be extended to any duration on the timeline", () => {
   p = applyEdit(p, { type: "trimClip", clipId: "img", edge: "end", time: 25 });
   expect(p.clips[0].out).toBe(25);
 });
+
+test("a link that must download first can't export until it's on this PC", async () => {
+  const { planExport } = await import("../src/project/exportPlan");
+  const media = mediaFromSource({ ...source("video"), url: "https://shop.example/v.m3u8", local: false, downloadFirst: true });
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
+  const settings = { output: "video", videoContainer: "mp4", audioContainer: "mp3", cutMode: "fast", frameId: "landscape", quality: "fast" } as const;
+  expect(planExport(p, settings).kind).toBe("empty");
+  p = { ...p, media: p.media.map((m) => ({ ...m, source: { ...source("video"), duration: m.source.duration } })) };
+  expect(planExport(p, settings).kind).not.toBe("empty");
+});

@@ -377,7 +377,7 @@ async fn read_link(app: &AppHandle, url: &str) -> Result<Info, String> {
 
 /// yt-dlp's words for "a bot check turned me away", such as "Got HTTP Error 403 caused by
 /// Cloudflare anti-bot challenge; try again with --extractor-args "generic:impersonate"".
-fn is_bot_check(error: &str) -> bool {
+pub(crate) fn is_bot_check(error: &str) -> bool {
     let error = error.to_ascii_lowercase();
     error.contains("anti-bot") || error.contains("impersonat")
 }

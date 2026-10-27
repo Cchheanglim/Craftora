@@ -70,6 +70,8 @@ pub fn run() {
             jobs::start_job,
             project::start_render,
             jobs::cancel_job,
+            jobs::pause_job,
+            jobs::discard_download,
             jobs::download_media,
             media_cache::cache_media,
             media_cache::prefetch_media,
