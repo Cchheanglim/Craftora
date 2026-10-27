@@ -114,13 +114,21 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
   useEffect(() => {
     const el = ref.current;
     if (!el || !viaHls) return;
-    const player = new Hls();
+    // Start sharp: hls.js otherwise starts at its lowest quality until it has measured the
+    // connection, and through the relay it can stay there. It still steps down if needed.
+    const player = new Hls({ abrEwmaDefaultEstimate: 5_000_000 });
     player.on(Hls.Events.ERROR, (_event, data) => {
       if (data.fatal) failedRef.current();
     });
     player.loadSource(src);
     player.attachMedia(el);
     return () => player.destroy();
+  }, [src, viaHls]);
+  // Leaving hls.js (a stream that finished downloading): its cleanup removes the element's src,
+  // which React had already set to the file, so the player would sit empty. Set it again.
+  useEffect(() => {
+    const el = ref.current;
+    if (el && !viaHls && src && el.getAttribute("src") !== src) el.src = src;
   }, [src, viaHls]);
 
   const onSeeked = () => {

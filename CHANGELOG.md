@@ -18,6 +18,9 @@
   A live stream from such a site records through Craftora's page window, so keep that window open
   while it records. These videos preview right away while they download, and Export unlocks once
   the download is done (their links often expire, so Craftora exports the downloaded copy).
+- **Sharper link previews.** Streams start at good quality instead of the lowest one.
+- **The sound wave matches the sound.** Links no longer show a made-up wave: the real one appears
+  once the video is downloaded (Cut silences no longer cuts at made-up quiet spots either).
 - **Pause a download and finish it later.** Click pause on a "Download for editing" in the Queue.
   It keeps what it has, waits there even after you close Craftora, and continues where it stopped
   when you click resume.
