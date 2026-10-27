@@ -1,4 +1,5 @@
 mod assistant;
+mod diag;
 mod encoders;
 mod engine;
 mod jobs;
@@ -59,6 +60,8 @@ pub fn run() {
             engine::engine_status,
             engine::update_yt_dlp,
             media::fetch_media,
+            diag::diagnostics,
+            diag::note_diagnostic,
             live::record_live,
             live::stop_recording,
             local::allow_local,

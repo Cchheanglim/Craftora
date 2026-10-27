@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { checkSite } from "../lib/engine";
 import { siteVerdict, type Verdict } from "./Home";
 import { Icon } from "./Icon";
+import { CopyReport } from "./CopyReport";
 import "./Toolbar.css";
 
 interface ToolbarProps {
@@ -130,6 +131,7 @@ export function Toolbar({
                 {errorAction.label}
               </button>
             )}
+            <CopyReport />
           </p>
         ) : (
           verdict && (

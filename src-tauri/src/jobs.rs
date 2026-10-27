@@ -410,6 +410,9 @@ pub async fn download_media(app: AppHandle, spec: MediaDownload) -> Result<(), S
         {
             downloaded = download(&task_app, &spec.id, &request, &work, "download").await;
         }
+        if let Err(e) = &downloaded {
+            crate::diag::note(format!("download {}: {e}", spec.url));
+        }
         let result = match downloaded {
             Ok(file) => {
                 let ext = file.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_else(|| "mp4".into());

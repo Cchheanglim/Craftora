@@ -368,9 +368,11 @@ async fn read_link(app: &AppHandle, url: &str) -> Result<Info, String> {
             return serde_json::from_slice(&output.stdout).map_err(|e| format!("Unexpected answer from yt-dlp: {e}"));
         }
         let error = last_error(&String::from_utf8_lossy(&output.stderr)).unwrap_or_else(|| "yt-dlp couldn't read this link.".into());
+        crate::diag::note(format!("yt-dlp read {url}{}: {error}", if retried { " (as a browser)" } else { "" }));
         if retried || !is_bot_check(&error) || !crate::signin::note_bot_check(url) {
             return Err(error);
         }
+        crate::diag::note("bot check: trying again as a browser");
         retried = true;
     }
 }
@@ -464,6 +466,18 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         _ => hls_preview(&info.formats).map_or((String::new(), false, false), |url| (url, true, true)),
     };
     let preview_audio_url = if preview_has_audio || preview_url.is_empty() { String::new() } else { preview_audio(&info.formats) };
+    let kinds: Vec<String> = info
+        .formats
+        .iter()
+        .map(|f| format!("{}{}{}", f.protocol.as_deref().unwrap_or("?"), if f.has_video() { "+v" } else { "" }, if f.has_audio() { "+a" } else { "" }))
+        .collect();
+    crate::diag::note(format!(
+        "fetched {url}: {} formats [{}], length {}, bot check {bot_checked}, preview {} {preview_url}",
+        info.formats.len(),
+        kinds.join(", "),
+        if length_known { format!("{duration:.0}s") } else { "unknown".into() },
+        if preview_url.is_empty() { "none" } else if preview_hls { "stream" } else { "file" },
+    ));
     let with_page = |preview: String| match &page {
         Some(page) if !preview.is_empty() => format!("{preview}{}{page}", crate::signin::REFERER_MARK),
         _ => preview,

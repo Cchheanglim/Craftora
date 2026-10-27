@@ -355,6 +355,11 @@ export const pauseJob = (id: string) => invoke<boolean>("pause_job", { id });
 /** Throws away what a paused download saved. */
 export const discardDownload = (id: string) => invoke<void>("discard_download", { id });
 
+/** What fetching and previewing did, web addresses hidden (src-tauri/src/diag.rs). */
+export const copyReport = async () => navigator.clipboard.writeText(await invoke<string>("diagnostics"));
+/** Adds a step the editor saw to that report. */
+export const noteDiagnostic = (text: string) => void invoke("note_diagnostic", { text }).catch(() => {});
+
 export const onJobEvent = (handler: (event: JobEvent) => void): Promise<UnlistenFn> =>
   listen<JobEvent>("job-event", (e) => handler(e.payload));
 
