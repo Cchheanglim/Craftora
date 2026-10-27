@@ -104,3 +104,18 @@ test("a link that must download first can't export until it's on this PC", async
   p = { ...p, media: p.media.map((m) => ({ ...m, source: { ...source("video"), duration: m.source.duration } })) };
   expect(planExport(p, settings).kind).not.toBe("empty");
 });
+
+test("the media library remembers files on this PC, newest first, and keeps starred ones", async () => {
+  const { withImported } = await import("../src/project/model");
+  const LIBRARY_LIMIT = 5;
+  const video = mediaFromSource({ ...source("video"), url: "C:\clips\beach.mp4" });
+  const link = mediaFromSource({ ...source("video"), url: "https://example.com/v", local: false });
+  const once = withImported([], [video, link], LIBRARY_LIMIT, 1);
+  expect(once.map((e) => [e.name, e.kind])).toEqual([["beach.mp4", "video"]]);
+  expect(withImported(once, [video], LIBRARY_LIMIT, 2)).toBe(once); // nothing new: the same list
+  const full = Array.from({ length: LIBRARY_LIMIT }, (_, i) => ({ path: `C:\old${i}.mp4`, name: `old${i}.mp4`, kind: "video" as const, duration: 1, addedAt: 0, saved: i === LIBRARY_LIMIT - 1 }));
+  const after = withImported(full, [video], LIBRARY_LIMIT, 3);
+  expect(after.length).toBe(LIBRARY_LIMIT);
+  expect(after[0].name).toBe("beach.mp4");
+  expect(after.some((e) => e.saved)).toBe(true); // the starred oldest one stays
+});

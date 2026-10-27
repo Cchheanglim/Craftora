@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ExportSettings, Job, MediaSource } from "./types";
+import type { ExportSettings, Job, MediaSource, OutputKind } from "./types";
 import { DEMO_JOBS, DEMO_SOURCES } from "./data/demo";
 import {
   engineStatus,
@@ -45,9 +45,13 @@ import {
   setOutputDir,
   type FetchEntry,
   type ProjectEntry,
+  loadMediaLibrary,
+  saveMediaLibrary,
+  LIBRARY_LIMIT,
+  type LibraryEntry,
 } from "./lib/storage";
 import { captureThumbnail } from "./lib/thumbnail";
-import { useQueue } from "./state/useQueue";
+import { MAX_RUNNING, useQueue } from "./state/useQueue";
 import { storeEdition, useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
 import { useProject } from "./project/useProject";
@@ -67,16 +71,21 @@ import {
   upgradeProject,
   type MediaItem,
   type Project,
+  withImported,
 } from "./project/model";
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
-import { Home } from "./components/Home";
+import { Home, type LinkSettings } from "./components/Home";
 import { Preview } from "./components/Preview";
 import { TimelineEditor } from "./components/TimelineEditor";
 import { Inspector } from "./components/Inspector";
 import { ExportPanel } from "./components/ExportPanel";
 import { QueueDock } from "./components/QueueDock";
 import { Library } from "./components/Library";
+import { Projects } from "./components/Projects";
+import { MediaLibrary } from "./components/MediaLibrary";
+import { Downloads } from "./components/Downloads";
+import { Settings } from "./components/Settings";
 import { AssistantPanel } from "./components/AssistantPanel";
 import { TextMenu } from "./components/TextMenu";
 import { WelcomeDialog, alreadyWelcomed } from "./components/WelcomeDialog";
@@ -124,6 +133,23 @@ const DEFAULT_SETTINGS: ExportSettings = {
   frameId: "1080p",
   quality: "fast",
 };
+
+/** A Settings page number (1–4), remembered per machine; storage may be unavailable. */
+function rememberedCount(key: string, fallback: number): number {
+  try {
+    const v = Number(localStorage.getItem(key));
+    return Number.isInteger(v) && v >= 1 && v <= 4 ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function rememberText(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* not essential */
+  }
+}
 
 /** Panel open/closed is remembered per machine; storage may be unavailable. */
 function remembered(key: string, fallback: boolean): boolean {
@@ -206,7 +232,10 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [settings, setSettings] = useState<ExportSettings>(DEFAULT_SETTINGS);
+  // Settings page: what new projects export as, and how many jobs run at once.
+  const [defaultOutput, setDefaultOutput] = useState<OutputKind>(() => (remembered("craftora.exportSound", false) ? "audio" : "video"));
+  const [maxRunning, setMaxRunning] = useState(() => rememberedCount("craftora.maxRunning", MAX_RUNNING));
+  const [settings, setSettings] = useState<ExportSettings>(() => ({ ...DEFAULT_SETTINGS, output: defaultOutput }));
   const [freshId, setFreshId] = useState<string | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -254,7 +283,19 @@ export default function App() {
   timeRef.current = playback.time;
   const currentProject = useCallback(() => projectRef.current, []);
   const currentTime = useCallback(() => timeRef.current, []);
-  const queue = useQueue(inDesktopApp ? [] : DEMO_JOBS, inDesktopApp);
+  const queue = useQueue(inDesktopApp ? [] : DEMO_JOBS, inDesktopApp, maxRunning);
+  const downloadsCount = queue.jobs.filter((j) => (j.prefetch || j.record) && j.status !== "finished" && j.status !== "failed").length;
+
+  // Every file on this PC used in a project is remembered in the Media library, across projects.
+  const [library, setLibrary] = useState<LibraryEntry[]>(loadMediaLibrary);
+  const changeLibrary = useCallback((update: (entries: LibraryEntry[]) => LibraryEntry[]) => {
+    setLibrary((entries) => {
+      const next = update(entries);
+      if (next !== entries) saveMediaLibrary(next);
+      return next;
+    });
+  }, []);
+  useEffect(() => changeLibrary((entries) => withImported(entries, project.media, LIBRARY_LIMIT)), [project.media, changeLibrary]);
   const updates = useUpdates();
 
   useEffect(() => {
@@ -845,6 +886,34 @@ export default function App() {
   const showPanel = view === "editor" && rightOpen;
   const selectedTrack = selected ? project.tracks.find((t) => t.id === selected.trackId) : undefined;
 
+  /** Signing in to websites, checking links and updating yt-dlp (Settings); absent in the browser preview. */
+  const linkSettings: LinkSettings | undefined = inDesktopApp
+    ? {
+        onSignIn: (site) => {
+          setSignInMessage(null);
+          openSignIn(site).catch((err) => setSignInMessage(errorText(err)));
+        },
+        onSignOut: () =>
+          void signOutEverywhere()
+            .then(() => setSignInMessage("Signed out of all websites."))
+            .catch((err) => setSignInMessage(errorText(err))),
+        signInMessage,
+        siteChecks,
+        onUpdateYtDlp: storeEdition ? undefined : refreshYtDlp,
+        updating: ytDlpUpdate.busy,
+        ytDlpMessage: ytDlpUpdate.message,
+      }
+    : undefined;
+  const chooseDefaultOutput = (output: OutputKind) => {
+    setDefaultOutput(output);
+    remember("craftora.exportSound", output === "audio");
+    setSettings((current) => ({ ...current, output }));
+  };
+  const chooseMaxRunning = (count: number) => {
+    setMaxRunning(count);
+    rememberText("craftora.maxRunning", String(count));
+  };
+
   return (
     <div className="app" data-left={leftOpen ? "open" : "closed"}>
       <Toolbar
@@ -885,6 +954,7 @@ export default function App() {
         onViewChange={setView}
         collapsed={!leftOpen}
         libraryCount={shownExports.length}
+        downloadsCount={downloadsCount}
         engines={engines}
         media={project.media}
         preparing={preparing}
@@ -925,25 +995,35 @@ export default function App() {
             outputDir={outputDir}
             updates={updates}
             onOpenWelcome={() => setWelcoming(true)}
-            links={
-              inDesktopApp
-                ? {
-                    onSignIn: (site) => {
-                      setSignInMessage(null);
-                      openSignIn(site).catch((err) => setSignInMessage(errorText(err)));
-                    },
-                    onSignOut: () =>
-                      void signOutEverywhere()
-                        .then(() => setSignInMessage("Signed out of all websites."))
-                        .catch((err) => setSignInMessage(errorText(err))),
-                    signInMessage,
-                    siteChecks,
-                    onUpdateYtDlp: storeEdition ? undefined : refreshYtDlp,
-                    updating: ytDlpUpdate.busy,
-                    ytDlpMessage: ytDlpUpdate.message,
-                  }
-                : undefined
-            }
+          />
+        )}
+        {view === "projects" && (
+          <Projects
+            projects={projects}
+            currentId={project.clips.length || project.media.length ? projectId : null}
+            onOpenProject={(id) => (id === projectId ? setView("editor") : void openProject(id))}
+            onNewProject={newProject}
+            onDeleteProject={(id) => void removeProject(id)}
+          />
+        )}
+        {view === "media" && (
+          <MediaLibrary
+            entries={library}
+            onAdd={(path) => void importFiles([path])}
+            onSave={(path, saved) => changeLibrary((entries) => entries.map((e) => (e.path === path ? { ...e, saved } : e)))}
+            onForget={(path) => changeLibrary((entries) => entries.filter((e) => e.path !== path))}
+          />
+        )}
+        {view === "downloads" && <Downloads queue={queue} onAdd={(path) => void importFiles([path])} />}
+        {view === "settings" && (
+          <Settings
+            outputDir={outputDir}
+            onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
+            defaultOutput={defaultOutput}
+            onDefaultOutput={chooseDefaultOutput}
+            maxRunning={maxRunning}
+            onMaxRunning={chooseMaxRunning}
+            links={linkSettings}
           />
         )}
         {view === "library" && (

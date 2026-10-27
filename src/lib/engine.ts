@@ -355,6 +355,16 @@ export const pauseJob = (id: string) => invoke<boolean>("pause_job", { id });
 /** Throws away what a paused download saved. */
 export const discardDownload = (id: string) => invoke<void>("discard_download", { id });
 
+export interface DownloadedFile {
+  name: string;
+  path: string;
+  sizeBytes: number;
+  /** Milliseconds since 1970. */
+  modifiedMs: number;
+}
+/** The Downloads folder and the finished downloads in it, newest first. */
+export const listDownloads = () => invoke<{ folder: string; files: DownloadedFile[] }>("list_downloads");
+
 /** What fetching and previewing did, web addresses hidden (src-tauri/src/diag.rs). */
 export const copyReport = async () => navigator.clipboard.writeText(await invoke<string>("diagnostics"));
 /** Adds a step the editor saw to that report. */

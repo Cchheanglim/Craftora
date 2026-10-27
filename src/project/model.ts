@@ -4,6 +4,7 @@
  * same actions the UI uses (see `actions.ts`).
  */
 import type { MediaSource } from "../types";
+import type { LibraryEntry } from "../lib/storage";
 
 export type TrackKind = "video" | "audio" | "text";
 
@@ -330,4 +331,29 @@ export function silencesFromPeaks(media: MediaItem, start: number, end: number):
   }
   if (quietStart !== null && end - quietStart >= 0.35) out.push([quietStart, end]);
   return out;
+}
+
+
+/**
+ * `entries` with every file on this PC in `media` added (newest first) or its picture filled in;
+ * past `limit` the oldest unstarred ones drop off. The same array when nothing changed.
+ */
+export function withImported(entries: LibraryEntry[], media: MediaItem[], limit: number, now = Date.now()): LibraryEntry[] {
+  const next = [...entries];
+  let changed = false;
+  for (const m of media) {
+    if (!m.source.local || m.source.live || m.missing) continue;
+    const path = m.source.url;
+    const thumbnail = m.source.thumbnail?.startsWith("data:") ? m.source.thumbnail : undefined;
+    const at = next.findIndex((e) => e.path === path);
+    if (at >= 0) {
+      if (thumbnail && next[at].thumbnail !== thumbnail) [next[at], changed] = [{ ...next[at], thumbnail }, true];
+      continue;
+    }
+    const kind = m.source.image ? "image" : m.hasVideo ? "video" : "audio";
+    next.unshift({ path, name: path.split(/[\/]/).pop() ?? m.name, kind, duration: m.source.image ? 0 : m.source.duration, thumbnail, addedAt: now });
+    changed = true;
+  }
+  for (let i = next.length - 1; next.length > limit && i >= 0; i--) if (!next[i].saved) next.splice(i, 1);
+  return changed ? next : entries;
 }

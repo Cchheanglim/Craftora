@@ -115,6 +115,25 @@ export interface FetchEntry {
 export const loadFetchHistory = (): FetchEntry[] => browserRead<FetchEntry[]>(FETCH_HISTORY, []);
 export const saveFetchHistory = (entries: FetchEntry[]) => browserWrite(FETCH_HISTORY, entries);
 
+/** A file once imported into a project, remembered for the Media library page. */
+export interface LibraryEntry {
+  path: string;
+  name: string;
+  kind: "video" | "audio" | "image";
+  /** Seconds; 0 for pictures. */
+  duration: number;
+  /** A small JPEG data URL, when one was made. */
+  thumbnail?: string;
+  addedAt: number;
+  /** Starred: shown under "Saved", and never dropped to make room. */
+  saved?: boolean;
+}
+const MEDIA_LIBRARY = "craftora.mediaLibrary";
+/** About 15 kB each with a picture, so the list stays far below what the window's storage holds. */
+export const LIBRARY_LIMIT = 300;
+export const loadMediaLibrary = (): LibraryEntry[] => browserRead<LibraryEntry[]>(MEDIA_LIBRARY, []);
+export const saveMediaLibrary = (entries: LibraryEntry[]) => browserWrite(MEDIA_LIBRARY, entries);
+
 /** Paused downloads, so they wait in the queue after Craftora is closed (their parts stay on disk). */
 export const loadPausedDownloads = (): Job[] => browserRead<Job[]>(PAUSED_DOWNLOADS, []);
 export const savePausedDownloads = (jobs: Job[]) => browserWrite(PAUSED_DOWNLOADS, jobs);
