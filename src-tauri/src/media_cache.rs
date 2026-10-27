@@ -124,6 +124,11 @@ fn read_at(path: &PathBuf, offset: u64, len: u64) -> std::io::Result<Vec<u8>> {
 }
 
 /// Fetches `[start, start + len)` from the internet into the cache; returns the bytes.
+/// Cloudflare's bot check answering instead of the site: 403 or 503 with `cf-mitigated: challenge`.
+fn turned_away(response: &reqwest::Response) -> bool {
+    matches!(response.status().as_u16(), 403 | 503) && response.headers().get("cf-mitigated").is_some_and(|v| v == "challenge")
+}
+
 #[cfg(not(test))]
 async fn page_piece(url: String, range: String) -> Result<crate::page_fetch::Fetched, String> {
     let app = APP.get().cloned().ok_or("Craftora isn't ready yet.")?;
@@ -166,6 +171,9 @@ async fn fetch(entry: &Entry, start: u64, len: u64) -> Result<Vec<u8>, String> {
                 .send()
                 .await
                 .map_err(|e| format!("Couldn't reach the video: {e}"))?;
+            if turned_away(&response) && crate::signin::note_bot_check(url) {
+                return Box::pin(fetch(entry, start, len)).await;
+            }
             if response.status() != StatusCode::PARTIAL_CONTENT {
                 return Err(format!("The video's server answered {} instead of part of the file.", response.status()));
             }
@@ -357,6 +365,10 @@ async fn relay_hls(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<
     let Ok(response) = outgoing.send().await else {
         return reply(StatusCode::BAD_GATEWAY, b"Couldn't reach the stream".to_vec());
     };
+    // Its own bot check (the video may live on another address than its page): through the page.
+    if turned_away(&response) && crate::signin::note_bot_check(url) {
+        return Box::pin(relay_hls(app, request)).await;
+    }
     let status = response.status();
     let base = response.url().clone();
     let content_type = response.headers().get(header::CONTENT_TYPE).cloned();
