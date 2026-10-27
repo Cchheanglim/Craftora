@@ -30,8 +30,6 @@ struct Entry {
     url: String,
     path: PathBuf,
     state: Mutex<Cached>,
-    /// For fetching through the page window (sites with a bot check); None in tests.
-    app: Option<AppHandle>,
 }
 
 #[derive(Default)]
@@ -127,18 +125,22 @@ fn read_at(path: &PathBuf, offset: u64, len: u64) -> std::io::Result<Vec<u8>> {
 
 /// Fetches `[start, start + len)` from the internet into the cache; returns the bytes.
 #[cfg(not(test))]
-async fn page_piece(app: AppHandle, url: String, range: String) -> Result<crate::page_fetch::Fetched, String> {
+async fn page_piece(url: String, range: String) -> Result<crate::page_fetch::Fetched, String> {
+    let app = APP.get().cloned().ok_or("Craftora isn't ready yet.")?;
     tauri::async_runtime::spawn_blocking(move || crate::page_fetch::page_fetch(&app, &url, Some(&range)))
         .await
         .map_err(|e| e.to_string())?
 }
 
-/// Unit tests leave the page window out: linking its code makes Windows refuse to start the test
-/// program (it lacks the app's Common Controls manifest).
+/// Unit tests leave the page window out: linking any of the app's window code makes Windows refuse
+/// to start the test program (it lacks the app's Common Controls manifest).
 #[cfg(test)]
-async fn page_piece(_: AppHandle, _: String, _: String) -> Result<crate::page_fetch::Fetched, String> {
+async fn page_piece(_: String, _: String) -> Result<crate::page_fetch::Fetched, String> {
     Err("No page window in tests.".into())
 }
+
+/// The app, for `page_piece`; kept here rather than in each cache entry (see the note above).
+static APP: OnceLock<AppHandle> = OnceLock::new();
 
 async fn fetch(entry: &Entry, start: u64, len: u64) -> Result<Vec<u8>, String> {
     let end = start + len - 1;
@@ -146,10 +148,10 @@ async fn fetch(entry: &Entry, start: u64, len: u64) -> Result<Vec<u8>, String> {
     let (url, page) = crate::signin::split_referer(&entry.url);
     // "bytes 0-1048575/123456789": the total is after the slash.
     let total_of = |range: &str| range.rsplit('/').next().and_then(|t| t.parse::<u64>().ok());
-    let (total, content_type, bytes) = match &entry.app {
+    let (total, content_type, bytes) = match () {
         // A site whose bot check turns Craftora away: the page window, which passed it, fetches.
-        Some(app) if crate::signin::bot_checked(url) => {
-            let fetched = page_piece(app.clone(), url.to_string(), format!("bytes={start}-{end}")).await?;
+        _ if crate::signin::bot_checked(url) => {
+            let fetched = page_piece(url.to_string(), format!("bytes={start}-{end}")).await?;
             if fetched.status != 206 {
                 return Err(format!("The video's server answered {} instead of part of the file.", fetched.status));
             }
@@ -202,12 +204,13 @@ pub fn cache_media(app: AppHandle, cache: State<'_, MediaCache>, url: String) ->
     let id = format!("{:016x}", hasher.finish());
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("streams");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create the cache folder: {e}"))?;
+    let _ = APP.set(app.clone());
     let mut entries = cache.0.lock().unwrap();
     entries.entry(id.clone()).or_insert_with(|| {
         let path = dir.join(format!("{id}.bin"));
         // A cache file from an earlier run has no record of what's in it: start clean.
         let _ = std::fs::remove_file(&path);
-        Arc::new(Entry { url, path, state: Mutex::new(Cached::default()), app: Some(app.clone()) })
+        Arc::new(Entry { url, path, state: Mutex::new(Cached::default()) })
     });
     Ok(id)
 }
@@ -497,7 +500,6 @@ mod tests {
             url: "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4".into(),
             path: path.clone(),
             state: std::sync::Mutex::new(Cached::default()),
-            app: None,
         };
         let timed = |label: &'static str| {
             let t = std::time::Instant::now();
