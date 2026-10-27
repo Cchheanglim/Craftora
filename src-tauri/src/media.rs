@@ -441,9 +441,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
 
     let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats) {
         _ if !length_known => (String::new(), true, false),
-        // Behind a bot check only stream playlists preview: the relay fetches them through the
-        // page window (media_cache.rs), while the byte cache for files would be turned away.
-        _ if bot_checked => hls_preview(&info.formats).map_or((String::new(), false, false), |url| (url, true, true)),
+        // Behind a bot check the byte cache and the stream relay fetch through the page window.
         (url, audio) if !url.is_empty() => (url, audio, false),
         // Only stream playlists, which the WebView plays itself; the master one carries the sound.
         _ => hls_preview(&info.formats).map_or((String::new(), false, false), |url| (url, true, true)),

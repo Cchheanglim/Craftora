@@ -30,6 +30,8 @@ struct Entry {
     url: String,
     path: PathBuf,
     state: Mutex<Cached>,
+    /// For fetching through the page window (sites with a bot check); None in tests.
+    app: Option<AppHandle>,
 }
 
 #[derive(Default)]
@@ -124,30 +126,53 @@ fn read_at(path: &PathBuf, offset: u64, len: u64) -> std::io::Result<Vec<u8>> {
 }
 
 /// Fetches `[start, start + len)` from the internet into the cache; returns the bytes.
+#[cfg(not(test))]
+async fn page_piece(app: AppHandle, url: String, range: String) -> Result<crate::page_fetch::Fetched, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::page_fetch::page_fetch(&app, &url, Some(&range)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Unit tests leave the page window out: linking its code makes Windows refuse to start the test
+/// program (it lacks the app's Common Controls manifest).
+#[cfg(test)]
+async fn page_piece(_: AppHandle, _: String, _: String) -> Result<crate::page_fetch::Fetched, String> {
+    Err("No page window in tests.".into())
+}
+
 async fn fetch(entry: &Entry, start: u64, len: u64) -> Result<Vec<u8>, String> {
     let end = start + len - 1;
     // Videos found by playing a page are refused without that page as the Referer.
     let (url, page) = crate::signin::split_referer(&entry.url);
-    let mut request = client().get(url).header(header::RANGE, format!("bytes={start}-{end}"));
-    if let Some(page) = page {
-        request = request.header(header::REFERER, page);
-    }
-    let response = request
-        .send()
-        .await
-        .map_err(|e| format!("Couldn't reach the video: {e}"))?;
-    if response.status() != StatusCode::PARTIAL_CONTENT {
-        return Err(format!("The video's server answered {} instead of part of the file.", response.status()));
-    }
     // "bytes 0-1048575/123456789": the total is after the slash.
-    let total = response
-        .headers()
-        .get(header::CONTENT_RANGE)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.rsplit('/').next())
-        .and_then(|t| t.parse::<u64>().ok());
-    let content_type = response.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_string);
-    let bytes = response.bytes().await.map_err(|e| format!("The video stopped downloading: {e}"))?.to_vec();
+    let total_of = |range: &str| range.rsplit('/').next().and_then(|t| t.parse::<u64>().ok());
+    let (total, content_type, bytes) = match &entry.app {
+        // A site whose bot check turns Craftora away: the page window, which passed it, fetches.
+        Some(app) if crate::signin::bot_checked(url) => {
+            let fetched = page_piece(app.clone(), url.to_string(), format!("bytes={start}-{end}")).await?;
+            if fetched.status != 206 {
+                return Err(format!("The video's server answered {} instead of part of the file.", fetched.status));
+            }
+            (fetched.range.as_deref().and_then(total_of), Some(fetched.kind), fetched.body)
+        }
+        _ => {
+            let mut request = client().get(url).header(header::RANGE, format!("bytes={start}-{end}"));
+            if let Some(page) = page {
+                request = request.header(header::REFERER, page);
+            }
+            let response = request
+                .send()
+                .await
+                .map_err(|e| format!("Couldn't reach the video: {e}"))?;
+            if response.status() != StatusCode::PARTIAL_CONTENT {
+                return Err(format!("The video's server answered {} instead of part of the file.", response.status()));
+            }
+            let total = response.headers().get(header::CONTENT_RANGE).and_then(|v| v.to_str().ok()).and_then(total_of);
+            let content_type = response.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_string);
+            let bytes = response.bytes().await.map_err(|e| format!("The video stopped downloading: {e}"))?.to_vec();
+            (total, content_type, bytes)
+        }
+    };
     write_at(&entry.path, start, &bytes).map_err(|e| format!("Couldn't save to the cache: {e}"))?;
     let mut state = entry.state.lock().unwrap();
     if total.is_some() {
@@ -182,7 +207,7 @@ pub fn cache_media(app: AppHandle, cache: State<'_, MediaCache>, url: String) ->
         let path = dir.join(format!("{id}.bin"));
         // A cache file from an earlier run has no record of what's in it: start clean.
         let _ = std::fs::remove_file(&path);
-        Arc::new(Entry { url, path, state: Mutex::new(Cached::default()) })
+        Arc::new(Entry { url, path, state: Mutex::new(Cached::default()), app: Some(app.clone()) })
     });
     Ok(id)
 }
@@ -472,6 +497,7 @@ mod tests {
             url: "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4".into(),
             path: path.clone(),
             state: std::sync::Mutex::new(Cached::default()),
+            app: None,
         };
         let timed = |label: &'static str| {
             let t = std::time::Instant::now();
