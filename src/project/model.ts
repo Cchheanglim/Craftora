@@ -351,7 +351,7 @@ export function withImported(entries: LibraryEntry[], media: MediaItem[], limit:
       continue;
     }
     const kind = m.source.image ? "image" : m.hasVideo ? "video" : "audio";
-    next.unshift({ path, name: path.split(/[\/]/).pop() ?? m.name, kind, duration: m.source.image ? 0 : m.source.duration, thumbnail, addedAt: now });
+    next.unshift({ path, name: path.split(/[\\/]/).pop() ?? m.name, kind, duration: m.source.image ? 0 : m.source.duration, thumbnail, addedAt: now });
     changed = true;
   }
   for (let i = next.length - 1; next.length > limit && i >= 0; i--) if (!next[i].saved) next.splice(i, 1);

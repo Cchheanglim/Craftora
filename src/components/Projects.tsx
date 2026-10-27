@@ -18,7 +18,7 @@ export function Projects({ projects, currentId, onOpenProject, onNewProject, onD
     <section className="library" aria-labelledby="projects-title">
       <header className="library__head">
         <h1 id="projects-title">Projects</h1>
-        <p>Everything you've edited, with its timeline and settings. Projects save themselves as you work.</p>
+        <p>Everything you've edited, with its timeline and settings.</p>
       </header>
       <div className="library__group">
         <button type="button" className="btn btn--secondary library__new" onClick={onNewProject}>

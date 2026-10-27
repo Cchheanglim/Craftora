@@ -173,3 +173,7 @@
 .library__choice {
   align-self: flex-start;
 }
+
+.library__choice button {
+  padding: 0 var(--space-3);
+}

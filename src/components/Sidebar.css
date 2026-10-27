@@ -127,6 +127,12 @@
   max-height: 38%;
 }
 
+/* With the longer page list, Media could shrink below its hint and run into History. */
+.side__media:not(.side__history) {
+  min-height: 96px;
+  overflow: hidden;
+}
+
 .side__past {
   padding: 0 4px 0 0;
   cursor: default;
