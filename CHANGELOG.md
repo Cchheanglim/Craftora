@@ -4,6 +4,13 @@
 
 **New**
 
+- **A fuller sidebar.** New pages: **Projects** (every project, to pick up where you left off),
+  **Media library** (every file you've imported, in any project: search by name, show only videos,
+  sound or pictures, and star the ones you use often under **Saved**), **Downloads** (what's
+  downloading, paused or failed, and every finished download, ready to add to a project), and
+  **Settings** (where files are saved, whether new projects export video or sound only, how many
+  downloads and exports run at once, and the link settings that used to be on Home). Downloads now
+  go into a Downloads folder inside your chosen save folder.
 - **Edit a live stream while it's still live.** Paste the link to a stream that's on right now
   (your own shop's site, YouTube, Twitch…). Craftora records it and puts it in **Media**, and its
   length keeps growing as it records. Drag in the moments you want and export them while the stream
