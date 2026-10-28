@@ -374,6 +374,26 @@ pub(crate) fn downloads_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// Gives a finished download in the Downloads folder the name the user chose (never replacing
+/// another file: "name (2)" if it's taken). Returns its new path.
+#[tauri::command]
+pub fn rename_download(app: AppHandle, path: String, name: String) -> Result<String, String> {
+    let dir = std::fs::canonicalize(downloads_dir(&app)?).map_err(|e| e.to_string())?;
+    let file = std::fs::canonicalize(&path).map_err(|_| "That download isn't there any more.".to_string())?;
+    if file.parent() != Some(dir.as_path()) || !file.is_file() {
+        return Err("Only files in the Downloads folder can be renamed here.".into());
+    }
+    let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("mp4").to_string();
+    let stem = safe_stem(&format!("{name}.{ext}"));
+    if file.file_stem().and_then(|s| s.to_str()) == Some(stem.as_str()) {
+        return Ok(path);
+    }
+    // `deliver` claims a free name, then moves the file there.
+    let renamed = deliver(&file, &dir, &stem, &ext)?;
+    // Without the `\\?\` prefix canonicalize adds, so the path reads like the others.
+    Ok(renamed.to_string_lossy().trim_start_matches(r"\\?\").to_string())
+}
+
 /// The Downloads folder and the finished downloads in it, newest first (the Downloads page).
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

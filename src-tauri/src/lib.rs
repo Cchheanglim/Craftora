@@ -91,6 +91,7 @@ pub fn run() {
             store::set_output_dir,
             store::open_file,
             store::delete_file,
+            jobs::rename_download,
             captions::load_captions,
             speech::make_captions,
             store::save_snapshot,
