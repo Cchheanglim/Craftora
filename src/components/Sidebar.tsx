@@ -1,16 +1,23 @@
-import { useState } from "react";
 import type { EngineStatus } from "../lib/engine";
-import type { FetchEntry } from "../lib/storage";
 import type { MediaItem } from "../project/model";
 import { formatClock } from "../lib/timecode";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
-import { useConfirm } from "./ConfirmDialog";
 import { beginMediaDrag } from "./TimelineEditor";
 import "./Sidebar.css";
 
 export type View = "home" | "editor" | "projects" | "media" | "downloads" | "history" | "library" | "settings";
 
+/** Something running now, for the "Working on" box: a download, export, recording or captions. */
+export interface Activity {
+  id: string;
+  /** "Downloading", "Exporting", "Making captions"… */
+  label: string;
+  /** Which video. */
+  detail: string;
+  /** 0–100, or null while it can't tell. */
+  percent: number | null;
+}
 
 interface SidebarProps {
   view: View;
@@ -38,12 +45,8 @@ interface SidebarProps {
   onRemoveMedia: (mediaId: string) => void;
   /** Media used on the timeline can't be removed without removing its clips. */
   usedMedia: Set<string>;
-  /** Links fetched before, newest first. */
-  history: FetchEntry[];
-  onFetchAgain: (url: string) => void;
-  /** Takes these links off History (one, or several picked with Select). */
-  onRemoveHistory: (urls: string[]) => void;
-  onClearHistory: () => void;
+  /** What's running now (shown only while something is). */
+  activity: Activity[];
 }
 
 export function Sidebar({
@@ -63,88 +66,82 @@ export function Sidebar({
   onAddMedia,
   onRemoveMedia,
   usedMedia,
-  history,
-  onFetchAgain,
-  onRemoveHistory,
-  onClearHistory,
+  activity,
 }: SidebarProps) {
-  const { ask, dialog } = useConfirm();
-  const clearHistory = async () => {
-    const ok = await ask({
-      title: "Clear history?",
-      message: "Every link in History is removed for good. Your projects, media and exports aren't touched.",
-      confirmLabel: "Clear history",
-      danger: true,
-    });
-    if (ok) onClearHistory();
-  };
-  const removeFromHistory = async (entry: { url: string; title: string }) => {
-    const ok = await ask({
-      title: "Remove from history?",
-      message: `“${entry.title}” leaves History for good. Projects that use it aren't touched.`,
-      confirmLabel: "Remove",
-      danger: true,
-    });
-    if (ok) onRemoveHistory([entry.url]);
-  };
-  // Links ticked while picking several in History; null when not picking.
-  const [picked, setPicked] = useState<Set<string> | null>(null);
-  const pick = (url: string) =>
-    setPicked((s) => {
-      const next = new Set(s);
-      if (!next.delete(url)) next.add(url);
-      return next;
-    });
-  const removePicked = async () => {
-    const urls = history.filter((e) => picked?.has(e.url)).map((e) => e.url);
-    const ok = await ask({
-      title: `Remove ${urls.length} link${urls.length === 1 ? "" : "s"} from history?`,
-      message: "They leave History for good. Projects that use them aren't touched.",
-      confirmLabel: "Remove",
-      danger: true,
-    });
-    if (!ok) return;
-    onRemoveHistory(urls);
-    setPicked(null);
-  };
-  const nav = [
-    { id: "home" as const, label: "Home", icon: "logo" as const },
-    { id: "editor" as const, label: "Editor", icon: "scissors" as const },
-    { id: "projects" as const, label: "Projects", icon: "grid" as const },
-    { id: "media" as const, label: "Media library", icon: "image" as const },
-    { id: "downloads" as const, label: "Downloads", icon: "download" as const, count: downloadsCount },
-    { id: "history" as const, label: "History", icon: "clock" as const },
-    { id: "library" as const, label: "Exports", icon: "folder" as const, count: libraryCount },
-    { id: "settings" as const, label: "Settings", icon: "sliders" as const },
+  const groups = [
+    {
+      label: "Make",
+      items: [
+        { id: "home" as const, label: "Home", icon: "logo" as const },
+        { id: "editor" as const, label: "Editor", icon: "scissors" as const },
+        { id: "projects" as const, label: "Projects", icon: "grid" as const },
+      ],
+    },
+    {
+      label: "Library",
+      items: [
+        { id: "media" as const, label: "Media library", icon: "image" as const },
+        { id: "downloads" as const, label: "Downloads", icon: "download" as const, count: downloadsCount },
+        { id: "history" as const, label: "History", icon: "clock" as const },
+        { id: "library" as const, label: "Exports", icon: "folder" as const, count: libraryCount },
+      ],
+    },
   ];
+  const item = (entry: { id: View; label: string; icon: "logo" | "scissors" | "grid" | "image" | "download" | "clock" | "folder" | "sliders"; count?: number }) => (
+    <li key={entry.id}>
+      <button
+        type="button"
+        className="side__item"
+        aria-current={view === entry.id ? "page" : undefined}
+        aria-label={collapsed ? entry.label : undefined}
+        title={collapsed ? entry.label : undefined}
+        onClick={() => onViewChange(entry.id)}
+      >
+        <Icon name={entry.icon} size={15} />
+        <span className="side__text">{entry.label}</span>
+        {entry.count ? <span className="side__count mono">{entry.count}</span> : null}
+      </button>
+    </li>
+  );
+  // yt-dlp and FFmpeg only take room when one is missing (or in the browser preview).
+  const engineTrouble = engines === "browser" || (typeof engines === "object" && (!engines.ytDlp || !engines.ffmpeg));
 
   return (
     <nav className={collapsed ? "side is-collapsed" : "side"} aria-label="Main">
-      {dialog}
-      <ul className="side__nav">
-        {nav.map((item) => (
-          <li key={item.id}>
-            <button
-              type="button"
-              className="side__item"
-              aria-current={view === item.id ? "page" : undefined}
-              aria-label={collapsed ? item.label : undefined}
-              title={collapsed ? item.label : undefined}
-              onClick={() => onViewChange(item.id)}
-            >
-              <Icon name={item.icon} size={15} />
-              <span className="side__text">{item.label}</span>
-              {item.count ? <span className="side__count mono">{item.count}</span> : null}
-            </button>
-          </li>
-        ))}
-      </ul>
+      {groups.map((group) => (
+        <div key={group.label} className="side__group">
+          {!collapsed && <h2 className="section-label side__group-label">{group.label}</h2>}
+          <ul className="side__nav">{group.items.map(item)}</ul>
+        </div>
+      ))}
+
+      {!collapsed && activity.length > 0 && (
+        <section className="side__activity" aria-labelledby="activity-title">
+          <h2 id="activity-title" className="section-label">
+            Working on
+          </h2>
+          {activity.map((a) => (
+            <div key={a.id} className="side__task">
+              <span className="side__task-head">
+                <span className="truncate">{a.label}</span>
+                {a.percent !== null && <span className="mono">{Math.floor(a.percent)}%</span>}
+              </span>
+              <span className={a.percent === null ? "side__task-bar is-indeterminate" : "side__task-bar"}>
+                <span style={{ width: a.percent === null ? undefined : `${a.percent}%` }} />
+              </span>
+              <span className="side__task-detail truncate" title={a.detail}>
+                {a.detail}
+              </span>
+            </div>
+          ))}
+        </section>
+      )}
 
       {!collapsed && (
         <section className="side__media" aria-labelledby="media-title">
           <header className="side__media-head">
             <h2 id="media-title" className="section-label">
-              Media
+              In this project
             </h2>
             {onImport && (
               <button type="button" className="btn btn--ghost" onClick={onImport}>
@@ -217,61 +214,9 @@ export function Sidebar({
         </section>
       )}
 
-      {!collapsed && history.length > 0 && (
-        <section className="side__media side__history" aria-labelledby="history-title">
-          <header className="side__media-head">
-            <h2 id="history-title" className="section-label">
-              History
-            </h2>
-            {picked ? (
-              <span className="side__pick">
-                <span className="side__pick-count">{picked.size}</span>
-                <button type="button" className="btn btn--ghost" onClick={() => setPicked(new Set(history.map((e) => e.url)))}>
-                  All
-                </button>
-                <button type="button" className="btn btn--ghost" disabled={picked.size === 0} onClick={() => void removePicked()}>
-                  Remove
-                </button>
-                <button type="button" className="btn btn--ghost" onClick={() => setPicked(null)}>
-                  Done
-                </button>
-              </span>
-            ) : (
-              <span className="side__pick">
-                <button type="button" className="btn btn--ghost" onClick={() => setPicked(new Set())}>
-                  Select
-                </button>
-                <button type="button" className="btn btn--ghost" onClick={() => void clearHistory()}>
-                  Clear
-                </button>
-              </span>
-            )}
-          </header>
-          <ul className="side__list">
-            {history.map((entry) => (
-              <li key={entry.url} className="side__file side__past">
-                {picked ? (
-                  <label className="side__past-open">
-                    <input type="checkbox" checked={picked.has(entry.url)} onChange={() => pick(entry.url)} />
-                    <PastEntry entry={entry} />
-                  </label>
-                ) : (
-                  <>
-                    <button type="button" className="side__past-open" title={`Fetch again: ${entry.url}`} onClick={() => onFetchAgain(entry.url)}>
-                      <Thumb src={entry.thumbnail} icon="link" />
-                      <PastEntry entry={entry} />
-                    </button>
-                    <button type="button" className="btn btn--icon" aria-label={`Remove ${entry.title} from history`} title="Remove from history" onClick={() => void removeFromHistory(entry)}>
-                      <Icon name="x" size={13} />
-                    </button>
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <ul className="side__nav side__bottom">{item({ id: "settings", label: "Settings", icon: "sliders" })}</ul>
 
+      {engineTrouble && (
       <section className="side__engines" aria-label="Engines">
         {!collapsed && <h2 className="section-label">Engines</h2>}
         <EngineRow name="yt-dlp" engines={engines} pick={(e) => e.ytDlp} collapsed={collapsed} />
@@ -283,6 +228,7 @@ export function Sidebar({
           <p className="side__hint">An engine is missing. Run scripts/fetch-sidecars.ps1, then restart Craftora.</p>
         )}
       </section>
+      )}
     </nav>
   );
 }
@@ -314,16 +260,3 @@ function EngineRow({
   );
 }
 
-/** A fetched link in History: the video's title and the link itself (without "https://www."). */
-function PastEntry({ entry }: { entry: FetchEntry }) {
-  return (
-    <span className="side__file-text">
-      <span className="truncate" title={entry.title}>
-        {entry.title}
-      </span>
-      <span className="side__file-meta side__past-link" title={entry.url}>
-        {entry.url.replace(/^https?:\/\/(www\.)?/, "")}
-      </span>
-    </span>
-  );
-}

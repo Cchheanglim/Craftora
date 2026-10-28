@@ -66,6 +66,94 @@
   padding: 0;
 }
 
+/* "Make" and "Library": a few pages each under a small heading. */
+.side__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.side__group-label {
+  margin: 0;
+  padding: 0 10px;
+}
+
+/* Settings, at the foot. */
+.side__bottom {
+  margin-top: auto;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+/* What's running now: downloads, exports, recordings, captions. */
+.side__activity {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 2px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+
+.side__activity .section-label {
+  margin: 0;
+}
+
+.side__task {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.side__task-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.side__task-head .mono {
+  color: var(--text-2);
+}
+
+.side__task-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg-selected);
+  overflow: hidden;
+}
+
+.side__task-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--text-2);
+  transition: width var(--dur) var(--ease-out);
+}
+
+/* No percentage yet: a short bar that slides across. */
+.side__task-bar.is-indeterminate > span {
+  width: 30%;
+  animation: side-task 1.4s var(--ease-out) infinite;
+}
+
+@keyframes side-task {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+.side__task-detail {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
 .side__count {
   margin-left: auto;
   font-size: 11px;
@@ -122,59 +210,10 @@
   background: var(--bg-raised);
 }
 
-.side__history {
-  flex: 0 1 auto;
-  max-height: 38%;
-}
-
-/* With the longer page list, Media could shrink below its hint and run into History. */
-.side__media:not(.side__history) {
+/* The page list is longer now: Media keeps room for its hint. */
+.side__media {
   min-height: 96px;
   overflow: hidden;
-}
-
-.side__past {
-  padding: 0 4px 0 0;
-  cursor: default;
-}
-
-/* The whole link, on up to two lines. */
-.side__past-link {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  word-break: break-all;
-  font-family: var(--font-mono);
-}
-
-.side__pick {
-  display: flex;
-  align-items: center;
-}
-
-.side__pick-count {
-  padding: 0 4px;
-  font-size: var(--text-xs);
-  color: var(--text-2);
-  font-variant-numeric: tabular-nums;
-}
-
-label.side__past-open {
-  cursor: pointer;
-}
-
-.side__past-open {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 6px 0 6px 10px;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  text-align: left;
 }
 
 .side__file > svg {
@@ -208,7 +247,6 @@ label.side__past-open {
 }
 
 .side__engines {
-  margin-top: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;

@@ -47,6 +47,13 @@
   PC) gets some made from its sound: Craftora listens to what's said and writes it down, on your PC.
   Media shows how it's going. The first time, Craftora downloads a 148 MB speech model. Turn it off
   in **Settings → Captions for videos without any**.
+- **Edit by text.** A **Transcript** tab next to *Edit & export* shows what's said on the timeline,
+  from the video's captions. Click a sentence or word to jump there; select words and press
+  **Delete** (or **Cut these words**) to cut them out of the video, as one Ctrl+Z step. **Cut every
+  "um"** removes the ums, uhs and hmms at once. Search what's said with the box at the top.
+- **A calmer sidebar.** Pages are grouped under **Make** and **Library**, Settings sits at the bottom,
+  and a **Working on** box shows what's downloading, exporting, recording or getting captions.
+  History lives on its own page now, and yt-dlp and FFmpeg only show up when one is missing.
 - **Privacy: use a proxy.** **Settings → Privacy** takes an HTTP proxy. Fetching, downloads,
   previews, pictures, captions and the AI assistant then go through it, so websites see its address
   instead of yours; Craftora's window follows after **Restart now**. If the proxy stops working,

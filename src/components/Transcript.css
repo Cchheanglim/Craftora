@@ -1,0 +1,189 @@
+/* The Transcript tab: what's said on the timeline, to edit by text. */
+.transcript {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.transcript__tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5) var(--space-2);
+}
+
+.transcript__find {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  color: var(--text-3);
+  transition: border-color var(--dur-fast) linear;
+}
+
+.transcript__find:hover {
+  border-color: var(--line-hover);
+}
+
+.transcript__find:focus-within {
+  border-color: var(--text-3);
+}
+
+.transcript__find svg {
+  flex-shrink: 0;
+}
+
+.transcript__find input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  outline: none;
+}
+
+.transcript__find input::placeholder {
+  color: var(--text-3);
+}
+
+.transcript__muted {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-3);
+}
+
+.transcript__lines {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.transcript__lines:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.transcript__line {
+  display: flex;
+  gap: 10px;
+  padding: var(--space-2);
+  border-radius: var(--radius);
+  color: var(--text-2);
+}
+
+.transcript__line:hover {
+  background: var(--bg-raised);
+}
+
+.transcript__line.is-current {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.transcript__time {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 2px 0 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.transcript__line.is-current .transcript__time,
+.transcript__time:hover {
+  color: var(--text);
+}
+
+.transcript__text {
+  line-height: 1.5;
+  font-size: var(--text-md);
+  cursor: text;
+  /* The app turns text selection off; words are picked by selecting them here. */
+  user-select: text;
+}
+
+/* Words picked to cut: crossed out in the cut's red. */
+.transcript__text .is-picked {
+  background: rgb(250 45 72 / 0.18);
+  color: #fc7385;
+  text-decoration: line-through;
+}
+
+.transcript__pending {
+  color: var(--text-3);
+  font-style: italic;
+  font-size: var(--text-sm);
+}
+
+.transcript__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--line);
+}
+
+.transcript__foot p {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.transcript__count {
+  color: var(--text);
+}
+
+.transcript__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.transcript__actions .btn--primary {
+  flex: 1;
+}
+
+.transcript__actions .btn--primary kbd {
+  background: rgb(0 0 0 / 0.2);
+  border-color: rgb(255 255 255 / 0.3);
+  color: var(--text-on-accent);
+}
+
+.transcript--empty {
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  text-align: center;
+  color: var(--text-3);
+}
+
+.transcript--empty p {
+  margin: 0;
+  max-width: 280px;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.transcript--empty p:first-of-type {
+  color: var(--text-2);
+}
