@@ -19,6 +19,7 @@ import {
   onSpeechProgress,
   detectSilences,
   openLocal,
+  renameDownload,
   deleteFile,
   probeLocal,
   recordLive,
@@ -628,19 +629,24 @@ export default function App() {
       if (!target || job.status !== "finished" || !job.outputPath || swapped.current.has(job.id)) continue;
       swapped.current.add(job.id);
       const { mediaId } = target;
-      openLocal(job.outputPath)
-        .then((local) => {
+      const { rename } = job;
+      // A name typed while it downloaded: the file takes it now (kept as it is if that fails).
+      const named = rename && job.prefetch ? renameDownload(job.outputPath, rename).catch(() => job.outputPath!) : Promise.resolve(job.outputPath);
+      named
+        .then(async (path) => {
+          if (path !== job.outputPath) queue.edit(job.id, { outputPath: path });
+          const local = await openLocal(path);
           const item = projectRef.current.media.find((m) => m.id === mediaId);
           if (!item) return;
           // Keep the link's length so clip times stay exactly where they were (a recording, or a
           // link whose length wasn't known, takes the file's).
           const duration = item.source.live || !item.source.duration ? local.duration : item.source.duration;
-          api.refreshMedia(mediaId, { source: { ...local, duration }, missing: false });
+          api.refreshMedia(mediaId, { source: { ...local, duration }, missing: false, ...(rename ? { name: rename } : {}) });
           prepare(mediaId, local);
         })
         .catch((err) => setError(`The download finished but couldn't be opened: ${errorText(err)}`));
     }
-  }, [queue.jobs, api, prepare]);
+  }, [queue.jobs, queue.edit, api, prepare]);
 
   /** `found`: what "Fetch this video" saw the page play, tried when yt-dlp doesn't know the page. */
   const fetchSource = async (link: string, found?: FoundPage) => {

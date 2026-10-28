@@ -13,6 +13,7 @@ type Action =
   | { type: "failed"; id: string; message: string }
   | { type: "retry"; id: string }
   | { type: "remove"; id: string }
+  | { type: "edit"; id: string; patch: Pick<Job, "rename" | "outputPath"> }
   | { type: "pause"; id: string }
   | { type: "resume"; id: string }
   | { type: "pauseAll" }
@@ -38,6 +39,8 @@ function reducer(jobs: Job[], action: Action): Job[] {
       return update(jobs, action.id, { status: "waiting", progress: 0, error: undefined });
     case "remove":
       return jobs.filter((j) => j.id !== action.id);
+    case "edit":
+      return update(jobs, action.id, action.patch);
     case "pause":
       return jobs.map((j) => (j.id === action.id && isRunning(j) ? { ...j, status: "paused" } : j));
     case "resume":
@@ -185,6 +188,8 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
     cancel,
     retry: useCallback((id: string) => dispatch({ type: "retry", id }), []),
     remove: useCallback((id: string) => dispatch({ type: "remove", id }), []),
+    /** A download's chosen name, or where its file is now. */
+    edit: useCallback((id: string, patch: Pick<Job, "rename" | "outputPath">) => dispatch({ type: "edit", id, patch }), []),
     pause,
     resume: useCallback((id: string) => dispatch({ type: "resume", id }), []),
     pauseAll: useCallback(() => dispatch({ type: "pauseAll" }), []),
