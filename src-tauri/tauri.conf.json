@@ -49,6 +49,7 @@
     "resources": {
       "bin/yt-dlp/": "yt-dlp/",
       "bin/whisper/": "whisper/",
+      "bin/deno/": "deno/",
       "bin/FFMPEG-LICENSE.txt": "licenses/FFMPEG-LICENSE.txt",
       "../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md",
       "../LICENSE": "licenses/CRAFTORA-LICENSE.txt"

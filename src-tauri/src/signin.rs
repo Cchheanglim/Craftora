@@ -329,7 +329,16 @@ pub async fn signed_in_sites(app: AppHandle) -> Result<Vec<String>, String> {
     Ok(sites)
 }
 
-/// Forgets the login for one website (as `signed_in_sites` names it).
+/// Websites that share one login: Google signs YouTube back in from its google.com cookies.
+// shortcut: only Google's pair is known; add a group when another site turns out to do the same.
+const SAME_LOGIN: &[&[&str]] = &[&["google.com", "youtube.com"]];
+
+/// `site` and the websites that share its login.
+fn same_login(site: &str) -> Vec<&str> {
+    SAME_LOGIN.iter().find(|group| group.contains(&site)).map_or_else(|| vec![site], |group| group.to_vec())
+}
+
+/// Forgets the login for one website (as `signed_in_sites` names it), and for those sharing it.
 #[tauri::command]
 pub async fn sign_out_of(app: AppHandle, site: String) -> Result<(), String> {
     forget_cookies(&app, Some(&site)).await
@@ -346,7 +355,7 @@ async fn forget_cookies(app: &AppHandle, site: Option<&str>) -> Result<(), Strin
     let cookies: Vec<_> = web_cookies(app)
         .await
         .into_iter()
-        .filter(|c| site.is_none_or(|site| c.domain().is_some_and(|d| site_of(d) == site)))
+        .filter(|c| site.is_none_or(|site| c.domain().is_some_and(|d| same_login(site).contains(&site_of(d).as_str()))))
         .collect();
     let Some(main) = app.get_webview_window("main") else {
         return Ok(());
@@ -363,6 +372,13 @@ async fn forget_cookies(app: &AppHandle, site: Option<&str>) -> Result<(), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn google_and_youtube_sign_out_together() {
+        assert_eq!(same_login("youtube.com"), ["google.com", "youtube.com"]);
+        assert_eq!(same_login("google.com"), ["google.com", "youtube.com"]);
+        assert_eq!(same_login("example.com"), ["example.com"]);
+    }
 
     #[test]
     fn names_the_website() {

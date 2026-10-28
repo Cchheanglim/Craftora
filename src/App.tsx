@@ -461,15 +461,17 @@ export default function App() {
   useEffect(() => {
     for (const m of project.media) {
       const s = m.source;
-      if (s.thumbnail?.startsWith("data:") || !(m.hasVideo || s.image) || thumbTried.current.has(m.id)) continue;
-      // A link whose site gave no picture (or one that won't load): a frame of its cached preview.
-      // Stream playlists (HLS) can't be drawn by a plain video element.
-      if (!s.local && (s.previewHls || s.live || !s.previewUrl)) continue;
-      if (!inDesktopApp && (s.previewProxy || !s.previewUrl)) continue;
+      if (s.thumbnail?.startsWith("data:") || thumbTried.current.has(m.id)) continue;
+      // A link with the site's picture: a small copy of it is kept (fetched once, with the page as Referer).
+      const sitePicture = inDesktopApp && !s.local && s.thumbnail?.startsWith("http") ? s.thumbnail : undefined;
+      // Otherwise (or if that fails) a frame of the video. Stream playlists (HLS) can't be drawn by a plain video element.
+      const canDraw = (m.hasVideo || s.image) && (s.local || !(s.previewHls || s.live || !s.previewUrl)) && (inDesktopApp || !(s.previewProxy || !s.previewUrl));
+      if (!sitePicture && !canDraw) continue;
       thumbTried.current.add(m.id);
-      const task = (s.previewUrl ? captureThumbnail(s.previewUrl, s.image) : Promise.resolve(undefined)).then(
-        (thumb) => thumb ?? (inDesktopApp && s.local ? localThumbnail(s.url, Boolean(s.image)).catch(() => undefined) : undefined),
-      );
+      const kept = sitePicture ? keptThumbnail(sitePicture, s.url).then((t) => (t.startsWith("data:") ? t : undefined)) : Promise.resolve(undefined);
+      const task = kept
+        .then((thumb) => thumb ?? (canDraw && s.previewUrl ? captureThumbnail(s.previewUrl, s.image) : undefined))
+        .then((thumb) => thumb ?? (inDesktopApp && s.local ? localThumbnail(s.url, Boolean(s.image)).catch(() => undefined) : undefined));
       void task.then((thumbnail) => {
         const current = projectRef.current.media.find((x) => x.id === m.id);
         // Only the list picture: an image keeps its full-size previewUrl (Preview falls back to this if it can't load).
@@ -511,6 +513,10 @@ export default function App() {
   const [captioning, setCaptioning] = useState<Record<string, string>>({});
   const spoken = useRef(new Set<string>());
   const speechTurn = useRef<Promise<unknown>>(Promise.resolve());
+  // Captions wait their turn: on a slow connection, getting the model or a link's sound would slow
+  // the fetch, preview, downloads and exports going on (and whisper would slow exports).
+  const idle = useRef(true);
+  idle.current = !busy && !queue.jobs.some((j) => j.status === "downloading" || j.status === "encoding");
   useEffect(() => {
     if (!inDesktopApp) return;
     const unlisten = onSpeechProgress(({ id, stage, percent }) =>
@@ -533,14 +539,16 @@ export default function App() {
           const { [m.id]: _, ...rest } = all;
           return label ? { ...rest, [m.id]: label } : rest;
         });
-      speechTurn.current = speechTurn.current.then(() =>
-        makeCaptions(m.id, s.url, Boolean(s.local))
+      speechTurn.current = speechTurn.current.then(async () => {
+        await new Promise((r) => window.setTimeout(r, 15_000)); // the new video's preview loads first
+        while (!idle.current) await new Promise((r) => window.setTimeout(r, 3_000));
+        return makeCaptions(m.id, s.url, Boolean(s.local))
           .then((lines) => {
             done();
             if (lines.length) api.refreshMedia(m.id, { captions: { label: "Made from the sound", lines } });
           })
-          .catch(() => done("couldn't make captions")),
-      );
+          .catch(() => done("couldn't make captions"));
+      });
     }
   }, [project.media, api, autoCaptions]);
 
@@ -767,7 +775,9 @@ export default function App() {
       const refreshed = source.local ? openLocal(source.url) : fetchMedia(source.url);
       refreshed
         .then((fresh) => {
-          api.refreshMedia(item.id, { source: { ...fresh, duration: source.duration }, missing: false });
+          // The picture kept last time stays (no need to fetch it from the site again).
+          const thumbnail = source.thumbnail?.startsWith("data:") ? source.thumbnail : fresh.thumbnail;
+          api.refreshMedia(item.id, { source: { ...fresh, duration: source.duration, thumbnail }, missing: false });
           prepare(item.id, fresh);
         })
         .catch(() => {

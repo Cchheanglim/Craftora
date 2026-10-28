@@ -33,8 +33,12 @@
   when you click resume.
 - **Delete exported files.** Each file in **Exports** has a **Delete** button: it moves the file to
   the Recycle Bin (so a wrong click can be undone there) and takes it off the list and Home.
-- **See and sign out of each website.** Under **Links** (Home and Settings), Craftora lists the
-  websites it keeps a login for, each with its own **Sign out**. **Sign out of all** is still there.
+- **See what each website saved, and forget it.** Under **Links** (Home and Settings), Craftora lists
+  the websites that saved cookies in its window (from a visit or a login), each with **Forget**.
+  Forgetting YouTube or Google forgets both, since they share one login. **Sign out of all** is still there.
+- **YouTube works again after visiting it in Craftora's window.** Craftora now includes Deno, which
+  yt-dlp uses for the JavaScript YouTube asks for; without it, YouTube's cookies made fetches fail with
+  "Requested format is not available".
 - **Captions from the website.** When a fetched video comes with captions (the uploader's own, or
   automatic ones like YouTube's), Craftora reads them right away: they show on the preview (turn them
   off with **CC**), and **Add captions** on the clip puts them on a **Captions** track as text you can
@@ -43,6 +47,11 @@
   PC) gets some made from its sound: Craftora listens to what's said and writes it down, on your PC.
   Media shows how it's going. The first time, Craftora downloads a 148 MB speech model. Turn it off
   in **Settings → Captions for videos without any**.
+- **Fetching shows the video sooner.** A fetched video appears in Media without waiting for its
+  picture, which fills in a moment later (about a second sooner on every fetch). Captions made from
+  the sound now wait until nothing is fetching, downloading or exporting, so on a slow connection
+  they don't slow those down, and they use only half the processor. **Copy report** now shows how
+  long each fetch took.
 - **Name your export.** The file name under **Add to queue** is now a box you can type in, so you can
   tell exports of the same video apart. Names keep spaces and accents; only characters Windows doesn't
   allow in file names are left out.

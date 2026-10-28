@@ -28,6 +28,11 @@ domain under the [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENS
 executable bundles Python and other components; their licences are listed in
 [yt-dlp's THIRD_PARTY_LICENSES.txt](https://github.com/yt-dlp/yt-dlp/blob/master/THIRD_PARTY_LICENSES.txt).
 
+## Deno (MIT)
+
+yt-dlp uses [Deno](https://github.com/denoland/deno) (MIT licence, Copyright 2018-2026 the Deno
+authors) to run the JavaScript that YouTube asks for before it lists a video's formats.
+
 ## whisper.cpp (MIT) and the Whisper "base" speech model (MIT)
 
 Craftora runs `whisper-cli.exe` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
