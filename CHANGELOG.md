@@ -41,6 +41,8 @@
   project pictures in Projects and on Home keep working after Craftora restarts.
 - **Pictures for links that come without one.** When a website (or sometimes YouTube) gives no
   picture, or one that won't load, Craftora takes a frame from the video itself.
+- **Sharper picture while a video loads.** The picture the preview shows while a link loads, or when
+  it can't play, was a tiny copy blown up; it's now kept at a size close to the video's.
 - **Find a moved or renamed file.** A clip whose file can't be found now has a **Find file** button
   (select the clip): point to the file and its clips play again.
 

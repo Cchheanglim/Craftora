@@ -163,20 +163,60 @@ pub fn set_output_dir(app: AppHandle, path: Option<String>) -> Result<String, St
     get_output_dir(app)
 }
 
+/// Exports are only ever these kinds of file: Play and Delete refuse anything else.
+fn is_media(file: &Path) -> bool {
+    file.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "mp4" | "mkv" | "webm" | "mov" | "mp3" | "m4a" | "wav" | "flac" | "opus"))
+}
+
 /// Opens an exported media file in the PC's default player.
 #[tauri::command]
 pub fn open_file(app: AppHandle, path: String) -> Result<(), String> {
     let file = Path::new(&path);
-    let media = file
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "mp4" | "mkv" | "webm" | "mov" | "mp3" | "m4a" | "wav" | "flac" | "opus"));
-    if !media || !file.is_file() {
+    if !is_media(file) || !file.is_file() {
         return Err("That exported file isn't there any more.".into());
     }
     tauri_plugin_opener::OpenerExt::opener(&app)
         .open_path(&path, None::<&str>)
         .map_err(|e| format!("Couldn't open the file: {e}"))
+}
+
+/// Moves an exported media file to the Recycle Bin, so a wrong click can be undone there. A file
+/// that's already gone counts as done.
+#[tauri::command]
+pub async fn delete_file(path: String) -> Result<(), String> {
+    let file = PathBuf::from(&path);
+    if !file.exists() {
+        return Ok(());
+    }
+    if !is_media(&file) || !file.is_file() {
+        return Err("Only exported video and sound files can be deleted here.".into());
+    }
+    // The path reaches PowerShell through the environment, never inside the script text.
+    let mut command = std::process::Command::new("powershell");
+    command
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($env:CRAFTORA_RECYCLE, 'OnlyErrorDialogs', 'SendToRecycleBin')",
+        ])
+        .env("CRAFTORA_RECYCLE", &file);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    tauri::async_runtime::spawn_blocking(move || command.output())
+        .await
+        .map_err(|e| format!("Couldn't delete the file: {e}"))?
+        .map_err(|e| format!("Couldn't delete the file: {e}"))?;
+    if file.exists() {
+        return Err("Couldn't delete the file. Close it in any player that has it open, then try again.".into());
+    }
+    Ok(())
 }
 
 /// Saves a PNG snapshot of the preview into the export folder and opens it for the editor.

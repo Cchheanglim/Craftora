@@ -88,6 +88,7 @@ pub fn run() {
             store::get_output_dir,
             store::set_output_dir,
             store::open_file,
+            store::delete_file,
             store::save_snapshot,
             virustotal::site_check_available,
             virustotal::check_site,

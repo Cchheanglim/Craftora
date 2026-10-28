@@ -16,13 +16,15 @@ interface LibraryProps {
   onOpenWorkspace: () => void;
   /** Hides an export from the list (and from Home), or shows it again. The file isn't touched. */
   onHide: (id: string, hidden: boolean) => void;
+  /** Moves the file to the Recycle Bin and takes it off the list; absent in the browser preview. */
+  onDelete?: (job: Job) => void;
 }
 
 const HIDDEN_KEY = "craftora.hideExports";
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace, onHide }: LibraryProps) {
+export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace, onHide, onDelete }: LibraryProps) {
   const shown = jobs.filter((j) => !j.hidden);
   const hidden = jobs.filter((j) => j.hidden);
   // The list can be folded away, so its pictures don't show; remembered.
@@ -82,7 +84,7 @@ export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace, o
                   Every export is hidden. They're under Hidden below.
                 </p>
               ) : (
-                <ExportTable id="library-files" jobs={shown} onHide={onHide} />
+                <ExportTable id="library-files" jobs={shown} onHide={onHide} onDelete={onDelete} />
               ))}
           </div>
 
@@ -101,7 +103,7 @@ export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace, o
               {hiddenOpen && (
                 <>
                   <p className="library__muted">Hidden here and on Home. The files are still in your save folder.</p>
-                  <ExportTable id="library-hidden" jobs={hidden} onHide={onHide} />
+                  <ExportTable id="library-hidden" jobs={hidden} onHide={onHide} onDelete={onDelete} />
                 </>
               )}
             </div>
@@ -113,7 +115,17 @@ export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace, o
 }
 
 /** A list of exports; hidden ones offer Unhide instead of Hide. */
-function ExportTable({ id, jobs, onHide }: { id: string; jobs: Job[]; onHide: (id: string, hidden: boolean) => void }) {
+function ExportTable({
+  id,
+  jobs,
+  onHide,
+  onDelete,
+}: {
+  id: string;
+  jobs: Job[];
+  onHide: (id: string, hidden: boolean) => void;
+  onDelete?: (job: Job) => void;
+}) {
   return (
     <div className="library__table-wrap" id={id}>
       <table className="library__table">
@@ -165,6 +177,18 @@ function ExportTable({ id, jobs, onHide }: { id: string; jobs: Job[]; onHide: (i
                       <Icon name={job.hidden ? "eye" : "eyeOff"} size={14} />
                       {job.hidden ? "Unhide" : "Hide"}
                     </button>
+                    {onDelete && (
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        aria-label={`Delete ${name}`}
+                        title="Move the file to the Recycle Bin"
+                        onClick={() => onDelete(job)}
+                      >
+                        <Icon name="trash" size={14} />
+                        Delete
+                      </button>
+                    )}
                   </span>
                 </td>
               </tr>
