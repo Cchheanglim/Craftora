@@ -10,3 +10,4 @@
 /bin/*.exe
 /bin/yt-dlp/
 /bin/whisper/
+/bin/deno/

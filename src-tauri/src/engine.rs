@@ -29,11 +29,15 @@ pub fn sidecar_dir() -> Result<PathBuf, String> {
 /// under 1 s unpacked. FFmpeg and FFprobe are ordinary sidecars.
 pub fn command(app: &AppHandle, name: &str) -> Result<Command, String> {
     if name == YT_DLP {
-        let exe = app.path().resource_dir().map_err(|e| e.to_string())?.join("yt-dlp").join("yt-dlp.exe");
+        let resources = app.path().resource_dir().map_err(|e| e.to_string())?;
+        let exe = resources.join("yt-dlp").join("yt-dlp.exe");
         if !exe.is_file() {
             return Err("yt-dlp is not bundled. Run scripts/fetch-sidecars.ps1, then restart Craftora.".into());
         }
-        return Ok(app.shell().command(exe));
+        // YouTube's JavaScript challenges (signed-in fetches find no formats without them).
+        let deno = resources.join("deno").join("deno.exe");
+        let command = app.shell().command(exe);
+        return Ok(if deno.is_file() { command.args(["--js-runtimes".to_string(), format!("deno:{}", deno.display())]) } else { command });
     }
     if name == WHISPER {
         let exe = app.path().resource_dir().map_err(|e| e.to_string())?.join("whisper").join("whisper-cli.exe");

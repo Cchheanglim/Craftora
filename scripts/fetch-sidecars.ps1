@@ -86,6 +86,28 @@ if ($Force -or -not (Test-Path $ffmpegTarget) -or -not (Test-Path $ffprobeTarget
   Write-Host "FFmpeg already present (use -Force to replace)"
 }
 
+# --- Deno (JavaScript for yt-dlp) -------------------------------------------------
+# YouTube makes yt-dlp solve JavaScript challenges; without a runtime, signed-in fetches find no
+# formats ("Requested format is not available"). yt-dlp looks for Deno first.
+$denoVersion = "v2.9.8"
+# Its .sha256sum files are in PowerShell's list format, so the hash of this build lives here.
+$denoSha256 = "cba84b26e0df5ae7f74fc66b86a95b866872a86292ebd84fa1e959927edd93bf"
+$denoDir = Join-Path $binDir "deno"
+$denoTarget = Join-Path $denoDir "deno.exe"
+if ($Force -or -not (Test-Path $denoTarget)) {
+  Write-Host "Deno ($denoVersion)"
+  $base = "https://github.com/denoland/deno/releases/download/$denoVersion"
+  $zip = Join-Path $tmp "deno-x86_64-pc-windows-msvc.zip"
+  Get-File "$base/deno-x86_64-pc-windows-msvc.zip" $zip
+  $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+  if ($actual -ne $denoSha256) { throw "Checksum mismatch for deno-x86_64-pc-windows-msvc.zip (expected $denoSha256, got $actual)" }
+  Write-Host "  checksum OK: deno-x86_64-pc-windows-msvc.zip"
+  if (Test-Path $denoDir) { Remove-Item -Recurse -Force $denoDir }
+  Expand-Archive -Path $zip -DestinationPath $denoDir
+} else {
+  Write-Host "Deno already present (use -Force to replace)"
+}
+
 # --- whisper.cpp (speech to text, for captions made from the sound) --------------
 # Pinned: its releases publish no checksum file, so the SHA-256 of this exact build lives here.
 # The speech model (ggml-base.bin, ~148 MB) isn't bundled: Craftora downloads it on first use.
