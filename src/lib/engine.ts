@@ -45,6 +45,9 @@ export const updateYtDlp = () => invoke<string>("update_yt_dlp");
 /** Opens a website or a video's page in a Craftora window, to log in and pick a video there. */
 export const openSignIn = (site: string) => invoke<void>("open_sign_in", { site });
 export const signOutEverywhere = () => invoke<void>("sign_out_everywhere");
+/** Websites Craftora keeps a login for, such as "youtube.com". */
+export const signedInSites = () => invoke<string[]>("signed_in_sites");
+export const signOutOf = (site: string) => invoke<void>("sign_out_of", { site });
 /** A short message shown on top of the page in the sign-in window. */
 export const tellSignIn = (message: string) => invoke<void>("tell_sign_in", { message });
 /** What "Fetch this video" saw in the sign-in window (`FoundPage` in src-tauri/src/signin.rs). */
@@ -375,6 +378,8 @@ export const onJobEvent = (handler: (event: JobEvent) => void): Promise<Unlisten
 
 export const revealFile = (path: string) => revealItemInDir(path);
 export const openFile = (path: string) => invoke<void>("open_file", { path });
+/** Moves an exported file to the Recycle Bin. */
+export const deleteFile = (path: string) => invoke<void>("delete_file", { path });
 export const localThumbnail = (path: string, image = false) => invoke<string>("local_thumbnail", { path, image });
 
 const fileThumbnails = new Map<string, Promise<string | undefined>>();

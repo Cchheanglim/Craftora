@@ -8,6 +8,8 @@ export interface ConfirmOptions {
   confirmLabel: string;
   /** Red confirm button, for things that destroy work. */
   danger?: boolean;
+  /** Replaces "This can't be undone." when there's a way back outside Craftora. */
+  note?: string;
 }
 
 /**
@@ -28,7 +30,7 @@ export function useConfirm() {
   return { ask, dialog };
 }
 
-function ConfirmDialog({ title, message, confirmLabel, danger, onClose }: ConfirmOptions & { onClose: (ok: boolean) => void }) {
+function ConfirmDialog({ title, message, confirmLabel, danger, note, onClose }: ConfirmOptions & { onClose: (ok: boolean) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -54,7 +56,7 @@ function ConfirmDialog({ title, message, confirmLabel, danger, onClose }: Confir
       <div className="confirm__box">
         <h2 id="confirm-title">{title}</h2>
         <div className="confirm__message">{message}</div>
-        <p className="confirm__note">This can't be undone.</p>
+        <p className="confirm__note">{note ?? "This can't be undone."}</p>
         <div className="confirm__actions">
           <button type="button" className="btn btn--ghost" onClick={() => onClose(false)} autoFocus>
             Cancel

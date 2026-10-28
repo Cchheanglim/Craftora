@@ -16,6 +16,7 @@ import {
   audioPeaks,
   detectSilences,
   openLocal,
+  deleteFile,
   probeLocal,
   recordLive,
   recordingUrl,
@@ -352,6 +353,22 @@ export default function App() {
     const next = history.map((j) => (j.id === id ? { ...j, hidden: hidden || undefined } : j));
     setHistory(next);
     void saveHistory(next).catch(() => {});
+  };
+
+  /** Moves an export's file to the Recycle Bin and takes it off the history. */
+  const deleteExport = async (job: Job) => {
+    try {
+      if (job.outputPath) await deleteFile(job.outputPath);
+    } catch (err) {
+      setError(errorText(err));
+      return;
+    }
+    setHistory((list) => {
+      if (!list) return list;
+      const next = list.filter((j) => j.id !== job.id);
+      void saveHistory(next).catch(() => {});
+      return next;
+    });
   };
 
   const toggleLeft = useCallback(() => setLeftOpen((o) => (remember("craftora.left", !o), !o)), []);
@@ -1062,6 +1079,7 @@ export default function App() {
           <Library
             jobs={exported}
             onHide={setExportHidden}
+            onDelete={inDesktopApp ? (job) => void deleteExport(job) : undefined}
             outputDir={outputDir}
             onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
             onOpenWorkspace={() => setView("editor")}

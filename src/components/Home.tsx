@@ -5,10 +5,10 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { inDesktopApp, revealFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { storeEdition, type Updates } from "../lib/updates";
-import { checkSite, type SiteReport } from "../lib/engine";
+import { checkSite, signedInSites, signOutOf, type SiteReport } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useConfirm } from "./ConfirmDialog";
 import "./Home.css";
 
@@ -84,7 +84,13 @@ export function ProjectList({
   currentId,
   onOpenProject,
   onDeleteProject,
-}: Pick<HomeProps, "projects" | "currentId" | "onOpenProject" | "onDeleteProject">) {
+  selected,
+  onToggle,
+}: Pick<HomeProps, "projects" | "currentId" | "onOpenProject" | "onDeleteProject"> & {
+  /** While picking several projects (Projects page): the ticked ones; rows tick instead of opening. */
+  selected?: Set<string>;
+  onToggle?: (id: string) => void;
+}) {
   const { ask, dialog } = useConfirm();
   const deleteProject = async (p: ProjectEntry) => {
     const ok = await ask({
@@ -102,6 +108,19 @@ export function ProjectList({
       <ul className="home__projects">
         {projects.map((p) => (
           <li key={p.id} className={p.id === currentId ? "is-current" : undefined}>
+            {selected ? (
+              <label className="home__project">
+                <input type="checkbox" checked={selected.has(p.id)} onChange={() => onToggle?.(p.id)} />
+                <Thumb src={p.thumbnail} icon="scissors" />
+                <span className="home__project-text">
+                  <span className="truncate">{p.name}</span>
+                  <span className="home__project-meta">
+                    {p.clips} clip{p.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(p.duration)}</span> · {ago(p.savedAt)}
+                  </span>
+                </span>
+              </label>
+            ) : (
+            <>
             <button type="button" className="home__project" onClick={() => onOpenProject(p.id)}>
               <Thumb src={p.thumbnail} icon="scissors" />
               <span className="home__project-text">
@@ -115,6 +134,8 @@ export function ProjectList({
             <button type="button" className="btn btn--icon home__delete" aria-label={`Delete ${p.name}`} title="Delete project" onClick={() => void deleteProject(p)}>
               <Icon name="trash" size={14} />
             </button>
+            </>
+            )}
           </li>
         ))}
       </ul>
@@ -338,6 +359,26 @@ export function Links({ links }: { links: LinkSettings }) {
   const [checking, setChecking] = useState(false);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const { ask, dialog } = useConfirm();
+  const [sites, setSites] = useState<string[]>([]);
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const refresh = () => void signedInSites().then(setSites).catch(() => {});
+    refresh();
+    // Back from the sign-in window, which may have added a login.
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, []);
+  const signOutOfSite = async (site: string) => {
+    const ok = await ask({
+      title: `Sign out of ${site}?`,
+      message: `Craftora forgets your login on ${site}. Videos there that need a login can't be fetched until you sign in again.`,
+      confirmLabel: "Sign out",
+      danger: true,
+    });
+    if (!ok) return;
+    await signOutOf(site).catch(() => {});
+    setSites(await signedInSites().catch(() => sites.filter((s) => s !== site)));
+  };
   const checkLink = async (e: FormEvent) => {
     e.preventDefault();
     if (!toCheck.trim() || checking) return;
@@ -358,7 +399,10 @@ export function Links({ links }: { links: LinkSettings }) {
       confirmLabel: "Sign out",
       danger: true,
     });
-    if (ok) links.onSignOut();
+    if (ok) {
+      links.onSignOut();
+      setSites([]);
+    }
   };
   const signIn = (e: FormEvent) => {
     e.preventDefault();
@@ -392,6 +436,19 @@ export function Links({ links }: { links: LinkSettings }) {
           For restricted site, private or members-only videos. A window opens: log in, go to the video, then click Fetch this video at the top of the window. Your browser can stay open, and the login is remembered.
         </p>
         {links.signInMessage && <p className="home__muted">{links.signInMessage}</p>}
+        {sites.length > 0 && (
+          <ul className="home__sites" aria-label="Signed in">
+            {sites.map((site) => (
+              <li key={site}>
+                <Icon name="check" size={13} />
+                <span className="mono truncate">{site}</span>
+                <button type="button" className="btn btn--ghost" aria-label={`Sign out of ${site}`} onClick={() => void signOutOfSite(site)}>
+                  Sign out
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         {links.siteChecks && (
           <>
             <form className="home__about-row home__gap-sm" onSubmit={checkLink}>

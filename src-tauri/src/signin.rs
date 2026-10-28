@@ -306,10 +306,48 @@ pub async fn tell_sign_in(app: AppHandle, message: String) -> Result<(), String>
     window.eval(js).map_err(|e| e.to_string())
 }
 
+/// The website a cookie domain belongs to: "accounts.google.com" -> "google.com".
+// shortcut: keeps the last two labels, so "bbc.co.uk" shows as "co.uk"; use a public-suffix list if that matters.
+fn site_of(domain: &str) -> String {
+    let domain = domain.trim_start_matches('.').to_ascii_lowercase();
+    if domain.parse::<std::net::IpAddr>().is_ok() {
+        return domain;
+    }
+    let labels: Vec<&str> = domain.rsplitn(3, '.').collect();
+    match labels.as_slice() {
+        [tld, name, ..] => format!("{name}.{tld}"),
+        _ => domain,
+    }
+}
+
+/// Websites Craftora keeps a login (cookies) for, from its sign-in window, sorted.
+#[tauri::command]
+pub async fn signed_in_sites(app: AppHandle) -> Result<Vec<String>, String> {
+    let mut sites: Vec<String> = web_cookies(&app).await.iter().filter_map(|c| c.domain().map(site_of)).collect();
+    sites.sort();
+    sites.dedup();
+    Ok(sites)
+}
+
+/// Forgets the login for one website (as `signed_in_sites` names it).
+#[tauri::command]
+pub async fn sign_out_of(app: AppHandle, site: String) -> Result<(), String> {
+    forget_cookies(&app, Some(&site)).await
+}
+
 /// Forgets every website login made in Craftora's sign-in window.
 #[tauri::command]
 pub async fn sign_out_everywhere(app: AppHandle) -> Result<(), String> {
-    let cookies = web_cookies(&app).await;
+    forget_cookies(&app, None).await
+}
+
+/// Deletes the sign-in window's cookies for `site`, or for every website.
+async fn forget_cookies(app: &AppHandle, site: Option<&str>) -> Result<(), String> {
+    let cookies: Vec<_> = web_cookies(app)
+        .await
+        .into_iter()
+        .filter(|c| site.is_none_or(|site| c.domain().is_some_and(|d| site_of(d) == site)))
+        .collect();
     let Some(main) = app.get_webview_window("main") else {
         return Ok(());
     };
@@ -325,6 +363,14 @@ pub async fn sign_out_everywhere(app: AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_the_website() {
+        assert_eq!(site_of(".accounts.google.com"), "google.com");
+        assert_eq!(site_of("www.YouTube.com"), "youtube.com");
+        assert_eq!(site_of("example.com"), "example.com");
+        assert_eq!(site_of("192.168.1.5"), "192.168.1.5");
+    }
 
     #[test]
     fn writes_netscape_lines() {

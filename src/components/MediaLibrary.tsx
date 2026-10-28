@@ -3,6 +3,7 @@ import type { LibraryEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
 import { Icon } from "./Icon";
 import { FileThumb } from "./Thumb";
+import { useConfirm } from "./ConfirmDialog";
 import "./Library.css";
 
 interface MediaLibraryProps {
@@ -29,6 +30,16 @@ type Filter = (typeof FILTERS)[number]["id"];
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
 export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget }: MediaLibraryProps) {
+  const { ask, dialog } = useConfirm();
+  const forget = async (entry: LibraryEntry) => {
+    const ok = await ask({
+      title: `Remove “${entry.name}” from the list?`,
+      message: "It leaves the Media library (and Saved, if it's starred). The file itself stays on your PC, and it comes back here if you import it again.",
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (ok) onForget(entry.path);
+  };
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const words = search.trim().toLowerCase();
@@ -38,6 +49,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget }: 
 
   return (
     <section className="library" aria-labelledby="media-library-title">
+      {dialog}
       <header className="library__head">
         <h1 id="media-library-title">Media library</h1>
         <p>Every file you've imported, in any project. Star the ones you use often.</p>
@@ -124,7 +136,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget }: 
                         className="btn btn--icon"
                         aria-label={`Remove ${entry.name} from the list`}
                         title="Remove from this list (the file stays)"
-                        onClick={() => onForget(entry.path)}
+                        onClick={() => void forget(entry)}
                       >
                         <Icon name="x" size={14} />
                       </button>

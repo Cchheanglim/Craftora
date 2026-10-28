@@ -166,8 +166,17 @@
   fill: currentColor;
 }
 
-.library__new {
-  align-self: flex-start;
+.library__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 36px;
+}
+
+.library__count {
+  font-size: 13px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .library__choice {

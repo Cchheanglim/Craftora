@@ -81,6 +81,15 @@ export function Sidebar({
     });
     if (ok) onClearHistory();
   };
+  const removeFromHistory = async (entry: { url: string; title: string }) => {
+    const ok = await ask({
+      title: "Remove from history?",
+      message: `“${entry.title}” leaves History for good. Projects that use it aren't touched.`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (ok) onRemoveHistory(entry.url);
+  };
   const nav = [
     { id: "home" as const, label: "Home", icon: "logo" as const },
     { id: "editor" as const, label: "Editor", icon: "scissors" as const },
@@ -208,7 +217,7 @@ export function Sidebar({
                     <span className="side__file-meta truncate">{siteOf(entry.url)}</span>
                   </span>
                 </button>
-                <button type="button" className="btn btn--icon" aria-label={`Remove ${entry.title} from history`} title="Remove from history" onClick={() => onRemoveHistory(entry.url)}>
+                <button type="button" className="btn btn--icon" aria-label={`Remove ${entry.title} from history`} title="Remove from history" onClick={() => void removeFromHistory(entry)}>
                   <Icon name="x" size={13} />
                 </button>
               </li>

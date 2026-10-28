@@ -31,6 +31,13 @@
 - **Pause a download and finish it later.** Click pause on a "Download for editing" in the Queue.
   It keeps what it has, waits there even after you close Craftora, and continues where it stopped
   when you click resume.
+- **Delete exported files.** Each file in **Exports** has a **Delete** button: it moves the file to
+  the Recycle Bin (so a wrong click can be undone there) and takes it off the list and Home.
+- **See and sign out of each website.** Under **Links** (Home and Settings), Craftora lists the
+  websites it keeps a login for, each with its own **Sign out**. **Sign out of all** is still there.
+- **A warning before anything that can't be undone.** Deleting an exported file, signing out of a
+  website, stopping a live recording, removing a file from the Media library and removing a link
+  from History now ask first. Cancelling a download now says "download" instead of "export".
 
 **Fixed**
 - **Sharp taskbar icon in the Microsoft Store version.** It was shrunk from a single 44-pixel logo and
@@ -41,6 +48,8 @@
   project pictures in Projects and on Home keep working after Craftora restarts.
 - **Pictures for links that come without one.** When a website (or sometimes YouTube) gives no
   picture, or one that won't load, Craftora takes a frame from the video itself.
+- **Sharper picture while a video loads.** The picture the preview shows while a link loads, or when
+  it can't play, was a tiny copy blown up; it's now kept at a size close to the video's.
 - **Find a moved or renamed file.** A clip whose file can't be found now has a **Find file** button
   (select the clip): point to the file and its clips play again.
 
