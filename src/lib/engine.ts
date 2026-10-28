@@ -164,8 +164,11 @@ export const onPreviewCache = (handler: (id: string, percent: number) => void): 
 const MEDIA_EXTENSIONS = ["mp4", "mkv", "webm", "mov", "avi", "m4v", "wmv", "flv", "ts", "mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"];
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "jfif", "webp", "bmp", "gif", "avif", "tif", "tiff", "ico"];
 
-/** The preview plays files straight from disk through Tauri's asset protocol. */
-const assetUrl = (path: string) => (path ? convertFileSrc(path) : "");
+/**
+ * The preview plays files from disk through Craftora's own `cmedia` server, piece by piece (Tauri's
+ * asset protocol read a whole file into memory for some requests, which crashed on a 4 GB video).
+ */
+const assetUrl = (path: string) => (path ? `${convertFileSrc("file", "cmedia")}?p=${encodeURIComponent(path)}` : "");
 
 interface QuickLocal {
   path: string;
@@ -412,6 +415,9 @@ export interface SpeechProgress {
 }
 export const onSpeechProgress = (handler: (progress: SpeechProgress) => void): Promise<UnlistenFn> =>
   listen<SpeechProgress>("speech-progress", (e) => handler(e.payload));
+/** Each caption line as soon as whisper has it, before the whole video is done. */
+export const onSpeechLine = (handler: (id: string, line: Caption) => void): Promise<UnlistenFn> =>
+  listen<{ id: string; line: Caption }>("speech-line", (e) => handler(e.payload.id, e.payload.line));
 export const detectSilences = (path: string, start: number, end: number) => invoke<[number, number][]>("detect_silences", { path, start, end });
 export const saveSnapshot = (bytes: number[], title: string) => invoke<string>("save_snapshot", { bytes, title });
 

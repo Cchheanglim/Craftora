@@ -47,6 +47,10 @@
   PC) gets some made from its sound: Craftora listens to what's said and writes it down, on your PC.
   Media shows how it's going. The first time, Craftora downloads a 148 MB speech model. Turn it off
   in **Settings → Captions for videos without any**.
+- **A History page.** **History** in the sidebar lists every link you've fetched: the video's
+  picture, title and whole link, and when you fetched it. Search them, fetch one again, copy its link,
+  or remove links one by one, several at once (**Select**) or all (**Clear all**). The small History
+  list in the sidebar shows whole links and has **Select** too.
 - **Fetching shows the video sooner.** A fetched video appears in Media without waiting for its
   picture, which fills in a moment later (about a second sooner on every fetch). Captions made from
   the sound now wait until nothing is fetching, downloading or exporting, so on a slow connection
@@ -65,6 +69,15 @@
   from History now ask first. Cancelling a download now says "download" instead of "export".
 
 **Fixed**
+- **Big files no longer crash Craftora.** Importing a video of several GB could close the app: the
+  preview's file server sometimes read the whole file into memory at once. Files on your PC now
+  play through Craftora's own server, a piece at a time (a 3.7 GB video used about 35 MB).
+- **The sound wave matches the sound.** It only listened to the first 10 minutes and kept only deep
+  rumble, so voices drew a flat line. It now follows how loud every moment is, for the whole video;
+  waves saved in your projects are redone by themselves.
+- **Captions from the sound show up while they're made**, line by line, instead of only when a long
+  video is done. The **CC** button shows clearly whether captions are on (filled) or off (crossed
+  out), with the progress next to it. Captions no longer wait behind a live recording.
 - **Sharp taskbar icon in the Microsoft Store version.** It was shrunk from a single 44-pixel logo and
   lost pixels; the Store package now carries the icon at every taskbar size.
 - **Play on a moved or deleted file says so.** Play in Exports, Home, the Queue and Downloads used

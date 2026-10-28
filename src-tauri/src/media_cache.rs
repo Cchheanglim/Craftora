@@ -305,6 +305,9 @@ pub async fn serve(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Vec<u
     if let Some(rest) = request.uri().path().strip_prefix("/rec/") {
         return crate::live::serve(app, rest);
     }
+    if request.uri().path() == "/file" {
+        return serve_file(app, &request).await;
+    }
     let id = request.uri().path().trim_start_matches('/').to_string();
     let Some(entry) = entry(app, &id) else {
         return reply(StatusCode::NOT_FOUND, b"Not cached".to_vec());
@@ -321,6 +324,83 @@ pub async fn serve(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Vec<u
         })
         .unwrap_or((0, None));
     answer(&entry, start, wanted_end).await
+}
+
+/// A file on this PC (`/file?p=<path>`) for the preview, at most `PLAY_CHUNK` per answer: the player
+/// asks for the rest piece by piece. Tauri's own asset protocol reads a whole file into memory when
+/// a request has no byte range, and a 4 GB video crashed the app. Only files allowed for preview.
+async fn serve_file(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    let path = Url::parse(&format!("http://cmedia.localhost/file?{}", request.uri().query().unwrap_or_default()))
+        .ok()
+        .and_then(|u| u.query_pairs().find(|(k, _)| k == "p").map(|(_, v)| PathBuf::from(v.into_owned())));
+    let Some(path) = path.filter(|p| app.asset_protocol_scope().is_allowed(p)) else {
+        return reply(StatusCode::FORBIDDEN, b"Not a file Craftora opened".to_vec());
+    };
+    let range = request.headers().get(header::RANGE).and_then(|v| v.to_str().ok()).map(str::to_string);
+    let read = tauri::async_runtime::spawn_blocking(move || file_piece(&path, range.as_deref())).await;
+    match read {
+        Ok(Ok(answer)) => answer,
+        _ => reply(StatusCode::NOT_FOUND, b"Couldn't read the file".to_vec()),
+    }
+}
+
+/// Small files (a picture) without a range come whole; anything else as one piece of a range.
+const WHOLE_FILE: u64 = 64 * 1024 * 1024;
+
+fn file_piece(path: &std::path::Path, range: Option<&str>) -> std::io::Result<Response<Vec<u8>>> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = File::open(path)?;
+    let len = file.metadata()?.len();
+    let kind = match path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase().as_str() {
+        "mp4" | "m4v" => "video/mp4",
+        "webm" => "video/webm",
+        "mkv" => "video/x-matroska",
+        "mov" => "video/quicktime",
+        "mp3" => "audio/mpeg",
+        "m4a" | "aac" => "audio/mp4",
+        "wav" => "audio/wav",
+        "ogg" | "opus" => "audio/ogg",
+        "flac" => "audio/flac",
+        "png" => "image/png",
+        "jpg" | "jpeg" | "jfif" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        "avif" => "image/avif",
+        _ => "application/octet-stream",
+    };
+    let answer = Response::builder()
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_TYPE, kind);
+    // "bytes=START-" or "bytes=START-END".
+    let asked = range.and_then(|v| v.strip_prefix("bytes=")).and_then(|v| {
+        let (s, e) = v.split_once('-')?;
+        Some((s.parse::<u64>().ok()?, e.parse::<u64>().ok()))
+    });
+    if asked.is_none() && len <= WHOLE_FILE {
+        let mut body = Vec::with_capacity(len as usize);
+        file.read_to_end(&mut body)?;
+        return Ok(answer.status(StatusCode::OK).header(header::CONTENT_LENGTH, len.to_string()).body(body).unwrap_or_default());
+    }
+    let (start, wanted_end) = asked.unwrap_or((0, None));
+    if start >= len {
+        return Ok(answer
+            .status(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::CONTENT_RANGE, format!("bytes */{len}"))
+            .body(Vec::new())
+            .unwrap_or_default());
+    }
+    let end = wanted_end.unwrap_or(len - 1).min(len - 1).min(start + PLAY_CHUNK - 1);
+    let mut body = vec![0; (end - start + 1) as usize];
+    file.seek(SeekFrom::Start(start))?;
+    file.read_exact(&mut body)?;
+    Ok(answer
+        .status(StatusCode::PARTIAL_CONTENT)
+        .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{len}"))
+        .header(header::CONTENT_LENGTH, body.len().to_string())
+        .body(body)
+        .unwrap_or_default())
 }
 
 /// Fetches a playlist, segment or key of a stream playlist for the preview. Done here rather than
@@ -498,7 +578,26 @@ async fn answer(entry: &Entry, start: u64, wanted_end: Option<u64>) -> Response<
 
 #[cfg(test)]
 mod tests {
-    use super::{relay_playlist, Cached, RELAY};
+    #[test]
+    fn local_files_come_in_pieces_never_whole_when_big() {
+        let path = std::env::temp_dir().join(format!("craftora-piece-{}.mp4", std::process::id()));
+        std::fs::write(&path, vec![7u8; (PLAY_CHUNK * 3) as usize]).unwrap();
+        // A range is capped at one piece.
+        let r = file_piece(&path, Some("bytes=0-")).unwrap();
+        assert_eq!(r.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(r.body().len() as u64, PLAY_CHUNK);
+        assert_eq!(r.headers()[header::CONTENT_RANGE], format!("bytes 0-{}/{}", PLAY_CHUNK - 1, PLAY_CHUNK * 3));
+        // The last bytes, and past the end.
+        assert_eq!(file_piece(&path, Some("bytes=3145720-")).unwrap().body().len(), 8);
+        assert_eq!(file_piece(&path, Some("bytes=99999999-")).unwrap().status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        // Small and no range: the whole file (a picture).
+        let r = file_piece(&path, None).unwrap();
+        assert_eq!((r.status(), r.body().len() as u64), (StatusCode::OK, PLAY_CHUNK * 3));
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    use super::{file_piece, relay_playlist, Cached, PLAY_CHUNK, RELAY};
+    use tauri::http::{header, StatusCode};
     use tauri::Url;
 
     #[test]
