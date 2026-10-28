@@ -53,7 +53,7 @@ async fn model(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
     }
     std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't make a folder for the speech model: {e}"))?;
     // No overall time limit (the shared client has one): 148 MB can take minutes.
-    let client = reqwest::Client::builder()
+    let client = crate::privacy::client_builder()
         .connect_timeout(Duration::from_secs(20))
         .build()
         .map_err(|e| e.to_string())?;

@@ -9,6 +9,7 @@ mod local;
 mod media_cache;
 mod media;
 mod page_fetch;
+mod privacy;
 mod project;
 mod signin;
 mod speech;
@@ -17,6 +18,8 @@ mod virustotal;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before any window: WebView2 only takes a proxy when it starts.
+    privacy::prepare();
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -91,6 +94,9 @@ pub fn run() {
             store::set_output_dir,
             store::open_file,
             store::delete_file,
+            store::get_proxy,
+            store::set_proxy,
+            privacy::check_address,
             jobs::rename_download,
             captions::load_captions,
             speech::make_captions,

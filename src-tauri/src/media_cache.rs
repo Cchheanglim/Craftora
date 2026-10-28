@@ -67,17 +67,25 @@ impl Cached {
 }
 
 /// One client for every request: it keeps connections open, so each piece of a preview doesn't
-/// pay for a new connection and TLS handshake (a new client per piece made scrubbing slow).
-pub(crate) fn client() -> &'static reqwest::Client {
-    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .user_agent(USER_AGENT)
-            .connect_timeout(Duration::from_secs(15))
-            .timeout(Duration::from_secs(120))
-            .build()
-            .unwrap_or_default()
-    })
+/// pay for a new connection and TLS handshake (a new client per piece made scrubbing slow). Made
+/// again when the proxy changes (privacy.rs).
+pub(crate) fn client() -> reqwest::Client {
+    static CLIENT: Mutex<Option<(Option<String>, reqwest::Client)>> = Mutex::new(None);
+    let proxy = crate::privacy::proxy();
+    let mut kept = CLIENT.lock().unwrap();
+    if let Some((made_for, client)) = kept.as_ref()
+        && *made_for == proxy
+    {
+        return client.clone();
+    }
+    let client = crate::privacy::client_builder()
+        .user_agent(USER_AGENT)
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(120))
+        .build()
+        .unwrap_or_default();
+    *kept = Some((proxy, client.clone()));
+    client
 }
 
 /// Positioned file I/O, so playing and filling never move each other's file cursor.
