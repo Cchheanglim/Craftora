@@ -38,6 +38,13 @@ export function Transcript({ project, api, time, seek, captionStatus }: Transcri
     const clip = clipOf(line);
     return clip ? clip.start + (Math.max(mediaT, clip.in) - clip.in) / clip.speed : lines[line].start;
   };
+  /** A word still on the timeline: cut ones (outside its clip) are hidden. */
+  const kept = (line: number, word: number) => {
+    const clip = clipOf(line);
+    const w = words[line][word];
+    const middle = (w.start + w.end) / 2;
+    return !clip || (middle >= clip.in && middle < clip.out);
+  };
   const current = lines.findIndex((l) => time >= l.start && time < l.end);
   // In braces: scrollIntoView returns a promise in WebView2, which React would take for a clean-up.
   useEffect(() => {
@@ -45,7 +52,9 @@ export function Transcript({ project, api, time, seek, captionStatus }: Transcri
   }, [current]);
 
   const needle = query.trim().toLowerCase();
-  const shown = lines.map((_, i) => i).filter((i) => !needle || lines[i].text.toLowerCase().includes(needle));
+  const shown = lines
+    .map((_, i) => i)
+    .filter((i) => words[i].some((w, j) => w.word && kept(i, j)) && (!needle || lines[i].text.toLowerCase().includes(needle)));
 
   const pickedWords = [...picked].map((k) => k.split(":").map(Number) as [number, number]).filter(([l, w]) => words[l]?.[w]);
   const cutLength = pickedWords.reduce((sum, [l, w]) => sum + (words[l][w].end - words[l][w].start) / (clipOf(l)?.speed ?? 1), 0);
@@ -122,7 +131,7 @@ export function Transcript({ project, api, time, seek, captionStatus }: Transcri
                 {formatClock(line.start)}
               </button>
               <span className="transcript__text">
-                {words[i].map((w, j) => (
+                {words[i].map((w, j) => kept(i, j) && (
                   <span
                     key={j}
                     data-word={w.word ? keyOf(i, j) : undefined}
