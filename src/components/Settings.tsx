@@ -15,9 +15,12 @@ interface SettingsProps {
   onMaxRunning: (count: number) => void;
   /** Settings for fetching links; absent in the browser preview. */
   links?: LinkSettings;
+  /** Make captions from the sound for videos that come without any. */
+  autoCaptions: boolean;
+  onAutoCaptions: (on: boolean) => void;
 }
 
-export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links }: SettingsProps) {
+export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, autoCaptions, onAutoCaptions }: SettingsProps) {
   return (
     <section className="library" aria-labelledby="settings-title">
       <header className="library__head">
@@ -65,6 +68,22 @@ export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaul
           ))}
         </div>
         <p className="library__muted">More at once finishes a long queue sooner but makes each job slower. Live recordings don't count.</p>
+      </div>
+
+      <div className="library__group">
+        <h2 className="section-label">Captions for videos without any</h2>
+        <div className="segmented library__choice" role="group" aria-label="Captions for videos without any">
+          <button type="button" aria-pressed={autoCaptions} onClick={() => onAutoCaptions(true)}>
+            Make them from the sound
+          </button>
+          <button type="button" aria-pressed={!autoCaptions} onClick={() => onAutoCaptions(false)}>
+            Off
+          </button>
+        </div>
+        <p className="library__muted">
+          Craftora listens to what's said and writes it down, on this PC: nothing is sent anywhere. The first time, it downloads a
+          148 MB speech model. A long video takes a few minutes and keeps the processor busy meanwhile.
+        </p>
       </div>
 
       {links && (

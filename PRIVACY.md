@@ -18,6 +18,9 @@ These are the only times Craftora goes online:
   click **Check**: Craftora sends VirusTotal the website's name (for example `youtube.com`),
   never the full link, using Craftora's own VirusTotal key. VirusTotal's
   [terms and privacy policy](https://www.virustotal.com/gui/terms-of-service) apply.
+- **Captions made from the sound.** Craftora listens to a video's sound and writes captions on
+  your PC; the sound isn't sent anywhere. The first time, it downloads the speech model
+  (`ggml-base.bin`, 148 MB) from Hugging Face. You can turn this off in Settings.
 - **Updating yt-dlp.** The **Update yt-dlp** button (Home → Links) downloads the newest yt-dlp
   from GitHub.
 - **The AI assistant.** It is off until you add your own Gemini API key. Each message you send

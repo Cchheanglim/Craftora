@@ -11,6 +11,8 @@ use tauri_plugin_shell::{
 
 pub const YT_DLP: &str = "yt-dlp";
 pub const FFMPEG: &str = "ffmpeg";
+/// whisper.cpp's command-line tool (speech to text), bundled as the `whisper` resource folder.
+pub const WHISPER: &str = "whisper";
 
 /// Folder holding the sidecars. Tauri copies them next to the app executable,
 /// both in `tauri dev` (target/debug) and in installed builds.
@@ -30,6 +32,13 @@ pub fn command(app: &AppHandle, name: &str) -> Result<Command, String> {
         let exe = app.path().resource_dir().map_err(|e| e.to_string())?.join("yt-dlp").join("yt-dlp.exe");
         if !exe.is_file() {
             return Err("yt-dlp is not bundled. Run scripts/fetch-sidecars.ps1, then restart Craftora.".into());
+        }
+        return Ok(app.shell().command(exe));
+    }
+    if name == WHISPER {
+        let exe = app.path().resource_dir().map_err(|e| e.to_string())?.join("whisper").join("whisper-cli.exe");
+        if !exe.is_file() {
+            return Err("whisper is not bundled. Run scripts/fetch-sidecars.ps1, then restart Craftora.".into());
         }
         return Ok(app.shell().command(exe));
     }

@@ -28,6 +28,14 @@ domain under the [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENS
 executable bundles Python and other components; their licences are listed in
 [yt-dlp's THIRD_PARTY_LICENSES.txt](https://github.com/yt-dlp/yt-dlp/blob/master/THIRD_PARTY_LICENSES.txt).
 
+## whisper.cpp (MIT) and the Whisper "base" speech model (MIT)
+
+Craftora runs `whisper-cli.exe` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
+(MIT licence, Copyright (c) 2023-2026 The ggml authors) to make captions from a video's sound. The
+speech model, `ggml-base.bin`, is OpenAI's [Whisper](https://github.com/openai/whisper) base model
+(MIT licence, Copyright (c) 2022 OpenAI) converted for whisper.cpp; Craftora downloads it from
+[Hugging Face](https://huggingface.co/ggerganov/whisper.cpp) the first time it's needed.
+
 ## Libraries built into Craftora
 
 The app is built with [Tauri](https://tauri.app) (MIT or Apache-2.0), [React](https://react.dev)

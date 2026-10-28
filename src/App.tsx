@@ -15,6 +15,8 @@ import {
   localThumbnail,
   audioPeaks,
   loadCaptions,
+  makeCaptions,
+  onSpeechProgress,
   detectSilences,
   openLocal,
   deleteFile,
@@ -495,6 +497,49 @@ export default function App() {
         .catch(() => {});
     }
   }, [project.media, api]);
+
+  // Videos without captions get some made from their sound, one at a time (it keeps the processor busy).
+  const [autoCaptions, setAutoCaptions] = useState(() => remembered("craftora.autoCaptions", true));
+  const chooseAutoCaptions = (on: boolean) => {
+    setAutoCaptions(on);
+    remember("craftora.autoCaptions", on);
+  };
+  /** Media id → how making its captions is going, for the Media list. */
+  const [captioning, setCaptioning] = useState<Record<string, string>>({});
+  const spoken = useRef(new Set<string>());
+  const speechTurn = useRef<Promise<unknown>>(Promise.resolve());
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const unlisten = onSpeechProgress(({ id, stage, percent }) =>
+      setCaptioning((all) => ({
+        ...all,
+        [id]: stage === "model" ? `getting the speech model, ${Math.floor(percent)}%` : stage === "sound" ? "getting the sound for captions…" : `making captions, ${Math.floor(percent)}%`,
+      })),
+    );
+    return () => void unlisten.then((stop) => stop());
+  }, []);
+  useEffect(() => {
+    if (!inDesktopApp || !autoCaptions) return;
+    for (const m of project.media) {
+      const s = m.source;
+      if (m.captions || s.captions || !m.hasAudio || s.image || s.live || m.missing || spoken.current.has(m.id)) continue;
+      spoken.current.add(m.id);
+      setCaptioning((all) => ({ ...all, [m.id]: "captions waiting…" }));
+      const done = (label?: string) =>
+        setCaptioning((all) => {
+          const { [m.id]: _, ...rest } = all;
+          return label ? { ...rest, [m.id]: label } : rest;
+        });
+      speechTurn.current = speechTurn.current.then(() =>
+        makeCaptions(m.id, s.url, Boolean(s.local))
+          .then((lines) => {
+            done();
+            if (lines.length) api.refreshMedia(m.id, { captions: { label: "Made from the sound", lines } });
+          })
+          .catch(() => done("couldn't make captions")),
+      );
+    }
+  }, [project.media, api, autoCaptions]);
 
   /** Queues a whole link to download, so it edits like a file on this PC. */
   const downloadForEditing = (item: MediaItem) => {
@@ -1023,6 +1068,7 @@ export default function App() {
         engines={engines}
         media={project.media}
         preparing={preparing}
+        captioning={captioning}
         previewReady={Object.fromEntries(
           project.media
             .filter((m) => m.source.previewCacheIds?.some((id) => cached[id] !== undefined))
@@ -1090,6 +1136,8 @@ export default function App() {
             maxRunning={maxRunning}
             onMaxRunning={chooseMaxRunning}
             links={linkSettings}
+            autoCaptions={autoCaptions}
+            onAutoCaptions={chooseAutoCaptions}
           />
         )}
         {view === "library" && (

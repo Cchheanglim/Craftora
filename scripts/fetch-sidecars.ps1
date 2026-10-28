@@ -86,6 +86,32 @@ if ($Force -or -not (Test-Path $ffmpegTarget) -or -not (Test-Path $ffprobeTarget
   Write-Host "FFmpeg already present (use -Force to replace)"
 }
 
+# --- whisper.cpp (speech to text, for captions made from the sound) --------------
+# Pinned: its releases publish no checksum file, so the SHA-256 of this exact build lives here.
+# The speech model (ggml-base.bin, ~148 MB) isn't bundled: Craftora downloads it on first use.
+$whisperRelease = "b5454"
+$whisperSha256 = "6ba69e3482d7826214f90a6a9c84ca07782aec1e1d0c6a7c30c994fd5d816ccb"
+$whisperDir = Join-Path $binDir "whisper"
+$whisperTarget = Join-Path $whisperDir "whisper-cli.exe"
+if ($Force -or -not (Test-Path $whisperTarget)) {
+  Write-Host "whisper.cpp ($whisperRelease)"
+  $zip = Join-Path $tmp "whisper-bin-x64.zip"
+  Get-File "https://github.com/ggml-org/whisper.cpp/releases/download/$whisperRelease/whisper-bin-x64.zip" $zip
+  $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+  if ($actual -ne $whisperSha256) { throw "Checksum mismatch for whisper-bin-x64.zip (expected $whisperSha256, got $actual)" }
+  Write-Host "  checksum OK: whisper-bin-x64.zip"
+  $unzipped = Join-Path $tmp "whisper"
+  if (Test-Path $unzipped) { Remove-Item -Recurse -Force $unzipped }
+  Expand-Archive -Path $zip -DestinationPath $unzipped
+  if (Test-Path $whisperDir) { Remove-Item -Recurse -Force $whisperDir }
+  New-Item -ItemType Directory -Force -Path $whisperDir | Out-Null
+  # Only the command-line tool and the libraries it loads; the zip also has demos and tests.
+  Copy-Item (Join-Path $unzipped "Release\whisper-cli.exe") $whisperDir
+  Get-ChildItem (Join-Path $unzipped "Release\*.dll") | Where-Object { $_.Name -ne "SDL2.dll" } | Copy-Item -Destination $whisperDir
+} else {
+  Write-Host "whisper.cpp already present (use -Force to replace)"
+}
+
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 
 Write-Host ""
