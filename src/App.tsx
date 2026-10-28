@@ -94,6 +94,7 @@ import { Projects } from "./components/Projects";
 import { MediaLibrary } from "./components/MediaLibrary";
 import { Downloads } from "./components/Downloads";
 import { History } from "./components/History";
+import { Transcript } from "./components/Transcript";
 import { Settings } from "./components/Settings";
 import { AssistantPanel } from "./components/AssistantPanel";
 import { TextMenu } from "./components/TextMenu";
@@ -269,7 +270,7 @@ export default function App() {
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const [cuttingSilences, setCuttingSilences] = useState(false);
-  const [rightTab, setRightTab] = useState<"edit" | "assistant">("edit");
+  const [rightTab, setRightTab] = useState<"edit" | "transcript" | "assistant">("edit");
   /** How much of each link preview is cached on disk (by cache id), 0–100. */
   const [cached, setCached] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -1266,11 +1267,22 @@ export default function App() {
             <button type="button" aria-pressed={rightTab === "edit"} onClick={() => setRightTab("edit")}>
               Edit & export
             </button>
+            <button type="button" aria-pressed={rightTab === "transcript"} onClick={() => setRightTab("transcript")}>
+              Transcript
+            </button>
             <button type="button" aria-pressed={rightTab === "assistant"} onClick={() => setRightTab("assistant")}>
               Assistant
             </button>
           </div>
-          {rightTab === "assistant" ? (
+          {rightTab === "transcript" ? (
+            <Transcript
+              project={project}
+              api={api}
+              time={playback.time}
+              seek={playback.seek}
+              captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
+            />
+          ) : rightTab === "assistant" ? (
             <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} />
           ) : (
             <ExportPanel
