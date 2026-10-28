@@ -23,6 +23,7 @@ import {
   pickFolder,
   saveSnapshot,
   pickMediaFiles,
+  pickMediaFile,
   openSignIn,
   onFetchPage,
   type FoundPage,
@@ -437,11 +438,14 @@ export default function App() {
   useEffect(() => {
     for (const m of project.media) {
       const s = m.source;
-      if (!s.local || s.thumbnail?.startsWith("data:") || !(m.hasVideo || s.image) || thumbTried.current.has(m.id)) continue;
+      if (s.thumbnail?.startsWith("data:") || !(m.hasVideo || s.image) || thumbTried.current.has(m.id)) continue;
+      // A link whose site gave no picture (or one that won't load): a frame of its cached preview.
+      // Stream playlists (HLS) can't be drawn by a plain video element.
+      if (!s.local && (s.previewHls || s.live || !s.previewUrl)) continue;
       if (!inDesktopApp && (s.previewProxy || !s.previewUrl)) continue;
       thumbTried.current.add(m.id);
       const task = (s.previewUrl ? captureThumbnail(s.previewUrl, s.image) : Promise.resolve(undefined)).then(
-        (thumb) => thumb ?? (inDesktopApp ? localThumbnail(s.url, Boolean(s.image)).catch(() => undefined) : undefined),
+        (thumb) => thumb ?? (inDesktopApp && s.local ? localThumbnail(s.url, Boolean(s.image)).catch(() => undefined) : undefined),
       );
       void task.then((thumbnail) => {
         const current = projectRef.current.media.find((x) => x.id === m.id);
@@ -676,6 +680,19 @@ export default function App() {
           // A link that can't be fetched now (offline) keeps its old details and can still export later.
           if (source.local) api.refreshMedia(item.id, { missing: true });
         });
+    }
+  };
+
+  /** A file that was moved or renamed: the user points to it, and its clips play again. */
+  const relink = async (item: MediaItem) => {
+    const path = await pickMediaFile();
+    if (!path) return;
+    try {
+      const fresh = await openLocal(path);
+      api.refreshMedia(item.id, { source: { ...fresh, duration: item.source.duration }, missing: false });
+      prepare(item.id, fresh);
+    } catch (err) {
+      setError(`Couldn't open that file: ${errorText(err)}`);
     }
   };
 
@@ -1111,6 +1128,7 @@ export default function App() {
                   clip={selected}
                   track={selectedTrack}
                   media={project.media.find((m) => m.id === selected.mediaId)}
+                  onRelink={(item) => void relink(item)}
                   onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
                   onDuration={
                     !selected.mediaId || project.media.find((m) => m.id === selected.mediaId)?.source.image
