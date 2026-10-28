@@ -2,7 +2,8 @@
  * Small pictures for lists: a frame of a video file (or the image itself) drawn into a JPEG
  * data URL, so it still shows after a restart, when the file's preview link has expired.
  */
-const WIDTH = 192;
+// Also the preview's stand-in while a video loads or can't play, so not much smaller than the video.
+const WIDTH = 480;
 
 function draw(source: HTMLVideoElement | HTMLImageElement, width: number, height: number): string | undefined {
   try {
