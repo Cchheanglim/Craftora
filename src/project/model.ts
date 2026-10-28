@@ -326,6 +326,84 @@ export function readableCaptions(lines: Caption[], max = CAPTION_CHARS): Caption
   });
 }
 
+/** A spoken line on the timeline: a caption piece of a clip that plays it. */
+export interface TranscriptLine {
+  id: string;
+  clipId: string;
+  /** Timeline seconds of the part that plays. */
+  start: number;
+  end: number;
+  /** Media seconds of the whole caption piece (its words are timed across these). */
+  mediaStart: number;
+  mediaEnd: number;
+  text: string;
+}
+
+/** What's said on the timeline, in order, from the captions of every clip that has them. */
+export function transcript(p: Project): TranscriptLine[] {
+  const lines: TranscriptLine[] = [];
+  const seen = new Set<string>();
+  for (const clip of p.clips) {
+    const captions = p.media.find((m) => m.id === clip.mediaId)?.captions?.lines;
+    // shortcut: reversed clips play their words backwards; left out until someone edits one by text.
+    if (!captions?.length || clip.reverse) continue;
+    for (const piece of readableCaptions(captions)) {
+      const from = Math.max(piece.start, clip.in);
+      const to = Math.min(piece.end, clip.out);
+      if (to - from < 0.05) continue;
+      const start = Math.round((clip.start + (from - clip.in) / clip.speed) * 1000) / 1000;
+      // The same video on a picture track and a sound track says it once.
+      const key = `${start}|${piece.text}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const end = Math.round((clip.start + (to - clip.in) / clip.speed) * 1000) / 1000;
+      lines.push({ id: `${clip.id}@${from}`, clipId: clip.id, start, end, mediaStart: piece.start, mediaEnd: piece.end, text: piece.text });
+    }
+  }
+  return lines.sort((a, b) => a.start - b.start);
+}
+
+/** A word (or the space or mark between words) of a transcript line, timed in media seconds. */
+export interface TranscriptWord {
+  text: string;
+  start: number;
+  end: number;
+  /** False for spaces and punctuation. */
+  word: boolean;
+}
+
+/**
+ * A line's words, each timed by where it sits in the line.
+ * shortcut: captions are timed per line, so word times are estimates; use word-level timing from whisper if cuts land off.
+ */
+export function wordsOf(line: TranscriptLine): TranscriptWord[] {
+  const segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
+  const length = Math.max(1, line.text.length);
+  const span = line.mediaEnd - line.mediaStart;
+  return [...segmenter.segment(line.text)].map(({ segment, index, isWordLike }) => ({
+    text: segment,
+    start: line.mediaStart + (span * index) / length,
+    end: line.mediaStart + (span * (index + segment.length)) / length,
+    word: Boolean(isWordLike),
+  }));
+}
+
+/** Words picked to cut, as media-time ranges per clip, touching ones joined. */
+export function cutRanges(picked: { clipId: string; start: number; end: number }[]): Map<string, [number, number][]> {
+  const byClip = new Map<string, [number, number][]>();
+  for (const p of [...picked].sort((a, b) => a.start - b.start)) {
+    const ranges = byClip.get(p.clipId) ?? [];
+    const last = ranges[ranges.length - 1];
+    if (last && p.start - last[1] < 0.05) last[1] = Math.max(last[1], p.end);
+    else ranges.push([p.start, p.end]);
+    byClip.set(p.clipId, ranges);
+  }
+  return byClip;
+}
+
+/** "um", "uh", "erm", "hmm", "ah" and their stretched forms. */
+export const isFiller = (word: string) => /^(u+m+|u+h+m*|e+r+m+|h+m+|a+h+)$/i.test(word);
+
 /**
  * Loudness bars (0–100) across a media item: real FFmpeg peaks, measured once it's a file on this
  * PC. None for a link until then (a made-up wave didn't match the sound, and fooled Cut silences).

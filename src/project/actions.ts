@@ -46,7 +46,8 @@ export type EditAction =
   | { type: "trimClip"; clipId: string; edge: "start" | "end"; time: number }
   | { type: "splitClip"; clipId: string; newClipId: string; at: number }
   | { type: "duplicateClip"; clipId: string; newClipId: string }
-  | { type: "cutSilences"; clipId: string; ranges: [number, number][] }
+  /** Removes these media-time ranges from a clip. `exact`: just these (words from the transcript), not padded silences of 0.25 s or more. */
+  | { type: "cutSilences"; clipId: string; ranges: [number, number][]; exact?: boolean }
   | { type: "splitByChapters"; clipId: string }
   | { type: "deleteClip"; clipId: string }
   | { type: "updateClip"; clipId: string; patch: ClipPatch }
@@ -392,9 +393,10 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const clip = p.clips.find((c) => c.id === action.clipId);
       if (!clip || isStill(p, clip) || action.ranges.length === 0) return p;
       const minMedia = MIN_CLIP * clip.speed;
+      const [pad, shortest] = action.exact ? [0, 0.03] : [0.04, 0.25];
       const sorted = action.ranges
-        .map(([s, e]): [number, number] => [Math.max(clip.in, s + 0.04), Math.min(clip.out, e - 0.04)])
-        .filter(([s, e]) => e - s >= 0.25)
+        .map(([s, e]): [number, number] => [Math.max(clip.in, s + pad), Math.min(clip.out, e - pad)])
+        .filter(([s, e]) => e - s >= shortest)
         .sort((a, b) => a[0] - b[0]);
       if (sorted.length === 0) return p;
       const kept: [number, number][] = [];

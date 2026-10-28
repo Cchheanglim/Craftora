@@ -173,3 +173,38 @@ test("each wave bar shows the loudest moment in the stretch it stands for", asyn
   // Two bars for the whole clip: the second holds the loud moment (one sample per bar would miss it).
   expect(clipPeaks(p.clips[0], p.media[0], 2)).toEqual([10, 90]);
 });
+
+test("the transcript follows the timeline, words are timed in their line, and picked words cut exactly", async () => {
+  const { transcript, wordsOf, cutRanges, isFiller } = await import("../src/project/model");
+  const lines = [
+    { start: 0, end: 2, text: "Hello there" },
+    { start: 4, end: 6, text: "Um the battery lasts" },
+  ];
+  const media = { ...mediaFromSource(source("video")), captions: { label: "English", lines } };
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
+  // Starting the clip 1 s in moves every line 1 s earlier on the timeline.
+  p = applyEdit(p, { type: "trimClip", clipId: "c", edge: "start", time: 1 });
+  const said = transcript(p);
+  expect(said.map((l) => [l.text, l.start])).toEqual([
+    ["Hello there", 0],
+    ["Um the battery lasts", 3],
+  ]);
+  const words = wordsOf(said[1]);
+  expect(words.filter((w) => w.word).map((w) => w.text)).toEqual(["Um", "the", "battery", "lasts"]);
+  const um = words[0];
+  expect([um.start, um.end]).toEqual([4, 4.2]);
+  expect(isFiller(um.text) && isFiller("uhh") && !isFiller("umbrella")).toBe(true);
+  // "Um" and the space after it join into one cut, which removes exactly that stretch.
+  const ranges = cutRanges([
+    { clipId: p.clips[0].id, start: um.start, end: um.end },
+    { clipId: p.clips[0].id, start: words[1].start, end: words[2].start },
+  ]).get(p.clips[0].id)!;
+  expect(ranges).toEqual([[4, 4.3]]);
+  p = applyEdit(p, { type: "cutSilences", clipId: p.clips[0].id, ranges, exact: true });
+  const kept = p.clips.filter((c) => c.mediaId === media.id).map((c) => [c.in, c.out]);
+  expect(kept).toEqual([
+    [1, 4],
+    [4.3, 10],
+  ]);
+});
