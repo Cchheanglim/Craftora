@@ -47,6 +47,11 @@
   PC) gets some made from its sound: Craftora listens to what's said and writes it down, on your PC.
   Media shows how it's going. The first time, Craftora downloads a 148 MB speech model. Turn it off
   in **Settings → Captions for videos without any**.
+- **Fetching shows the video sooner.** A fetched video appears in Media without waiting for its
+  picture, which fills in a moment later (about a second sooner on every fetch). Captions made from
+  the sound now wait until nothing is fetching, downloading or exporting, so on a slow connection
+  they don't slow those down, and they use only half the processor. **Copy report** now shows how
+  long each fetch took.
 - **Name your export.** The file name under **Add to queue** is now a box you can type in, so you can
   tell exports of the same video apart. Names keep spaces and accents; only characters Windows doesn't
   allow in file names are left out.

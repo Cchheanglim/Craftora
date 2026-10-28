@@ -513,6 +513,10 @@ export default function App() {
   const [captioning, setCaptioning] = useState<Record<string, string>>({});
   const spoken = useRef(new Set<string>());
   const speechTurn = useRef<Promise<unknown>>(Promise.resolve());
+  // Captions wait their turn: on a slow connection, getting the model or a link's sound would slow
+  // the fetch, preview, downloads and exports going on (and whisper would slow exports).
+  const idle = useRef(true);
+  idle.current = !busy && !queue.jobs.some((j) => j.status === "downloading" || j.status === "encoding");
   useEffect(() => {
     if (!inDesktopApp) return;
     const unlisten = onSpeechProgress(({ id, stage, percent }) =>
@@ -535,14 +539,16 @@ export default function App() {
           const { [m.id]: _, ...rest } = all;
           return label ? { ...rest, [m.id]: label } : rest;
         });
-      speechTurn.current = speechTurn.current.then(() =>
-        makeCaptions(m.id, s.url, Boolean(s.local))
+      speechTurn.current = speechTurn.current.then(async () => {
+        await new Promise((r) => window.setTimeout(r, 15_000)); // the new video's preview loads first
+        while (!idle.current) await new Promise((r) => window.setTimeout(r, 3_000));
+        return makeCaptions(m.id, s.url, Boolean(s.local))
           .then((lines) => {
             done();
             if (lines.length) api.refreshMedia(m.id, { captions: { label: "Made from the sound", lines } });
           })
-          .catch(() => done("couldn't make captions")),
-      );
+          .catch(() => done("couldn't make captions"));
+      });
     }
   }, [project.media, api, autoCaptions]);
 
