@@ -31,6 +31,7 @@ interface PreviewProps {
 }
 
 const WAVE_BARS = 140;
+const CAPTIONS_KEY = "craftora.captions";
 
 /** Draws the visible preview stage onto a canvas and encodes it as a PNG. */
 async function captureStagePng(stage: HTMLElement, width: number, height: number): Promise<Uint8Array | null> {
@@ -105,6 +106,22 @@ function placeAlong(offset: number, free: number): number {
 /** Plays the timeline: every clip's media follows the playhead, stacked like the export. */
 export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot }: PreviewProps) {
   const [muted, setMuted] = useState(false);
+  const [showCaptions, setShowCaptions] = useState(() => {
+    try {
+      return localStorage.getItem(CAPTIONS_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  });
+  const toggleCaptions = () =>
+    setShowCaptions((on) => {
+      try {
+        localStorage.setItem(CAPTIONS_KEY, on ? "off" : "on");
+      } catch {
+        /* not remembered */
+      }
+      return !on;
+    });
   const [fullscreen, setFullscreen] = useState(false);
   const [snapping, setSnapping] = useState(false);
   /** Preview files that failed to load (refused by their server, or unplayable). */
@@ -167,6 +184,17 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   };
   const sounds = project.clips.filter((c) => c.mediaId && trackKind(c) === "audio");
   const texts = project.clips.filter((c) => !c.mediaId).sort(byLayer);
+  // The caption line of the top picture that has captions, unless they're on the timeline already.
+  const hasCaptions = project.media.some((m) => m.captions);
+  const captionLine = (() => {
+    if (!showCaptions || project.tracks.some((t) => t.name === "Captions")) return undefined;
+    for (const clip of [...pictures].reverse()) {
+      const t = mediaTime(clip);
+      const line = t === null ? undefined : mediaOf(clip)?.captions?.lines.find((l) => t >= l.start && t < l.end);
+      if (t !== null && mediaOf(clip)?.captions) return line?.text;
+    }
+    return undefined;
+  })();
   const nothingHere = !project.clips.some(active);
   const selected = project.clips.find((c) => c.id === selectedId);
   const editable = (c?: Clip) => Boolean(c && trackKind(c) !== "audio");
@@ -449,6 +477,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               </div>
             );
           })}
+          {captionLine && <p className="preview__captions">{captionLine}</p>}
         </div>
         {nothingHere && duration > 0 && <p className="preview__note">Nothing on the timeline here</p>}
         {playing && playback.waiting && (
@@ -515,6 +544,18 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               onClick={() => void takeSnapshot()}
             >
               <Icon name="camera" />
+            </button>
+          )}
+          {hasCaptions && (
+            <button
+              type="button"
+              className="btn btn--icon"
+              aria-label="Captions"
+              aria-pressed={showCaptions}
+              title={showCaptions ? "Hide captions" : "Show captions"}
+              onClick={toggleCaptions}
+            >
+              <Icon name="captions" />
             </button>
           )}
           <button type="button" className="btn btn--icon" aria-label={muted ? "Unmute" : "Mute"} aria-pressed={muted} onClick={() => setMuted((m) => !m)}>

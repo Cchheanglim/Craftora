@@ -37,6 +37,12 @@ struct Info {
     chapters: Option<Vec<RawChapter>>,
     #[serde(default)]
     formats: Vec<Format>,
+    /// The uploader's captions and the site's automatic ones, by language.
+    #[serde(default)]
+    subtitles: BTreeMap<String, Vec<crate::captions::SubFormat>>,
+    #[serde(default)]
+    automatic_captions: BTreeMap<String, Vec<crate::captions::SubFormat>>,
+    language: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -127,6 +133,9 @@ pub struct MediaSource {
     pub(crate) thumbnail: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) chapters: Vec<Chapter>,
+    /// Links: the captions that come with the video (`load_captions` reads them).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) captions: Option<crate::captions::Track>,
     pub(crate) streams: Vec<Stream>,
     /// A stream that is live now: no length yet; the editor records it (live.rs).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -413,6 +422,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
             image: false,
             thumbnail: info.thumbnail.unwrap_or_default(),
             chapters: Vec::new(),
+            captions: None,
             streams: vec![Stream { id: "live".into(), kind: "video", label: "Live".into(), detail: "Recording".into(), size_mb: 0.0 }],
             live: true,
             download_first: false,
@@ -483,6 +493,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         _ => preview,
     };
     let (preview_url, preview_audio_url) = (with_page(preview_url), with_page(preview_audio_url));
+    let captions = crate::captions::pick(&info.subtitles, &info.automatic_captions, info.language.as_deref());
     Ok(MediaSource {
         url,
         title: info.title.unwrap_or_else(|| "Untitled".into()),
@@ -509,6 +520,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
                 })
             })
             .collect(),
+        captions,
         streams,
         live: false,
         download_first: bot_checked,

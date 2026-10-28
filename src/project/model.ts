@@ -3,7 +3,7 @@
  * Plain data, so it can be undone, saved, and edited by an AI agent through the
  * same actions the UI uses (see `actions.ts`).
  */
-import type { MediaSource } from "../types";
+import type { Caption, MediaSource } from "../types";
 import type { LibraryEntry } from "../lib/storage";
 
 export type TrackKind = "video" | "audio" | "text";
@@ -68,6 +68,8 @@ export interface MediaItem {
   audioFormat: string;
   /** Set when a saved project is reopened and the file can't be found any more. */
   missing?: boolean;
+  /** The captions that came with a fetched video, kept after it's downloaded; with their name. */
+  captions?: { label: string; lines: Caption[] };
 }
 
 /** Fractions of the picture cut off each side. */
