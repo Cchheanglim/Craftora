@@ -89,7 +89,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     const { clip, media } = single;
     const src = media.source;
     const length = clipLength(clip);
-    const fileName = `${slug(media.name)}_${compact(clip.in)}-${compact(clip.out)}.${container}`;
+    const fileName = `${settings.name?.trim() || `${slug(media.name)}_${compact(clip.in)}-${compact(clip.out)}`}.${container}`;
     const format = src.local ? "local" : isVideo ? media.videoFormat : media.audioFormat;
     const stream = src.streams.find((s) => s.id === format);
     const whole = clip.in <= 0.05 && clip.out >= src.duration - 0.05;
@@ -185,7 +185,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   });
 
   const title = used[0]?.name ?? "Project";
-  const fileName = `${slug(title)}_edit.${container}`;
+  const fileName = `${settings.name?.trim() || `${slug(title)}_edit`}.${container}`;
   // Rough: ~8 Mbit/s for 1080p video plus 192 kbit/s sound.
   const pixels = (frame.width * frame.height) / (1920 * 1080);
   const sizeMb = isVideo ? duration * (1 + 0.024) * Math.max(0.4, pixels) : duration * (container === "wav" ? 0.18 : container === "flac" ? 0.1 : 0.04);

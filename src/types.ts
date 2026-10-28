@@ -72,6 +72,8 @@ export interface ExportSettings {
   frameId: string;
   /** Timeline renders: "fast" uses the graphics card when there is one; "best" is slower and smaller. */
   quality: RenderQuality;
+  /** The file name the user typed, without extension; empty or absent for the automatic one. */
+  name?: string;
 }
 
 export type RenderQuality = "fast" | "best";
