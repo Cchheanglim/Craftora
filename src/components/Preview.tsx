@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { clipEnd, fadeAt, mediaTimeAt, peaksFor, trackOrder, transitionMix, type Clip, type Project } from "../project/model";
+import { clipEnd, fadeAt, mediaTimeAt, peaksFor, readableCaptions, trackOrder, transitionMix, type Clip, type Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
@@ -192,7 +192,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     if (!showCaptions || project.tracks.some((t) => t.name === "Captions")) return undefined;
     for (const clip of [...pictures].reverse()) {
       const t = mediaTime(clip);
-      const line = t === null ? undefined : mediaOf(clip)?.captions?.lines.find((l) => t >= l.start && t < l.end);
+      const whole = t === null ? undefined : mediaOf(clip)?.captions?.lines.find((l) => t >= l.start && t < l.end);
+      // Only the piece being said now, when a line is long.
+      const line = whole && t !== null ? readableCaptions([whole]).find((l) => t >= l.start && t < l.end) ?? whole : undefined;
       if (t !== null && mediaOf(clip)?.captions) return line?.text;
     }
     return undefined;

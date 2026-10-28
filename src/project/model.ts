@@ -287,6 +287,45 @@ export function mediaFromSource(source: MediaSource): MediaItem {
   };
 }
 
+/** About two lines of captions on screen. */
+export const CAPTION_CHARS = 80;
+
+/**
+ * Captions cut into pieces of at most `max` characters, at whole words (Khmer and Thai too, which
+ * don't put spaces between words), each piece shown for its share of its line's time. Some sites'
+ * captions hold a whole paragraph per line, which covered the picture.
+ */
+export function readableCaptions(lines: Caption[], max = CAPTION_CHARS): Caption[] {
+  const words = new Intl.Segmenter(undefined, { granularity: "word" });
+  const letters = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  return lines.flatMap((line) => {
+    if (line.text.length <= max) return [line];
+    const pieces: string[] = [];
+    let current = "";
+    const add = (part: string) => {
+      if (current.trim() && (current + part).trim().length > max) {
+        pieces.push(current.trim());
+        current = "";
+      }
+      current += part;
+    };
+    for (const { segment } of words.segment(line.text)) {
+      // A "word" longer than a piece (no word breaks found): cut it between letters instead.
+      if (segment.length > max) for (const { segment: letter } of letters.segment(segment)) add(letter);
+      else add(segment);
+    }
+    if (current.trim()) pieces.push(current.trim());
+    const total = pieces.reduce((n, p) => n + p.length, 0);
+    let start = line.start;
+    return pieces.map((text) => {
+      const end = start + ((line.end - line.start) * text.length) / total;
+      const piece = { start: Math.round(start * 1000) / 1000, end: Math.round(end * 1000) / 1000, text };
+      start = end;
+      return piece;
+    });
+  });
+}
+
 /**
  * Loudness bars (0–100) across a media item: real FFmpeg peaks, measured once it's a file on this
  * PC. None for a link until then (a made-up wave didn't match the sound, and fooled Cut silences).

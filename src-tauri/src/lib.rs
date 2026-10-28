@@ -74,6 +74,7 @@ pub fn run() {
             local::make_preview,
             local::local_thumbnail,
             local::audio_peaks,
+            local::link_peaks,
             local::detect_silences,
             jobs::start_job,
             project::start_render,

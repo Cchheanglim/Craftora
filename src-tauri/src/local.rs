@@ -339,6 +339,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
             image: true,
             thumbnail: String::new(),
             chapters: Vec::new(),
+            peaks_url: String::new(),
             captions: None,
             streams: vec![Stream { id: "local:image".into(), kind: "video", label, detail: codec_name(image.codec_name.as_deref()), size_mb }],
             live: false,
@@ -418,6 +419,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
         image: false,
         thumbnail: String::new(),
         chapters: Vec::new(),
+            peaks_url: String::new(),
             captions: None,
         streams,
         live: false,
@@ -564,15 +566,34 @@ pub async fn audio_peaks(app: AppHandle, opened: State<'_, OpenedFiles>, path: S
     if !opened.contains(&path) {
         return Err("Open the file first.".into());
     }
-    let input = path.to_string_lossy();
-    let output = run_to_end(
-        &app,
-        FFMPEG,
-        // How loud, 200 times a second: the sound made positive, then averaged. (Resampling the sound
-        // itself to 100 Hz kept only rumble under 50 Hz, so voices drew a flat line.)
-        &["-hide_banner", "-v", "error", "-i", &input, "-vn", "-ac", "1", "-af", "aresample=8000,aeval=abs(val(0)),aresample=200", "-f", "s16le", "pipe:1"],
-    )
-    .await?;
+    peaks_of(&app, &path.to_string_lossy(), None).await
+}
+
+/// The sound wave of a fetched link, from the light stream `MediaSource.peaks_url` names.
+#[tauri::command]
+pub async fn link_peaks(app: AppHandle, url: String) -> Result<Vec<u8>, String> {
+    let (file, page) = crate::signin::split_referer(&url);
+    if !(file.starts_with("https://") || file.starts_with("http://")) {
+        return Err("Not a web address.".into());
+    }
+    // No line breaks from a page address: they would let it add headers of its own.
+    let headers = page.map(|p| format!("Referer: {}\r\n", p.replace(['\r', '\n'], "")));
+    let peaks = peaks_of(&app, file, headers.as_deref()).await?;
+    if peaks.is_empty() {
+        return Err("Couldn't read the link's sound.".into());
+    }
+    Ok(peaks)
+}
+
+async fn peaks_of(app: &AppHandle, input: &str, headers: Option<&str>) -> Result<Vec<u8>, String> {
+    let mut args = vec!["-hide_banner", "-v", "error"];
+    if let Some(headers) = headers {
+        args.extend(["-headers", headers]);
+    }
+    // How loud, 200 times a second: the sound made positive, then averaged. (Resampling the sound
+    // itself to 100 Hz kept only rumble under 50 Hz, so voices drew a flat line.)
+    args.extend(["-i", input, "-vn", "-ac", "1", "-af", "aresample=8000,aeval=abs(val(0)),aresample=200", "-f", "s16le", "pipe:1"]);
+    let output = run_to_end(app, FFMPEG, &args).await?;
     Ok(peaks_from_pcm(&output.stdout, PEAK_BARS))
 }
 

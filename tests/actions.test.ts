@@ -139,3 +139,23 @@ test("captions go on a new Captions track, lined up with each clip after cuts an
     ["goodbye", 5.5, 1],
   ]);
 });
+
+test("long caption lines become two-line pieces at whole words, timed by length", async () => {
+  const { readableCaptions, CAPTION_CHARS } = await import("../src/project/model");
+  const english = "After the war the gods came down to the mountain and asked who would guard the gate, and the monkey king answered that he would do it alone if they let him keep his staff.";
+  const khmer = "បន្ទាប់ពីវគ្គមុនមកទេវតាថៃដីងស៊ីហ្គឹងគឺបានចុះទៅកាន់ភ្នំហួរគហៅសូន្ធខុងឡើងមកកាន់ឋានសួរនិងទទួលតំណែងទេវតារួចគ្រាន់តែទៅដល់ភ្លាមអ៊ូខុងនឹងគឺបីសនឹងវ៉ៃគ្នាជាមួយនឹងសេនាការពារ";
+  for (const text of [english, khmer]) {
+    const pieces = readableCaptions([{ start: 10, end: 30, text }]);
+    expect(pieces.length).toBeGreaterThan(1);
+    for (const p of pieces) expect(p.text.length).toBeLessThanOrEqual(CAPTION_CHARS);
+    // Nothing lost, and the pieces fill the line's time without gaps.
+    expect(pieces.map((p) => p.text).join("").replace(/\s/g, "")).toBe(text.replace(/\s/g, ""));
+    expect(pieces[0].start).toBe(10);
+    expect(pieces[pieces.length - 1].end).toBe(30);
+    for (let i = 1; i < pieces.length; i++) expect(pieces[i].start).toBe(pieces[i - 1].end);
+  }
+  // Whole English words: no piece starts or ends inside one.
+  for (const p of readableCaptions([{ start: 0, end: 9, text: english }])) expect(english.split(" ")).toEqual(expect.arrayContaining(p.text.split(" ")));
+  // Short lines stay as they are.
+  expect(readableCaptions([{ start: 1, end: 2, text: "Hello there" }])).toEqual([{ start: 1, end: 2, text: "Hello there" }]);
+});

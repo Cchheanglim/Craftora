@@ -413,6 +413,8 @@ export function fileThumbnail(path: string, image = false): Promise<string | und
   return made;
 }
 export const audioPeaks = (path: string) => invoke<number[]>("audio_peaks", { path });
+/** A fetched link's sound wave, from `MediaSource.peaksUrl`. */
+export const linkPeaks = (url: string) => invoke<number[]>("link_peaks", { url });
 /** A fetched video's captions (`MediaSource.captions.url`) as timed lines. */
 export const loadCaptions = (url: string, link: string) => invoke<Caption[]>("load_captions", { url, link });
 /** Captions made from what's said (whisper.cpp, on this PC); `source` is a file path or a link. */

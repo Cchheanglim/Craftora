@@ -133,6 +133,9 @@ pub struct MediaSource {
     pub(crate) thumbnail: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) chapters: Vec<Chapter>,
+    /// Links: a light stream of the sound to draw the wave from (`link_peaks`); empty when none.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub(crate) peaks_url: String,
     /// Links: the captions that come with the video (`load_captions` reads them).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) captions: Option<crate::captions::Track>,
@@ -332,6 +335,22 @@ fn preview_audio(formats: &[Format]) -> String {
     candidates.first().and_then(|f| f.url.clone()).unwrap_or_default()
 }
 
+/// The lightest stream to draw a link's sound wave from: its smallest sound-only file, else a small
+/// whole file (up to 150 MB). Empty when there is none (stream playlists aren't read).
+fn wave_source(formats: &[Format], duration: f64) -> String {
+    let direct = |f: &&Format| matches!(f.protocol.as_deref(), None | Some("https") | Some("http")) && f.url.is_some() && f.has_audio();
+    let rate = |f: &Format| f.abr.or(f.tbr).unwrap_or(f64::MAX);
+    let sound = formats.iter().filter(direct).filter(|f| !f.has_video()).min_by(|a, b| rate(a).total_cmp(&rate(b)));
+    let small = || {
+        formats
+            .iter()
+            .filter(direct)
+            .filter(|f| f.size_mb(duration) > 0.0 && f.size_mb(duration) <= 150.0)
+            .min_by(|a, b| a.size_mb(duration).total_cmp(&b.size_mb(duration)))
+    };
+    sound.or_else(small).and_then(|f| f.url.clone()).unwrap_or_default()
+}
+
 /// Pictures bigger than this aren't thumbnails.
 const MAX_THUMBNAIL_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -425,6 +444,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
             image: false,
             thumbnail: info.thumbnail.unwrap_or_default(),
             chapters: Vec::new(),
+            peaks_url: String::new(),
             captions: None,
             streams: vec![Stream { id: "live".into(), kind: "video", label: "Live".into(), detail: "Recording".into(), size_mb: 0.0 }],
             live: true,
@@ -496,6 +516,8 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         _ => preview,
     };
     let (preview_url, preview_audio_url) = (with_page(preview_url), with_page(preview_audio_url));
+    // Not behind a bot check: only the page window gets through there.
+    let peaks_url = if bot_checked { String::new() } else { with_page(wave_source(&info.formats, duration)) };
     let captions = crate::captions::pick(&info.subtitles, &info.automatic_captions, info.language.as_deref());
     Ok(MediaSource {
         url,
@@ -523,6 +545,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
                 })
             })
             .collect(),
+        peaks_url,
         captions,
         streams,
         live: false,
