@@ -43,6 +43,9 @@
   PC) gets some made from its sound: Craftora listens to what's said and writes it down, on your PC.
   Media shows how it's going. The first time, Craftora downloads a 148 MB speech model. Turn it off
   in **Settings → Captions for videos without any**.
+- **Name your export.** The file name under **Add to queue** is now a box you can type in, so you can
+  tell exports of the same video apart. Names keep spaces and accents; only characters Windows doesn't
+  allow in file names are left out.
 - **Delete several projects at once.** **Projects → Select**: tick projects (or **Select all**), then
   **Delete** them with one question.
 - **A warning before anything that can't be undone.** Deleting an exported file, signing out of a
