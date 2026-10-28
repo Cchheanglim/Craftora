@@ -219,6 +219,12 @@ const paths = {
     </>
   ),
   waveform: <path d="M2 12h2M6 8v8M10 4v16M14 9v6M18 6v12M22 12h-2" />,
+  captions: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M10.5 10.2a2.2 2.2 0 1 0 0 3.6M17 10.2a2.2 2.2 0 1 0 0 3.6" />
+    </>
+  ),
 } as const;
 
 export type IconName = keyof typeof paths;

@@ -37,6 +37,8 @@ export type EditAction =
    */
   | { type: "addClip"; clipId: string; mediaId: string; trackId?: string; at?: number }
   | { type: "addText"; clipId: string; at: number; text?: string }
+  /** The media's captions as text clips on a new "Captions" track, lined up with each of its clips. */
+  | { type: "addCaptions"; mediaId: string; trackId: string }
   /** On a magnetic track, `start` picks the slot: the clip goes where its left edge lands. */
   | { type: "moveClip"; clipId: string; start: number; trackId?: string }
   /** Moves one edge of a clip to a timeline time. */
@@ -285,6 +287,40 @@ export function applyEdit(p: Project, action: EditAction): Project {
         y: bottom.y,
       });
       return place(p, p.tracks.find((t) => t.kind === "text" && !t.magnetic), "text", clip, action.at);
+    }
+
+    case "addCaptions": {
+      const lines = p.media.find((m) => m.id === action.mediaId)?.captions?.lines ?? [];
+      // shortcut: reversed clips get no captions; map them backwards if anyone reverses captioned clips.
+      const clips = p.clips.filter((c) => c.mediaId === action.mediaId && !c.reverse);
+      if (lines.length === 0 || clips.length === 0 || p.tracks.some((t) => t.id === action.trackId)) return p;
+      const bottom = POSITIONS.bottom;
+      const added: Clip[] = [];
+      for (const clip of clips) {
+        for (const line of lines) {
+          const from = Math.max(line.start, clip.in);
+          const to = Math.min(line.end, clip.out);
+          if (to - from < 0.05) continue;
+          added.push(
+            newClip({
+              id: `${action.trackId}-${added.length}`,
+              trackId: action.trackId,
+              start: round(clip.start + (from - clip.in) / clip.speed),
+              in: 0,
+              out: round((to - from) / clip.speed),
+              text: line.text,
+              color: "#ffffff",
+              size: 0.055,
+              x: bottom.x,
+              y: bottom.y,
+            }),
+          );
+        }
+      }
+      if (added.length === 0) return p;
+      const { project } = withTrack(p, "text", action.trackId);
+      const tracks = project.tracks.map((t) => (t.id === action.trackId ? { ...t, name: "Captions" } : t));
+      return { ...project, tracks, clips: [...project.clips, ...added] };
     }
 
     case "moveClip": {

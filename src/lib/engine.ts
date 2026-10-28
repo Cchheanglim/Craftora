@@ -7,7 +7,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import type { JobSpec, MediaSource, RenderSpec } from "../types";
+import type { Caption, JobSpec, MediaSource, RenderSpec } from "../types";
 import { captureThumbnail } from "./thumbnail";
 
 export const inDesktopApp = "__TAURI_INTERNALS__" in window;
@@ -398,6 +398,8 @@ export function fileThumbnail(path: string, image = false): Promise<string | und
   return made;
 }
 export const audioPeaks = (path: string) => invoke<number[]>("audio_peaks", { path });
+/** A fetched video's captions (`MediaSource.captions.url`) as timed lines. */
+export const loadCaptions = (url: string, link: string) => invoke<Caption[]>("load_captions", { url, link });
 export const detectSilences = (path: string, start: number, end: number) => invoke<[number, number][]>("detect_silences", { path, start, end });
 export const saveSnapshot = (bytes: number[], title: string) => invoke<string>("save_snapshot", { bytes, title });
 

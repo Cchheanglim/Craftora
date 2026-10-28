@@ -46,6 +46,8 @@ export interface MediaSource {
   peaks?: number[];
   /** Chapters from yt-dlp (e.g. YouTube chapters), in media seconds. */
   chapters?: { title: string; start: number; end: number }[];
+  /** Links: the captions that come with the video, read with `loadCaptions`. */
+  captions?: { url: string; label: string };
   streams: StreamOption[];
   /** Live now: no length yet. Recorded while it plays (src-tauri/src/live.rs); `duration` grows. */
   live?: boolean;
@@ -177,4 +179,11 @@ export interface Job {
   error?: string;
   /** Hidden by the user from Exports' main list and Home's recent exports; the file stays. */
   hidden?: boolean;
+}
+
+/** A line of captions, in media seconds (`Caption` in captions.rs). */
+export interface Caption {
+  start: number;
+  end: number;
+  text: string;
 }

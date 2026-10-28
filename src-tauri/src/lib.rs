@@ -1,4 +1,5 @@
 mod assistant;
+mod captions;
 mod diag;
 mod encoders;
 mod engine;
@@ -89,6 +90,7 @@ pub fn run() {
             store::set_output_dir,
             store::open_file,
             store::delete_file,
+            captions::load_captions,
             store::save_snapshot,
             virustotal::site_check_available,
             virustotal::check_site,

@@ -14,6 +14,7 @@ import {
   onFileDrop,
   localThumbnail,
   audioPeaks,
+  loadCaptions,
   detectSilences,
   openLocal,
   deleteFile,
@@ -476,6 +477,22 @@ export default function App() {
             return next;
           });
       });
+    }
+  }, [project.media, api]);
+
+  // A fetched video's captions, read once and kept with the media, so they stay after it's downloaded.
+  const captionsTried = useRef(new Set<string>());
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    for (const m of project.media) {
+      const track = m.source.captions;
+      if (!track || m.captions || captionsTried.current.has(m.id)) continue;
+      captionsTried.current.add(m.id);
+      loadCaptions(track.url, m.source.url)
+        .then((lines) => {
+          if (lines.length) api.refreshMedia(m.id, { captions: { label: track.label, lines } });
+        })
+        .catch(() => {});
     }
   }, [project.media, api]);
 
@@ -1188,6 +1205,11 @@ export default function App() {
                       .find((m) => m.id === selected.mediaId)
                       ?.source.chapters?.some((ch) => ch.start > selected.in + 0.2 && ch.start < selected.out - 0.2)
                       ? () => api.edit({ type: "splitByChapters", clipId: selected.id })
+                      : undefined
+                  }
+                  onAddCaptions={
+                    selected.mediaId && project.media.find((m) => m.id === selected.mediaId)?.captions
+                      ? () => api.edit({ type: "addCaptions", mediaId: selected.mediaId!, trackId: `text-${crypto.randomUUID().slice(0, 8)}` })
                       : undefined
                   }
                   onDelete={remove}

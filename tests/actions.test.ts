@@ -119,3 +119,23 @@ test("the media library remembers files on this PC, newest first, and keeps star
   expect(after[0].name).toBe("beach.mp4");
   expect(after.some((e) => e.saved)).toBe(true); // the starred oldest one stays
 });
+
+test("captions go on a new Captions track, lined up with each clip after cuts and speed changes", () => {
+  const lines = [
+    { start: 1, end: 3, text: "hello" },
+    { start: 6, end: 8, text: "goodbye" },
+  ];
+  const media = { ...mediaFromSource(source("video")), captions: { label: "English", lines } };
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
+  p = applyEdit(p, { type: "splitClip", clipId: "c", newClipId: "d", at: 5 });
+  p = applyEdit(p, { type: "setSpeed", clipId: "d", speed: 2 });
+  p = applyEdit(p, { type: "addCaptions", mediaId: media.id, trackId: "cap" });
+  expect(p.tracks.find((t) => t.id === "cap")?.name).toBe("Captions");
+  const added = p.clips.filter((c) => c.trackId === "cap").map((c) => [c.text, c.start, c.out]);
+  // "goodbye" (media 6-8) sits in clip d (media 5-10 from timeline 5, twice as fast): 5.5 for 1 s.
+  expect(added).toEqual([
+    ["hello", 1, 2],
+    ["goodbye", 5.5, 1],
+  ]);
+});

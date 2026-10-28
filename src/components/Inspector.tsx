@@ -56,6 +56,8 @@ interface InspectorProps {
   onCutSilences?: () => void;
   cuttingSilences?: boolean;
   onSplitChapters?: () => void;
+  /** The video came with captions: put them on the timeline as text. */
+  onAddCaptions?: () => void;
   onDelete: () => void;
   /** A moved or renamed file: let the user find it. */
   onRelink: (media: MediaItem) => void;
@@ -78,6 +80,7 @@ export function Inspector({
   onCutSilences,
   cuttingSilences,
   onSplitChapters,
+  onAddCaptions,
   onDelete,
   onRelink,
   canSplit,
@@ -333,6 +336,13 @@ export function Inspector({
             ))}
           </select>
         </div>
+      )}
+
+      {onAddCaptions && media?.captions && (
+        <button type="button" className="btn btn--secondary" onClick={onAddCaptions} title={`Put the ${media.captions.label} captions on the timeline as text you can edit`}>
+          <Icon name="captions" size={14} />
+          Add captions · {media.captions.label}
+        </button>
       )}
 
       {(onCutSilences || onSplitChapters) && (
