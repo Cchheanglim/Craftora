@@ -9,7 +9,7 @@ import { useConfirm } from "./ConfirmDialog";
 import { beginMediaDrag } from "./TimelineEditor";
 import "./Sidebar.css";
 
-export type View = "home" | "editor" | "projects" | "media" | "downloads" | "library" | "settings";
+export type View = "home" | "editor" | "projects" | "media" | "downloads" | "history" | "library" | "settings";
 
 
 interface SidebarProps {
@@ -113,6 +113,7 @@ export function Sidebar({
     { id: "projects" as const, label: "Projects", icon: "grid" as const },
     { id: "media" as const, label: "Media library", icon: "image" as const },
     { id: "downloads" as const, label: "Downloads", icon: "download" as const, count: downloadsCount },
+    { id: "history" as const, label: "History", icon: "clock" as const },
     { id: "library" as const, label: "Exports", icon: "folder" as const, count: libraryCount },
     { id: "settings" as const, label: "Settings", icon: "sliders" as const },
   ];

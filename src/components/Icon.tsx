@@ -220,6 +220,12 @@ const paths = {
   ),
   waveform: <path d="M2 12h2M6 8v8M10 4v16M14 9v6M18 6v12M22 12h-2" />,
   pencil: <path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />,
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
   captions: (
     <>
       <rect x="3" y="5" width="18" height="14" rx="2" />

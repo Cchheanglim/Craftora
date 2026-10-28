@@ -164,8 +164,11 @@ export const onPreviewCache = (handler: (id: string, percent: number) => void): 
 const MEDIA_EXTENSIONS = ["mp4", "mkv", "webm", "mov", "avi", "m4v", "wmv", "flv", "ts", "mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"];
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "jfif", "webp", "bmp", "gif", "avif", "tif", "tiff", "ico"];
 
-/** The preview plays files straight from disk through Tauri's asset protocol. */
-const assetUrl = (path: string) => (path ? convertFileSrc(path) : "");
+/**
+ * The preview plays files from disk through Craftora's own `cmedia` server, piece by piece (Tauri's
+ * asset protocol read a whole file into memory for some requests, which crashed on a 4 GB video).
+ */
+const assetUrl = (path: string) => (path ? `${convertFileSrc("file", "cmedia")}?p=${encodeURIComponent(path)}` : "");
 
 interface QuickLocal {
   path: string;

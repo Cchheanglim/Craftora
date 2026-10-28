@@ -92,6 +92,7 @@ import { Library } from "./components/Library";
 import { Projects } from "./components/Projects";
 import { MediaLibrary } from "./components/MediaLibrary";
 import { Downloads } from "./components/Downloads";
+import { History } from "./components/History";
 import { Settings } from "./components/Settings";
 import { AssistantPanel } from "./components/AssistantPanel";
 import { TextMenu } from "./components/TextMenu";
@@ -1159,6 +1160,16 @@ export default function App() {
           />
         )}
         {view === "downloads" && <Downloads queue={queue} onAdd={(path) => void importFiles([path])} />}
+        {view === "history" && (
+          <History
+            history={fetchHistory}
+            onFetchAgain={(link) => {
+              setView("editor");
+              void fetchSource(link);
+            }}
+            onRemove={(links) => changeFetchHistory(fetchHistory.filter((e) => !links.includes(e.url)))}
+          />
+        )}
         {view === "settings" && (
           <Settings
             outputDir={outputDir}
