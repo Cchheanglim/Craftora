@@ -47,6 +47,11 @@
   PC) gets some made from its sound: Craftora listens to what's said and writes it down, on your PC.
   Media shows how it's going. The first time, Craftora downloads a 148 MB speech model. Turn it off
   in **Settings → Captions for videos without any**.
+- **Privacy: use a proxy.** **Settings → Privacy** takes an HTTP proxy. Fetching, downloads,
+  previews, pictures, captions and the AI assistant then go through it, so websites see its address
+  instead of yours; Craftora's window follows after **Restart now**. If the proxy stops working,
+  Craftora doesn't quietly connect directly. **Check** shows the address websites see. (A VPN app
+  needs no setting: it already covers the whole PC.)
 - **A History page.** **History** in the sidebar lists every link you've fetched: the video's
   picture, title and whole link, and when you fetched it. Search them, fetch one again, copy its link,
   or remove links one by one, several at once (**Select**) or all (**Clear all**). The small History

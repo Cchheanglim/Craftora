@@ -18,6 +18,12 @@ These are the only times Craftora goes online:
   click **Check**: Craftora sends VirusTotal the website's name (for example `youtube.com`),
   never the full link, using Craftora's own VirusTotal key. VirusTotal's
   [terms and privacy policy](https://www.virustotal.com/gui/terms-of-service) apply.
+- **A proxy, if you set one.** In Settings → Privacy you can enter an HTTP proxy. Fetching,
+  downloads, previews, pictures, captions, the speech model, "Is this link safe?" and the AI
+  assistant then connect through it, so websites see the proxy's address instead of yours; Craftora's
+  own window (signing in, some previews and pictures) uses it after a restart. If the proxy stops
+  working, those connections fail instead of going direct. **Check** asks Cloudflare
+  (`www.cloudflare.com/cdn-cgi/trace`) which address it sees, only when you click it.
 - **Captions made from the sound.** Craftora listens to a video's sound and writes captions on
   your PC; the sound isn't sent anywhere. The first time, it downloads the speech model
   (`ggml-base.bin`, 148 MB) from Hugging Face. You can turn this off in Settings.
