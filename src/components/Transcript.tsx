@@ -39,7 +39,10 @@ export function Transcript({ project, api, time, seek, captionStatus }: Transcri
     return clip ? clip.start + (Math.max(mediaT, clip.in) - clip.in) / clip.speed : lines[line].start;
   };
   const current = lines.findIndex((l) => time >= l.start && time < l.end);
-  useEffect(() => currentRef.current?.scrollIntoView({ block: "nearest" }), [current]);
+  // In braces: scrollIntoView returns a promise in WebView2, which React would take for a clean-up.
+  useEffect(() => {
+    currentRef.current?.scrollIntoView({ block: "nearest" });
+  }, [current]);
 
   const needle = query.trim().toLowerCase();
   const shown = lines.map((_, i) => i).filter((i) => !needle || lines[i].text.toLowerCase().includes(needle));

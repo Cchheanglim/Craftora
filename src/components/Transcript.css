@@ -101,6 +101,8 @@
   line-height: 1.5;
   font-size: var(--text-md);
   cursor: text;
+  /* The app turns text selection off; words are picked by selecting them here. */
+  user-select: text;
 }
 
 /* Words picked to cut: crossed out in the cut's red. */
