@@ -5,10 +5,10 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { inDesktopApp, revealFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { storeEdition, type Updates } from "../lib/updates";
-import { checkSite, type SiteReport } from "../lib/engine";
+import { checkSite, signedInSites, signOutOf, type SiteReport } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useConfirm } from "./ConfirmDialog";
 import "./Home.css";
 
@@ -338,6 +338,20 @@ export function Links({ links }: { links: LinkSettings }) {
   const [checking, setChecking] = useState(false);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const { ask, dialog } = useConfirm();
+  const [sites, setSites] = useState<string[]>([]);
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const refresh = () => void signedInSites().then(setSites).catch(() => {});
+    refresh();
+    // Back from the sign-in window, which may have added a login.
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, []);
+  const signOutOfSite = (site: string) =>
+    void signOutOf(site)
+      .catch(() => {})
+      .then(() => signedInSites().then(setSites))
+      .catch(() => {});
   const checkLink = async (e: FormEvent) => {
     e.preventDefault();
     if (!toCheck.trim() || checking) return;
@@ -358,7 +372,10 @@ export function Links({ links }: { links: LinkSettings }) {
       confirmLabel: "Sign out",
       danger: true,
     });
-    if (ok) links.onSignOut();
+    if (ok) {
+      links.onSignOut();
+      setSites([]);
+    }
   };
   const signIn = (e: FormEvent) => {
     e.preventDefault();
@@ -392,6 +409,19 @@ export function Links({ links }: { links: LinkSettings }) {
           For restricted site, private or members-only videos. A window opens: log in, go to the video, then click Fetch this video at the top of the window. Your browser can stay open, and the login is remembered.
         </p>
         {links.signInMessage && <p className="home__muted">{links.signInMessage}</p>}
+        {sites.length > 0 && (
+          <ul className="home__sites" aria-label="Signed in">
+            {sites.map((site) => (
+              <li key={site}>
+                <Icon name="check" size={13} />
+                <span className="mono truncate">{site}</span>
+                <button type="button" className="btn btn--ghost" aria-label={`Sign out of ${site}`} onClick={() => signOutOfSite(site)}>
+                  Sign out
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         {links.siteChecks && (
           <>
             <form className="home__about-row home__gap-sm" onSubmit={checkLink}>

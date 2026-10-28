@@ -95,6 +95,8 @@ pub fn run() {
             media::fetch_thumbnail,
             signin::open_sign_in,
             signin::sign_out_everywhere,
+            signin::signed_in_sites,
+            signin::sign_out_of,
             signin::tell_sign_in,
             assistant::assistant_has_key,
             assistant::assistant_set_key,
