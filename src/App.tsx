@@ -174,7 +174,12 @@ const isTyping = (el: EventTarget | null) =>
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /** The project's picture for lists: the first media that has one. */
-const coverOf = (project: Project) => project.media.find((m) => m.source.thumbnail)?.source.thumbnail;
+/**
+ * The project's picture for lists (Projects, Home, Exports): one kept in the app (a data URL) or a
+ * website's picture. Not a file's preview address: it stops working once Craftora restarts.
+ */
+const coverOf = (project: Project) =>
+  project.media.map((m) => m.source.thumbnail).find((t) => t?.startsWith("data:") || (t?.startsWith("http") && !t.includes("asset.localhost")));
 
 /** Why "Fetch this video" found nothing, from how the page was seen playing. */
 function notFoundMessage(found: FoundPage): string {
@@ -465,6 +470,7 @@ export default function App() {
       sizeMb: stream?.sizeMb ?? 0,
       fileName: item.name,
       command: `yt-dlp -f "${format}" ${item.hasVideo ? "--merge-output-format mp4" : "-x --audio-format m4a"} "${item.source.url}"`,
+      thumbnail: item.source.thumbnail,
       prefetch: { mediaId: item.id, url: item.source.url, format, title: item.name, audioOnly: !item.hasVideo },
     });
   };
@@ -484,6 +490,7 @@ export default function App() {
       sizeMb: 0,
       fileName: item.name,
       command: `ffmpeg -i <live stream of "${item.source.url}"> -c copy -f hls index.m3u8`,
+      thumbnail: item.source.thumbnail,
       record: { mediaId: item.id },
     });
     recordLive({ id, url: item.source.url, title: item.name })
@@ -1011,6 +1018,7 @@ export default function App() {
             entries={library}
             onAdd={(path) => void importFiles([path])}
             onSave={(path, saved) => changeLibrary((entries) => entries.map((e) => (e.path === path ? { ...e, saved } : e)))}
+            onThumbnail={(path, thumbnail) => changeLibrary((entries) => entries.map((e) => (e.path === path ? { ...e, thumbnail } : e)))}
             onForget={(path) => changeLibrary((entries) => entries.filter((e) => e.path !== path))}
           />
         )}

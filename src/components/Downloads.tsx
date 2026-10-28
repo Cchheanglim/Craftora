@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import type { Job } from "../types";
 import type { Queue } from "../state/useQueue";
-import { listDownloads, openFile, revealFile, type DownloadedFile } from "../lib/engine";
+import { listDownloads, revealFile, type DownloadedFile } from "../lib/engine";
+import { PlayFile } from "./PlayFile";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
 import { QueueRow } from "./QueueDock";
+import { FileThumb } from "./Thumb";
 import "./Library.css";
 
 interface DownloadsProps {
@@ -83,7 +85,7 @@ export function Downloads({ queue, onAdd }: DownloadsProps) {
                     <tr key={file.path}>
                       <td>
                         <span className="library__name">
-                          <Icon name={SOUND.test(file.name) ? "music" : "film"} size={14} />
+                          <FileThumb path={file.path} icon={SOUND.test(file.name) ? "music" : "film"} />
                           <span className="mono truncate" title={file.name}>
                             {file.name}
                           </span>
@@ -97,10 +99,7 @@ export function Downloads({ queue, onAdd }: DownloadsProps) {
                             <Icon name="plus" size={14} />
                             Add to project
                           </button>
-                          <button type="button" className="btn btn--ghost" onClick={() => void openFile(file.path)}>
-                            <Icon name="play" size={14} />
-                            Play
-                          </button>
+                          <PlayFile path={file.path} name={file.name} label />
                           <button type="button" className="btn btn--ghost" onClick={() => void revealFile(file.path)}>
                             <Icon name="folder" size={14} />
                             Show in folder

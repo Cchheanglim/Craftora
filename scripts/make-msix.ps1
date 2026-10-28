@@ -83,6 +83,32 @@ foreach ($logo in "StoreLogo", "Square44x44Logo", "Square71x71Logo", "Square150x
   Copy-Item (Join-Path $tauri "icons\$logo.png") (Join-Path $layout "Assets")
 }
 
+# The taskbar, Start and the title bar want the app icon at exact sizes (24 px at 100% display
+# scale, 32 at 125%...). With only the 44 px logo Windows shrank it and the icon lost pixels. Each
+# size is drawn from the 512 px icon; "unplated" ones keep Windows from putting a coloured square
+# behind it. resources.pri (made below) tells Windows which file is which.
+Add-Type -AssemblyName System.Drawing
+$master = [System.Drawing.Image]::FromFile((Join-Path $tauri "icons\icon.png"))
+$edges = New-Object System.Drawing.Imaging.ImageAttributes
+$edges.SetWrapMode([System.Drawing.Drawing2D.WrapMode]::TileFlipXY) # no faint border from outside the image
+try {
+  foreach ($size in 16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 256) {
+    $bitmap = New-Object System.Drawing.Bitmap $size, $size
+    $draw = [System.Drawing.Graphics]::FromImage($bitmap)
+    $draw.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $draw.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $draw.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+    $draw.DrawImage($master, (New-Object System.Drawing.Rectangle 0, 0, $size, $size), 0, 0, $master.Width, $master.Height, [System.Drawing.GraphicsUnit]::Pixel, $edges)
+    $draw.Dispose()
+    foreach ($form in "", "_altform-unplated", "_altform-lightunplated") {
+      $bitmap.Save((Join-Path $layout "Assets\Square44x44Logo.targetsize-$size$form.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+    }
+    $bitmap.Dispose()
+  }
+} finally {
+  $master.Dispose()
+}
+
 $escape = { param($text) [Security.SecurityElement]::Escape([string]$text) }
 $manifest = (Get-Content (Join-Path $tauri "msix\AppxManifest.xml") -Raw).
   Replace("{{IDENTITY_NAME}}", (& $escape $identity.name)).
@@ -95,6 +121,14 @@ $manifest = (Get-Content (Join-Path $tauri "msix\AppxManifest.xml") -Raw).
 $makeappx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue |
   Sort-Object { [version]$_.Directory.Parent.Name } | Select-Object -Last 1
 if (-not $makeappx) { throw "makeappx.exe wasn't found. Install the Windows SDK (it comes with Visual Studio Build Tools)." }
+
+# The index of the sized icons above (resources.pri), made by the SDK's makepri next to makeappx.
+$makepri = Join-Path $makeappx.DirectoryName "makepri.exe"
+$priConfig = Join-Path $out "priconfig.xml"
+& $makepri createconfig /cf $priConfig /dq en-US /pv 10.0.0 /o | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "makepri couldn't make its settings file." }
+& $makepri new /pr $layout /cf $priConfig /of (Join-Path $layout "resources.pri") /o | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "makepri couldn't index the icons." }
 
 $package = Join-Path $out "Craftora_$($appVersion)_x64.msix"
 & $makeappx.FullName pack /d $layout /p $package /o

@@ -3,7 +3,9 @@ import type { Job } from "../types";
 import type { Queue } from "../state/useQueue";
 import { formatSize } from "../project/exportPlan";
 import { formatClock } from "../lib/timecode";
-import { openFile, revealFile, stopRecording } from "../lib/engine";
+import { revealFile, stopRecording } from "../lib/engine";
+import { PlayFile } from "./PlayFile";
+import { Thumb } from "./Thumb";
 import { Icon } from "./Icon";
 import { useConfirm } from "./ConfirmDialog";
 import "./QueueDock.css";
@@ -135,7 +137,7 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
     <li className={fresh ? "queue__row is-fresh" : "queue__row"}>
       {dialog}
       <div className="queue__name">
-        <Icon name={job.kind === "audio" ? "music" : "film"} size={15} />
+        <Thumb src={job.thumbnail} icon={job.kind === "audio" ? "music" : "film"} />
         <div>
           <div className="truncate">{job.title}</div>
           <div className="queue__summary truncate">
@@ -200,17 +202,7 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
             <Icon name="rotate" size={14} />
           </button>
         )}
-        {done && !job.prefetch && job.outputPath && (
-          <button
-            type="button"
-            className="btn btn--icon"
-            aria-label={`Play ${job.fileName}`}
-            title="Play"
-            onClick={() => void openFile(job.outputPath!)}
-          >
-            <Icon name="play" size={14} />
-          </button>
-        )}
+        {done && !job.prefetch && job.outputPath && <PlayFile path={job.outputPath} name={job.fileName} />}
         {done && job.outputPath && (
           <>
             <button

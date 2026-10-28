@@ -32,6 +32,14 @@
   It keeps what it has, waits there even after you close Craftora, and continues where it stopped
   when you click resume.
 
+**Fixed**
+- **Sharp taskbar icon in the Microsoft Store version.** It was shrunk from a single 44-pixel logo and
+  lost pixels; the Store package now carries the icon at every taskbar size.
+- **Play on a moved or deleted file says so.** Play in Exports, Home, the Queue and Downloads used
+  to do nothing when the file was gone; it now shows "Moved or deleted".
+- **Pictures everywhere.** Downloads, the Media library and the Queue show each video's picture, and
+  project pictures in Projects and on Home keep working after Craftora restarts.
+
 ## 0.3.1 (October 2026)
 
 **New**
