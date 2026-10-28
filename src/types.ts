@@ -44,6 +44,8 @@ export interface MediaSource {
   previewCacheIds?: string[];
   /** ~240 loudness bars (0–100) across the audio, for the radio wave under the video and on clips. */
   peaks?: number[];
+  /** Bars per second in `peaks`: 10 for waves read the current way (older ones are redone). */
+  peaksRate?: number;
   /** Links: a light stream of the sound to draw the wave from (`linkPeaks`). */
   peaksUrl?: string;
   /** Chapters from yt-dlp (e.g. YouTube chapters), in media seconds. */

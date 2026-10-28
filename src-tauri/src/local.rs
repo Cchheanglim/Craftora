@@ -556,10 +556,12 @@ pub async fn local_thumbnail(app: AppHandle, opened: State<'_, OpenedFiles>, pat
     Ok(format!("data:image/jpeg;base64,{}", base64_encode(&output.stdout)))
 }
 
-/// Bars in a sound wave; the editor redoes saved waves of another length (older, wrong ones).
-pub(crate) const PEAK_BARS: usize = 300;
+/// Bars per second of sound in a wave: enough to see words and pauses when the timeline is zoomed in.
+const PEAKS_PER_SECOND: usize = 10;
+/// At most this many bars (5.5 hours of sound).
+const MAX_PEAKS: usize = 200_000;
 
-/// Reads 300 loudness bars (0–100) across the whole of an opened file's audio for the radio wave.
+/// Reads loudness bars (0–100, `PEAKS_PER_SECOND` of them a second) across an opened file's audio.
 #[tauri::command]
 pub async fn audio_peaks(app: AppHandle, opened: State<'_, OpenedFiles>, path: String) -> Result<Vec<u8>, String> {
     let path = normalize(Path::new(&path))?;
@@ -594,7 +596,9 @@ async fn peaks_of(app: &AppHandle, input: &str, headers: Option<&str>) -> Result
     // itself to 100 Hz kept only rumble under 50 Hz, so voices drew a flat line.)
     args.extend(["-i", input, "-vn", "-ac", "1", "-af", "aresample=8000,aeval=abs(val(0)),aresample=200", "-f", "s16le", "pipe:1"]);
     let output = run_to_end(app, FFMPEG, &args).await?;
-    Ok(peaks_from_pcm(&output.stdout, PEAK_BARS))
+    // 200 two-byte values a second come out of the filter above.
+    let bars = (output.stdout.len() / 2 / (200 / PEAKS_PER_SECOND)).clamp(1, MAX_PEAKS);
+    Ok(peaks_from_pcm(&output.stdout, bars))
 }
 
 /// Finds silent stretches `[start, end]` (in media seconds) inside `[start, end]` of an opened file.

@@ -159,3 +159,17 @@ test("long caption lines become two-line pieces at whole words, timed by length"
   // Short lines stay as they are.
   expect(readableCaptions([{ start: 1, end: 2, text: "Hello there" }])).toEqual([{ start: 1, end: 2, text: "Hello there" }]);
 });
+
+test("each wave bar shows the loudest moment in the stretch it stands for", async () => {
+  const { peakBetween, clipPeaks } = await import("../src/project/model");
+  // 10 bars a second over 2 seconds: quiet, with one loud moment at 1.5 s.
+  const full = Array.from({ length: 20 }, (_, i) => (i === 15 ? 90 : 10));
+  expect(peakBetween(full, 2, 0, 1)).toBe(10);
+  expect(peakBetween(full, 2, 1, 2)).toBe(90);
+  expect(peakBetween(full, 2, 2, 1)).toBe(90);
+  const media = { ...mediaFromSource({ ...source("video"), duration: 2, peaks: full, peaksRate: 10 }) };
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
+  // Two bars for the whole clip: the second holds the loud moment (one sample per bar would miss it).
+  expect(clipPeaks(p.clips[0], p.media[0], 2)).toEqual([10, 90]);
+});
