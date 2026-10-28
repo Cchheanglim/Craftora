@@ -1119,7 +1119,7 @@ export default function App() {
         usedMedia={usedMedia}
         history={fetchHistory}
         onFetchAgain={(link) => void fetchSource(link)}
-        onRemoveHistory={(link) => changeFetchHistory(fetchHistory.filter((e) => e.url !== link))}
+        onRemoveHistory={(links) => changeFetchHistory(fetchHistory.filter((e) => !links.includes(e.url)))}
         onClearHistory={() => changeFetchHistory([])}
       />
 

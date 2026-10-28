@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { EngineStatus } from "../lib/engine";
 import type { FetchEntry } from "../lib/storage";
 import type { MediaItem } from "../project/model";
@@ -10,14 +11,6 @@ import "./Sidebar.css";
 
 export type View = "home" | "editor" | "projects" | "media" | "downloads" | "library" | "settings";
 
-/** "youtube.com" for a link; the link itself when it doesn't parse (yt-dlp takes some without https://). */
-function siteOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
 
 interface SidebarProps {
   view: View;
@@ -48,7 +41,8 @@ interface SidebarProps {
   /** Links fetched before, newest first. */
   history: FetchEntry[];
   onFetchAgain: (url: string) => void;
-  onRemoveHistory: (url: string) => void;
+  /** Takes these links off History (one, or several picked with Select). */
+  onRemoveHistory: (urls: string[]) => void;
   onClearHistory: () => void;
 }
 
@@ -91,7 +85,27 @@ export function Sidebar({
       confirmLabel: "Remove",
       danger: true,
     });
-    if (ok) onRemoveHistory(entry.url);
+    if (ok) onRemoveHistory([entry.url]);
+  };
+  // Links ticked while picking several in History; null when not picking.
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  const pick = (url: string) =>
+    setPicked((s) => {
+      const next = new Set(s);
+      if (!next.delete(url)) next.add(url);
+      return next;
+    });
+  const removePicked = async () => {
+    const urls = history.filter((e) => picked?.has(e.url)).map((e) => e.url);
+    const ok = await ask({
+      title: `Remove ${urls.length} link${urls.length === 1 ? "" : "s"} from history?`,
+      message: "They leave History for good. Projects that use them aren't touched.",
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
+    onRemoveHistory(urls);
+    setPicked(null);
   };
   const nav = [
     { id: "home" as const, label: "Home", icon: "logo" as const },
@@ -208,23 +222,49 @@ export function Sidebar({
             <h2 id="history-title" className="section-label">
               History
             </h2>
-            <button type="button" className="btn btn--ghost" onClick={() => void clearHistory()}>
-              Clear
-            </button>
+            {picked ? (
+              <span className="side__pick">
+                <span className="side__pick-count">{picked.size}</span>
+                <button type="button" className="btn btn--ghost" onClick={() => setPicked(new Set(history.map((e) => e.url)))}>
+                  All
+                </button>
+                <button type="button" className="btn btn--ghost" disabled={picked.size === 0} onClick={() => void removePicked()}>
+                  Remove
+                </button>
+                <button type="button" className="btn btn--ghost" onClick={() => setPicked(null)}>
+                  Done
+                </button>
+              </span>
+            ) : (
+              <span className="side__pick">
+                <button type="button" className="btn btn--ghost" onClick={() => setPicked(new Set())}>
+                  Select
+                </button>
+                <button type="button" className="btn btn--ghost" onClick={() => void clearHistory()}>
+                  Clear
+                </button>
+              </span>
+            )}
           </header>
           <ul className="side__list">
             {history.map((entry) => (
               <li key={entry.url} className="side__file side__past">
-                <button type="button" className="side__past-open" title={`Fetch again: ${entry.url}`} onClick={() => onFetchAgain(entry.url)}>
-                  <Thumb src={entry.thumbnail} icon="link" />
-                  <span className="side__file-text">
-                    <span className="truncate">{entry.title}</span>
-                    <span className="side__file-meta truncate">{siteOf(entry.url)}</span>
-                  </span>
-                </button>
-                <button type="button" className="btn btn--icon" aria-label={`Remove ${entry.title} from history`} title="Remove from history" onClick={() => void removeFromHistory(entry)}>
-                  <Icon name="x" size={13} />
-                </button>
+                {picked ? (
+                  <label className="side__past-open">
+                    <input type="checkbox" checked={picked.has(entry.url)} onChange={() => pick(entry.url)} />
+                    <PastEntry entry={entry} />
+                  </label>
+                ) : (
+                  <>
+                    <button type="button" className="side__past-open" title={`Fetch again: ${entry.url}`} onClick={() => onFetchAgain(entry.url)}>
+                      <Thumb src={entry.thumbnail} icon="link" />
+                      <PastEntry entry={entry} />
+                    </button>
+                    <button type="button" className="btn btn--icon" aria-label={`Remove ${entry.title} from history`} title="Remove from history" onClick={() => void removeFromHistory(entry)}>
+                      <Icon name="x" size={13} />
+                    </button>
+                  </>
+                )}
               </li>
             ))}
           </ul>
@@ -270,5 +310,19 @@ function EngineRow({
       )}
       {collapsed && <span className="sr-only">{`${name}: ${state}`}</span>}
     </div>
+  );
+}
+
+/** A fetched link in History: the video's title and the link itself (without "https://www."). */
+function PastEntry({ entry }: { entry: FetchEntry }) {
+  return (
+    <span className="side__file-text">
+      <span className="truncate" title={entry.title}>
+        {entry.title}
+      </span>
+      <span className="side__file-meta side__past-link" title={entry.url}>
+        {entry.url.replace(/^https?:\/\/(www\.)?/, "")}
+      </span>
+    </span>
   );
 }

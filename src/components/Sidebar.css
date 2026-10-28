@@ -138,6 +138,32 @@
   cursor: default;
 }
 
+/* The whole link, on up to two lines. */
+.side__past-link {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  word-break: break-all;
+  font-family: var(--font-mono);
+}
+
+.side__pick {
+  display: flex;
+  align-items: center;
+}
+
+.side__pick-count {
+  padding: 0 4px;
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+label.side__past-open {
+  cursor: pointer;
+}
+
 .side__past-open {
   flex: 1;
   min-width: 0;
