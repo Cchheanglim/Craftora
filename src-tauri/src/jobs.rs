@@ -292,15 +292,24 @@ pub(crate) fn output_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-/// A safe file stem: letters, digits, `-` and `_` only, never empty.
+/// A file stem from a title or a name the user typed, never empty. Spaces and accents stay; what
+/// Windows refuses goes (`\ / : * ? " < > |`, control characters, trailing dots, names like CON), and
+/// so does `%`, which yt-dlp's output template would read. A short extension (".mp4") is dropped.
 pub(crate) fn safe_stem(name: &str) -> String {
-    let stem = Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or("");
-    let clean: String = stem
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
-        .take(80)
-        .collect();
-    if clean.is_empty() { "clip".into() } else { clean }
+    let stem = match name.rsplit_once('.') {
+        Some((stem, ext)) if (1..=4).contains(&ext.len()) && ext.chars().all(|c| c.is_ascii_alphanumeric()) => stem,
+        _ => name,
+    };
+    let clean: String = stem.chars().filter(|c| !c.is_control() && !r#"\/:*?"<>|%"#.contains(*c)).take(80).collect();
+    let clean = clean.trim_matches([' ', '.']);
+    let upper = clean.to_ascii_uppercase();
+    let device = ["CON", "PRN", "AUX", "NUL"].contains(&upper.as_str())
+        || (upper.len() == 4 && (upper.starts_with("COM") || upper.starts_with("LPT")) && upper.ends_with(|c: char| c.is_ascii_digit()));
+    match clean {
+        "" => "clip".into(),
+        _ if device => format!("{clean}_"),
+        _ => clean.to_string(),
+    }
 }
 
 /// A job's private working folder, `.craftora-<id>` in the export folder (the same drive,
@@ -727,6 +736,16 @@ pub(crate) async fn run_streaming(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_names_keep_spaces_but_not_what_windows_refuses() {
+        assert_eq!(safe_stem("My shop video – part 2.mp4"), "My shop video – part 2");
+        assert_eq!(safe_stem("a:b*c?\"d<e>f|g%h.mp4"), "abcdefgh");
+        assert_eq!(safe_stem("  dots...  .mp4"), "dots");
+        assert_eq!(safe_stem("con.mp4"), "con_");
+        assert_eq!(safe_stem("../../evil.mp4"), "evil");
+        assert_eq!(safe_stem("???.mp4"), "clip");
+    }
 
     #[test]
     fn deliver_never_replaces_an_existing_export() {

@@ -251,6 +251,8 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [engines, setEngines] = useState<EngineStatus | "checking" | "browser">(inDesktopApp ? "checking" : "browser");
   const [projectId, setProjectId] = useState<string>(() => crypto.randomUUID());
+  // A typed file name belongs to the project it was typed in.
+  useEffect(() => setSettings((s) => (s.name === undefined ? s : { ...s, name: undefined })), [projectId]);
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [history, setHistory] = useState<Job[] | null>(null);
   /** Links fetched before, newest first. */

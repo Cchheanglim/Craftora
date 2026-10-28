@@ -231,9 +231,22 @@ export function ExportPanel({
       <div className="export__foot">
         {ready && (
           <dl className="export__summary">
-            <dt>File</dt>
-            <dd className="mono truncate" title={plan.fileName}>
-              {plan.fileName}
+            <dt>
+              <label htmlFor="export-name">File</label>
+            </dt>
+            <dd className="export__name">
+              <input
+                id="export-name"
+                className="field mono"
+                value={settings.name ?? plan.fileName.replace(/\.[^.]+$/, "")}
+                placeholder={plan.fileName.replace(/\.[^.]+$/, "")}
+                maxLength={80}
+                spellCheck={false}
+                title="Name the file, so you can tell your exports apart"
+                // What Windows doesn't allow in a file name can't be typed.
+                onChange={(e) => onChange({ name: e.target.value.replace(/[\\/:*?"<>|%\u0000-\u001f]/g, "") })}
+              />
+              <span className="mono">.{plan.fileName.split(".").pop()}</span>
             </dd>
             <dt>Size</dt>
             <dd className="mono">≈ {formatSize(plan.sizeMb)}</dd>
