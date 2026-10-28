@@ -46,6 +46,9 @@
 - **Name your export.** The file name under **Add to queue** is now a box you can type in, so you can
   tell exports of the same video apart. Names keep spaces and accents; only characters Windows doesn't
   allow in file names are left out.
+- **Name a download while it downloads.** Click the pencil on a download in the Queue (or on the
+  Downloads page), type a name, and the file is saved with it when it finishes; Media shows the
+  new name too. Handy for downloads that start by themselves when you fetch.
 - **Delete several projects at once.** **Projects → Select**: tick projects (or **Select all**), then
   **Delete** them with one question.
 - **A warning before anything that can't be undone.** Deleting an exported file, signing out of a

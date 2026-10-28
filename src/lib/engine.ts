@@ -378,6 +378,8 @@ export const onJobEvent = (handler: (event: JobEvent) => void): Promise<Unlisten
 
 export const revealFile = (path: string) => revealItemInDir(path);
 export const openFile = (path: string) => invoke<void>("open_file", { path });
+/** Renames a finished download in the Downloads folder; resolves its new path. */
+export const renameDownload = (path: string, name: string) => invoke<string>("rename_download", { path, name });
 /** Moves an exported file to the Recycle Bin. */
 export const deleteFile = (path: string) => invoke<void>("delete_file", { path });
 export const localThumbnail = (path: string, image = false) => invoke<string>("local_thumbnail", { path, image });

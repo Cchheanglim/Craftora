@@ -166,6 +166,8 @@ export interface Job {
   render?: RenderSpec;
   /** A whole link downloaded so it can be edited like a file on this PC ("Download first"). */
   prefetch?: { mediaId: string; url: string; format: string; title: string; audioOnly: boolean };
+  /** Downloads: the name the user gave it; the file takes it when the download finishes. */
+  rename?: string;
   /** A live link being recorded into this media item; Stop keeps the recording. */
   record?: { mediaId: string };
   /** "processing" while yt-dlp merges or converts after downloading. */

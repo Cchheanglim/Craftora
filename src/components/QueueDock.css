@@ -110,6 +110,14 @@
 
 .queue__name > div {
   min-width: 0;
+  flex: 1;
+}
+
+.queue__rename {
+  width: 100%;
+  height: 24px;
+  padding: 0 6px;
+  font-size: 13px;
 }
 
 .queue__summary {

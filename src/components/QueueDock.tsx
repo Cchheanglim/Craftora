@@ -106,6 +106,10 @@ export function QueueDock({ queue, freshId }: QueueDockProps) {
 
 export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh: boolean }) {
   const [copied, setCopied] = useState(false);
+  // Downloads can be named before they finish (some start by themselves on fetch).
+  const [naming, setNaming] = useState(false);
+  const canName = Boolean(job.prefetch) && job.status !== "finished" && job.status !== "failed";
+  const shownTitle = job.rename ?? job.title;
   const { ask, dialog } = useConfirm();
   const cancel = async () => {
     // A job that hasn't started loses nothing; a running one (or a paused download) loses its progress.
@@ -149,7 +153,34 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
       <div className="queue__name">
         <Thumb src={job.thumbnail} icon={job.kind === "audio" ? "music" : "film"} />
         <div>
-          <div className="truncate">{job.title}</div>
+          {naming ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const name = new FormData(e.currentTarget).get("name")?.toString().trim();
+                queue.edit(job.id, { rename: name && name !== job.title ? name : undefined });
+                setNaming(false);
+              }}
+            >
+              <input
+                name="name"
+                className="field queue__rename"
+                defaultValue={shownTitle}
+                aria-label={`File name for ${job.title}`}
+                maxLength={80}
+                spellCheck={false}
+                autoFocus
+                onFocus={(e) => e.currentTarget.select()}
+                onBlur={(e) => e.currentTarget.form?.requestSubmit()}
+                onKeyDown={(e) => e.key === "Escape" && setNaming(false)}
+                onInput={(e) => (e.currentTarget.value = e.currentTarget.value.replace(/[\\/:*?"<>|%\u0000-\u001f]/g, ""))}
+              />
+            </form>
+          ) : (
+            <div className="truncate" title={job.rename ? `Saved as “${job.rename}” when it finishes` : undefined}>
+              {shownTitle}
+            </div>
+          )}
           <div className="queue__summary truncate">
             <MixedNumbers text={job.summary} />
           </div>
@@ -196,6 +227,11 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
       <span className="queue__size mono">{done ? formatSize(job.sizeMb) : `~${formatSize(job.sizeMb)}`}</span>
 
       <div className="queue__row-actions">
+        {canName && !naming && (
+          <button type="button" className="btn btn--icon" aria-label={`Rename ${shownTitle}`} title="Rename: the file gets this name when it finishes" onClick={() => setNaming(true)}>
+            <Icon name="pencil" size={14} />
+          </button>
+        )}
         {queue.canPauseJob(job) && isActive(job) && (
           <button type="button" className="btn btn--icon" aria-label={`Pause ${job.title}`} onClick={() => queue.pause(job.id)}>
             <Icon name="pause" size={14} />
