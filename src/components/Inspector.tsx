@@ -57,6 +57,8 @@ interface InspectorProps {
   cuttingSilences?: boolean;
   onSplitChapters?: () => void;
   onDelete: () => void;
+  /** A moved or renamed file: let the user find it. */
+  onRelink: (media: MediaItem) => void;
   canSplit: boolean;
 }
 
@@ -77,6 +79,7 @@ export function Inspector({
   cuttingSilences,
   onSplitChapters,
   onDelete,
+  onRelink,
   canSplit,
 }: InspectorProps) {
   const isText = !clip.mediaId;
@@ -104,8 +107,14 @@ export function Inspector({
       {media?.missing && (
         <p className="insp__warn">
           <Icon name="alert" size={13} />
-          This file can't be found. Put it back where it was, or remove the clip.
+          This file can't be found. It was moved, renamed or deleted.
         </p>
+      )}
+      {media?.missing && (
+        <button type="button" className="btn btn--secondary" onClick={() => onRelink(media)}>
+          <Icon name="folder" size={14} />
+          Find file
+        </button>
       )}
 
       {onDuration && (

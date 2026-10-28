@@ -296,8 +296,8 @@ export async function pickMediaFile(): Promise<string | null> {
   const picked = await open({
     multiple: false,
     directory: false,
-    title: "Open a video or audio file",
-    filters: [{ name: "Video and audio", extensions: MEDIA_EXTENSIONS }],
+    title: "Find the file",
+    filters: [{ name: "Video, audio and images", extensions: [...MEDIA_EXTENSIONS, ...IMAGE_EXTENSIONS] }],
   });
   return typeof picked === "string" ? picked : null;
 }

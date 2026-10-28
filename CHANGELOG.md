@@ -39,6 +39,10 @@
   to do nothing when the file was gone; it now shows "Moved or deleted".
 - **Pictures everywhere.** Downloads, the Media library and the Queue show each video's picture, and
   project pictures in Projects and on Home keep working after Craftora restarts.
+- **Pictures for links that come without one.** When a website (or sometimes YouTube) gives no
+  picture, or one that won't load, Craftora takes a frame from the video itself.
+- **Find a moved or renamed file.** A clip whose file can't be found now has a **Find file** button
+  (select the clip): point to the file and its clips play again.
 
 ## 0.3.1 (October 2026)
 
