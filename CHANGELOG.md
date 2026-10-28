@@ -33,8 +33,12 @@
   when you click resume.
 - **Delete exported files.** Each file in **Exports** has a **Delete** button: it moves the file to
   the Recycle Bin (so a wrong click can be undone there) and takes it off the list and Home.
-- **See and sign out of each website.** Under **Links** (Home and Settings), Craftora lists the
-  websites it keeps a login for, each with its own **Sign out**. **Sign out of all** is still there.
+- **See what each website saved, and forget it.** Under **Links** (Home and Settings), Craftora lists
+  the websites that saved cookies in its window (from a visit or a login), each with **Forget**.
+  Forgetting YouTube or Google forgets both, since they share one login. **Sign out of all** is still there.
+- **YouTube works again after visiting it in Craftora's window.** Craftora now includes Deno, which
+  yt-dlp uses for the JavaScript YouTube asks for; without it, YouTube's cookies made fetches fail with
+  "Requested format is not available".
 - **Captions from the website.** When a fetched video comes with captions (the uploader's own, or
   automatic ones like YouTube's), Craftora reads them right away: they show on the preview (turn them
   off with **CC**), and **Add captions** on the clip puts them on a **Captions** track as text you can

@@ -370,8 +370,8 @@ export function Links({ links }: { links: LinkSettings }) {
   }, []);
   const signOutOfSite = async (site: string) => {
     const ok = await ask({
-      title: `Sign out of ${site}?`,
-      message: `Craftora forgets your login on ${site}. Videos there that need a login can't be fetched until you sign in again.`,
+      title: `Forget ${site}?`,
+      message: `Craftora deletes what ${site} saved in its window: cookies from visiting it, and your login if you signed in. Videos there that need a login can't be fetched until you sign in again.`,
       confirmLabel: "Sign out",
       danger: true,
     });
@@ -437,17 +437,20 @@ export function Links({ links }: { links: LinkSettings }) {
         </p>
         {links.signInMessage && <p className="home__muted">{links.signInMessage}</p>}
         {sites.length > 0 && (
-          <ul className="home__sites" aria-label="Signed in">
+          <>
+          <p className="home__muted">Websites that saved cookies in Craftora's window (from a visit or a login):</p>
+          <ul className="home__sites" aria-label="Websites with saved cookies">
             {sites.map((site) => (
               <li key={site}>
                 <Icon name="check" size={13} />
                 <span className="mono truncate">{site}</span>
-                <button type="button" className="btn btn--ghost" aria-label={`Sign out of ${site}`} onClick={() => void signOutOfSite(site)}>
-                  Sign out
+                <button type="button" className="btn btn--ghost" aria-label={`Forget ${site}`} onClick={() => void signOutOfSite(site)}>
+                  Forget
                 </button>
               </li>
             ))}
           </ul>
+          </>
         )}
         {links.siteChecks && (
           <>
