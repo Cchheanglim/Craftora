@@ -110,15 +110,25 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
   const cancel = async () => {
     // A job that hasn't started loses nothing; a running one (or a paused download) loses its progress.
     const running = job.status === "downloading" || job.status === "encoding" || (job.status === "paused" && Boolean(job.prefetch));
+    const what = job.prefetch || job.record ? "download" : "export";
     const ok =
       !running ||
       (await ask({
-        title: "Cancel this export?",
+        title: `Cancel this ${what}?`,
         message: `“${job.title}” stops now and what it has done so far is thrown away. You can add it to the queue again later.`,
-        confirmLabel: "Cancel export",
+        confirmLabel: `Cancel ${what}`,
         danger: true,
       }));
     if (ok) queue.cancel(job.id);
+  };
+  const stop = async () => {
+    const ok = await ask({
+      title: "Stop recording?",
+      message: `Everything recorded of “${job.title}” so far is kept, but Craftora can't pick the stream up again where it stopped.`,
+      confirmLabel: "Stop recording",
+      danger: true,
+    });
+    if (ok) void stopRecording(job.id);
   };
   const done = job.status === "finished";
   const failed = job.status === "failed";
@@ -153,8 +163,7 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
             Finished <span>· {job.finishedAt ? ago(job.finishedAt) : ""}</span>
           </span>
         ) : job.record && job.status === "downloading" ? (
-          // Stop keeps everything recorded so far, so it needs no "are you sure?".
-          <button type="button" className="btn btn--icon" aria-label={`Stop recording ${job.title}`} title="Stop recording" onClick={() => void stopRecording(job.id)}>
+          <button type="button" className="btn btn--icon" aria-label={`Stop recording ${job.title}`} title="Stop recording" onClick={() => void stop()}>
             <Icon name="stop" size={14} />
           </button>
         ) : failed ? (

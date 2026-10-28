@@ -347,11 +347,17 @@ export function Links({ links }: { links: LinkSettings }) {
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
   }, []);
-  const signOutOfSite = (site: string) =>
-    void signOutOf(site)
-      .catch(() => {})
-      .then(() => signedInSites().then(setSites))
-      .catch(() => {});
+  const signOutOfSite = async (site: string) => {
+    const ok = await ask({
+      title: `Sign out of ${site}?`,
+      message: `Craftora forgets your login on ${site}. Videos there that need a login can't be fetched until you sign in again.`,
+      confirmLabel: "Sign out",
+      danger: true,
+    });
+    if (!ok) return;
+    await signOutOf(site).catch(() => {});
+    setSites(await signedInSites().catch(() => sites.filter((s) => s !== site)));
+  };
   const checkLink = async (e: FormEvent) => {
     e.preventDefault();
     if (!toCheck.trim() || checking) return;
@@ -415,7 +421,7 @@ export function Links({ links }: { links: LinkSettings }) {
               <li key={site}>
                 <Icon name="check" size={13} />
                 <span className="mono truncate">{site}</span>
-                <button type="button" className="btn btn--ghost" aria-label={`Sign out of ${site}`} onClick={() => signOutOfSite(site)}>
+                <button type="button" className="btn btn--ghost" aria-label={`Sign out of ${site}`} onClick={() => void signOutOfSite(site)}>
                   Sign out
                 </button>
               </li>

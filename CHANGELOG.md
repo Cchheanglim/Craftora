@@ -31,6 +31,10 @@
 - **Pause a download and finish it later.** Click pause on a "Download for editing" in the Queue.
   It keeps what it has, waits there even after you close Craftora, and continues where it stopped
   when you click resume.
+- **Delete exported files.** Each file in **Exports** has a **Delete** button: it moves the file to
+  the Recycle Bin (so a wrong click can be undone there) and takes it off the list and Home.
+- **See and sign out of each website.** Under **Links** (Home and Settings), Craftora lists the
+  websites it keeps a login for, each with its own **Sign out**. **Sign out of all** is still there.
 
 **Fixed**
 - **Sharp taskbar icon in the Microsoft Store version.** It was shrunk from a single 44-pixel logo and

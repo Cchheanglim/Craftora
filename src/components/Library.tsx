@@ -5,6 +5,7 @@ import { revealFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
+import { useConfirm } from "./ConfirmDialog";
 import "./Library.css";
 
 interface LibraryProps {
@@ -126,8 +127,20 @@ function ExportTable({
   onHide: (id: string, hidden: boolean) => void;
   onDelete?: (job: Job) => void;
 }) {
+  const { ask, dialog } = useConfirm();
+  const remove = async (job: Job, name: string) => {
+    const ok = await ask({
+      title: `Delete “${name}”?`,
+      message: "The file moves to the Recycle Bin and leaves this list and Home.",
+      note: "Craftora can't undo this, but you can restore the file from the Recycle Bin.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (ok) onDelete?.(job);
+  };
   return (
     <div className="library__table-wrap" id={id}>
+      {dialog}
       <table className="library__table">
         <thead>
           <tr>
@@ -183,7 +196,7 @@ function ExportTable({
                         className="btn btn--ghost"
                         aria-label={`Delete ${name}`}
                         title="Move the file to the Recycle Bin"
-                        onClick={() => onDelete(job)}
+                        onClick={() => void remove(job, name)}
                       >
                         <Icon name="trash" size={14} />
                         Delete
