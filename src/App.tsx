@@ -1139,10 +1139,25 @@ export default function App() {
         onAddMedia={addMedia}
         onRemoveMedia={(mediaId) => api.edit({ type: "removeMedia", mediaId })}
         usedMedia={usedMedia}
-        history={fetchHistory}
-        onFetchAgain={(link) => void fetchSource(link)}
-        onRemoveHistory={(links) => changeFetchHistory(fetchHistory.filter((e) => !links.includes(e.url)))}
-        onClearHistory={() => changeFetchHistory([])}
+        activity={[
+          // Downloads, exports and recordings running now, then captions being made.
+          ...queue.jobs
+            .filter((j) => j.status === "downloading" || j.status === "encoding")
+            .map((j) => ({
+              id: j.id,
+              label: j.record ? "Recording live" : j.prefetch ? "Downloading" : "Exporting",
+              detail: j.rename ?? j.title,
+              percent: j.record ? null : j.progress,
+            })),
+          ...project.media
+            .filter((m) => captioning[m.id] && captioning[m.id] !== "couldn't make captions")
+            .map((m) => {
+              const text = captioning[m.id];
+              const percent = /(\d+)%/.exec(text)?.[1];
+              const label = text.replace(/,?\s*\d+%$/, "");
+              return { id: `captions-${m.id}`, label: label[0].toUpperCase() + label.slice(1), detail: m.name, percent: percent ? Number(percent) : null };
+            }),
+        ]}
       />
 
       <main className="app__work">
