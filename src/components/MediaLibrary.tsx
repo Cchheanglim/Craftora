@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { LibraryEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
 import { Icon } from "./Icon";
-import { Thumb } from "./Thumb";
+import { FileThumb } from "./Thumb";
 import "./Library.css";
 
 interface MediaLibraryProps {
@@ -11,6 +11,8 @@ interface MediaLibraryProps {
   /** Adds the file to the project open in the editor. */
   onAdd: (path: string) => void;
   onSave: (path: string, saved: boolean) => void;
+  /** Keeps a picture made from the file, so it's made once. */
+  onThumbnail: (path: string, thumbnail: string) => void;
   /** Takes it off this list; the file isn't touched. */
   onForget: (path: string) => void;
 }
@@ -26,7 +28,7 @@ type Filter = (typeof FILTERS)[number]["id"];
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
-export function MediaLibrary({ entries, onAdd, onSave, onForget }: MediaLibraryProps) {
+export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget }: MediaLibraryProps) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const words = search.trim().toLowerCase();
@@ -87,7 +89,13 @@ export function MediaLibrary({ entries, onAdd, onSave, onForget }: MediaLibraryP
                 <tr key={entry.path}>
                   <td>
                     <span className="library__name">
-                      <Thumb src={entry.thumbnail} icon={entry.kind === "image" ? "image" : entry.kind === "audio" ? "music" : "film"} />
+                      <FileThumb
+                        path={entry.path}
+                        src={entry.thumbnail}
+                        image={entry.kind === "image"}
+                        icon={entry.kind === "image" ? "image" : entry.kind === "audio" ? "music" : "film"}
+                        onMade={(thumbnail) => onThumbnail(entry.path, thumbnail)}
+                      />
                       <span className="mono truncate" title={entry.path}>
                         {entry.name}
                       </span>

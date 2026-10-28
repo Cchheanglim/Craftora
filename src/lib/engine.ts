@@ -376,6 +376,22 @@ export const onJobEvent = (handler: (event: JobEvent) => void): Promise<Unlisten
 export const revealFile = (path: string) => revealItemInDir(path);
 export const openFile = (path: string) => invoke<void>("open_file", { path });
 export const localThumbnail = (path: string, image = false) => invoke<string>("local_thumbnail", { path, image });
+
+const fileThumbnails = new Map<string, Promise<string | undefined>>();
+let thumbnailTurn: Promise<unknown> = Promise.resolve();
+/**
+ * A small picture (JPEG data URL) of a file on this PC that isn't open in the editor (Downloads,
+ * Media library): made once per file, one file at a time, undefined when it can't be.
+ */
+export function fileThumbnail(path: string, image = false): Promise<string | undefined> {
+  let made = fileThumbnails.get(path);
+  if (!made) {
+    made = thumbnailTurn.then(() => allowLocal(path).then(() => localThumbnail(path, image))).catch(() => undefined);
+    thumbnailTurn = made;
+    fileThumbnails.set(path, made);
+  }
+  return made;
+}
 export const audioPeaks = (path: string) => invoke<number[]>("audio_peaks", { path });
 export const detectSilences = (path: string, start: number, end: number) => invoke<[number, number][]>("detect_silences", { path, start, end });
 export const saveSnapshot = (bytes: number[], title: string) => invoke<string>("save_snapshot", { bytes, title });

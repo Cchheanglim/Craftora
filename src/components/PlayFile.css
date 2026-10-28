@@ -1,0 +1,9 @@
+.play-file__problem {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-h);
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  white-space: nowrap;
+}

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { Job } from "../types";
 import { formatSize } from "../project/exportPlan";
-import { openFile, revealFile } from "../lib/engine";
+import { revealFile } from "../lib/engine";
+import { PlayFile } from "./PlayFile";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
 import "./Library.css";
@@ -147,10 +148,7 @@ function ExportTable({ id, jobs, onHide }: { id: string; jobs: Job[]; onHide: (i
                   <span className="library__actions">
                     {job.outputPath && (
                       <>
-                        <button type="button" className="btn btn--ghost" onClick={() => void openFile(job.outputPath!)}>
-                          <Icon name="play" size={14} />
-                          Play
-                        </button>
+                        <PlayFile path={job.outputPath} name={name} label />
                         <button type="button" className="btn btn--ghost" onClick={() => void revealFile(job.outputPath!)}>
                           <Icon name="folder" size={14} />
                           Show in folder

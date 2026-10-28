@@ -2,7 +2,8 @@ import type { Job } from "../types";
 import type { ProjectEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { inDesktopApp, openFile, revealFile } from "../lib/engine";
+import { inDesktopApp, revealFile } from "../lib/engine";
+import { PlayFile } from "./PlayFile";
 import { storeEdition, type Updates } from "../lib/updates";
 import { checkSite, type SiteReport } from "../lib/engine";
 import { Icon } from "./Icon";
@@ -219,9 +220,7 @@ export function Home({
                     <span className="truncate mono">{job.outputPath?.split(/[\\/]/).pop() ?? job.fileName}</span>
                     {job.outputPath && (
                       <>
-                        <button type="button" className="btn btn--icon" aria-label={`Play ${job.fileName}`} title="Play" onClick={() => void openFile(job.outputPath!)}>
-                          <Icon name="play" size={14} />
-                        </button>
+                        <PlayFile path={job.outputPath} name={job.fileName} />
                         <button type="button" className="btn btn--icon" aria-label={`Show ${job.fileName} in folder`} title="Show in folder" onClick={() => void revealFile(job.outputPath!)}>
                           <Icon name="folder" size={14} />
                         </button>
