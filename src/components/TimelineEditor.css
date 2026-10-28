@@ -275,7 +275,7 @@
   grid-auto-flow: column;
   grid-auto-columns: minmax(1px, 1fr);
   align-items: end;
-  gap: 1.5px;
+  gap: 1px;
   pointer-events: none;
 }
 

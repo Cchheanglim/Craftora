@@ -74,6 +74,13 @@
   from History now ask first. Cancelling a download now says "download" instead of "export".
 
 **Fixed**
+- **Captions no longer cover the picture.** Some videos' captions hold a whole paragraph per line;
+  they now show as two-line pieces, one after another while it's said, cut at whole words (Khmer and
+  Thai too), in smaller text. **Add captions** puts the same pieces on the timeline.
+- **Links have a sound wave before they're downloaded.** Craftora reads just a light stream of the
+  sound after a fetch and draws the real wave. Waves now hold 10 bars a second, so zooming into the
+  timeline shows words and pauses, and each bar shows the loudest moment it stands for. Long clips
+  get up to 1,500 bars without slowing playback.
 - **Big files no longer crash Craftora.** Importing a video of several GB could close the app: the
   preview's file server sometimes read the whole file into memory at once. Files on your PC now
   play through Craftora's own server, a piece at a time (a 3.7 GB video used about 35 MB).
