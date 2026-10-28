@@ -372,7 +372,10 @@ async fn read_link(app: &AppHandle, url: &str) -> Result<Info, String> {
         let (link, _cookie_file) = crate::signin::link_args(app, url).await;
         args.extend(link);
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let started = std::time::Instant::now();
         let output = run_to_end(app, YT_DLP, &args).await?;
+        // Timed in "Copy report", so a slow fetch shows which step is slow.
+        crate::diag::note(format!("yt-dlp read {url} in {:.1}s", started.elapsed().as_secs_f64()));
         if output.status.success() {
             return serde_json::from_slice(&output.stdout).map_err(|e| format!("Unexpected answer from yt-dlp: {e}"));
         }

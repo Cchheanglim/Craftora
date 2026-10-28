@@ -146,8 +146,8 @@ export async function fetchMedia(url: string): Promise<MediaSource> {
         ? `${HLS_RELAY}?u=${encodeURIComponent(source.previewUrl)}`
         : source.previewUrl;
     const previewAudioUrl = await cached(source.previewAudioUrl);
-    const thumbnail = source.thumbnail ? await keptThumbnail(source.thumbnail, source.url) : undefined;
-    return { ...source, thumbnail, previewUrl, previewAudioUrl, previewCacheIds: ids };
+    // The site's picture is kept (keptThumbnail) by the editor after the video shows up: not waited for here.
+    return { ...source, thumbnail: source.thumbnail || undefined, previewUrl, previewAudioUrl, previewCacheIds: ids };
   } catch (err) {
     throw new Error(message(err));
   }
