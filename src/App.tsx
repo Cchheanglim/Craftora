@@ -451,6 +451,13 @@ export default function App() {
         const current = projectRef.current.media.find((x) => x.id === m.id);
         // Only the list picture: an image keeps its full-size previewUrl (Preview falls back to this if it can't load).
         if (thumbnail && current) api.refreshMedia(m.id, { source: { ...current.source, thumbnail } });
+        // History saved the link before this picture existed.
+        if (thumbnail && !s.local)
+          setFetchHistory((list) => {
+            const next = list.map((e) => (e.url === s.url && !e.thumbnail?.startsWith("data:") ? { ...e, thumbnail } : e));
+            saveFetchHistory(next);
+            return next;
+          });
       });
     }
   }, [project.media, api]);
