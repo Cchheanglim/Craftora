@@ -412,6 +412,9 @@ export interface SpeechProgress {
 }
 export const onSpeechProgress = (handler: (progress: SpeechProgress) => void): Promise<UnlistenFn> =>
   listen<SpeechProgress>("speech-progress", (e) => handler(e.payload));
+/** Each caption line as soon as whisper has it, before the whole video is done. */
+export const onSpeechLine = (handler: (id: string, line: Caption) => void): Promise<UnlistenFn> =>
+  listen<{ id: string; line: Caption }>("speech-line", (e) => handler(e.payload.id, e.payload.line));
 export const detectSilences = (path: string, start: number, end: number) => invoke<[number, number][]>("detect_silences", { path, start, end });
 export const saveSnapshot = (bytes: number[], title: string) => invoke<string>("save_snapshot", { bytes, title });
 

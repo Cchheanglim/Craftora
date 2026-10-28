@@ -179,6 +179,20 @@
   background: var(--bg-selected);
 }
 
+/* CC on: filled white, so on and off can't be mixed up. */
+.preview__right .preview__cc.is-on {
+  color: var(--bg-canvas);
+  background: var(--text);
+  border-color: var(--text);
+}
+
+.preview__cc-status {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 /* The radio wave under the video: shows the timeline's sound and scrubs on click/drag. */
 .preview__wave {
   height: 24px;

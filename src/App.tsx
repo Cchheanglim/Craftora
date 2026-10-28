@@ -17,6 +17,7 @@ import {
   loadCaptions,
   makeCaptions,
   onSpeechProgress,
+  onSpeechLine,
   detectSilences,
   openLocal,
   renameDownload,
@@ -447,7 +448,8 @@ export default function App() {
             prepare(m.id, next);
           })
           .catch(() => {});
-        if (m.hasAudio && !s.peaks?.length) {
+        // 300 bars: waves saved with another count came from an older, wrong reading (see audio_peaks).
+        if (m.hasAudio && s.peaks?.length !== 300) {
           void audioPeaks(s.url)
             .then((peaks) => {
               const current = projectRef.current.media.find((x) => x.id === m.id);
@@ -516,7 +518,8 @@ export default function App() {
   // Captions wait their turn: on a slow connection, getting the model or a link's sound would slow
   // the fetch, preview, downloads and exports going on (and whisper would slow exports).
   const idle = useRef(true);
-  idle.current = !busy && !queue.jobs.some((j) => j.status === "downloading" || j.status === "encoding");
+  // A live recording "downloads" for hours: it doesn't hold captions back.
+  idle.current = !busy && !queue.jobs.some((j) => (j.status === "downloading" && !j.record) || j.status === "encoding");
   useEffect(() => {
     if (!inDesktopApp) return;
     const unlisten = onSpeechProgress(({ id, stage, percent }) =>
@@ -525,13 +528,23 @@ export default function App() {
         [id]: stage === "model" ? `getting the speech model, ${Math.floor(percent)}%` : stage === "sound" ? "getting the sound for captions…" : `making captions, ${Math.floor(percent)}%`,
       })),
     );
-    return () => void unlisten.then((stop) => stop());
-  }, []);
+    // Lines show up while the rest is still being made.
+    const unlines = onSpeechLine((id, line) => {
+      const current = projectRef.current.media.find((m) => m.id === id);
+      if (!current) return;
+      const lines = current.captions?.partial ? [...current.captions.lines, line] : [line];
+      api.refreshMedia(id, { captions: { label: "Made from the sound", lines, partial: true } });
+    });
+    return () => {
+      void unlisten.then((stop) => stop());
+      void unlines.then((stop) => stop());
+    };
+  }, [api]);
   useEffect(() => {
     if (!inDesktopApp || !autoCaptions) return;
     for (const m of project.media) {
       const s = m.source;
-      if (m.captions || s.captions || !m.hasAudio || s.image || s.live || m.missing || spoken.current.has(m.id)) continue;
+      if ((m.captions && !m.captions.partial) || s.captions || !m.hasAudio || s.image || s.live || m.missing || spoken.current.has(m.id)) continue;
       spoken.current.add(m.id);
       setCaptioning((all) => ({ ...all, [m.id]: "captions waiting…" }));
       const done = (label?: string) =>
@@ -545,6 +558,7 @@ export default function App() {
         return makeCaptions(m.id, s.url, Boolean(s.local))
           .then((lines) => {
             done();
+            // The finished file replaces the lines shown along the way.
             if (lines.length) api.refreshMedia(m.id, { captions: { label: "Made from the sound", lines } });
           })
           .catch(() => done("couldn't make captions"));
@@ -1179,6 +1193,7 @@ export default function App() {
               selectedId={selectedId}
               onSelect={setSelectedId}
               onSnapshot={takeSnapshot}
+              captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
             />
             <TimelineEditor
               project={project}

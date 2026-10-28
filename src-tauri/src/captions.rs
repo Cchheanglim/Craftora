@@ -24,7 +24,7 @@ pub struct Track {
 }
 
 /// A line of captions, in media seconds.
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct Caption {
     pub start: f64,
     pub end: f64,
@@ -81,7 +81,7 @@ pub async fn load_captions(url: String, link: String) -> Result<Vec<Caption>, St
 }
 
 /// "01:02.5", "00:01:02.500" (or with a comma) in seconds.
-fn seconds(time: &str) -> Option<f64> {
+pub(crate) fn seconds(time: &str) -> Option<f64> {
     time.trim().replace(',', ".").split(':').try_fold(0.0, |total, part| Some(total * 60.0 + part.parse::<f64>().ok()?))
 }
 

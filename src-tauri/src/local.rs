@@ -428,19 +428,21 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
 
 /// Summarises signed 8-bit mono PCM samples into `bins` loudness bars (0–100).
 pub(crate) fn peaks_from_pcm(bytes: &[u8], bins: usize) -> Vec<u8> {
-    if bytes.is_empty() || bins == 0 {
+    // 16-bit little-endian samples: quiet speech keeps its shape (8 bits left it a few steps tall).
+    let samples: Vec<u16> = bytes.as_chunks::<2>().0.iter().map(|&s| i16::from_le_bytes(s).unsigned_abs()).collect();
+    if samples.is_empty() || bins == 0 {
         return Vec::new();
     }
-    let count = bins.min(bytes.len());
-    let raw: Vec<u8> = (0..count)
+    let count = bins.min(samples.len());
+    let raw: Vec<u16> = (0..count)
         .map(|i| {
-            let a = i * bytes.len() / count;
-            let b = ((i + 1) * bytes.len() / count).max(a + 1);
-            bytes[a..b].iter().map(|&s| (s as i8).unsigned_abs()).max().unwrap_or(0)
+            let a = i * samples.len() / count;
+            let b = ((i + 1) * samples.len() / count).max(a + 1);
+            samples[a..b].iter().copied().max().unwrap_or(0)
         })
         .collect();
-    let peak = (*raw.iter().max().unwrap_or(&1)).max(1) as u32;
-    raw.into_iter().map(|v| ((v as u32 * 100) / peak).min(100) as u8).collect()
+    let peak = u32::from(*raw.iter().max().unwrap_or(&1)).max(1);
+    raw.into_iter().map(|v| ((u32::from(v) * 100) / peak).min(100) as u8).collect()
 }
 
 /// Reads `silence_start` / `silence_end` lines from FFmpeg's `silencedetect` filter.
@@ -552,7 +554,10 @@ pub async fn local_thumbnail(app: AppHandle, opened: State<'_, OpenedFiles>, pat
     Ok(format!("data:image/jpeg;base64,{}", base64_encode(&output.stdout)))
 }
 
-/// Reads ~240 loudness bars (0–100) across an opened file's audio for the radio wave.
+/// Bars in a sound wave; the editor redoes saved waves of another length (older, wrong ones).
+pub(crate) const PEAK_BARS: usize = 300;
+
+/// Reads 300 loudness bars (0–100) across the whole of an opened file's audio for the radio wave.
 #[tauri::command]
 pub async fn audio_peaks(app: AppHandle, opened: State<'_, OpenedFiles>, path: String) -> Result<Vec<u8>, String> {
     let path = normalize(Path::new(&path))?;
@@ -563,10 +568,12 @@ pub async fn audio_peaks(app: AppHandle, opened: State<'_, OpenedFiles>, path: S
     let output = run_to_end(
         &app,
         FFMPEG,
-        &["-hide_banner", "-v", "error", "-t", "600", "-i", &input, "-vn", "-ac", "1", "-ar", "100", "-f", "s8", "pipe:1"],
+        // How loud, 200 times a second: the sound made positive, then averaged. (Resampling the sound
+        // itself to 100 Hz kept only rumble under 50 Hz, so voices drew a flat line.)
+        &["-hide_banner", "-v", "error", "-i", &input, "-vn", "-ac", "1", "-af", "aresample=8000,aeval=abs(val(0)),aresample=200", "-f", "s16le", "pipe:1"],
     )
     .await?;
-    Ok(peaks_from_pcm(&output.stdout, 240))
+    Ok(peaks_from_pcm(&output.stdout, PEAK_BARS))
 }
 
 /// Finds silent stretches `[start, end]` (in media seconds) inside `[start, end]` of an opened file.
@@ -631,9 +638,8 @@ mod tests {
 
     #[test]
     fn summarises_pcm_into_normalised_peaks() {
-        let pcm = [0u8, 10, 20, 40, 256u16.wrapping_sub(80) as u8, 0, 0, 0];
-        let peaks = peaks_from_pcm(&pcm, 2);
-        assert_eq!(peaks, vec![50, 100]);
+        let pcm: Vec<u8> = [0i16, 1000, 2000, -4000, 8000, 0, 0, -16000].iter().flat_map(|s| s.to_le_bytes()).collect();
+        assert_eq!(peaks_from_pcm(&pcm, 2), vec![25, 100]);
     }
 
     #[test]

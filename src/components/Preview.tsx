@@ -28,6 +28,8 @@ interface PreviewProps {
   onSelect: (id: string | null) => void;
   /** Saves a PNG snapshot of the current preview frame and imports it into Media. */
   onSnapshot?: (bytes: Uint8Array) => Promise<void>;
+  /** How making captions from the sound is going ("making captions, 40%"), while it is. */
+  captionStatus?: string;
 }
 
 const WAVE_BARS = 140;
@@ -104,7 +106,7 @@ function placeAlong(offset: number, free: number): number {
 }
 
 /** Plays the timeline: every clip's media follows the playhead, stacked like the export. */
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus }: PreviewProps) {
   const [muted, setMuted] = useState(false);
   const [showCaptions, setShowCaptions] = useState(() => {
     try {
@@ -546,16 +548,17 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               <Icon name="camera" />
             </button>
           )}
-          {hasCaptions && (
+          {captionStatus && <span className="preview__cc-status">{captionStatus}</span>}
+          {(hasCaptions || captionStatus) && (
             <button
               type="button"
-              className="btn btn--icon"
+              className={showCaptions ? "btn btn--icon preview__cc is-on" : "btn btn--icon preview__cc"}
               aria-label="Captions"
               aria-pressed={showCaptions}
-              title={showCaptions ? "Hide captions" : "Show captions"}
+              title={showCaptions ? "Captions on: click to hide them" : "Captions off: click to show them"}
               onClick={toggleCaptions}
             >
-              <Icon name="captions" />
+              <Icon name={showCaptions ? "captions" : "captionsOff"} />
             </button>
           )}
           <button type="button" className="btn btn--icon" aria-label={muted ? "Unmute" : "Mute"} aria-pressed={muted} onClick={() => setMuted((m) => !m)}>
