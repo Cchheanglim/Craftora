@@ -383,6 +383,16 @@ export const revealFile = (path: string) => revealItemInDir(path);
 export const openFile = (path: string) => invoke<void>("open_file", { path });
 /** Renames a finished download in the Downloads folder; resolves its new path. */
 export const renameDownload = (path: string, name: string) => invoke<string>("rename_download", { path, name });
+/** The proxy Craftora's connections use now, and the one its window started with (null: direct). */
+export interface ProxyState {
+  proxy: string | null;
+  window: string | null;
+}
+export const getProxy = () => invoke<ProxyState>("get_proxy");
+/** Saves and uses a proxy ("http://host:port"), or none with null; rejects addresses that won't work. */
+export const setProxy = (proxy: string | null) => invoke<ProxyState>("set_proxy", { proxy });
+/** The internet address websites see now (asks Cloudflare). */
+export const checkAddress = () => invoke<string>("check_address");
 /** Moves an exported file to the Recycle Bin. */
 export const deleteFile = (path: string) => invoke<void>("delete_file", { path });
 export const localThumbnail = (path: string, image = false) => invoke<string>("local_thumbnail", { path, image });
@@ -403,6 +413,8 @@ export function fileThumbnail(path: string, image = false): Promise<string | und
   return made;
 }
 export const audioPeaks = (path: string) => invoke<number[]>("audio_peaks", { path });
+/** A fetched link's sound wave, from `MediaSource.peaksUrl`. */
+export const linkPeaks = (url: string) => invoke<number[]>("link_peaks", { url });
 /** A fetched video's captions (`MediaSource.captions.url`) as timed lines. */
 export const loadCaptions = (url: string, link: string) => invoke<Caption[]>("load_captions", { url, link });
 /** Captions made from what's said (whisper.cpp, on this PC); `source` is a file path or a link. */

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, trackOrder, transitionLength, type Clip, type Project, type Track, type TrackKind } from "../project/model";
+import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, trackOrder, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackKind } from "../project/model";
 import { fitsTrack, packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -525,11 +525,7 @@ export function TimelineEditor({
                           />
                         )}
                         {media?.hasAudio && !media.source.image && (
-                          <span className="tl__wave" aria-hidden="true">
-                            {clipPeaks(clip, media, Math.min(96, Math.max(8, Math.round((length * pps) / 5))), Boolean(track.muted)).map((h, i) => (
-                              <span key={i} style={{ height: `${h}%` }} />
-                            ))}
-                          </span>
+                          <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={Boolean(track.muted)} />
                         )}
                         {media?.source.chapters
                           ?.filter((ch) => ch.start > clip.in + 0.2 && ch.start < clip.out - 0.2)
@@ -580,3 +576,17 @@ export function TimelineEditor({
     </section>
   );
 }
+
+/**
+ * A clip's sound wave. Drawn again only when the clip, its media, the zoom or mute change, not on
+ * every frame of playback (a long clip has up to 1,500 bars).
+ */
+const ClipWave = memo(function ClipWave({ clip, media, bars, muted }: { clip: Clip; media: MediaItem; bars: number; muted: boolean }) {
+  return (
+    <span className="tl__wave" aria-hidden="true">
+      {clipPeaks(clip, media, bars, muted).map((h, i) => (
+        <span key={i} style={{ height: `${h}%` }} />
+      ))}
+    </span>
+  );
+});

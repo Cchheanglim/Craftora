@@ -77,7 +77,7 @@ pub struct ModelInfo {
 /// The Gemini models this key can use for chat with tools, newest first as Google lists them.
 #[tauri::command]
 pub async fn assistant_models() -> Result<Vec<ModelInfo>, String> {
-    let client = reqwest::Client::new();
+    let client = crate::privacy::client_builder().build().map_err(|e| e.to_string())?;
     let answer = call(client.get(format!("{API}/models?pageSize=200"))).await?;
     // Image, speech, embedding and live-audio models can't run the editing tools.
     let unsuitable = ["embedding", "image", "tts", "audio", "live", "aqa", "banana", "veo", "imagen"];
@@ -106,6 +106,6 @@ pub async fn assistant_generate(model: String, body: Value) -> Result<Value, Str
     if !valid {
         return Err("That isn't a Gemini model name.".into());
     }
-    let client = reqwest::Client::new();
+    let client = crate::privacy::client_builder().build().map_err(|e| e.to_string())?;
     call(client.post(format!("{API}/models/{model}:generateContent")).json(&body)).await
 }

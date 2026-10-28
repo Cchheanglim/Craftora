@@ -14,6 +14,7 @@ import {
   onFileDrop,
   localThumbnail,
   audioPeaks,
+  linkPeaks,
   loadCaptions,
   makeCaptions,
   onSpeechProgress,
@@ -426,6 +427,24 @@ export default function App() {
   // Files on this PC get a picture of their first frame and their real FFmpeg audio wave.
   const thumbTried = useRef(new Set<string>());
   const peaksTried = useRef(new Set<string>());
+  // A fetched link's wave, from a light stream of its sound, before it's downloaded.
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    for (const m of project.media) {
+      const s = m.source;
+      if (s.local || !s.peaksUrl || !m.hasAudio || s.peaksRate === 10 || peaksTried.current.has(m.id)) continue;
+      peaksTried.current.add(m.id);
+      // A moment later, so the preview's first pieces load first.
+      window.setTimeout(() => {
+        void linkPeaks(s.peaksUrl!)
+          .then((peaks) => {
+            const current = projectRef.current.media.find((x) => x.id === m.id);
+            if (peaks.length && current && !current.source.local) api.refreshMedia(m.id, { source: { ...current.source, peaks, peaksRate: 10 } });
+          })
+          .catch(() => {});
+      }, 3000);
+    }
+  }, [project.media, api]);
   useEffect(() => {
     if (!inDesktopApp) return;
     for (const m of project.media) {
@@ -449,12 +468,12 @@ export default function App() {
             prepare(m.id, next);
           })
           .catch(() => {});
-        // 300 bars: waves saved with another count came from an older, wrong reading (see audio_peaks).
-        if (m.hasAudio && s.peaks?.length !== 300) {
+        // Waves saved before peaksRate came from an older, wrong reading (see audio_peaks).
+        if (m.hasAudio && s.peaksRate !== 10) {
           void audioPeaks(s.url)
             .then((peaks) => {
               const current = projectRef.current.media.find((x) => x.id === m.id);
-              if (peaks.length && current) api.refreshMedia(m.id, { source: { ...current.source, peaks } });
+              if (peaks.length && current) api.refreshMedia(m.id, { source: { ...current.source, peaks, peaksRate: 10 } });
             })
             .catch(() => {});
         }
@@ -792,7 +811,9 @@ export default function App() {
         .then((fresh) => {
           // The picture kept last time stays (no need to fetch it from the site again).
           const thumbnail = source.thumbnail?.startsWith("data:") ? source.thumbnail : fresh.thumbnail;
-          api.refreshMedia(item.id, { source: { ...fresh, duration: source.duration, thumbnail }, missing: false });
+          // The wave drawn last time stays too (it's the same sound).
+          const wave = source.peaksRate === 10 ? { peaks: source.peaks, peaksRate: 10 } : {};
+          api.refreshMedia(item.id, { source: { ...fresh, duration: source.duration, thumbnail, ...wave }, missing: false });
           prepare(item.id, fresh);
         })
         .catch(() => {

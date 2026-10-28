@@ -47,6 +47,11 @@
   PC) gets some made from its sound: Craftora listens to what's said and writes it down, on your PC.
   Media shows how it's going. The first time, Craftora downloads a 148 MB speech model. Turn it off
   in **Settings → Captions for videos without any**.
+- **Privacy: use a proxy.** **Settings → Privacy** takes an HTTP proxy. Fetching, downloads,
+  previews, pictures, captions and the AI assistant then go through it, so websites see its address
+  instead of yours; Craftora's window follows after **Restart now**. If the proxy stops working,
+  Craftora doesn't quietly connect directly. **Check** shows the address websites see. (A VPN app
+  needs no setting: it already covers the whole PC.)
 - **A History page.** **History** in the sidebar lists every link you've fetched: the video's
   picture, title and whole link, and when you fetched it. Search them, fetch one again, copy its link,
   or remove links one by one, several at once (**Select**) or all (**Clear all**). The small History
@@ -69,6 +74,13 @@
   from History now ask first. Cancelling a download now says "download" instead of "export".
 
 **Fixed**
+- **Captions no longer cover the picture.** Some videos' captions hold a whole paragraph per line;
+  they now show as two-line pieces, one after another while it's said, cut at whole words (Khmer and
+  Thai too), in smaller text. **Add captions** puts the same pieces on the timeline.
+- **Links have a sound wave before they're downloaded.** Craftora reads just a light stream of the
+  sound after a fetch and draws the real wave. Waves now hold 10 bars a second, so zooming into the
+  timeline shows words and pauses, and each bar shows the loudest moment it stands for. Long clips
+  get up to 1,500 bars without slowing playback.
 - **Big files no longer crash Craftora.** Importing a video of several GB could close the app: the
   preview's file server sometimes read the whole file into memory at once. Files on your PC now
   play through Craftora's own server, a piece at a time (a 3.7 GB video used about 35 MB).

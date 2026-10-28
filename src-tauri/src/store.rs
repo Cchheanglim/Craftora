@@ -125,6 +125,9 @@ struct Settings {
     /// Where exports are saved; the default is Videos\Craftora.
     #[serde(default)]
     output_dir: Option<String>,
+    /// The proxy Craftora's connections go through (privacy.rs); none for a direct connection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    proxy: Option<String>,
 }
 
 fn write_settings(app: &AppHandle, settings: &Settings) -> Result<(), String> {
@@ -143,6 +146,23 @@ fn read_settings(app: &AppHandle) -> Settings {
 /// The save folder the user chose, if it still exists.
 pub(crate) fn chosen_output_dir(app: &AppHandle) -> Option<PathBuf> {
     read_settings(app).output_dir.map(PathBuf::from).filter(|dir| dir.is_dir())
+}
+
+/// The proxy now, and the one Craftora's window started with.
+#[tauri::command]
+pub fn get_proxy() -> crate::privacy::ProxyState {
+    crate::privacy::state()
+}
+
+/// Sets the proxy (empty or `None` for a direct connection), checked, saved and used from now on.
+#[tauri::command]
+pub fn set_proxy(app: AppHandle, proxy: Option<String>) -> Result<crate::privacy::ProxyState, String> {
+    let proxy = proxy.filter(|p| !p.trim().is_empty()).map(|p| crate::privacy::checked(&p)).transpose()?;
+    let mut settings = read_settings(&app);
+    settings.proxy = proxy.clone();
+    write_settings(&app, &settings)?;
+    crate::privacy::set(proxy);
+    Ok(crate::privacy::state())
 }
 
 /// Where exports go now.

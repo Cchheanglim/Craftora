@@ -287,6 +287,45 @@ export function mediaFromSource(source: MediaSource): MediaItem {
   };
 }
 
+/** About two lines of captions on screen. */
+export const CAPTION_CHARS = 80;
+
+/**
+ * Captions cut into pieces of at most `max` characters, at whole words (Khmer and Thai too, which
+ * don't put spaces between words), each piece shown for its share of its line's time. Some sites'
+ * captions hold a whole paragraph per line, which covered the picture.
+ */
+export function readableCaptions(lines: Caption[], max = CAPTION_CHARS): Caption[] {
+  const words = new Intl.Segmenter(undefined, { granularity: "word" });
+  const letters = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  return lines.flatMap((line) => {
+    if (line.text.length <= max) return [line];
+    const pieces: string[] = [];
+    let current = "";
+    const add = (part: string) => {
+      if (current.trim() && (current + part).trim().length > max) {
+        pieces.push(current.trim());
+        current = "";
+      }
+      current += part;
+    };
+    for (const { segment } of words.segment(line.text)) {
+      // A "word" longer than a piece (no word breaks found): cut it between letters instead.
+      if (segment.length > max) for (const { segment: letter } of letters.segment(segment)) add(letter);
+      else add(segment);
+    }
+    if (current.trim()) pieces.push(current.trim());
+    const total = pieces.reduce((n, p) => n + p.length, 0);
+    let start = line.start;
+    return pieces.map((text) => {
+      const end = start + ((line.end - line.start) * text.length) / total;
+      const piece = { start: Math.round(start * 1000) / 1000, end: Math.round(end * 1000) / 1000, text };
+      start = end;
+      return piece;
+    });
+  });
+}
+
 /**
  * Loudness bars (0–100) across a media item: real FFmpeg peaks, measured once it's a file on this
  * PC. None for a link until then (a made-up wave didn't match the sound, and fooled Cut silences).
@@ -297,17 +336,27 @@ export function peaksFor(media: MediaItem | undefined): number[] {
 }
 
 /** `bars` loudness values (0–100) for the part of `media` that `clip` plays, with volume and fades. */
+/** The loudest of a wave's bars between media times `a` and `b` (seconds, either order). */
+export function peakBetween(full: number[], total: number, a: number, b: number): number {
+  if (!full.length) return 0;
+  const lo = Math.min(full.length - 1, Math.max(0, Math.floor((Math.min(a, b) / total) * full.length)));
+  const hi = Math.min(full.length, Math.max(lo + 1, Math.ceil((Math.max(a, b) / total) * full.length)));
+  let loudest = 0;
+  for (let i = lo; i < hi; i++) loudest = Math.max(loudest, full[i]);
+  return loudest;
+}
+
 export function clipPeaks(clip: Clip, media: MediaItem | undefined, bars: number, muted = false): number[] {
   const full = peaksFor(media);
   if (!full.length || bars <= 0 || muted || clip.volume <= 0) return Array.from({ length: Math.max(0, bars) }, () => 4);
   const total = Math.max(0.1, media?.source.duration || clip.out);
   const len = clipLength(clip);
+  const at = (u: number) => (clip.reverse ? clip.out - u * (clip.out - clip.in) : clip.in + u * (clip.out - clip.in));
   return Array.from({ length: bars }, (_, i) => {
-    const u = (i + 0.5) / bars;
-    const mediaT = clip.reverse ? clip.out - u * (clip.out - clip.in) : clip.in + u * (clip.out - clip.in);
-    const idx = Math.min(full.length - 1, Math.max(0, Math.floor((mediaT / total) * full.length)));
-    const fade = fadeAt(clip, clip.start + u * len);
-    return Math.max(4, Math.min(100, Math.round(full[idx] * clip.volume * fade)));
+    // Each bar: the loudest moment in the stretch of sound it stands for.
+    const loud = peakBetween(full, total, at(i / bars), at((i + 1) / bars));
+    const fade = fadeAt(clip, clip.start + ((i + 0.5) / bars) * len);
+    return Math.max(4, Math.min(100, Math.round(loud * clip.volume * fade)));
   });
 }
 

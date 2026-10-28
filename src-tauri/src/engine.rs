@@ -37,7 +37,12 @@ pub fn command(app: &AppHandle, name: &str) -> Result<Command, String> {
         // YouTube's JavaScript challenges (signed-in fetches find no formats without them).
         let deno = resources.join("deno").join("deno.exe");
         let command = app.shell().command(exe);
-        return Ok(if deno.is_file() { command.args(["--js-runtimes".to_string(), format!("deno:{}", deno.display())]) } else { command });
+        let command = if deno.is_file() { command.args(["--js-runtimes".to_string(), format!("deno:{}", deno.display())]) } else { command };
+        // The proxy, for yt-dlp and for the FFmpeg it runs itself.
+        return Ok(match crate::privacy::proxy() {
+            Some(proxy) => command.args(["--proxy", &proxy]).env("http_proxy", &proxy).env("https_proxy", &proxy),
+            None => command,
+        });
     }
     if name == WHISPER {
         let exe = app.path().resource_dir().map_err(|e| e.to_string())?.join("whisper").join("whisper-cli.exe");
@@ -46,7 +51,12 @@ pub fn command(app: &AppHandle, name: &str) -> Result<Command, String> {
         }
         return Ok(app.shell().command(exe));
     }
-    app.shell().sidecar(name).map_err(|e| format!("{name} is not bundled: {e}"))
+    let sidecar = app.shell().sidecar(name).map_err(|e| format!("{name} is not bundled: {e}"))?;
+    // FFmpeg and FFprobe read http_proxy for web addresses (https ones too, tunnelled through it).
+    Ok(match crate::privacy::proxy() {
+        Some(proxy) => sidecar.env("http_proxy", proxy),
+        None => sidecar,
+    })
 }
 
 /// Runs an engine to completion and collects its output.

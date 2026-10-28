@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { clipEnd, fadeAt, mediaTimeAt, peaksFor, trackOrder, transitionMix, type Clip, type Project } from "../project/model";
+import { clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, readableCaptions, trackOrder, transitionMix, type Clip, type Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
@@ -192,7 +192,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     if (!showCaptions || project.tracks.some((t) => t.name === "Captions")) return undefined;
     for (const clip of [...pictures].reverse()) {
       const t = mediaTime(clip);
-      const line = t === null ? undefined : mediaOf(clip)?.captions?.lines.find((l) => t >= l.start && t < l.end);
+      const whole = t === null ? undefined : mediaOf(clip)?.captions?.lines.find((l) => t >= l.start && t < l.end);
+      // Only the piece being said now, when a line is long.
+      const line = whole && t !== null ? readableCaptions([whole]).find((l) => t >= l.start && t < l.end) ?? whole : undefined;
       if (t !== null && mediaOf(clip)?.captions) return line?.text;
     }
     return undefined;
@@ -212,15 +214,17 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const mediaPeaks = new Map(project.media.map((m) => [m.id, peaksFor(m)]));
     return Array.from({ length: WAVE_BARS }, (_, i) => {
       const t = ((i + 0.5) / WAVE_BARS) * duration;
+      const [from, to] = [(i / WAVE_BARS) * duration, ((i + 1) / WAVE_BARS) * duration];
       let sum = 0;
       for (const c of audible) {
-        if (t < c.start || t >= clipEnd(c)) continue;
+        if (to <= c.start || from >= clipEnd(c)) continue;
         const full = mediaPeaks.get(c.mediaId!);
         const m = project.media.find((x) => x.id === c.mediaId);
         if (!full?.length || !m) continue;
-        const mt = mediaTimeAt(c, t);
-        const idx = Math.min(full.length - 1, Math.max(0, Math.floor((mt / Math.max(0.1, m.source.duration)) * full.length)));
-        sum += full[idx] * c.volume * fadeAt(c, t);
+        // The loudest moment of this clip within the bar's stretch of the timeline.
+        const [a, b] = [mediaTimeAt(c, Math.max(from, c.start)), mediaTimeAt(c, Math.min(to, clipEnd(c)) - 0.001)];
+        const inClip = Math.min(Math.max(t, c.start), clipEnd(c) - 0.001);
+        sum += peakBetween(full, Math.max(0.1, m.source.duration), a, b) * c.volume * fadeAt(c, inClip);
       }
       return Math.max(6, Math.min(100, Math.round(sum)));
     });

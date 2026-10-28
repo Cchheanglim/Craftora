@@ -139,3 +139,37 @@ test("captions go on a new Captions track, lined up with each clip after cuts an
     ["goodbye", 5.5, 1],
   ]);
 });
+
+test("long caption lines become two-line pieces at whole words, timed by length", async () => {
+  const { readableCaptions, CAPTION_CHARS } = await import("../src/project/model");
+  const english = "After the war the gods came down to the mountain and asked who would guard the gate, and the monkey king answered that he would do it alone if they let him keep his staff.";
+  const khmer = "បន្ទាប់ពីវគ្គមុនមកទេវតាថៃដីងស៊ីហ្គឹងគឺបានចុះទៅកាន់ភ្នំហួរគហៅសូន្ធខុងឡើងមកកាន់ឋានសួរនិងទទួលតំណែងទេវតារួចគ្រាន់តែទៅដល់ភ្លាមអ៊ូខុងនឹងគឺបីសនឹងវ៉ៃគ្នាជាមួយនឹងសេនាការពារ";
+  for (const text of [english, khmer]) {
+    const pieces = readableCaptions([{ start: 10, end: 30, text }]);
+    expect(pieces.length).toBeGreaterThan(1);
+    for (const p of pieces) expect(p.text.length).toBeLessThanOrEqual(CAPTION_CHARS);
+    // Nothing lost, and the pieces fill the line's time without gaps.
+    expect(pieces.map((p) => p.text).join("").replace(/\s/g, "")).toBe(text.replace(/\s/g, ""));
+    expect(pieces[0].start).toBe(10);
+    expect(pieces[pieces.length - 1].end).toBe(30);
+    for (let i = 1; i < pieces.length; i++) expect(pieces[i].start).toBe(pieces[i - 1].end);
+  }
+  // Whole English words: no piece starts or ends inside one.
+  for (const p of readableCaptions([{ start: 0, end: 9, text: english }])) expect(english.split(" ")).toEqual(expect.arrayContaining(p.text.split(" ")));
+  // Short lines stay as they are.
+  expect(readableCaptions([{ start: 1, end: 2, text: "Hello there" }])).toEqual([{ start: 1, end: 2, text: "Hello there" }]);
+});
+
+test("each wave bar shows the loudest moment in the stretch it stands for", async () => {
+  const { peakBetween, clipPeaks } = await import("../src/project/model");
+  // 10 bars a second over 2 seconds: quiet, with one loud moment at 1.5 s.
+  const full = Array.from({ length: 20 }, (_, i) => (i === 15 ? 90 : 10));
+  expect(peakBetween(full, 2, 0, 1)).toBe(10);
+  expect(peakBetween(full, 2, 1, 2)).toBe(90);
+  expect(peakBetween(full, 2, 2, 1)).toBe(90);
+  const media = { ...mediaFromSource({ ...source("video"), duration: 2, peaks: full, peaksRate: 10 }) };
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
+  // Two bars for the whole clip: the second holds the loud moment (one sample per bar would miss it).
+  expect(clipPeaks(p.clips[0], p.media[0], 2)).toEqual([10, 90]);
+});
