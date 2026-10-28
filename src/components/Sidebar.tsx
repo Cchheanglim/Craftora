@@ -31,6 +31,8 @@ interface SidebarProps {
   media: MediaItem[];
   /** Media whose preview copy is still being made. */
   preparing: Set<string>;
+  /** Media id → how making its captions from the sound is going. */
+  captioning: Record<string, string>;
   /** Links whose preview is being cached: how much (0–100) can already be scrubbed instantly. */
   previewReady: Record<string, number>;
   /** Links being downloaded for editing. */
@@ -60,6 +62,7 @@ export function Sidebar({
   media,
   preparing,
   previewReady,
+  captioning,
   downloading,
   onDownload,
   onImport,
@@ -166,6 +169,8 @@ export function Sidebar({
                             : " · downloading…"
                           : preparing.has(item.id)
                             ? " · preparing preview…"
+                          : captioning[item.id]
+                            ? ` · ${captioning[item.id]}`
                           : item.source.local
                             ? " · this PC"
                             : " · link"}

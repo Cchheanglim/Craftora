@@ -11,6 +11,7 @@ mod media;
 mod page_fetch;
 mod project;
 mod signin;
+mod speech;
 mod store;
 mod virustotal;
 
@@ -91,6 +92,7 @@ pub fn run() {
             store::open_file,
             store::delete_file,
             captions::load_captions,
+            speech::make_captions,
             store::save_snapshot,
             virustotal::site_check_available,
             virustotal::check_site,

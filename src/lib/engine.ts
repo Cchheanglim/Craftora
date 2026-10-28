@@ -400,6 +400,16 @@ export function fileThumbnail(path: string, image = false): Promise<string | und
 export const audioPeaks = (path: string) => invoke<number[]>("audio_peaks", { path });
 /** A fetched video's captions (`MediaSource.captions.url`) as timed lines. */
 export const loadCaptions = (url: string, link: string) => invoke<Caption[]>("load_captions", { url, link });
+/** Captions made from what's said (whisper.cpp, on this PC); `source` is a file path or a link. */
+export const makeCaptions = (id: string, source: string, local: boolean) => invoke<Caption[]>("make_captions", { id, source, local });
+export interface SpeechProgress {
+  id: string;
+  /** "model": downloading the speech model (first time only); "sound": getting a link's sound. */
+  stage: "model" | "sound" | "listening";
+  percent: number;
+}
+export const onSpeechProgress = (handler: (progress: SpeechProgress) => void): Promise<UnlistenFn> =>
+  listen<SpeechProgress>("speech-progress", (e) => handler(e.payload));
 export const detectSilences = (path: string, start: number, end: number) => invoke<[number, number][]>("detect_silences", { path, start, end });
 export const saveSnapshot = (bytes: number[], title: string) => invoke<string>("save_snapshot", { bytes, title });
 
