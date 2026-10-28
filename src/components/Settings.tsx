@@ -1,4 +1,7 @@
+import { useEffect, useState, type FormEvent } from "react";
+import { relaunch } from "@tauri-apps/plugin-process";
 import type { OutputKind } from "../types";
+import { checkAddress, getProxy, inDesktopApp, setProxy, type ProxyState } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Links, type LinkSettings } from "./Home";
 import "./Library.css";
@@ -86,11 +89,94 @@ export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaul
         </p>
       </div>
 
+      {inDesktopApp && <Privacy />}
+
       {links && (
         <div className="library__group">
           <Links links={links} />
         </div>
       )}
     </section>
+  );
+}
+
+/** A proxy for every connection Craftora makes, and a check of the address websites see. */
+function Privacy() {
+  const [state, setState] = useState<ProxyState | null>(null);
+  const [draft, setDraft] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => {
+    void getProxy().then((s) => {
+      setState(s);
+      setDraft(s.proxy ?? "");
+    });
+  }, []);
+  const save = async (proxy: string | null) => {
+    try {
+      const next = await setProxy(proxy);
+      setState(next);
+      setDraft(next.proxy ?? "");
+      setMessage(next.proxy ? `Saved. Connections now go through ${next.proxy}.` : "Proxy off. Connections go directly.");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err));
+    }
+  };
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    void save(draft.trim() || null);
+  };
+  const check = async () => {
+    setChecking(true);
+    try {
+      setMessage(`Websites see your connection as ${await checkAddress()}.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setChecking(false);
+    }
+  };
+  if (!state) return null;
+  return (
+    <div className="library__group">
+      <h2 className="section-label">Privacy</h2>
+      <form className="library__save" onSubmit={submit}>
+        <label htmlFor="proxy">Proxy</label>
+        <input
+          id="proxy"
+          className="field mono"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="http://127.0.0.1:8080"
+          spellCheck={false}
+        />
+        <button type="submit" className="btn btn--secondary" disabled={draft.trim() === (state.proxy ?? "")}>
+          Save
+        </button>
+        {state.proxy && (
+          <button type="button" className="btn btn--ghost" onClick={() => void save(null)}>
+            Turn off
+          </button>
+        )}
+        <button type="button" className="btn btn--ghost" disabled={checking} onClick={() => void check()}>
+          <Icon name="shield" size={14} />
+          {checking ? "Checking…" : "Check"}
+        </button>
+      </form>
+      <p className="library__muted">
+        Fetching, downloads, previews, pictures, captions and the AI assistant go through this proxy, so websites see its
+        address instead of yours. Only http:// proxies: FFmpeg can't use SOCKS ones. A VPN app needs nothing here, it already
+        covers your whole PC. <strong>Check</strong> asks Cloudflare which address it sees.
+      </p>
+      {message && <p className="library__muted">{message}</p>}
+      {state.proxy !== state.window && (
+        <p className="library__save">
+          <span>Restart Craftora so its own window (signing in, some previews and pictures) uses this too.</span>
+          <button type="button" className="btn btn--secondary" onClick={() => void relaunch()}>
+            Restart now
+          </button>
+        </p>
+      )}
+    </div>
   );
 }
