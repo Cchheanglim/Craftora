@@ -481,10 +481,13 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
 
     // 4. Encode, on the graphics card when asked and possible; if that fails, on the processor.
     let encoder = if is_video { encoders::for_render(app, spec.quality).await } else { Encoder::Software };
+    // From a file: hundreds of text clips (captions) would pass Windows' 32,767-character command limit.
+    let graph_file = work.join("graph.txt");
+    std::fs::write(&graph_file, graph.join(";")).map_err(|e| format!("Couldn't prepare the export: {e}"))?;
     let command = |encoder: Encoder| -> Vec<String> {
         let mut args: Vec<String> = ["-y", "-hide_banner", "-nostats", "-progress", "pipe:1"].map(String::from).to_vec();
         args.extend(inputs.iter().cloned());
-        args.extend(["-filter_complex".into(), graph.join(";")]);
+        args.extend(["-/filter_complex".into(), graph_file.to_string_lossy().into_owned()]);
         if is_video {
             args.extend(["-map".into(), "[outv]".into()]);
             args.extend(encoder.args(spec.quality));

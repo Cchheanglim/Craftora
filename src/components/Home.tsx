@@ -84,7 +84,13 @@ export function ProjectList({
   currentId,
   onOpenProject,
   onDeleteProject,
-}: Pick<HomeProps, "projects" | "currentId" | "onOpenProject" | "onDeleteProject">) {
+  selected,
+  onToggle,
+}: Pick<HomeProps, "projects" | "currentId" | "onOpenProject" | "onDeleteProject"> & {
+  /** While picking several projects (Projects page): the ticked ones; rows tick instead of opening. */
+  selected?: Set<string>;
+  onToggle?: (id: string) => void;
+}) {
   const { ask, dialog } = useConfirm();
   const deleteProject = async (p: ProjectEntry) => {
     const ok = await ask({
@@ -102,6 +108,19 @@ export function ProjectList({
       <ul className="home__projects">
         {projects.map((p) => (
           <li key={p.id} className={p.id === currentId ? "is-current" : undefined}>
+            {selected ? (
+              <label className="home__project">
+                <input type="checkbox" checked={selected.has(p.id)} onChange={() => onToggle?.(p.id)} />
+                <Thumb src={p.thumbnail} icon="scissors" />
+                <span className="home__project-text">
+                  <span className="truncate">{p.name}</span>
+                  <span className="home__project-meta">
+                    {p.clips} clip{p.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(p.duration)}</span> · {ago(p.savedAt)}
+                  </span>
+                </span>
+              </label>
+            ) : (
+            <>
             <button type="button" className="home__project" onClick={() => onOpenProject(p.id)}>
               <Thumb src={p.thumbnail} icon="scissors" />
               <span className="home__project-text">
@@ -115,6 +134,8 @@ export function ProjectList({
             <button type="button" className="btn btn--icon home__delete" aria-label={`Delete ${p.name}`} title="Delete project" onClick={() => void deleteProject(p)}>
               <Icon name="trash" size={14} />
             </button>
+            </>
+            )}
           </li>
         ))}
       </ul>

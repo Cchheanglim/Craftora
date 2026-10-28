@@ -35,6 +35,9 @@
   the Recycle Bin (so a wrong click can be undone there) and takes it off the list and Home.
 - **See and sign out of each website.** Under **Links** (Home and Settings), Craftora lists the
   websites it keeps a login for, each with its own **Sign out**. **Sign out of all** is still there.
+- **A warning before anything that can't be undone.** Deleting an exported file, signing out of a
+  website, stopping a live recording, removing a file from the Media library and removing a link
+  from History now ask first. Cancelling a download now says "download" instead of "export".
 
 **Fixed**
 - **Sharp taskbar icon in the Microsoft Store version.** It was shrunk from a single 44-pixel logo and

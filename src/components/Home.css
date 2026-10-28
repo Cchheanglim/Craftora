@@ -161,6 +161,10 @@
   color: var(--text);
 }
 
+label.home__project {
+  cursor: pointer;
+}
+
 .home__open {
   flex-shrink: 0;
   font-size: 12px;
