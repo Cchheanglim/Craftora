@@ -69,8 +69,10 @@ To try the package layout on this PC before you have the identity values, run th
    - `src-tauri/tauri.conf.json` → `"version"`
    - `src-tauri/Cargo.toml` → `version`
    - `package.json` → `"version"`
-2. Add a section for the version at the top of [CHANGELOG.md](CHANGELOG.md): what's new, in
-   plain words. Paste it into the GitHub release notes and the Store's "What's new" box.
+2. Add a section for the version at the top of [CHANGELOG.md](CHANGELOG.md) (`## 0.4.0 (Month
+   Year)`): what's new, in plain words. The release workflow copies it into the GitHub release
+   notes by itself (and stops if it's missing); paste a short version into the Store's "What's
+   new" box.
 3. Commit, then tag and push the tag:
 
    ```powershell
@@ -79,8 +81,8 @@ To try the package layout on this PC before you have the identity values, run th
    ```
 
 4. Watch **Actions → Release** on GitHub (about 15–25 minutes).
-5. Open **Releases**, check the draft (installer, `.sig`, `latest.json`, FFmpeg source), add
-   the changelog to the notes, and **Publish**. Installed copies offer the update from then on.
+5. Open **Releases**, check the draft (installer, `.sig`, `latest.json`, FFmpeg source) and its
+   notes, and **Publish**. Installed copies offer the update from then on.
 
 To try the build without releasing, run the workflow by hand (**Actions → Release → Run
 workflow**). The installer is kept as a workflow artifact.

@@ -155,7 +155,20 @@ jobs:
           curl.exe -fsSL -o release/ffmpeg-source-${{ steps.ffmpeg.outputs.commit }}.tar.gz "https://github.com/FFmpeg/FFmpeg/archive/${{ steps.ffmpeg.outputs.commit }}.tar.gz"
           curl.exe -fsSL -o release/ffmpeg-build-scripts-${{ steps.ffmpeg.outputs.scripts }}.tar.gz "https://github.com/BtbN/FFmpeg-Builds/archive/${{ steps.ffmpeg.outputs.scripts }}.tar.gz"
 
+          # What's new: this version's section of CHANGELOG.md ("## 0.4.0 (October 2026)" up to the next "## ").
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $lines = @(Get-Content CHANGELOG.md -Encoding utf8)
+          $start = [Array]::FindIndex($lines, [Predicate[string]] { param($l) $l -eq "## $version" -or $l.StartsWith("## $version ") })
+          if ($start -lt 0) { throw "CHANGELOG.md has no section for ${version}: add one before tagging (see RELEASING.md)." }
+          $end = [Array]::FindIndex($lines, $start + 1, [Predicate[string]] { param($l) $l.StartsWith("## ") })
+          if ($end -lt 0) { $end = $lines.Length }
+          $whatsNew = ($lines[($start + 1)..($end - 1)] -join "`n").Trim()
+
           @"
+          ## What's new
+
+          $whatsNew
+
           ## Download
 
           Get **$name** below and run it. Installed copies update themselves.
@@ -166,6 +179,7 @@ jobs:
 
           - FFmpeg (GPL v3): ``${{ steps.ffmpeg.outputs.version }}``. Its source code and build scripts are attached to this release. See [THIRD_PARTY_NOTICES.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/THIRD_PARTY_NOTICES.md).
           - yt-dlp (Unlicense).
+          - Deno (MIT), which yt-dlp uses for YouTube, and whisper.cpp (MIT), which makes captions from the sound.
           "@ | Set-Content release/notes.md -Encoding utf8
 
       - name: Create the draft release
