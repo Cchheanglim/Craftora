@@ -163,6 +163,28 @@ kbd {
   background: var(--bg-raised);
 }
 
+/* Things that appear ease in instead of popping. `backwards` (not `both`) so no transform stays
+   behind afterwards: a leftover transform would move fixed-position children. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -10,6 +10,11 @@
 
 .confirm::backdrop {
   background: rgb(0 0 0 / 0.6);
+  animation: fade-in var(--dur) linear backwards;
+}
+
+.confirm[open] {
+  animation: pop-in var(--dur) var(--ease-out) backwards;
 }
 
 .confirm__box {

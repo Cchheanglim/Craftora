@@ -1048,7 +1048,6 @@ export default function App() {
   const exported = history ?? [];
   const shownExports = exported.filter((j) => !j.hidden);
   const usedMedia = new Set(project.clips.map((c) => c.mediaId).filter((id): id is string => Boolean(id)));
-  const showPanel = view === "editor" && rightOpen;
   const selectedTrack = selected ? project.tracks.find((t) => t.id === selected.trackId) : undefined;
 
   /** Signing in to websites, checking links and updating yt-dlp (Settings); absent in the browser preview. */
@@ -1261,8 +1260,9 @@ export default function App() {
         )}
       </main>
 
-      {showPanel && (
-        <div className="app__panel">
+      {view === "editor" && (
+        // Stays mounted when closed so it can slide away; inert keeps it out of Tab and clicks.
+        <div className={`app__panel${rightOpen ? "" : " is-closed"}`} inert={!rightOpen}>
           <div className="segmented app__tabs" role="group" aria-label="Right panel">
             <button type="button" aria-pressed={rightTab === "edit"} onClick={() => setRightTab("edit")}>
               Edit & export
