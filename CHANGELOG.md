@@ -9,6 +9,10 @@
 - **Preview quality.** Settings → Preview quality of links: **Smooth** (up to 720p, the default,
   good on slow Wi-Fi) or **Sharp** (the best quality the site offers, for example 1080p on YouTube
   instead of 360p).
+- **Use your own AI.** The assistant now works with Gemini, ChatGPT (OpenAI) or Claude
+  (Anthropic): pick one in the Assistant tab and paste its API key. Craftora tries the key before
+  keeping it, stores it in Windows Credential Manager, and only ever sends it to that company.
+  Switch AI from the list at the top of the chat.
 - **Videos play when you rest the mouse on them.** In the sidebar's media, the Media library,
   Projects, Exports, Downloads and the Queue, a video's picture plays it (muted) while the mouse
   is over its row, and stops when it leaves. Projects play their first video from where its clip

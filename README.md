@@ -99,7 +99,7 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
 
 **AI assistant** (optional): describe an edit in your own words, such as "add the title My
 Trip for 3 seconds" or "put crossfades between all the clips", and it makes the edit. It
-uses Google's Gemini with your own API key; see [The AI assistant](#the-ai-assistant).
+uses your own API key for Gemini, ChatGPT or Claude; see [The AI assistant](#the-ai-assistant).
 
 **Export**
 - MP4 or MKV video, or audio only (MP3, WAV, FLAC), in 16:9, 9:16 (Shorts and Reels), 1:1
@@ -133,19 +133,22 @@ uses Google's Gemini with your own API key; see [The AI assistant](#the-ai-assis
 ## The AI assistant
 
 1. Open the **Assistant** tab at the top of the right panel.
-2. Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey) and paste
-   it in. A Google AI Pro subscription covers the Gemini app, not the API, so the key is
-   separate.
+2. Pick the AI you have an account with and paste its API key:
+   [Gemini](https://aistudio.google.com/apikey) (free to start),
+   [ChatGPT](https://platform.openai.com/api-keys) or [Claude](https://console.anthropic.com/settings/keys)
+   (both need API credit). App subscriptions (Google AI Pro, ChatGPT Plus, Claude Pro) don't
+   cover the API, so the key is separate. Craftora tries the key first and only keeps it if it
+   works.
 3. Pick a model: Craftora suggests two or three good ones for your key, and **Search all
-   models…** finds any other. The free plan covers the Flash models; the largest models may need
-   billing in Google AI Studio. If a model is busy or not in your plan, the assistant switches to
-   another one by itself.
+   models…** finds any other. On Gemini's free plan, if a model is busy or not in your plan, the
+   assistant switches to another one by itself. Switch AI any time from the list at the top.
 4. Type what you want changed. Everything the assistant does for one message is a single
    undo step (`Ctrl+Z`).
 
-The key is kept in Windows Credential Manager on your PC. Each message sends your words and
-a text description of the timeline (clip names, times and settings, never the media) to
-Google. The assistant can't watch or listen to your media, so it can't find silences or
+Keys are kept in Windows Credential Manager on your PC and are only ever sent to the service
+they belong to (Craftora's screens never see them again, and websites opened in Craftora can't
+use them). Each message sends your words and a text description of the timeline (clip names,
+times and settings, never the media) to that service. The assistant can't watch or listen to your media, so it can't find silences or
 "the funny part" yet. See the [privacy policy](PRIVACY.md).
 
 ## Keyboard shortcuts
@@ -237,7 +240,7 @@ src-tauri/                Rust (Tauri 2)
   src/jobs.rs             Queue plumbing, progress, cancelling, fast single cuts
   src/project.rs          Timeline render: one FFmpeg filter graph
   src/store.rs            Projects, export history and settings on disk
-  src/assistant.rs        Gemini requests; the API key in Credential Manager
+  src/assistant.rs        AI requests (Gemini, OpenAI, Claude); keys in Credential Manager
   msix/                   Microsoft Store package manifest and identity
   bin/                    yt-dlp and FFmpeg (downloaded, not committed)
 scripts/                  fetch-sidecars.ps1, make-msix.ps1
