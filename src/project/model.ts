@@ -139,11 +139,18 @@ export interface Project {
   media: MediaItem[];
   tracks: Track[];
   clips: Clip[];
-  /** Where captions sit on the picture; bottom when absent. */
-  captionPlace?: CaptionPlace;
+  /** Where every caption sits on the picture and how big it is; `CAPTIONS` when absent. */
+  captionLayout?: CaptionLayout;
 }
 
-export type CaptionPlace = "top" | "center" | "bottom";
+/** `x`/`y` as for text clips; `size`: letter height as a fraction of the frame. */
+export interface CaptionLayout {
+  x: number;
+  y: number;
+  size: number;
+}
+
+export const CAPTIONS: CaptionLayout = { x: 0.5, y: 0.9, size: 0.055 };
 
 /** Shortest clip a trim or split may leave, in seconds. */
 export const MIN_CLIP = 0.2;
@@ -328,6 +335,23 @@ export function readableCaptions(lines: Caption[], max = CAPTION_CHARS): Caption
       return piece;
     });
   });
+}
+
+/**
+ * Text broken into lines of at most `max` characters at whole words, as the preview wraps it:
+ * FFmpeg draws each line as given, so a long caption ran off the picture's edges.
+ */
+export function wrapText(text: string, max: number): string {
+  return text
+    .split("\n")
+    .map((line) => readableCaptions([{ start: 0, end: 1, text: line }], max).map((piece) => piece.text).join("\n"))
+    .join("\n");
+}
+
+/** A text clip's lines in a frame, the same in the preview and the export. */
+export function textLines(text: string, size: number, frame: { width: number; height: number }): string {
+  // Letters of bold text are about 0.6 of their height wide; lines fill up to 92% of the width.
+  return wrapText(text, Math.max(8, Math.floor((0.92 * frame.width) / (0.6 * size * frame.height))));
 }
 
 /** A spoken line on the timeline: a caption piece of a clip that plays it. */

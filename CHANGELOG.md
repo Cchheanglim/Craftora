@@ -9,6 +9,12 @@
 - **Preview quality.** Settings → Preview quality of links: **Smooth** (up to 720p, the default,
   good on slow Wi-Fi) or **Sharp** (the best quality the site offers, for example 1080p on YouTube
   instead of 360p).
+- **Captions go into the export.** With captions on (CC in the preview), the exported video has
+  them too, exactly as the preview shows them, also for captions made on this PC without internet.
+  **Drag captions anywhere** on the preview and **resize them from a corner**: every caption moves
+  and resizes together (Undo works), or pick **Top / Middle / Bottom** next to the CC button. Long
+  captions and long text now wrap onto lines that fit the picture, the same in the preview and the
+  export, instead of running off its edges.
 - **Hide saved websites.** In Settings → Links, **Hide** takes a website off the list of websites
   that saved cookies (its login stays); **Show hidden** brings them back. **Forget** now really
   deletes a website's cookies: before, YouTube and Google stayed signed in.

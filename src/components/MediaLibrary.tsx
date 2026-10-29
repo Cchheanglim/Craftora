@@ -107,6 +107,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget }: 
                         image={entry.kind === "image"}
                         icon={entry.kind === "image" ? "image" : entry.kind === "audio" ? "music" : "film"}
                         onMade={(thumbnail) => onThumbnail(entry.path, thumbnail)}
+                        play={entry.kind === "video"}
                       />
                       <span className="mono truncate" title={entry.path}>
                         {entry.name}

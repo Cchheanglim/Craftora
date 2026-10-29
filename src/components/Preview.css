@@ -77,11 +77,12 @@
 /* Matches the export's Segoe UI Bold with a soft drop shadow. */
 .preview__text {
   position: absolute;
-  max-width: 92%;
+  /* Line breaks come from `textLines`, as in the export: never wrapped by the box. */
+  width: max-content;
   font-family: "Segoe UI", var(--font-ui);
   font-weight: 700;
   line-height: 1.15;
-  white-space: pre-wrap;
+  white-space: pre;
   text-align: center;
   text-shadow: 0.06em 0.06em 0 rgb(0 0 0 / 0.6);
   cursor: move;
@@ -157,28 +158,6 @@
 }
 
 /* The fetched video's own captions, shown while CC is on (not exported until added to the timeline). */
-.preview__captions {
-  position: absolute;
-  left: 50%;
-  bottom: 6%;
-  translate: -50% 0;
-  max-width: 80%;
-  margin: 0;
-  padding: 0.15em 0.5em;
-  background: rgb(0 0 0 / 0.72);
-  color: #fff;
-  font-size: 3.6cqh;
-  line-height: 1.35;
-  /* Never more than two lines, even if a piece runs long. */
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  text-align: center;
-  border-radius: 2px;
-  pointer-events: none;
-}
-
 .preview__right .btn--icon[aria-pressed="true"] {
   color: var(--text);
   background: var(--bg-selected);

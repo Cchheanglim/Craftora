@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, readableCaptions, trackOrder, transitionMix, type Clip, type Project } from "../project/model";
+import { clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, transitionMix, CAPTIONS, type Clip, type Project } from "../project/model";
+import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
@@ -30,10 +31,18 @@ interface PreviewProps {
   onSnapshot?: (bytes: Uint8Array) => Promise<void>;
   /** How making captions from the sound is going ("making captions, 40%"), while it is. */
   captionStatus?: string;
+  /** Captions on (CC): shown here and exported. */
+  showCaptions: boolean;
+  onToggleCaptions: () => void;
 }
 
 const WAVE_BARS = 140;
-const CAPTIONS_KEY = "craftora.captions";
+// Quick places for captions; dragging them on the picture puts them anywhere ("Custom").
+const CAPTION_PLACES = [
+  { place: "top", label: "Top", y: 0.08 },
+  { place: "center", label: "Middle", y: 0.5 },
+  { place: "bottom", label: "Bottom", y: 0.9 },
+];
 
 /** Draws the visible preview stage onto a canvas and encodes it as a PNG. */
 async function captureStagePng(stage: HTMLElement, width: number, height: number): Promise<Uint8Array | null> {
@@ -93,6 +102,8 @@ interface Gesture {
   box: DOMRect;
   size: number;
   isText: boolean;
+  /** A caption: moves and resizes every caption together. */
+  captions: boolean;
   moved: boolean;
 }
 
@@ -106,24 +117,13 @@ function placeAlong(offset: number, free: number): number {
 }
 
 /** Plays the timeline: every clip's media follows the playhead, stacked like the export. */
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions }: PreviewProps) {
   const [muted, setMuted] = useState(false);
-  const [showCaptions, setShowCaptions] = useState(() => {
-    try {
-      return localStorage.getItem(CAPTIONS_KEY) !== "off";
-    } catch {
-      return true;
-    }
-  });
-  const toggleCaptions = () =>
-    setShowCaptions((on) => {
-      try {
-        localStorage.setItem(CAPTIONS_KEY, on ? "off" : "on");
-      } catch {
-        /* not remembered */
-      }
-      return !on;
-    });
+  // Exactly the captions the export adds (see `withShownCaptions`), unless they're on the timeline.
+  const shownCaptions = useMemo(
+    () => (showCaptions ? withShownCaptions(project).clips.filter((c) => c.trackId.startsWith(SHOWN_CAPTIONS)) : []),
+    [project, showCaptions],
+  );
   const [fullscreen, setFullscreen] = useState(false);
   const [snapping, setSnapping] = useState(false);
   /** Preview files that failed to load (refused by their server, or unplayable). */
@@ -186,19 +186,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   };
   const sounds = project.clips.filter((c) => c.mediaId && trackKind(c) === "audio");
   const texts = project.clips.filter((c) => !c.mediaId).sort(byLayer);
-  // The caption line of the top picture that has captions, unless they're on the timeline already.
-  const hasCaptions = project.media.some((m) => m.captions);
-  const captionLine = (() => {
-    if (!showCaptions || project.tracks.some((t) => t.name === "Captions")) return undefined;
-    for (const clip of [...pictures].reverse()) {
-      const t = mediaTime(clip);
-      const whole = t === null ? undefined : mediaOf(clip)?.captions?.lines.find((l) => t >= l.start && t < l.end);
-      // Only the piece being said now, when a line is long.
-      const line = whole && t !== null ? readableCaptions([whole]).find((l) => t >= l.start && t < l.end) ?? whole : undefined;
-      if (t !== null && mediaOf(clip)?.captions) return line?.text;
-    }
-    return undefined;
-  })();
+  const captionTracks = new Set(project.tracks.filter((t) => t.name === "Captions").map((t) => t.id));
+  const hasCaptions = project.media.some((m) => m.captions) || captionTracks.size > 0;
+  const isCaption = (c: Clip) => c.trackId.startsWith(SHOWN_CAPTIONS) || captionTracks.has(c.trackId);
+  const layout = project.captionLayout ?? CAPTIONS;
+  const captionPlace = (layout.x === 0.5 && CAPTION_PLACES.find((p) => p.y === layout.y)?.place) || "custom";
   const nothingHere = !project.clips.some(active);
   const selected = project.clips.find((c) => c.id === selectedId);
   const editable = (c?: Clip) => Boolean(c && trackKind(c) !== "audio");
@@ -277,12 +269,10 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const { stage, box } = g;
     const left0 = box.left - stage.left;
     const top0 = box.top - stage.top;
+    const change = (patch: { x: number; y: number; size?: number }) =>
+      api.editLive(g.captions ? { type: "layoutCaptions", patch } : { type: "updateClip", clipId: g.clipId, patch });
     if (g.mode === "move") {
-      api.editLive({
-        type: "updateClip",
-        clipId: g.clipId,
-        patch: { x: placeAlong(left0 + dx, stage.width - box.width), y: placeAlong(top0 + dy, stage.height - box.height) },
-      });
+      change({ x: placeAlong(left0 + dx, stage.width - box.width), y: placeAlong(top0 + dy, stage.height - box.height) });
       return;
     }
     // Resize from a corner, keeping the shape and the opposite corner where it is.
@@ -296,18 +286,16 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const left = fromLeft ? left0 + box.width - width : left0;
     const top = fromTop ? top0 + box.height - height : top0;
     const free = (total: number, used: number, offset: number) => (total - used <= 0 ? 0.5 : clamp(offset / (total - used), 0, 1));
-    api.editLive({
-      type: "updateClip",
-      clipId: g.clipId,
-      patch: { size, x: free(stage.width, width, left), y: free(stage.height, height, top) },
-    });
+    change({ size, x: free(stage.width, width, left), y: free(stage.height, height, top) });
   };
 
   const beginGesture = (clip: Clip, mode: Gesture["mode"]) => (e: ReactPointerEvent<HTMLElement>) => {
     if (e.button !== 0 || !stageRef.current) return;
     e.stopPropagation();
     e.preventDefault();
-    onSelect(clip.id);
+    const captions = isCaption(clip);
+    // Captions not on the timeline aren't clips: they're picked as a whole.
+    onSelect(clip.trackId.startsWith(SHOWN_CAPTIONS) ? SHOWN_CAPTIONS : clip.id);
     const box = (mode === "move" ? e.currentTarget : e.currentTarget.parentElement!).getBoundingClientRect();
     gestureRef.current = {
       clipId: clip.id,
@@ -318,6 +306,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
       box,
       size: clip.size,
       isText: !clip.mediaId,
+      captions,
       moved: false,
     };
     const move = (ev: PointerEvent) => onPointerMove.current(ev);
@@ -478,12 +467,30 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 onPointerDown={beginGesture(clip, "move")}
                 onClick={(e) => e.stopPropagation()}
               >
-                {clip.text}
+                {textLines(clip.text ?? "", clip.size, frame)}
                 {isSelected && handles(clip)}
               </div>
             );
           })}
-          {captionLine && <p className="preview__captions">{captionLine}</p>}
+          {shownCaptions.filter(active).map((clip) => (
+            <div
+              key={clip.id}
+              className={selectedId === SHOWN_CAPTIONS ? "preview__text is-selected" : "preview__text"}
+              title="Captions: drag to move them all, drag a corner to resize"
+              style={{
+                left: `${clip.x * 100}%`,
+                top: `${clip.y * 100}%`,
+                translate: `${-clip.x * 100}% ${-clip.y * 100}%`,
+                fontSize: `${clip.size * 100}cqh`,
+                color: clip.color,
+              }}
+              onPointerDown={beginGesture(clip, "move")}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {textLines(clip.text ?? "", clip.size, frame)}
+              {selectedId === SHOWN_CAPTIONS && handles(clip)}
+            </div>
+          ))}
         </div>
         {nothingHere && duration > 0 && <p className="preview__note">Nothing on the timeline here</p>}
         {playing && playback.waiting && (
@@ -560,10 +567,38 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               aria-label="Captions"
               aria-pressed={showCaptions}
               title={showCaptions ? "Captions on: click to hide them" : "Captions off: click to show them"}
-              onClick={toggleCaptions}
+              onClick={onToggleCaptions}
             >
               <Icon name={showCaptions ? "captions" : "captionsOff"} />
             </button>
+          )}
+          {hasCaptions && showCaptions && (
+            <>
+              <label htmlFor="caption-place" className="sr-only">
+                Where captions appear
+              </label>
+              <select
+                id="caption-place"
+                className="field"
+                title="Where captions appear"
+                value={captionPlace}
+                onChange={(e) => {
+                  const preset = CAPTION_PLACES.find((p) => p.place === e.target.value);
+                  if (preset) api.edit({ type: "layoutCaptions", patch: { x: 0.5, y: preset.y } });
+                }}
+              >
+                {CAPTION_PLACES.map(({ place, label }) => (
+                  <option key={place} value={place}>
+                    {label}
+                  </option>
+                ))}
+                {captionPlace === "custom" && (
+                  <option value="custom" disabled>
+                    Custom
+                  </option>
+                )}
+              </select>
+            </>
           )}
           <button type="button" className="btn btn--icon" aria-label={muted ? "Unmute" : "Mute"} aria-pressed={muted} onClick={() => setMuted((m) => !m)}>
             <Icon name={muted ? "volumeOff" : "volume"} />

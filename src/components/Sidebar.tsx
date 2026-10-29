@@ -167,7 +167,12 @@ export function Sidebar({
                   }}
                   title="Drag onto the timeline, or press + to add at the end"
                 >
-                  <Thumb src={item.source.thumbnail || (item.source.image ? item.source.previewUrl : undefined)} icon={item.source.image ? "image" : item.hasVideo ? "film" : "music"} />
+                  <Thumb
+                    src={item.source.thumbnail || (item.source.image ? item.source.previewUrl : undefined)}
+                    icon={item.source.image ? "image" : item.hasVideo ? "film" : "music"}
+                    // Streams (HLS) need hls.js, and live ones keep growing: those don't play here.
+                    play={item.hasVideo && !item.source.image && !item.source.previewHls && !item.source.live && item.source.previewUrl ? () => Promise.resolve(item.source.previewUrl) : undefined}
+                  />
                   <span className="side__file-text">
                     <span className="truncate">{item.name}</span>
                     <span className="side__file-meta">

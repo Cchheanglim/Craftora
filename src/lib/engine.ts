@@ -180,6 +180,9 @@ const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "jfif", "webp", "bmp", "gif", "a
  */
 const assetUrl = (path: string) => (path ? `${convertFileSrc("file", "cmedia")}?p=${encodeURIComponent(path)}` : "");
 
+/** An address the WebView can play a file on this PC from, once Craftora lets the preview read it. */
+export const playableFile = (path: string) => allowLocal(path).then(() => assetUrl(path));
+
 interface QuickLocal {
   path: string;
   title: string;

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Job } from "../types";
 import { formatSize } from "../project/exportPlan";
-import { revealFile } from "../lib/engine";
+import { playableFile, revealFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
@@ -162,7 +162,7 @@ function ExportTable({
               <tr key={job.id}>
                 <td>
                   <span className="library__name">
-                    <Thumb src={job.thumbnail} icon={job.kind === "audio" ? "music" : "film"} />
+                    <Thumb src={job.thumbnail} icon={job.kind === "audio" ? "music" : "film"} play={job.kind !== "audio" && job.outputPath ? () => playableFile(job.outputPath!) : undefined} />
                     <span className="mono truncate">{name}</span>
                   </span>
                 </td>
