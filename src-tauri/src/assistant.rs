@@ -37,6 +37,14 @@ impl Provider {
         }
     }
 
+    /// As the Assistant tab names it.
+    fn label(self) -> &'static str {
+        match self {
+            Provider::Openai => "ChatGPT",
+            other => other.name(),
+        }
+    }
+
     /// The only addresses a key is sent to. Fixed here, never taken from the UI, so a page that
     /// somehow ran code in the window still couldn't send a key anywhere else.
     fn models_url(self) -> &'static str {
@@ -88,10 +96,8 @@ pub fn assistant_set_key(provider: Provider, key: Option<String>) -> Result<(), 
     let entry = entry(provider)?;
     match key.as_deref().map(str::trim) {
         Some(key) if !key.is_empty() => {
-            if !looks_like_key(key) {
-                return Err("That doesn't look like an API key.".into());
-            }
-            entry.set_password(key).map_err(|e| format!("Couldn't save the API key: {e}"))
+            let key = clean_key(provider, key)?;
+            entry.set_password(&key).map_err(|e| format!("Couldn't save the API key: {e}"))
         }
         _ => match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -100,10 +106,45 @@ pub fn assistant_set_key(provider: Provider, key: Option<String>) -> Result<(), 
     }
 }
 
-/// Keys are printable ASCII without spaces: anything else (a pasted sentence, line breaks that
-/// would add HTTP headers) is refused before it's stored or sent.
-fn looks_like_key(key: &str) -> bool {
-    (10..=300).contains(&key.len()) && key.chars().all(|c| c.is_ascii_graphic())
+/// The key in what was pasted. Copying often brings along spaces, line breaks, invisible
+/// characters or quotes, or a name in front ("ANTHROPIC_API_KEY=", "x-api-key:"): those are
+/// dropped. Keys are only letters, digits, `-` and `_`, so what's left must be exactly that
+/// (nothing that could add HTTP headers), or the user is told what's wrong in plain words.
+fn clean_key(provider: Provider, pasted: &str) -> Result<String, String> {
+    let name = provider.label();
+    let invisible = |c: char| c.is_whitespace() || matches!(c, '\u{200B}'..='\u{200D}' | '\u{2060}' | '\u{FEFF}' | '"' | '\'' | '`');
+    let mut key: String = pasted.chars().filter(|&c| !invisible(c)).collect();
+    if let Some(at) = key.rfind([':', '=']) {
+        key = key[at + 1..].to_string();
+    }
+    if key.contains('\u{2026}') || key.contains("...") || key.contains('*') {
+        return Err(format!(
+            "That's a shortened key (it has \u{2026} or * in it). {name} shows the whole key only once, when it's made: create a new key and copy all of it."
+        ));
+    }
+    if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("That has characters an API key never has. Copy just the key itself.".into());
+    }
+    if key.len() < 20 {
+        return Err("That's too short to be an API key. Copy the whole key.".into());
+    }
+    if key.len() > 300 {
+        return Err("That's too long to be an API key. Copy just the key itself.".into());
+    }
+    // A key for another AI: say which, rather than letting the service just turn it down.
+    let belongs_to = if key.starts_with("sk-ant-") {
+        Some(Provider::Anthropic)
+    } else if key.starts_with("AIza") {
+        Some(Provider::Gemini)
+    } else if key.starts_with("sk-") {
+        Some(Provider::Openai)
+    } else {
+        None
+    };
+    if let Some(other) = belongs_to.filter(|other| other.account() != provider.account()) {
+        return Err(format!("That's a {} key, not a {name} key. Pick {} above.", other.label(), other.label()));
+    }
+    Ok(key)
 }
 
 async fn call(provider: Provider, request: reqwest::RequestBuilder) -> Result<Value, String> {
@@ -204,11 +245,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn refuses_keys_that_could_add_headers() {
-        assert!(looks_like_key("sk-proj-abcDEF123_-xyz"));
-        assert!(!looks_like_key("sk-abc\r\nX-Evil: 1"));
-        assert!(!looks_like_key("my key is sk-abc"));
-        assert!(!looks_like_key("short"));
+    fn cleans_up_pasted_keys() {
+        let key = "sk-ant-api03-AbCdEf0123456789_xyz-AA";
+        let claude = |pasted: &str| clean_key(Provider::Anthropic, pasted);
+        assert_eq!(claude(key).as_deref(), Ok(key));
+        // What copying brings along: line breaks, spaces, invisible characters, quotes, a name in front.
+        assert_eq!(claude(&format!(" \u{FEFF}{key}\u{200B}\r\n")).as_deref(), Ok(key));
+        assert_eq!(claude("sk-ant-api03-AbCdEf01234\n56789_xyz-AA").as_deref(), Ok(key));
+        assert_eq!(claude(&format!("\"{key}\"")).as_deref(), Ok(key));
+        assert_eq!(claude(&format!("ANTHROPIC_API_KEY={key}")).as_deref(), Ok(key));
+        assert_eq!(claude(&format!("x-api-key: {key}")).as_deref(), Ok(key));
+        assert_eq!(claude(&format!("\u{00A0}{key}\u{00A0}")).as_deref(), Ok(key));
+    }
+
+    #[test]
+    fn says_what_is_wrong_with_a_key() {
+        let claude = |pasted: &str| clean_key(Provider::Anthropic, pasted).unwrap_err();
+        assert!(claude("sk-ant-api03-AbC\u{2026}xyz").contains("shortened"));
+        assert!(claude("sk-ant-api03-AbC...xyz-0123456789").contains("shortened"));
+        assert!(claude("sk-ant-<script>alert(1)</script>").contains("characters"));
+        assert!(claude("sk-ant-1").contains("too short"));
+        assert!(claude("sk-proj-AbCdEf0123456789xyz").contains("ChatGPT key"));
+        assert!(claude("AIzaSyAbCdEf0123456789xyz").contains("Gemini key"));
+        assert!(clean_key(Provider::Gemini, "sk-ant-api03-AbCdEf0123456789").unwrap_err().contains("Claude key"));
+        // Nothing that could add a header survives.
+        assert!(clean_key(Provider::Openai, "sk-proj-abc\r\nX-Evil:1").is_err());
     }
 
     #[test]
