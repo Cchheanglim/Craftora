@@ -52,6 +52,45 @@ const LINKS = [
   { label: "Releases", url: `${REPO}/releases` },
 ];
 
+/** Check for updates, install one, and whether to check by itself (Home → About and Settings). */
+export function UpdateControls({ updates }: { updates: Updates }) {
+  return (
+    <>
+      {updates.available ? (
+        <>
+          {updateText(updates.status) && <p className="home__muted">{updateText(updates.status)}</p>}
+          <div className="home__about-row">
+            {updates.status.kind === "available" ? (
+              <button type="button" className="btn btn--secondary" onClick={() => void updates.install()}>
+                Install and restart
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => void updates.checkNow()}
+                disabled={updates.status.kind === "checking" || updates.status.kind === "installing"}
+              >
+                Check for updates
+              </button>
+            )}
+            <label className="home__check">
+              <input type="checkbox" checked={updates.auto} onChange={(e) => updates.setAuto(e.target.checked)} />
+              Check automatically
+            </label>
+          </div>
+        </>
+      ) : (
+        <p className="home__muted">
+          {storeEdition
+            ? "Updates come through the Microsoft Store."
+            : "Updates are checked in installed copies of Craftora, not in development runs."}
+        </p>
+      )}
+    </>
+  );
+}
+
 function updateText(status: Updates["status"]): string {
   switch (status.kind) {
     case "checking":
@@ -260,37 +299,7 @@ export function Home({
                 {/* The number only changes at a release; dev runs already have the newer work. */}
                 {import.meta.env.DEV ? " (development build)" : ""} · MIT License · includes FFmpeg (GPL) and yt-dlp
               </p>
-              {updates.available ? (
-                <>
-                  {updateText(updates.status) && <p className="home__muted">{updateText(updates.status)}</p>}
-                  <div className="home__about-row">
-                    {updates.status.kind === "available" ? (
-                      <button type="button" className="btn btn--secondary" onClick={() => void updates.install()}>
-                        Install and restart
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn btn--secondary"
-                        onClick={() => void updates.checkNow()}
-                        disabled={updates.status.kind === "checking" || updates.status.kind === "installing"}
-                      >
-                        Check for updates
-                      </button>
-                    )}
-                    <label className="home__check">
-                      <input type="checkbox" checked={updates.auto} onChange={(e) => updates.setAuto(e.target.checked)} />
-                      Check automatically
-                    </label>
-                  </div>
-                </>
-              ) : (
-                <p className="home__muted">
-                  {storeEdition
-                    ? "Updates come through the Microsoft Store."
-                    : "Updates are checked in installed copies of Craftora, not in development runs."}
-                </p>
-              )}
+              <UpdateControls updates={updates} />
               <p className="home__links">
                 <button type="button" onClick={onOpenWelcome}>
                   Welcome guide

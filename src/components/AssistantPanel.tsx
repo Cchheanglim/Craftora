@@ -4,11 +4,11 @@ import { inDesktopApp } from "../lib/engine";
 import type { Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
 import { fallbackModels, hasKey, listModels, preferredModel, recommendedModels, setKey, useAssistant, type ModelInfo } from "../assistant/useAssistant";
+import { PROVIDERS, providerName, type Provider } from "../assistant/providers";
 import { Icon } from "./Icon";
 import { useConfirm } from "./ConfirmDialog";
 import "./AssistantPanel.css";
 
-const KEY_PAGE = "https://aistudio.google.com/apikey";
 const EXAMPLES = [
   "Add the title “My trip” for the first 3 seconds, big and yellow",
   "Put crossfades between all the clips on Video 1",
@@ -16,6 +16,7 @@ const EXAMPLES = [
   "Speed up the second clip 2× and fade out the end",
 ];
 const MODEL_KEY = "craftora.assistantModel";
+const PROVIDER_KEY = "craftora.assistantProvider";
 /** The model list's last entry, which opens the search instead of picking a model. */
 const SEARCH = "__search__";
 
@@ -26,17 +27,29 @@ interface AssistantPanelProps {
   seek: (t: number) => void;
 }
 
-function rememberedModel(): string | null {
+function remembered(key: string): string | null {
   try {
-    return localStorage.getItem(MODEL_KEY);
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
 }
+function remember(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* not essential */
+  }
+}
+// Gemini keeps the old key, so a model picked before other AIs existed stays picked.
+const modelKey = (provider: Provider) => (provider === "gemini" ? MODEL_KEY : `${MODEL_KEY}.${provider}`);
 
 /** Chat with the AI editing assistant, which edits the timeline with the editor's own actions. */
 export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelProps) {
-  const [keyState, setKeyState] = useState<"checking" | "missing" | "ready">("checking");
+  /** The AIs with a saved key; null while checking. */
+  const [keys, setKeys] = useState<Provider[] | null>(null);
+  const [provider, setProvider] = useState<Provider>(() => PROVIDERS.find((p) => p.id === remembered(PROVIDER_KEY))?.id ?? "gemini");
+  const ready = Boolean(keys?.includes(provider));
   const [model, setModel] = useState("");
   /** The models this key can use; null while loading. */
   const [models, setModels] = useState<ModelInfo[] | null>(null);
@@ -46,10 +59,11 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
-  const fallbacks = useMemo(() => (models ? fallbackModels(models) : []), [models]);
-  const { entries, busy, send, reset } = useAssistant({ api, current, playhead, seek, model, fallbacks });
+  // Falling back to another model is for Gemini's free plan; other AIs use the model picked.
+  const fallbacks = useMemo(() => (models && provider === "gemini" ? fallbackModels(models) : []), [models, provider]);
+  const { entries, busy, send, reset } = useAssistant({ api, current, playhead, seek, provider, model, fallbacks });
   const { ask, dialog } = useConfirm();
-  const recommended = models ? recommendedModels(models) : [];
+  const recommended = models ? recommendedModels(models, provider) : [];
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (models ?? []).filter((m) => words.every((w) => `${m.id} ${m.label}`.toLowerCase().includes(w)));
 
@@ -63,35 +77,53 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
   };
 
   const removeKey = async () => {
+    const name = providerName(provider);
     const ok = await ask({
-      title: "Remove your API key?",
-      message: "Craftora deletes the key from this PC. To use the assistant again you'll need to paste it again (it's still in Google AI Studio).",
+      title: `Remove your ${name} API key?`,
+      message: `Craftora deletes the key from this PC. To use ${name} again you'll need to paste it again (it stays in your ${name} account until you delete it there).`,
       confirmLabel: "Remove key",
       danger: true,
     });
-    if (ok) await setKey(null).then(() => setKeyState("missing"));
+    if (ok) await setKey(provider, null).then(() => setKeys((list) => (list ?? []).filter((p) => p !== provider)));
+  };
+
+  // Switching AI starts a new chat: each keeps its conversation in its own form.
+  const chooseProvider = (next: Provider) => {
+    if (next === provider) return;
+    setProvider(next);
+    remember(PROVIDER_KEY, next);
+    reset();
   };
 
   useEffect(() => {
     if (!inDesktopApp) return;
-    hasKey()
-      .then((ok) => setKeyState(ok ? "ready" : "missing"))
-      .catch(() => setKeyState("missing"));
+    void Promise.all(PROVIDERS.map((p) => hasKey(p.id).catch(() => false))).then((has) => {
+      const saved = PROVIDERS.filter((_, i) => has[i]).map((p) => p.id);
+      setKeys(saved);
+      // The AI used last, or else one that has a key.
+      setProvider((now) => (saved.includes(now) || saved.length === 0 ? now : saved[0]));
+    });
   }, []);
 
-  // Once there's a key, ask Google which models it can use.
+  // Once there's a key, ask the provider which models it can use.
   useEffect(() => {
-    if (keyState !== "ready") return;
+    if (!ready) return;
     setModels(null);
     setModelsError(null);
-    listModels()
+    setModel("");
+    let live = true;
+    listModels(provider)
       .then((list) => {
+        if (!live) return;
         setModels(list);
-        const saved = rememberedModel();
-        setModel(list.some((m) => m.id === saved) ? saved! : (preferredModel(list) ?? ""));
+        const saved = remembered(modelKey(provider));
+        setModel(list.some((m) => m.id === saved) ? saved! : (preferredModel(list, provider) ?? ""));
       })
-      .catch((err) => setModelsError(err instanceof Error ? err.message : String(err)));
-  }, [keyState]);
+      .catch((err) => live && setModelsError(err instanceof Error ? err.message : String(err)));
+    return () => {
+      live = false;
+    };
+  }, [ready, provider]);
 
   // Follow the conversation as it grows.
   useEffect(() => {
@@ -107,11 +139,7 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
 
   const chooseModel = (id: string) => {
     setModel(id);
-    try {
-      localStorage.setItem(MODEL_KEY, id);
-    } catch {
-      /* not essential */
-    }
+    remember(modelKey(provider), id);
   };
 
   if (!inDesktopApp) {
@@ -121,13 +149,31 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
       </section>
     );
   }
-  if (keyState === "checking") return <section className="asst" aria-label="Assistant" />;
-  if (keyState === "missing") return <KeySetup onSaved={() => setKeyState("ready")} />;
+  if (!keys) return <section className="asst" aria-label="Assistant" />;
+  if (!ready)
+    return (
+      <KeySetup
+        provider={provider}
+        onProvider={chooseProvider}
+        onSaved={() => setKeys((list) => [...(list ?? []).filter((p) => p !== provider), provider])}
+      />
+    );
 
   return (
     <section className="asst" aria-label="Assistant">
       {dialog}
       <header className="asst__head">
+        <label htmlFor="asst-provider" className="sr-only">
+          AI
+        </label>
+        <select id="asst-provider" className="field asst__provider" value={provider} onChange={(e) => chooseProvider(e.target.value as Provider)} disabled={busy}>
+          {PROVIDERS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+              {keys.includes(p.id) ? "" : " (add key)"}
+            </option>
+          ))}
+        </select>
         <label htmlFor="asst-model" className="sr-only">
           Model
         </label>
@@ -255,7 +301,7 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
             className="asst__link"
             onClick={() => void removeKey()}
           >
-            Remove API key
+            Remove {providerName(provider)} key
           </button>
           <button type="submit" className="btn btn--secondary" disabled={busy || !draft.trim() || !model}>
             Send
@@ -267,17 +313,26 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
   );
 }
 
-function KeySetup({ onSaved }: { onSaved: () => void }) {
+function KeySetup({ provider, onProvider, onSaved }: { provider: Provider; onProvider: (p: Provider) => void; onSaved: () => void }) {
   const [key, setKeyText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const info = PROVIDERS.find((p) => p.id === provider)!;
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
-      await setKey(key);
+      await setKey(provider, key);
+      // Try the key before keeping it: a wrong one is removed again straight away.
+      try {
+        await listModels(provider);
+      } catch (err) {
+        await setKey(provider, null).catch(() => {});
+        throw err;
+      }
+      setKeyText("");
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -289,16 +344,30 @@ function KeySetup({ onSaved }: { onSaved: () => void }) {
   return (
     <section className="asst" aria-labelledby="asst-setup-title">
       <form className="asst__setup" onSubmit={save}>
-        <h2 id="asst-setup-title">Set up the assistant</h2>
-        <p>
-          The assistant uses Google's Gemini API, which needs an API key. You can create one for free in Google AI Studio. A Google AI
-          Pro subscription covers the Gemini app, not the API, so the key is separate.
-        </p>
-        <button type="button" className="btn btn--secondary" onClick={() => void openUrl(KEY_PAGE)}>
+        <h2 id="asst-setup-title">Connect your AI</h2>
+        <p>The assistant works with your own account at one of these AI services. Pick one and paste its API key.</p>
+        <div className="segmented" role="group" aria-label="AI service">
+          {PROVIDERS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              aria-pressed={p.id === provider}
+              onClick={() => {
+                onProvider(p.id);
+                setKeyText("");
+                setError(null);
+              }}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+        <p className="asst__fine">{info.keyHelp}</p>
+        <button type="button" className="btn btn--secondary" onClick={() => void openUrl(info.keyPage)}>
           <Icon name="link" size={13} />
-          Get a key in Google AI Studio
+          Get a {info.name} key
         </button>
-        <label htmlFor="asst-key">Paste your API key</label>
+        <label htmlFor="asst-key">Paste your {info.name} API key</label>
         <input
           id="asst-key"
           type="password"
@@ -310,18 +379,20 @@ function KeySetup({ onSaved }: { onSaved: () => void }) {
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? "asst-key-error" : "asst-key-detail"}
         />
-        {error ? (
+        {error && (
           <p id="asst-key-error" className="asst__error" role="alert">
             {error}
           </p>
-        ) : (
-          <p id="asst-key-detail" className="asst__fine">
-            Kept in Windows Credential Manager on this PC, and only ever sent to Google. Your timeline (clip names and times, not the
-            media itself) goes to Google with each message.
-          </p>
         )}
+        <ul id="asst-key-detail" className="asst__safety">
+          <li>Craftora checks the key with {info.company} first, and only keeps it if it works.</li>
+          <li>It's stored encrypted in Windows Credential Manager on this PC, and never shown again, not even to Craftora's screens.</li>
+          <li>It's only ever sent to {info.company}, over a secure connection. Never to Craftora or anyone else.</li>
+          <li>Each message sends your timeline to {info.company}: clip names, times and the words in text and captions. Not your videos, sound or files.</li>
+          <li>{info.company} bills your account for what you use. Remove the key any time.</li>
+        </ul>
         <button type="submit" className="btn btn--primary" disabled={saving || !key.trim()}>
-          {saving ? "Saving…" : "Save key"}
+          {saving ? "Checking the key…" : "Save key"}
         </button>
       </form>
     </section>

@@ -3,7 +3,8 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import type { OutputKind } from "../types";
 import { checkAddress, getProxy, inDesktopApp, setProxy, type ProxyState } from "../lib/engine";
 import { Icon } from "./Icon";
-import { Links, type LinkSettings } from "./Home";
+import { Links, UpdateControls, type LinkSettings } from "./Home";
+import type { Updates } from "../lib/updates";
 import "./Library.css";
 
 interface SettingsProps {
@@ -24,9 +25,10 @@ interface SettingsProps {
   /** Preview links at their best quality instead of up to 720p. */
   sharpPreview: boolean;
   onSharpPreview: (on: boolean) => void;
+  updates: Updates;
 }
 
-export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, autoCaptions, onAutoCaptions, sharpPreview, onSharpPreview }: SettingsProps) {
+export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, autoCaptions, onAutoCaptions, sharpPreview, onSharpPreview, updates }: SettingsProps) {
   return (
     <section className="library" aria-labelledby="settings-title">
       <header className="library__head">
@@ -106,6 +108,17 @@ export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaul
           Smooth starts fast and plays well on slow Wi-Fi. Sharp looks crisper but loads more. Used for links fetched from now on
           and projects opened again; files on this PC always preview as they are. Exports are never affected.
         </p>
+      </div>
+
+      <div className="library__group">
+        <h2 className="section-label">Updates</h2>
+        <p className="library__muted">
+          Craftora{updates.version ? ` ${updates.version}` : ""}
+          {import.meta.env.DEV ? " (development build)" : ""}
+        </p>
+        <div className="home__about">
+          <UpdateControls updates={updates} />
+        </div>
       </div>
 
       {inDesktopApp && <Privacy />}

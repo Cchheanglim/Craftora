@@ -156,6 +156,9 @@
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--text-2);
+  /* Taller than a small window: scroll, so Save stays reachable. */
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .asst__setup h2 {
@@ -172,6 +175,22 @@
 
 .asst__setup .btn {
   align-self: flex-start;
+}
+
+/* The AI service: as wide as its name; the model list takes the rest. */
+.asst__head .asst__provider {
+  flex: 0 0 auto;
+}
+
+/* What happens to the key, one short line each. */
+.asst__safety {
+  margin: 0;
+  padding-left: 1.1em;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3);
 }
 
 .asst__error {
