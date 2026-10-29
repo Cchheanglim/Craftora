@@ -16,6 +16,16 @@ const EXAMPLES = [
   "Speed up the second clip 2× and fade out the end",
 ];
 const MODEL_KEY = "craftora.assistantModel";
+/**
+ * Reporting a reply (Microsoft Store policy 11.16: users can report generated content). Opens a new
+ * GitHub issue naming the AI and model; the user pastes the reply themselves, so nothing is sent
+ * without them seeing it.
+ */
+const reportUrl = (provider: Provider, model: string) =>
+  `https://github.com/Cchheanglim/Craftora/issues/new?${new URLSearchParams({
+    title: "Report an AI assistant reply",
+    body: `AI: ${providerName(provider)}\nModel: ${model || "unknown"}\n\nWhat did the assistant say or do? (paste the reply here)\n\n\nWhy is it wrong or inappropriate?\n`,
+  })}`;
 const PROVIDER_KEY = "craftora.assistantProvider";
 /** The model list's last entry, which opens the search instead of picking a model. */
 const SEARCH = "__search__";
@@ -296,13 +306,19 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
           }}
         />
         <div className="asst__actions">
-          <button
-            type="button"
-            className="asst__link"
-            onClick={() => void removeKey()}
-          >
-            Remove {providerName(provider)} key
-          </button>
+          <span className="asst__links">
+            <button type="button" className="asst__link" onClick={() => void removeKey()}>
+              Remove {providerName(provider)} key
+            </button>
+            <button
+              type="button"
+              className="asst__link"
+              title="Tell us about a wrong or inappropriate reply"
+              onClick={() => void openUrl(reportUrl(provider, model))}
+            >
+              Report a reply
+            </button>
+          </span>
           <button type="submit" className="btn btn--secondary" disabled={busy || !draft.trim() || !model}>
             Send
             <kbd>↵</kbd>

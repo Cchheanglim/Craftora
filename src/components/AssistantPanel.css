@@ -134,6 +134,11 @@
   margin-left: 2px;
 }
 
+.asst__links {
+  display: flex;
+  gap: var(--space-3);
+}
+
 .asst__link {
   padding: 0;
   border: 0;
