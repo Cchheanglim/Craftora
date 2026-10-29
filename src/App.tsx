@@ -64,7 +64,7 @@ import { MAX_RUNNING, useQueue } from "./state/useQueue";
 import { storeEdition, useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
 import { useProject } from "./project/useProject";
-import { applyEdit } from "./project/actions";
+import { applyEdit, withShownCaptions } from "./project/actions";
 import { usePlayback } from "./project/usePlayback";
 import { cutModeApplies, frameOf, planExport } from "./project/exportPlan";
 import {
@@ -388,7 +388,25 @@ export default function App() {
   // A timeline with nothing visual can only be saved as sound.
   const hasPicture = project.clips.some((c) => !c.mediaId || project.tracks.find((t) => t.id === c.trackId)?.kind === "video");
   const effective: ExportSettings = useMemo(() => (hasPicture ? settings : { ...settings, output: "audio" }), [hasPicture, settings]);
-  const plan = useMemo(() => planExport(project, effective), [project, effective]);
+  // Captions on (CC in the preview): shown there and burned into the export alike.
+  const [showCaptions, setShowCaptions] = useState(() => {
+    try {
+      return localStorage.getItem("craftora.captions") !== "off";
+    } catch {
+      return true;
+    }
+  });
+  const toggleCaptions = () => {
+    try {
+      localStorage.setItem("craftora.captions", showCaptions ? "off" : "on");
+    } catch {
+      /* not remembered */
+    }
+    setShowCaptions(!showCaptions);
+  };
+  // What gets exported: the timeline plus the captions shown on the preview.
+  const toExport = useMemo(() => (showCaptions ? withShownCaptions(project) : project), [project, showCaptions]);
+  const plan = useMemo(() => planExport(toExport, effective), [toExport, effective]);
   const selected = project.clips.find((c) => c.id === selectedId) ?? null;
 
   /** Makes the preview copy for a file the player can't open, then swaps it in. */
@@ -1250,6 +1268,8 @@ export default function App() {
               onSelect={setSelectedId}
               onSnapshot={takeSnapshot}
               captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
+              showCaptions={showCaptions}
+              onToggleCaptions={toggleCaptions}
             />
             <TimelineEditor
               project={project}
@@ -1298,7 +1318,7 @@ export default function App() {
               settings={effective}
               onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
               plan={plan}
-              cutModeApplies={cutModeApplies(project, effective)}
+              cutModeApplies={cutModeApplies(toExport, effective)}
               hasPicture={hasPicture}
               onAddToQueue={addToQueue}
               onPreset={(frameId, fill) => {

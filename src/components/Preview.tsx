@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, readableCaptions, trackOrder, transitionMix, type Clip, type Project } from "../project/model";
+import { clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, trackOrder, transitionMix, type CaptionPlace, type Clip, type Project } from "../project/model";
+import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
@@ -30,10 +31,17 @@ interface PreviewProps {
   onSnapshot?: (bytes: Uint8Array) => Promise<void>;
   /** How making captions from the sound is going ("making captions, 40%"), while it is. */
   captionStatus?: string;
+  /** Captions on (CC): shown here and exported. */
+  showCaptions: boolean;
+  onToggleCaptions: () => void;
 }
 
 const WAVE_BARS = 140;
-const CAPTIONS_KEY = "craftora.captions";
+const CAPTION_PLACES: { place: CaptionPlace; label: string }[] = [
+  { place: "top", label: "Top" },
+  { place: "center", label: "Middle" },
+  { place: "bottom", label: "Bottom" },
+];
 
 /** Draws the visible preview stage onto a canvas and encodes it as a PNG. */
 async function captureStagePng(stage: HTMLElement, width: number, height: number): Promise<Uint8Array | null> {
@@ -106,24 +114,13 @@ function placeAlong(offset: number, free: number): number {
 }
 
 /** Plays the timeline: every clip's media follows the playhead, stacked like the export. */
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions }: PreviewProps) {
   const [muted, setMuted] = useState(false);
-  const [showCaptions, setShowCaptions] = useState(() => {
-    try {
-      return localStorage.getItem(CAPTIONS_KEY) !== "off";
-    } catch {
-      return true;
-    }
-  });
-  const toggleCaptions = () =>
-    setShowCaptions((on) => {
-      try {
-        localStorage.setItem(CAPTIONS_KEY, on ? "off" : "on");
-      } catch {
-        /* not remembered */
-      }
-      return !on;
-    });
+  // Exactly the captions the export adds (see `withShownCaptions`), unless they're on the timeline.
+  const shownCaptions = useMemo(
+    () => (showCaptions ? withShownCaptions(project).clips.filter((c) => c.trackId.startsWith(SHOWN_CAPTIONS)) : []),
+    [project, showCaptions],
+  );
   const [fullscreen, setFullscreen] = useState(false);
   const [snapping, setSnapping] = useState(false);
   /** Preview files that failed to load (refused by their server, or unplayable). */
@@ -186,19 +183,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   };
   const sounds = project.clips.filter((c) => c.mediaId && trackKind(c) === "audio");
   const texts = project.clips.filter((c) => !c.mediaId).sort(byLayer);
-  // The caption line of the top picture that has captions, unless they're on the timeline already.
-  const hasCaptions = project.media.some((m) => m.captions);
-  const captionLine = (() => {
-    if (!showCaptions || project.tracks.some((t) => t.name === "Captions")) return undefined;
-    for (const clip of [...pictures].reverse()) {
-      const t = mediaTime(clip);
-      const whole = t === null ? undefined : mediaOf(clip)?.captions?.lines.find((l) => t >= l.start && t < l.end);
-      // Only the piece being said now, when a line is long.
-      const line = whole && t !== null ? readableCaptions([whole]).find((l) => t >= l.start && t < l.end) ?? whole : undefined;
-      if (t !== null && mediaOf(clip)?.captions) return line?.text;
-    }
-    return undefined;
-  })();
+  const hasCaptions = project.media.some((m) => m.captions) || project.tracks.some((t) => t.name === "Captions");
   const nothingHere = !project.clips.some(active);
   const selected = project.clips.find((c) => c.id === selectedId);
   const editable = (c?: Clip) => Boolean(c && trackKind(c) !== "audio");
@@ -483,7 +468,21 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               </div>
             );
           })}
-          {captionLine && <p className="preview__captions">{captionLine}</p>}
+          {shownCaptions.filter(active).map((clip) => (
+            <div
+              key={clip.id}
+              className="preview__text preview__text--caption"
+              style={{
+                left: `${clip.x * 100}%`,
+                top: `${clip.y * 100}%`,
+                translate: `${-clip.x * 100}% ${-clip.y * 100}%`,
+                fontSize: `${clip.size * 100}cqh`,
+                color: clip.color,
+              }}
+            >
+              {clip.text}
+            </div>
+          ))}
         </div>
         {nothingHere && duration > 0 && <p className="preview__note">Nothing on the timeline here</p>}
         {playing && playback.waiting && (
@@ -560,10 +559,30 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               aria-label="Captions"
               aria-pressed={showCaptions}
               title={showCaptions ? "Captions on: click to hide them" : "Captions off: click to show them"}
-              onClick={toggleCaptions}
+              onClick={onToggleCaptions}
             >
               <Icon name={showCaptions ? "captions" : "captionsOff"} />
             </button>
+          )}
+          {hasCaptions && showCaptions && (
+            <>
+              <label htmlFor="caption-place" className="sr-only">
+                Where captions appear
+              </label>
+              <select
+                id="caption-place"
+                className="field"
+                title="Where captions appear"
+                value={project.captionPlace ?? "bottom"}
+                onChange={(e) => api.edit({ type: "placeCaptions", place: e.target.value as CaptionPlace })}
+              >
+                {CAPTION_PLACES.map(({ place, label }) => (
+                  <option key={place} value={place}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </>
           )}
           <button type="button" className="btn btn--icon" aria-label={muted ? "Unmute" : "Mute"} aria-pressed={muted} onClick={() => setMuted((m) => !m)}>
             <Icon name={muted ? "volumeOff" : "volume"} />

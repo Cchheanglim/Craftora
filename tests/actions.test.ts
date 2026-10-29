@@ -140,6 +140,22 @@ test("captions go on a new Captions track, lined up with each clip after cuts an
   ]);
 });
 
+test("shown captions go into the export, at the chosen place, until they're on the timeline", async () => {
+  const { withShownCaptions } = await import("../src/project/actions");
+  const media = { ...mediaFromSource(source("video")), captions: { label: "English", lines: [{ start: 1, end: 3, text: "hello" }] } };
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
+  const shown = withShownCaptions(p);
+  expect(shown.clips.filter((c) => c.text === "hello").map((c) => c.y)).toEqual([0.9]);
+  p = applyEdit(p, { type: "placeCaptions", place: "top" });
+  expect(withShownCaptions(p).clips.find((c) => c.text === "hello")?.y).toBe(0.08);
+  // On the timeline: they move with the choice, and nothing is added twice.
+  p = applyEdit(p, { type: "addCaptions", mediaId: media.id, trackId: "cap" });
+  p = applyEdit(p, { type: "placeCaptions", place: "center" });
+  expect(p.clips.find((c) => c.trackId === "cap")?.y).toBe(0.5);
+  expect(withShownCaptions(p)).toBe(p);
+});
+
 test("long caption lines become two-line pieces at whole words, timed by length", async () => {
   const { readableCaptions, CAPTION_CHARS } = await import("../src/project/model");
   const english = "After the war the gods came down to the mountain and asked who would guard the gate, and the monkey king answered that he would do it alone if they let him keep his staff.";
