@@ -592,7 +592,7 @@ fn pick_live(formats: &[Format]) -> Option<Vec<(String, BTreeMap<String, String>
 
 #[cfg(test)]
 mod tests {
-    use super::{is_bot_check, parse_mpd_duration, Info};
+    use super::{is_bot_check, parse_mpd_duration, preview, Info};
 
     #[test]
     fn knows_a_bot_check_answer() {
@@ -613,5 +613,17 @@ mod tests {
         let json = br#"{"title":"Test","duration":12.0,"chapters":null,"formats":[]}"#;
         let info: Info = serde_json::from_slice(json).unwrap();
         assert!(info.chapters.is_none());
+    }
+
+    #[test]
+    fn sharp_preview_takes_the_highest_resolution() {
+        // Like YouTube: one small file with sound, bigger video-only ones.
+        let json = br#"{"title":"T","formats":[
+            {"format_id":"18","ext":"mp4","vcodec":"avc1","acodec":"mp4a","height":360,"url":"https://v/360","protocol":"https"},
+            {"format_id":"136","ext":"mp4","vcodec":"avc1","acodec":"none","height":720,"url":"https://v/720","protocol":"https"},
+            {"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"url":"https://v/1080","protocol":"https"}]}"#;
+        let info: Info = serde_json::from_slice(json).unwrap();
+        assert_eq!(preview(&info.formats, false), ("https://v/360".into(), true));
+        assert_eq!(preview(&info.formats, true), ("https://v/1080".into(), false));
     }
 }
