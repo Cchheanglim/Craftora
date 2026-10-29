@@ -21,15 +21,15 @@
   <a href="https://github.com/Cchheanglim/Craftora/issues">Report a problem</a>
 </p>
 
-<img src="docs/screenshot.png" width="100%" alt="Craftora's editor: a film in the preview, its clip on the timeline, Media and History in the sidebar, and the Export panel on the right">
+<img src="docs/screenshot.png" width="100%" alt="Craftora's editor: a film in the preview, its clip on the timeline, the sidebar with Make and Library pages, and the Edit and export panel with Transcript and Assistant tabs on the right">
 
 <sub>Shown: <em>Big Buck Bunny</em> © Blender Foundation, <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.</sub>
 
 </div>
 
-Put clips on a timeline, trim and split them, stack picture-in-picture, add titles, music and
-voice-overs, then export a clean video or audio file. Files on your PC work offline, and
-nothing is uploaded.
+Put clips on a timeline, trim and split them, stack picture-in-picture, add titles, music,
+voice-overs and captions, cut a video by deleting its words, then export a clean video or audio
+file. Files on your PC work offline, and nothing is uploaded.
 
 Craftora is a [Tauri 2](https://tauri.app) app with a React and TypeScript interface.
 [FFmpeg](https://ffmpeg.org) and [yt-dlp](https://github.com/yt-dlp/yt-dlp) ship inside it
@@ -45,8 +45,8 @@ and do the cutting, rendering and downloading.
   Windows account without admin rights.
   - The installer isn't code-signed, so Windows SmartScreen may say the publisher is
     unknown: choose **More info**, then **Run anyway**.
-  - Craftora checks for updates when it starts and offers to install them. You can turn this
-    off on the Home screen (**About → Check automatically**).
+  - Craftora checks for updates when it starts and offers to install them. Check by hand or
+    turn this off in **Settings → Updates**.
 - **Microsoft Store:** submitted, waiting for Microsoft's review. Store copies are signed by
   Microsoft and updated by the Store.
 
@@ -56,26 +56,35 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
 
 **Bring things in**
 - Import video, audio and images (PNG, JPEG, WebP, BMP) from your PC: the **Import** button,
-  `Ctrl+O`, or drag files onto the window. Imported files work offline. An image starts at
-  5 seconds on the timeline; drag its edge to show it for longer.
+  `Ctrl+O`, or drag files onto the window. Imported files work offline, even files of several GB.
+  An image starts at 5 seconds on the timeline; drag its edge to show it for longer.
 - Paste a link from YouTube or any of the [many sites yt-dlp supports](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
   and click **Fetch**: the video goes straight onto the timeline, ready to edit (only the parts
-  you use are downloaded when you export). The ⬇ button in Media downloads the whole video to
-  `Videos\Craftora\Downloads` for smoother, offline editing. Streams the preview can't play are
-  downloaded by themselves. Fetched links are kept in **History** in the sidebar.
+  you use are downloaded when you export). The ⬇ button downloads the whole video for smoother,
+  offline editing; downloads can be **paused**, resumed later and **renamed** while they run.
+- **Live streams:** paste the link to a stream that's on right now. Craftora records it while you
+  edit, and **Stop recording** turns it into a normal video file.
 - **Links that need a login** (private, age-restricted, members-only): click **Sign in to …** on
   the error. Craftora opens its own small browser window (separate from your own browser); log
-  in, then click **Fetch this video**. The login is remembered and only used for that website.
-  Pages yt-dlp doesn't know ("Unsupported URL") work the same way: open the page, play the
-  video, click **Fetch this video**.
-- **Not sure a link is safe?** Click **Check** next to the top link box, or paste it under Home →
-  Links: Craftora asks [VirusTotal](https://www.virustotal.com) whether security vendors flag its
-  website (only the website's name is sent, never the full link).
-- Link previews are cached on your PC as they play: jumping back to any part already fetched
-  is instant. Stream playlists (HLS) preview too, including from sites that only serve their
-  own pages.
-- Files the built-in player can't show (AC-3 or DTS sound, AVI, HEVC and similar) get a
-  preview copy made in the background, once. Exports always use the original.
+  in, then click **Fetch this video**. It finds players embedded from other sites too. The login
+  is remembered and only used for that website, and Settings lists every website that saved
+  cookies, with **Forget** and **Hide**.
+- **Sites that block bots** (such as Cloudflare's check): Craftora tries again as a browser and
+  edits the downloaded copy.
+- **Not sure a link is safe?** Click **Check** next to the top link box: Craftora asks
+  [VirusTotal](https://www.virustotal.com) whether security vendors flag its website (only the
+  website's name is sent, never the full link).
+- Link previews are cached on your PC as they play, so jumping back is instant. Pick **Smooth**
+  (up to 720p, good on slow Wi-Fi) or **Sharp** (best quality) in Settings.
+
+**Captions and edit by text**
+- Captions come from the website when it has them; otherwise Craftora **listens to the sound and
+  writes them**, on your PC, without internet (Khmer and Thai too).
+- With **CC** on, captions show on the preview and go into the export. **Drag them anywhere** and
+  **resize them from a corner** (all captions together), or pick **Top / Middle / Bottom**. Long
+  lines wrap to fit the picture. **Add captions** puts them on a track as text you can edit.
+- The **Transcript** tab shows what's said: click a word to jump there, select words and press
+  **Delete** to cut them out of the video, or **Cut every "um"** in one click.
 
 **Edit on the timeline**
 - Every video track works the same way: higher tracks are drawn over lower ones, and any
@@ -87,6 +96,7 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
 - Drag clips to move them and their edges to trim. Split at the playhead (`S`), duplicate
   (`Ctrl+D`), **cut silences** in one click, **split by chapters**, mute any track, delete, and
   undo or redo anything (`Ctrl+Z` / `Ctrl+Y`). Edges snap to the playhead and to other clips.
+- The sound wave under the preview and on each clip shows how loud every moment is.
 - Drag the red playhead, or anywhere on the ruler, to move through the video.
 
 **Shape each clip** (select it; settings are on the right)
@@ -96,6 +106,7 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
   bars), change speed (0.25× to 4×), fade in and out, and set the volume.
 - **Transitions** between clips on a magnetic track: crossfade or dip to black.
 - Text: words, size, colour and place.
+- A clip whose file moved or was renamed gets **Find file** to point Craftora to it.
 
 **AI assistant** (optional): describe an edit in your own words, such as "add the title My
 Trip for 3 seconds" or "put crossfades between all the clips", and it makes the edit. It
@@ -105,20 +116,24 @@ uses your own API key for Gemini, ChatGPT or Claude; see [The AI assistant](#the
 - MP4 or MKV video, or audio only (MP3, WAV, FLAC), in 16:9, 9:16 (Shorts and Reels), 1:1
   or 4:3. **Made for** gives one-click presets for YouTube, TikTok · Reels · Shorts and
   Instagram (upright and square ones make every picture fill the frame).
+- Type the file name yourself under **Add to queue**.
 - **Fast** export uses your graphics card (NVIDIA, Intel or AMD) when the PC has one, which is
   several times quicker; **Best quality** uses the processor for smaller files.
 - Exports run in a queue at the bottom while you keep editing. Choose the save folder next
-  to **Save to** in the Export panel (default: `Videos\Craftora`).
-- Before anything that can't be undone (deleting a project, cancelling a running export),
-  Craftora asks first. Edits on the timeline can always be undone with `Ctrl+Z`.
+  to **Save to** in the Export panel or in Settings (default: `Videos\Craftora`).
 - Open **Command that will run** in the Export panel to see the exact FFmpeg and yt-dlp
   commands.
 
 **Your work is kept**
-- Projects save themselves as you edit. Open, start or delete them on the Home screen.
-- Finished exports are listed under **Exports**, even after you restart. Any export can be
-  hidden from the list and from Home (**Hide**, kept under **Hidden** until you click
-  **Unhide**; the file stays in your save folder).
+- Projects save themselves as you edit. The sidebar has a page for each kind of thing:
+  **Projects**, **Media library** (every file you've imported, with search and ★ Saved),
+  **Downloads**, **History** (every link you've fetched) and **Exports**. Rest the mouse on a
+  video's picture to see it play.
+- **Hide** anything on those pages: it moves to a folded **Hidden** list (**Unhide** brings it
+  back; nothing is deleted). Settings → Privacy can take the Hidden lists away completely.
+- Before anything that can't be undone (deleting a project or file, signing out of a website,
+  stopping a recording), Craftora asks first. Deleted exports go to the Recycle Bin. Edits on
+  the timeline can always be undone with `Ctrl+Z`.
 
 ### How export works
 
@@ -174,7 +189,9 @@ times and settings, never the media) to that service. The assistant can't watch 
 
 Craftora goes online only when you ask it to: fetching a link, sending a message to the
 assistant, or checking for updates (which you can turn off). Files from your PC are never
-uploaded. Details: [PRIVACY.md](PRIVACY.md).
+uploaded, and captions made from the sound are made on your PC. **Settings → Privacy** takes an
+HTTP proxy for every connection Craftora makes, and can hide the Hidden lists. Details:
+[PRIVACY.md](PRIVACY.md).
 
 ## For developers
 
@@ -196,7 +213,7 @@ git clone https://github.com/Cchheanglim/Craftora.git
 cd Craftora
 bun install
 
-# Download yt-dlp and FFmpeg (≈ 200 MB, checksum-verified) into src-tauri/bin/
+# Download yt-dlp, FFmpeg, Deno and whisper.cpp (checksum-verified) into src-tauri/bin/
 powershell -ExecutionPolicy Bypass -File scripts/fetch-sidecars.ps1
 
 # Run the desktop app with live reload
@@ -229,20 +246,26 @@ src/                      React + TypeScript interface (plain CSS)
     usePlayback.ts        The timeline clock
     exportPlan.ts         Fast cut vs full render, sizes and command preview
   assistant/              The AI assistant: tools (one per edit action) and the chat loop
-  components/             Toolbar, Sidebar, Preview, TimelineEditor, Inspector,
-                          ExportPanel, AssistantPanel, QueueDock, Home, Library
+  components/             Toolbar, Sidebar, Preview, TimelineEditor, Inspector, Transcript,
+                          ExportPanel, AssistantPanel, QueueDock, Home and the sidebar
+                          pages (Projects, MediaLibrary, Downloads, History, Library, Settings)
   lib/                    Bridges to Rust (engine, storage), updates
   state/useQueue.ts       The export queue
   styles/                 Design tokens and shared controls (see DESIGN.md)
 src-tauri/                Rust (Tauri 2)
   src/media.rs            Fetch: yt-dlp --dump-json → formats and preview
-  src/local.rs            Open files with ffprobe; preview copies
+  src/media_cache.rs      Link previews from a disk cache; stream relay; big local files
+  src/signin.rs           Craftora's browser window: logins, cookies, "Fetch this video"
+  src/captions.rs         Captions from websites; speech.rs makes them from the sound
+  src/live.rs             Recording live streams; page_fetch.rs for bot-checked sites
+  src/privacy.rs          The proxy for every connection
+  src/local.rs            Open files with ffprobe; preview copies; sound waves
   src/jobs.rs             Queue plumbing, progress, cancelling, fast single cuts
   src/project.rs          Timeline render: one FFmpeg filter graph
   src/store.rs            Projects, export history and settings on disk
   src/assistant.rs        AI requests (Gemini, OpenAI, Claude); keys in Credential Manager
   msix/                   Microsoft Store package manifest and identity
-  bin/                    yt-dlp and FFmpeg (downloaded, not committed)
+  bin/                    yt-dlp, FFmpeg, Deno and whisper.cpp (downloaded, not committed)
 scripts/                  fetch-sidecars.ps1, make-msix.ps1
 .github/workflows/        release.yml: builds and publishes releases
 ```
@@ -254,6 +277,8 @@ you have opened in Craftora.
 ## Roadmap
 
 - Let the AI assistant hear the media (for example, to find silences).
+- Caption styles (font, colour) and saving captions as an `.srt` file.
+- Exact word timing for edit by text.
 - Faster previews of large files from this PC.
 - Code-signed installers on GitHub.
 

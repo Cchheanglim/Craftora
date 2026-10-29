@@ -10,11 +10,11 @@ These are the only times Craftora goes online:
 - **Signing in to a website.** When a link needs a login, Craftora can open the website in its
   own small browser window, separate from your browser. Logins made there are kept on your PC,
   inside Craftora, and are only sent to the website they belong to, when you fetch from it.
-  **Sign out of all** (Home → Links) removes them.
+  **Sign out of all** (Settings → Links) removes them.
 - **Pictures of fetched videos.** When you fetch a video, Craftora downloads its picture once and
   keeps a small copy on your PC for History, Media, Projects and Exports. (Videos fetched with
   version 0.3.0 or earlier still load their picture from the website each time.)
-- **"Is this link safe?"** Only when you paste a link into the check box under Home → Links and
+- **"Is this link safe?"** Only when you paste a link into the check box under Settings → Links and
   click **Check**: Craftora sends VirusTotal the website's name (for example `youtube.com`),
   never the full link, using Craftora's own VirusTotal key. VirusTotal's
   [terms and privacy policy](https://www.virustotal.com/gui/terms-of-service) apply.
@@ -27,7 +27,7 @@ These are the only times Craftora goes online:
 - **Captions made from the sound.** Craftora listens to a video's sound and writes captions on
   your PC; the sound isn't sent anywhere. The first time, it downloads the speech model
   (`ggml-base.bin`, 148 MB) from Hugging Face. You can turn this off in Settings.
-- **Updating yt-dlp.** The **Update yt-dlp** button (Home → Links) downloads the newest yt-dlp
+- **Updating yt-dlp.** The **Update yt-dlp** button (Settings → Links) downloads the newest yt-dlp
   from GitHub.
 - **The AI assistant.** It is off until you add your own API key for Google Gemini, OpenAI
   (ChatGPT) or Anthropic (Claude). Each message you send goes to the service you picked, and only

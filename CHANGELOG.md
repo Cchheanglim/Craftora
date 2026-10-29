@@ -9,6 +9,14 @@
 - **Preview quality.** Settings → Preview quality of links: **Smooth** (up to 720p, the default,
   good on slow Wi-Fi) or **Sharp** (the best quality the site offers, for example 1080p on YouTube
   instead of 360p).
+- **Hide things you don't want to see.** **Projects**, **Media library**, **Downloads** and
+  **History** get a **Hide** button on each row, like Exports: hidden items move to a folded
+  **Hidden** list at the bottom (**Unhide** brings them back; nothing is deleted). **Select** can
+  hide several projects or links at once, and hidden projects leave Home too.
+- **Keep hidden things private.** **Settings → Privacy → Don't show them** takes the Hidden lists
+  away from every page, so nobody using the PC can open them; **Show hidden items** brings them back.
+- **Craftora's cat on the installer.** The setup file shows Craftora's icon instead of the
+  installer tool's.
 - **Updates in Settings.** Settings → Updates shows your version, **Check for updates**, **Install
   and restart** and **Check automatically** (also still under Home → About).
 - **Use your own AI.** The assistant now works with Gemini, ChatGPT (OpenAI) or Claude
