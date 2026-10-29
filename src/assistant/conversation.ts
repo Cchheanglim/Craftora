@@ -1,8 +1,8 @@
 /**
  * One message to the editing assistant, start to finish: send the user's words with the
- * timeline, apply the tool calls Gemini answers with, send the results back, and repeat
+ * timeline, apply the tool calls the AI answers with, send the results back, and repeat
  * until it replies in words. Plain functions (no React, no Tauri) so the same code runs in
- * the app and in tests; the caller supplies how to reach Gemini.
+ * the app and in tests; the caller supplies how to reach the AI (in Gemini's request shape).
  */
 import type { Project } from "../project/model";
 import { ShortIds, SYSTEM_INSTRUCTION, TOOLS, describe, runTool } from "./tools";
@@ -66,7 +66,7 @@ export async function runTurn(o: TurnOptions): Promise<string> {
       const candidate = answer.candidates?.[0];
       if (!candidate?.content?.parts?.length) {
         const why = answer.promptFeedback?.blockReason ?? candidate?.finishReason;
-        throw new Error(why ? `Gemini didn't answer (${why}). Try rewording the request.` : "Gemini sent an empty answer. Try again.");
+        throw new Error(why ? `The AI didn't answer (${why}). Try rewording the request.` : "The AI sent an empty answer. Try again.");
       }
       o.history.push({ role: "model", parts: candidate.content.parts });
       const calls = candidate.content.parts.filter((p) => p.functionCall).map((p) => p.functionCall!);
