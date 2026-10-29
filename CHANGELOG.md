@@ -1,6 +1,6 @@
 # What's new in Craftora
 
-## Next version
+## 0.4.0 (October 2026)
 
 **New**
 

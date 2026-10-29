@@ -35,7 +35,7 @@ Craftora is a [Tauri 2](https://tauri.app) app with a React and TypeScript inter
 [FFmpeg](https://ffmpeg.org) and [yt-dlp](https://github.com/yt-dlp/yt-dlp) ship inside it
 and do the cutting, rendering and downloading.
 
-> **Status:** young (v0.3) and changing quickly. Please
+> **Status:** young (v0.4) and changing quickly. Please
 > [report problems](https://github.com/Cchheanglim/Craftora/issues).
 
 ## Download

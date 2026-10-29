@@ -1,6 +1,6 @@
 [package]
 name = "craftora"
-version = "0.3.1"
+version = "0.4.0"
 description = "Desktop media trimmer and downloader (yt-dlp + FFmpeg)"
 authors = ["Cchheanglim"]
 edition = "2024"
