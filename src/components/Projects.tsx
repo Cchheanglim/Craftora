@@ -3,6 +3,7 @@ import type { ProjectEntry } from "../lib/storage";
 import { Icon } from "./Icon";
 import { ProjectList } from "./Home";
 import { useConfirm } from "./ConfirmDialog";
+import { HiddenFold, useHidden } from "./Hidden";
 import "./Library.css";
 
 interface ProjectsProps {
@@ -19,6 +20,9 @@ export function Projects({ projects, currentId, onOpenProject, onNewProject, onD
   // Ticked projects while picking several; null when not picking.
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const { ask, dialog } = useConfirm();
+  const hidden = useHidden("projects");
+  const shown = projects.filter((p) => !hidden.isHidden(p.id));
+  const hiddenProjects = projects.filter((p) => hidden.isHidden(p.id));
   const ticked = selected ? projects.filter((p) => selected.has(p.id)) : [];
   const toggle = (id: string) =>
     setSelected((s) => {
@@ -49,8 +53,23 @@ export function Projects({ projects, currentId, onOpenProject, onNewProject, onD
         {selected ? (
           <div className="library__bar">
             <span className="library__count">{ticked.length} selected</span>
-            <button type="button" className="btn btn--ghost" onClick={() => setSelected(new Set(projects.map((p) => p.id)))}>
+            <button type="button" className="btn btn--ghost" onClick={() => setSelected(new Set(shown.map((p) => p.id)))}>
               Select all
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              disabled={ticked.length === 0}
+              onClick={() => {
+                hidden.setHidden(
+                  ticked.map((p) => p.id),
+                  true,
+                );
+                setSelected(null);
+              }}
+            >
+              <Icon name="eyeOff" size={14} />
+              Hide
             </button>
             <button type="button" className="btn btn--secondary" disabled={ticked.length === 0} onClick={() => void deleteTicked()}>
               <Icon name="trash" size={14} />
@@ -74,15 +93,23 @@ export function Projects({ projects, currentId, onOpenProject, onNewProject, onD
             )}
           </div>
         )}
-        <ProjectList
-          projects={projects}
-          currentId={currentId}
-          onOpenProject={onOpenProject}
-          onDeleteProject={onDeleteProject}
-          selected={selected ?? undefined}
-          onToggle={toggle}
-        />
+        {projects.length > 0 && shown.length === 0 ? (
+          <p className="library__muted">Every project is hidden.</p>
+        ) : (
+          <ProjectList
+            projects={shown}
+            currentId={currentId}
+            onOpenProject={onOpenProject}
+            onDeleteProject={onDeleteProject}
+            selected={selected ?? undefined}
+            onToggle={toggle}
+            hidden={hidden}
+          />
+        )}
       </div>
+      <HiddenFold count={hiddenProjects.length} note="Hidden here and on Home. The projects are still saved.">
+        <ProjectList projects={hiddenProjects} currentId={currentId} onOpenProject={onOpenProject} onDeleteProject={onDeleteProject} hidden={hidden} />
+      </HiddenFold>
     </section>
   );
 }

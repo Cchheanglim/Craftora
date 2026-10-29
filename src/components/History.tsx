@@ -3,6 +3,7 @@ import type { FetchEntry } from "../lib/storage";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
 import { useConfirm } from "./ConfirmDialog";
+import { HiddenFold, HideButton, useHidden } from "./Hidden";
 import "./Library.css";
 
 interface HistoryProps {
@@ -24,7 +25,10 @@ export function History({ history, onFetchAgain, onRemove }: HistoryProps) {
   const [copied, setCopied] = useState<string | null>(null);
   const { ask, dialog } = useConfirm();
   const words = search.trim().toLowerCase();
-  const shown = history.filter((e) => !words || e.title.toLowerCase().includes(words) || e.url.toLowerCase().includes(words));
+  const hidden = useHidden("history");
+  const matching = history.filter((e) => !words || e.title.toLowerCase().includes(words) || e.url.toLowerCase().includes(words));
+  const shown = matching.filter((e) => !hidden.isHidden(e.url));
+  const hiddenShown = matching.filter((e) => hidden.isHidden(e.url));
 
   const toggle = (url: string) =>
     setPicked((s) => {
@@ -56,6 +60,72 @@ export function History({ history, onFetchAgain, onRemove }: HistoryProps) {
     );
   const ticked = shown.filter((e) => picked?.has(e.url)).map((e) => e.url);
 
+  const table = (list: FetchEntry[]) => (
+    <div className="library__table-wrap">
+      <table className="library__table">
+        <thead>
+          <tr>
+            <th scope="col">Video</th>
+            <th scope="col">Fetched</th>
+            <th scope="col">
+              <span className="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((entry) => (
+            <tr key={entry.url}>
+              <td>
+                <span className="library__name">
+                  {picked && (
+                    <input type="checkbox" checked={picked.has(entry.url)} onChange={() => toggle(entry.url)} aria-label={`Select ${entry.title}`} />
+                  )}
+                  <Thumb src={entry.thumbnail} icon="link" />
+                  <span className="library__entry">
+                    <span className="truncate" title={entry.title}>
+                      {entry.title}
+                    </span>
+                    <span className="library__link mono" title={entry.url}>
+                      {entry.url}
+                    </span>
+                  </span>
+                </span>
+              </td>
+              <td className="library__detail">{dateFormat.format(entry.fetchedAt)}</td>
+              <td className="is-num">
+                <span className="library__actions">
+                  <HideButton hidden={hidden} id={entry.url} name={entry.title} />
+                  <button type="button" className="btn btn--ghost" onClick={() => onFetchAgain(entry.url)}>
+                    <Icon name="rotate" size={14} />
+                    Fetch again
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--icon"
+                    aria-label={copied === entry.url ? "Link copied" : `Copy the link of ${entry.title}`}
+                    title={copied === entry.url ? "Copied" : "Copy link"}
+                    onClick={() => copy(entry.url)}
+                  >
+                    <Icon name={copied === entry.url ? "check" : "copy"} size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--icon"
+                    aria-label={`Remove ${entry.title} from history`}
+                    title="Remove from history"
+                    onClick={() => void remove([entry.url])}
+                  >
+                    <Icon name="x" size={14} />
+                  </button>
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <section className="library" aria-labelledby="history-page-title">
       {dialog}
@@ -84,6 +154,18 @@ export function History({ history, onFetchAgain, onRemove }: HistoryProps) {
               <button type="button" className="btn btn--ghost" onClick={() => setPicked(new Set(shown.map((e) => e.url)))}>
                 Select all
               </button>
+              <button
+                type="button"
+                className="btn btn--ghost"
+                disabled={ticked.length === 0}
+                onClick={() => {
+                  hidden.setHidden(ticked, true);
+                  setPicked(null);
+                }}
+              >
+                <Icon name="eyeOff" size={14} />
+                Hide
+              </button>
               <button type="button" className="btn btn--secondary" disabled={ticked.length === 0} onClick={() => void remove(ticked)}>
                 <Icon name="trash" size={14} />
                 Remove
@@ -110,71 +192,13 @@ export function History({ history, onFetchAgain, onRemove }: HistoryProps) {
       {history.length === 0 ? (
         <p className="library__muted">Links you fetch show up here, so you can find them again.</p>
       ) : shown.length === 0 ? (
-        <p className="library__muted">Nothing matches.</p>
+        <p className="library__muted">{hiddenShown.length ? "Everything here is hidden." : "Nothing matches."}</p>
       ) : (
-        <div className="library__table-wrap">
-          <table className="library__table">
-            <thead>
-              <tr>
-                <th scope="col">Video</th>
-                <th scope="col">Fetched</th>
-                <th scope="col">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((entry) => (
-                <tr key={entry.url}>
-                  <td>
-                    <span className="library__name">
-                      {picked && (
-                        <input type="checkbox" checked={picked.has(entry.url)} onChange={() => toggle(entry.url)} aria-label={`Select ${entry.title}`} />
-                      )}
-                      <Thumb src={entry.thumbnail} icon="link" />
-                      <span className="library__entry">
-                        <span className="truncate" title={entry.title}>
-                          {entry.title}
-                        </span>
-                        <span className="library__link mono" title={entry.url}>
-                          {entry.url}
-                        </span>
-                      </span>
-                    </span>
-                  </td>
-                  <td className="library__detail">{dateFormat.format(entry.fetchedAt)}</td>
-                  <td className="is-num">
-                    <span className="library__actions">
-                      <button type="button" className="btn btn--ghost" onClick={() => onFetchAgain(entry.url)}>
-                        <Icon name="rotate" size={14} />
-                        Fetch again
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--icon"
-                        aria-label={copied === entry.url ? "Link copied" : `Copy the link of ${entry.title}`}
-                        title={copied === entry.url ? "Copied" : "Copy link"}
-                        onClick={() => copy(entry.url)}
-                      >
-                        <Icon name={copied === entry.url ? "check" : "copy"} size={14} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--icon"
-                        aria-label={`Remove ${entry.title} from history`}
-                        title="Remove from history"
-                        onClick={() => void remove([entry.url])}
-                      >
-                        <Icon name="x" size={14} />
-                      </button>
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        table(shown)
       )}
+      <HiddenFold count={hiddenShown.length} note="Hidden from this list only. They're still in your history.">
+        {table(hiddenShown)}
+      </HiddenFold>
     </section>
   );
 }

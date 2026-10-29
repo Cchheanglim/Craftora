@@ -38,6 +38,25 @@ export function useHidden(list: HiddenListName) {
 
 export type Hidden = ReturnType<typeof useHidden>;
 
+const SHOW_KEY = "craftora.showHidden";
+
+/** Settings → Privacy: whether pages show their Hidden list at all (on unless turned off). */
+export function showHiddenLists(): boolean {
+  try {
+    return localStorage.getItem(SHOW_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export function setShowHiddenLists(on: boolean) {
+  try {
+    localStorage.setItem(SHOW_KEY, on ? "1" : "0");
+  } catch {
+    /* not remembered */
+  }
+}
+
 /** The eye button on a row: Hide, or Unhide in the Hidden list. */
 export function HideButton({ hidden, id, name }: { hidden: Hidden; id: string; name: string }) {
   const isHidden = hidden.isHidden(id);
@@ -54,10 +73,13 @@ export function HideButton({ hidden, id, name }: { hidden: Hidden; id: string; n
   );
 }
 
-/** The folded "Hidden" list at the bottom of a page; closed each time the page opens. */
+/**
+ * The folded "Hidden" list at the bottom of a page; closed each time the page opens, and not
+ * there at all when Settings → Privacy says not to show hidden items.
+ */
 export function HiddenFold({ count, note, children }: { count: number; note: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  if (count === 0) return null;
+  if (count === 0 || !showHiddenLists()) return null;
   return (
     <div className="library__group">
       <button type="button" className="library__toggle" aria-expanded={open} onClick={() => setOpen(!open)}>

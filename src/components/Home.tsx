@@ -10,6 +10,7 @@ import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
 import { useEffect, useState, type FormEvent } from "react";
 import { useConfirm } from "./ConfirmDialog";
+import { HideButton, useHidden, type Hidden } from "./Hidden";
 import "./Home.css";
 
 interface HomeProps {
@@ -125,10 +126,13 @@ export function ProjectList({
   onDeleteProject,
   selected,
   onToggle,
+  hidden,
 }: Pick<HomeProps, "projects" | "currentId" | "onOpenProject" | "onDeleteProject"> & {
   /** While picking several projects (Projects page): the ticked ones; rows tick instead of opening. */
   selected?: Set<string>;
   onToggle?: (id: string) => void;
+  /** Projects page: each row gets Hide (or Unhide). */
+  hidden?: Hidden;
 }) {
   const { ask, dialog } = useConfirm();
   const deleteProject = async (p: ProjectEntry) => {
@@ -170,6 +174,7 @@ export function ProjectList({
               </span>
               {p.id === currentId && <span className="home__open">Open now</span>}
             </button>
+            {hidden && <HideButton hidden={hidden} id={p.id} name={p.name} />}
             <button type="button" className="btn btn--icon home__delete" aria-label={`Delete ${p.name}`} title="Delete project" onClick={() => void deleteProject(p)}>
               <Icon name="trash" size={14} />
             </button>
@@ -196,6 +201,7 @@ export function Home({
   updates,
   onOpenWelcome,
 }: HomeProps) {
+  const hiddenProjects = useHidden("projects");
   // Some people don't want their exports' pictures on the start screen; remembered.
   const [hideRecent, setHideRecent] = useState(() => {
     try {
@@ -254,7 +260,7 @@ export function Home({
                 New project
               </button>
             </div>
-            <ProjectList projects={projects} currentId={currentId} onOpenProject={onOpenProject} onDeleteProject={onDeleteProject} />
+            <ProjectList projects={projects.filter((p) => !hiddenProjects.isHidden(p.id))} currentId={currentId} onOpenProject={onOpenProject} onDeleteProject={onDeleteProject} />
           </div>
 
           <div className="home__col">
