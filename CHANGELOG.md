@@ -4,6 +4,11 @@
 
 **New**
 
+- **Smoother.** Pages fade in, the right panel slides open and shut, and dialogs and menus ease in
+  instead of popping up. (Turned off if Windows is set to show fewer animations.)
+- **Preview quality.** Settings → Preview quality of links: **Smooth** (up to 720p, the default,
+  good on slow Wi-Fi) or **Sharp** (the best quality the site offers, for example 1080p on YouTube
+  instead of 360p).
 - **A fuller sidebar.** New pages: **Projects** (every project, to pick up where you left off),
   **Media library** (every file you've imported, in any project: search by name, show only videos,
   sound or pictures, and star the ones you use often under **Saved**), **Downloads** (what's
