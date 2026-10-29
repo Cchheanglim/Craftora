@@ -19,3 +19,8 @@
   height: 100%;
   object-fit: cover;
 }
+
+/* The hover preview covers the picture. */
+.thumb .thumb__play {
+  z-index: 1;
+}
