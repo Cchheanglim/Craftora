@@ -147,23 +147,21 @@ test("shown captions go into the export, at the chosen place, until they're on t
   p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
   const shown = withShownCaptions(p);
   expect(shown.clips.filter((c) => c.text === "hello").map((c) => c.y)).toEqual([0.9]);
-  p = applyEdit(p, { type: "placeCaptions", place: "top" });
-  expect(withShownCaptions(p).clips.find((c) => c.text === "hello")?.y).toBe(0.08);
+  p = applyEdit(p, { type: "layoutCaptions", patch: { y: 0.08 } });
+  p = applyEdit(p, { type: "layoutCaptions", patch: { x: 0.2, size: 0.1 } });
+  expect(withShownCaptions(p).clips.find((c) => c.text === "hello")).toMatchObject({ x: 0.2, y: 0.08, size: 0.1 });
   // On the timeline: they move with the choice, and nothing is added twice.
   p = applyEdit(p, { type: "addCaptions", mediaId: media.id, trackId: "cap" });
-  p = applyEdit(p, { type: "placeCaptions", place: "center" });
-  expect(p.clips.find((c) => c.trackId === "cap")?.y).toBe(0.5);
+  p = applyEdit(p, { type: "layoutCaptions", patch: { y: 0.5 } });
+  expect(p.clips.find((c) => c.trackId === "cap")).toMatchObject({ x: 0.2, y: 0.5, size: 0.1 });
   expect(withShownCaptions(p)).toBe(p);
 });
 
 test("exported text wraps at whole words to fit the frame", async () => {
   const { wrapText } = await import("../src/project/model");
-  expect(wrapText("Welcome to the shop. Today we are looking at a new camera.", 30)).toBe("Welcome to the shop. Today we
-are looking at a new camera.");
+  expect(wrapText("Welcome to the shop. Today we are looking at a new camera.", 30)).toBe("Welcome to the shop. Today we\nare looking at a new camera.");
   expect(wrapText("short", 30)).toBe("short");
-  expect(wrapText("one
-two", 30)).toBe("one
-two");
+  expect(wrapText("one\ntwo", 30)).toBe("one\ntwo");
 });
 
 test("long caption lines become two-line pieces at whole words, timed by length", async () => {

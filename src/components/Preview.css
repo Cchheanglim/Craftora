@@ -157,11 +157,6 @@
 }
 
 /* The fetched video's own captions, shown while CC is on (not exported until added to the timeline). */
-/* Captions shown from the media: not clips yet, so they can't be picked or dragged. */
-.preview__text--caption {
-  pointer-events: none;
-}
-
 .preview__right .btn--icon[aria-pressed="true"] {
   color: var(--text);
   background: var(--bg-selected);

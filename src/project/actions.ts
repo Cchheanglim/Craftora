@@ -16,7 +16,8 @@ import {
   isStill,
   readableCaptions,
   transitionLength,
-  type CaptionPlace,
+  CAPTIONS,
+  type CaptionLayout,
   type Clip,
   type MediaItem,
   type Project,
@@ -41,8 +42,8 @@ export type EditAction =
   | { type: "addText"; clipId: string; at: number; text?: string }
   /** The media's captions as text clips on a new "Captions" track, lined up with each of its clips. */
   | { type: "addCaptions"; mediaId: string; trackId: string }
-  /** Where captions sit: the ones shown from the media and every clip on a "Captions" track. */
-  | { type: "placeCaptions"; place: CaptionPlace }
+  /** Moves or resizes every caption at once: the ones shown from the media and every clip on a "Captions" track. */
+  | { type: "layoutCaptions"; patch: Partial<CaptionLayout> }
   /** On a magnetic track, `start` picks the slot: the clip goes where its left edge lands. */
   | { type: "moveClip"; clipId: string; start: number; trackId?: string }
   /** Moves one edge of a clip to a timeline time. */
@@ -299,7 +300,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
       // shortcut: reversed clips get no captions; map them backwards if anyone reverses captioned clips.
       const clips = p.clips.filter((c) => c.mediaId === action.mediaId && !c.reverse);
       if (lines.length === 0 || clips.length === 0 || p.tracks.some((t) => t.id === action.trackId)) return p;
-      const place = POSITIONS[p.captionPlace ?? "bottom"];
+      const layout = p.captionLayout ?? CAPTIONS;
       const added: Clip[] = [];
       for (const clip of clips) {
         for (const line of lines) {
@@ -315,9 +316,9 @@ export function applyEdit(p: Project, action: EditAction): Project {
               out: round((to - from) / clip.speed),
               text: line.text,
               color: "#ffffff",
-              size: 0.055,
-              x: place.x,
-              y: place.y,
+              size: layout.size,
+              x: layout.x,
+              y: layout.y,
             }),
           );
         }
@@ -512,10 +513,10 @@ export function applyEdit(p: Project, action: EditAction): Project {
       if (!p.tracks.some((t) => t.id === action.trackId && t.kind !== "text")) return p;
       return { ...p, tracks: p.tracks.map((t) => (t.id === action.trackId ? { ...t, muted: action.muted || undefined } : t)) };
 
-    case "placeCaptions": {
-      const { x, y } = POSITIONS[action.place];
+    case "layoutCaptions": {
+      const layout = { ...(p.captionLayout ?? CAPTIONS), ...action.patch };
       const captions = new Set(p.tracks.filter((t) => t.name === "Captions").map((t) => t.id));
-      return { ...p, captionPlace: action.place, clips: p.clips.map((c) => (captions.has(c.trackId) ? { ...c, x, y } : c)) };
+      return { ...p, captionLayout: layout, clips: p.clips.map((c) => (captions.has(c.trackId) ? { ...c, ...layout } : c)) };
     }
 
     case "settle":

@@ -139,11 +139,18 @@ export interface Project {
   media: MediaItem[];
   tracks: Track[];
   clips: Clip[];
-  /** Where captions sit on the picture; bottom when absent. */
-  captionPlace?: CaptionPlace;
+  /** Where every caption sits on the picture and how big it is; `CAPTIONS` when absent. */
+  captionLayout?: CaptionLayout;
 }
 
-export type CaptionPlace = "top" | "center" | "bottom";
+/** `x`/`y` as for text clips; `size`: letter height as a fraction of the frame. */
+export interface CaptionLayout {
+  x: number;
+  y: number;
+  size: number;
+}
+
+export const CAPTIONS: CaptionLayout = { x: 0.5, y: 0.9, size: 0.055 };
 
 /** Shortest clip a trim or split may leave, in seconds. */
 export const MIN_CLIP = 0.2;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, trackOrder, transitionMix, type CaptionPlace, type Clip, type Project } from "../project/model";
+import { clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, trackOrder, transitionMix, CAPTIONS, type Clip, type Project } from "../project/model";
 import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -37,10 +37,11 @@ interface PreviewProps {
 }
 
 const WAVE_BARS = 140;
-const CAPTION_PLACES: { place: CaptionPlace; label: string }[] = [
-  { place: "top", label: "Top" },
-  { place: "center", label: "Middle" },
-  { place: "bottom", label: "Bottom" },
+// Quick places for captions; dragging them on the picture puts them anywhere ("Custom").
+const CAPTION_PLACES = [
+  { place: "top", label: "Top", y: 0.08 },
+  { place: "center", label: "Middle", y: 0.5 },
+  { place: "bottom", label: "Bottom", y: 0.9 },
 ];
 
 /** Draws the visible preview stage onto a canvas and encodes it as a PNG. */
@@ -101,6 +102,8 @@ interface Gesture {
   box: DOMRect;
   size: number;
   isText: boolean;
+  /** A caption: moves and resizes every caption together. */
+  captions: boolean;
   moved: boolean;
 }
 
@@ -183,7 +186,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   };
   const sounds = project.clips.filter((c) => c.mediaId && trackKind(c) === "audio");
   const texts = project.clips.filter((c) => !c.mediaId).sort(byLayer);
-  const hasCaptions = project.media.some((m) => m.captions) || project.tracks.some((t) => t.name === "Captions");
+  const captionTracks = new Set(project.tracks.filter((t) => t.name === "Captions").map((t) => t.id));
+  const hasCaptions = project.media.some((m) => m.captions) || captionTracks.size > 0;
+  const isCaption = (c: Clip) => c.trackId.startsWith(SHOWN_CAPTIONS) || captionTracks.has(c.trackId);
+  const layout = project.captionLayout ?? CAPTIONS;
+  const captionPlace = (layout.x === 0.5 && CAPTION_PLACES.find((p) => p.y === layout.y)?.place) || "custom";
   const nothingHere = !project.clips.some(active);
   const selected = project.clips.find((c) => c.id === selectedId);
   const editable = (c?: Clip) => Boolean(c && trackKind(c) !== "audio");
@@ -262,12 +269,10 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const { stage, box } = g;
     const left0 = box.left - stage.left;
     const top0 = box.top - stage.top;
+    const change = (patch: { x: number; y: number; size?: number }) =>
+      api.editLive(g.captions ? { type: "layoutCaptions", patch } : { type: "updateClip", clipId: g.clipId, patch });
     if (g.mode === "move") {
-      api.editLive({
-        type: "updateClip",
-        clipId: g.clipId,
-        patch: { x: placeAlong(left0 + dx, stage.width - box.width), y: placeAlong(top0 + dy, stage.height - box.height) },
-      });
+      change({ x: placeAlong(left0 + dx, stage.width - box.width), y: placeAlong(top0 + dy, stage.height - box.height) });
       return;
     }
     // Resize from a corner, keeping the shape and the opposite corner where it is.
@@ -281,18 +286,16 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const left = fromLeft ? left0 + box.width - width : left0;
     const top = fromTop ? top0 + box.height - height : top0;
     const free = (total: number, used: number, offset: number) => (total - used <= 0 ? 0.5 : clamp(offset / (total - used), 0, 1));
-    api.editLive({
-      type: "updateClip",
-      clipId: g.clipId,
-      patch: { size, x: free(stage.width, width, left), y: free(stage.height, height, top) },
-    });
+    change({ size, x: free(stage.width, width, left), y: free(stage.height, height, top) });
   };
 
   const beginGesture = (clip: Clip, mode: Gesture["mode"]) => (e: ReactPointerEvent<HTMLElement>) => {
     if (e.button !== 0 || !stageRef.current) return;
     e.stopPropagation();
     e.preventDefault();
-    onSelect(clip.id);
+    const captions = isCaption(clip);
+    // Captions not on the timeline aren't clips: they're picked as a whole.
+    onSelect(clip.trackId.startsWith(SHOWN_CAPTIONS) ? SHOWN_CAPTIONS : clip.id);
     const box = (mode === "move" ? e.currentTarget : e.currentTarget.parentElement!).getBoundingClientRect();
     gestureRef.current = {
       clipId: clip.id,
@@ -303,6 +306,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
       box,
       size: clip.size,
       isText: !clip.mediaId,
+      captions,
       moved: false,
     };
     const move = (ev: PointerEvent) => onPointerMove.current(ev);
@@ -471,7 +475,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           {shownCaptions.filter(active).map((clip) => (
             <div
               key={clip.id}
-              className="preview__text preview__text--caption"
+              className={selectedId === SHOWN_CAPTIONS ? "preview__text is-selected" : "preview__text"}
+              title="Captions: drag to move them all, drag a corner to resize"
               style={{
                 left: `${clip.x * 100}%`,
                 top: `${clip.y * 100}%`,
@@ -479,8 +484,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 fontSize: `${clip.size * 100}cqh`,
                 color: clip.color,
               }}
+              onPointerDown={beginGesture(clip, "move")}
+              onClick={(e) => e.stopPropagation()}
             >
               {clip.text}
+              {selectedId === SHOWN_CAPTIONS && handles(clip)}
             </div>
           ))}
         </div>
@@ -573,14 +581,22 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 id="caption-place"
                 className="field"
                 title="Where captions appear"
-                value={project.captionPlace ?? "bottom"}
-                onChange={(e) => api.edit({ type: "placeCaptions", place: e.target.value as CaptionPlace })}
+                value={captionPlace}
+                onChange={(e) => {
+                  const preset = CAPTION_PLACES.find((p) => p.place === e.target.value);
+                  if (preset) api.edit({ type: "layoutCaptions", patch: { x: 0.5, y: preset.y } });
+                }}
               >
                 {CAPTION_PLACES.map(({ place, label }) => (
                   <option key={place} value={place}>
                     {label}
                   </option>
                 ))}
+                {captionPlace === "custom" && (
+                  <option value="custom" disabled>
+                    Custom
+                  </option>
+                )}
               </select>
             </>
           )}
