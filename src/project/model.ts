@@ -139,7 +139,11 @@ export interface Project {
   media: MediaItem[];
   tracks: Track[];
   clips: Clip[];
+  /** Where captions sit on the picture; bottom when absent. */
+  captionPlace?: CaptionPlace;
 }
+
+export type CaptionPlace = "top" | "center" | "bottom";
 
 /** Shortest clip a trim or split may leave, in seconds. */
 export const MIN_CLIP = 0.2;
