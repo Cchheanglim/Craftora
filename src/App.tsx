@@ -37,6 +37,7 @@ import {
   signOutEverywhere,
   tellSignIn,
   updateYtDlp,
+  SHARP_PREVIEW,
   type EngineStatus,
 } from "./lib/engine";
 import {
@@ -531,6 +532,12 @@ export default function App() {
   const chooseAutoCaptions = (on: boolean) => {
     setAutoCaptions(on);
     remember("craftora.autoCaptions", on);
+  };
+  // Preview quality of links; fetchMedia and the stream player read it from storage themselves.
+  const [sharpPreview, setSharpPreview] = useState(() => remembered(SHARP_PREVIEW, false));
+  const chooseSharpPreview = (on: boolean) => {
+    setSharpPreview(on);
+    remember(SHARP_PREVIEW, on);
   };
   /** Media id → how making its captions is going, for the Media list. */
   const [captioning, setCaptioning] = useState<Record<string, string>>({});
@@ -1217,6 +1224,8 @@ export default function App() {
             links={linkSettings}
             autoCaptions={autoCaptions}
             onAutoCaptions={chooseAutoCaptions}
+            sharpPreview={sharpPreview}
+            onSharpPreview={chooseSharpPreview}
           />
         )}
         {view === "library" && (
