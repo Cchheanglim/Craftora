@@ -1244,6 +1244,7 @@ export default function App() {
             onAutoCaptions={chooseAutoCaptions}
             sharpPreview={sharpPreview}
             onSharpPreview={chooseSharpPreview}
+            updates={updates}
           />
         )}
         {view === "library" && (

@@ -9,6 +9,8 @@
 - **Preview quality.** Settings → Preview quality of links: **Smooth** (up to 720p, the default,
   good on slow Wi-Fi) or **Sharp** (the best quality the site offers, for example 1080p on YouTube
   instead of 360p).
+- **Updates in Settings.** Settings → Updates shows your version, **Check for updates**, **Install
+  and restart** and **Check automatically** (also still under Home → About).
 - **Use your own AI.** The assistant now works with Gemini, ChatGPT (OpenAI) or Claude
   (Anthropic): pick one in the Assistant tab and paste its API key. Craftora tries the key before
   keeping it, stores it in Windows Credential Manager, and only ever sends it to that company.
