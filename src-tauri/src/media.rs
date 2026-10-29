@@ -238,7 +238,18 @@ fn audio_streams(formats: &[Format], duration: f64) -> Vec<Stream> {
 
 /// Picks a direct file the preview player can open: a stream with sound if one exists,
 /// otherwise a silent video-only stream (YouTube usually offers only separate streams).
-fn preview(formats: &[Format]) -> (String, bool) {
+/// `sharp` (Settings → Preview quality) takes the highest resolution instead, even video-only:
+/// YouTube's only file with sound is 360p.
+fn preview(formats: &[Format], sharp: bool) -> (String, bool) {
+    if sharp {
+        let best = formats
+            .iter()
+            .filter(|f| f.has_video() && f.plays_in_webview())
+            .min_by_key(|f| (codec_name(f.vcodec.as_deref()) != "H.264", std::cmp::Reverse(f.height.unwrap_or(0)), !f.has_audio()));
+        if let Some(url) = best.and_then(|f| f.url.clone()) {
+            return (url, best.is_some_and(|f| f.has_audio()));
+        }
+    }
     // Prefer modest resolutions (fast to start, enough to find a cut), then H.264,
     // which every WebView decodes.
     let rank = |f: &&Format| {
@@ -417,7 +428,7 @@ pub(crate) fn is_bot_check(error: &str) -> bool {
 
 /// Runs `yt-dlp --dump-single-json` on a link and maps the result for the editor.
 #[tauri::command]
-pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, String> {
+pub async fn fetch_media(app: AppHandle, url: String, sharp: Option<bool>) -> Result<MediaSource, String> {
     let url = url.trim().to_string();
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return Err("That doesn't look like a web link. Paste a link starting with https://".into());
@@ -491,7 +502,7 @@ pub async fn fetch_media(app: AppHandle, url: String) -> Result<MediaSource, Str
         return Err("No downloadable video or audio was found at this link.".into());
     }
 
-    let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats) {
+    let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats, sharp.unwrap_or(false)) {
         _ if !length_known => (String::new(), true, false),
         // Behind a bot check the byte cache and the stream relay fetch through the page window.
         (url, audio) if !url.is_empty() => (url, audio, false),
@@ -581,7 +592,7 @@ fn pick_live(formats: &[Format]) -> Option<Vec<(String, BTreeMap<String, String>
 
 #[cfg(test)]
 mod tests {
-    use super::{is_bot_check, parse_mpd_duration, Info};
+    use super::{is_bot_check, parse_mpd_duration, preview, Info};
 
     #[test]
     fn knows_a_bot_check_answer() {
@@ -602,5 +613,17 @@ mod tests {
         let json = br#"{"title":"Test","duration":12.0,"chapters":null,"formats":[]}"#;
         let info: Info = serde_json::from_slice(json).unwrap();
         assert!(info.chapters.is_none());
+    }
+
+    #[test]
+    fn sharp_preview_takes_the_highest_resolution() {
+        // Like YouTube: one small file with sound, bigger video-only ones.
+        let json = br#"{"title":"T","formats":[
+            {"format_id":"18","ext":"mp4","vcodec":"avc1","acodec":"mp4a","height":360,"url":"https://v/360","protocol":"https"},
+            {"format_id":"136","ext":"mp4","vcodec":"avc1","acodec":"none","height":720,"url":"https://v/720","protocol":"https"},
+            {"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"url":"https://v/1080","protocol":"https"}]}"#;
+        let info: Info = serde_json::from_slice(json).unwrap();
+        assert_eq!(preview(&info.formats, false), ("https://v/360".into(), true));
+        assert_eq!(preview(&info.formats, true), ("https://v/1080".into(), false));
     }
 }

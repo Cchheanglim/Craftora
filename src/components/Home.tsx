@@ -360,6 +360,25 @@ export function Links({ links }: { links: LinkSettings }) {
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const { ask, dialog } = useConfirm();
   const [sites, setSites] = useState<string[]>([]);
+  // Websites picked to be left out of the list (only hidden here, the cookies stay); remembered on this PC.
+  const [hiddenSites, setHiddenSites] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("craftora.hiddenSites") ?? "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [showHidden, setShowHidden] = useState(false);
+  const toggleHidden = (site: string) => {
+    const next = hiddenSites.includes(site) ? hiddenSites.filter((s) => s !== site) : [...hiddenSites, site];
+    setHiddenSites(next);
+    try {
+      localStorage.setItem("craftora.hiddenSites", JSON.stringify(next));
+    } catch {
+      /* not essential */
+    }
+  };
+  const hiddenCount = sites.filter((s) => hiddenSites.includes(s)).length;
   useEffect(() => {
     if (!inDesktopApp) return;
     const refresh = () => void signedInSites().then(setSites).catch(() => {});
@@ -438,12 +457,22 @@ export function Links({ links }: { links: LinkSettings }) {
         {links.signInMessage && <p className="home__muted">{links.signInMessage}</p>}
         {sites.length > 0 && (
           <>
-          <p className="home__muted">Websites that saved cookies in Craftora's window (from a visit or a login):</p>
+          <div className="home__sites-head">
+            <p className="home__muted">Websites that saved cookies in Craftora's window (from a visit or a login):</p>
+            {hiddenCount > 0 && (
+              <button type="button" className="btn btn--ghost" aria-expanded={showHidden} onClick={() => setShowHidden(!showHidden)}>
+                {showHidden ? "Hide hidden" : `Show hidden (${hiddenCount})`}
+              </button>
+            )}
+          </div>
           <ul className="home__sites" aria-label="Websites with saved cookies">
-            {sites.map((site) => (
+            {sites.filter((site) => showHidden || !hiddenSites.includes(site)).map((site) => (
               <li key={site}>
                 <Icon name="check" size={13} />
                 <span className="mono truncate">{site}</span>
+                <button type="button" className="btn btn--ghost" onClick={() => toggleHidden(site)}>
+                  {hiddenSites.includes(site) ? "Unhide" : "Hide"}
+                </button>
                 <button type="button" className="btn btn--ghost" aria-label={`Forget ${site}`} onClick={() => void signOutOfSite(site)}>
                   Forget
                 </button>

@@ -37,6 +37,24 @@
   flex-direction: column;
   background: var(--bg-panel);
   border-left: 1px solid var(--line);
+  transition: margin-right var(--dur) var(--ease-out);
+}
+
+/* Closed: slides out past the window's edge (the negative margin shrinks its grid column to 0,
+   so the editor widens with it), then hides once the slide ends. */
+.app__panel.is-closed {
+  margin-right: calc(-1 * var(--panel-w));
+  visibility: hidden;
+  transition: margin-right var(--dur) var(--ease-out), visibility 0s var(--dur);
+}
+
+/* Each page, and each panel tab, eases in when shown. */
+.app__work > * {
+  animation: rise-in var(--dur) var(--ease-out) backwards;
+}
+
+.app__panel > :not(.app__tabs) {
+  animation: fade-in var(--dur) linear backwards;
 }
 
 .app__tabs {

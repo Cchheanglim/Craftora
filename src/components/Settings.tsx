@@ -21,9 +21,12 @@ interface SettingsProps {
   /** Make captions from the sound for videos that come without any. */
   autoCaptions: boolean;
   onAutoCaptions: (on: boolean) => void;
+  /** Preview links at their best quality instead of up to 720p. */
+  sharpPreview: boolean;
+  onSharpPreview: (on: boolean) => void;
 }
 
-export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, autoCaptions, onAutoCaptions }: SettingsProps) {
+export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, autoCaptions, onAutoCaptions, sharpPreview, onSharpPreview }: SettingsProps) {
   return (
     <section className="library" aria-labelledby="settings-title">
       <header className="library__head">
@@ -86,6 +89,22 @@ export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaul
         <p className="library__muted">
           Craftora listens to what's said and writes it down, on this PC: nothing is sent anywhere. The first time, it downloads a
           148 MB speech model. A long video takes a few minutes and keeps the processor busy meanwhile.
+        </p>
+      </div>
+
+      <div className="library__group">
+        <h2 className="section-label">Preview quality of links</h2>
+        <div className="segmented library__choice" role="group" aria-label="Preview quality of links">
+          <button type="button" aria-pressed={!sharpPreview} onClick={() => onSharpPreview(false)}>
+            Smooth (up to 720p)
+          </button>
+          <button type="button" aria-pressed={sharpPreview} onClick={() => onSharpPreview(true)}>
+            Sharp (best quality)
+          </button>
+        </div>
+        <p className="library__muted">
+          Smooth starts fast and plays well on slow Wi-Fi. Sharp looks crisper but loads more. Used for links fetched from now on
+          and projects opened again; files on this PC always preview as they are. Exports are never affected.
         </p>
       </div>
 

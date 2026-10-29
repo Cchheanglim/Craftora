@@ -37,6 +37,7 @@ import {
   signOutEverywhere,
   tellSignIn,
   updateYtDlp,
+  SHARP_PREVIEW,
   type EngineStatus,
 } from "./lib/engine";
 import {
@@ -531,6 +532,12 @@ export default function App() {
   const chooseAutoCaptions = (on: boolean) => {
     setAutoCaptions(on);
     remember("craftora.autoCaptions", on);
+  };
+  // Preview quality of links; fetchMedia and the stream player read it from storage themselves.
+  const [sharpPreview, setSharpPreview] = useState(() => remembered(SHARP_PREVIEW, false));
+  const chooseSharpPreview = (on: boolean) => {
+    setSharpPreview(on);
+    remember(SHARP_PREVIEW, on);
   };
   /** Media id → how making its captions is going, for the Media list. */
   const [captioning, setCaptioning] = useState<Record<string, string>>({});
@@ -1048,7 +1055,6 @@ export default function App() {
   const exported = history ?? [];
   const shownExports = exported.filter((j) => !j.hidden);
   const usedMedia = new Set(project.clips.map((c) => c.mediaId).filter((id): id is string => Boolean(id)));
-  const showPanel = view === "editor" && rightOpen;
   const selectedTrack = selected ? project.tracks.find((t) => t.id === selected.trackId) : undefined;
 
   /** Signing in to websites, checking links and updating yt-dlp (Settings); absent in the browser preview. */
@@ -1218,6 +1224,8 @@ export default function App() {
             links={linkSettings}
             autoCaptions={autoCaptions}
             onAutoCaptions={chooseAutoCaptions}
+            sharpPreview={sharpPreview}
+            onSharpPreview={chooseSharpPreview}
           />
         )}
         {view === "library" && (
@@ -1261,8 +1269,9 @@ export default function App() {
         )}
       </main>
 
-      {showPanel && (
-        <div className="app__panel">
+      {view === "editor" && (
+        // Stays mounted when closed so it can slide away; inert keeps it out of Tab and clicks.
+        <div className={`app__panel${rightOpen ? "" : " is-closed"}`} inert={!rightOpen}>
           <div className="segmented app__tabs" role="group" aria-label="Right panel">
             <button type="button" aria-pressed={rightTab === "edit"} onClick={() => setRightTab("edit")}>
               Edit & export

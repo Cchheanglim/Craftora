@@ -132,6 +132,7 @@
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: var(--bg-raised);
+  animation: pop-in var(--dur-fast) var(--ease-out) backwards;
 }
 
 .tl__menu button {

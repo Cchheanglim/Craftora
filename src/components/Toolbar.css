@@ -83,6 +83,7 @@
   color: var(--text);
   font-size: var(--text-xs);
   white-space: nowrap;
+  animation: pop-in var(--dur) var(--ease-out) backwards;
 }
 
 .toolbar__error .btn {
