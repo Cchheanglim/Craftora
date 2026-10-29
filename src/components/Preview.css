@@ -77,11 +77,12 @@
 /* Matches the export's Segoe UI Bold with a soft drop shadow. */
 .preview__text {
   position: absolute;
-  max-width: 92%;
+  /* Line breaks come from `textLines`, as in the export: never wrapped by the box. */
+  width: max-content;
   font-family: "Segoe UI", var(--font-ui);
   font-weight: 700;
   line-height: 1.15;
-  white-space: pre-wrap;
+  white-space: pre;
   text-align: center;
   text-shadow: 0.06em 0.06em 0 rgb(0 0 0 / 0.6);
   cursor: move;

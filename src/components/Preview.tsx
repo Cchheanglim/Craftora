@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, trackOrder, transitionMix, CAPTIONS, type Clip, type Project } from "../project/model";
+import { clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, transitionMix, CAPTIONS, type Clip, type Project } from "../project/model";
 import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -467,7 +467,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 onPointerDown={beginGesture(clip, "move")}
                 onClick={(e) => e.stopPropagation()}
               >
-                {clip.text}
+                {textLines(clip.text ?? "", clip.size, frame)}
                 {isSelected && handles(clip)}
               </div>
             );
@@ -487,7 +487,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               onPointerDown={beginGesture(clip, "move")}
               onClick={(e) => e.stopPropagation()}
             >
-              {clip.text}
+              {textLines(clip.text ?? "", clip.size, frame)}
               {selectedId === SHOWN_CAPTIONS && handles(clip)}
             </div>
           ))}

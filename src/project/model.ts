@@ -348,6 +348,12 @@ export function wrapText(text: string, max: number): string {
     .join("\n");
 }
 
+/** A text clip's lines in a frame, the same in the preview and the export. */
+export function textLines(text: string, size: number, frame: { width: number; height: number }): string {
+  // Letters of bold text are about 0.6 of their height wide; lines fill up to 92% of the width.
+  return wrapText(text, Math.max(8, Math.floor((0.92 * frame.width) / (0.6 * size * frame.height))));
+}
+
 /** A spoken line on the timeline: a caption piece of a clip that plays it. */
 export interface TranscriptLine {
   id: string;
