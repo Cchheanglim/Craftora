@@ -362,9 +362,14 @@ async fn forget_cookies(app: &AppHandle, site: Option<&str>) -> Result<(), Strin
     };
     // Not `delete_cookie`: the cookie library drops a site-wide cookie's leading dot
     // (".youtube.com"), so WebView2 looked for a cookie of "youtube.com" alone and deleted nothing.
-    // Deleting by name and address removes the cookie that address gets, site-wide or not.
-    let targets: Vec<(String, String)> =
-        cookies.iter().map(|c| (c.name().to_string(), format!("https://{}{}", c.domain().unwrap_or_default(), c.path().unwrap_or("/")))).collect();
+    // WebView2 deletes by exact domain, so ask for both: the site-wide one and the host-only one.
+    let targets: Vec<(String, String, String)> = cookies
+        .iter()
+        .flat_map(|c| {
+            let (name, domain, path) = (c.name(), c.domain().unwrap_or_default(), c.path().unwrap_or("/"));
+            [domain.to_string(), format!(".{domain}")].map(|d| (name.to_string(), d, path.to_string()))
+        })
+        .collect();
     let (done, finished) = std::sync::mpsc::channel();
     main.with_webview(move |webview| {
         use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_2;
@@ -372,8 +377,8 @@ async fn forget_cookies(app: &AppHandle, site: Option<&str>) -> Result<(), Strin
         // SAFETY: WebView2 calls on the window's own thread, where `with_webview` runs this.
         let result = unsafe {
             webview.controller().CoreWebView2().and_then(|w| w.cast::<ICoreWebView2_2>()).and_then(|w| w.CookieManager()).map(|manager| {
-                for (name, uri) in &targets {
-                    let _ = manager.DeleteCookies(&HSTRING::from(name), &HSTRING::from(uri));
+                for (name, domain, path) in &targets {
+                    let _ = manager.DeleteCookiesWithDomainAndPath(&HSTRING::from(name), &HSTRING::from(domain), &HSTRING::from(path));
                 }
             })
         };
