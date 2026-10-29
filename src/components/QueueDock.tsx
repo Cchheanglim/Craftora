@@ -3,7 +3,7 @@ import type { Job } from "../types";
 import type { Queue } from "../state/useQueue";
 import { formatSize } from "../project/exportPlan";
 import { formatClock } from "../lib/timecode";
-import { revealFile, stopRecording } from "../lib/engine";
+import { playableFile, revealFile, stopRecording } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { Thumb } from "./Thumb";
 import { Icon } from "./Icon";
@@ -151,7 +151,11 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
     <li className={fresh ? "queue__row is-fresh" : "queue__row"}>
       {dialog}
       <div className="queue__name">
-        <Thumb src={job.thumbnail} icon={job.kind === "audio" ? "music" : "film"} />
+        <Thumb
+          src={job.thumbnail}
+          icon={job.kind === "audio" ? "music" : "film"}
+          play={job.status === "finished" && job.kind !== "audio" && job.outputPath ? () => playableFile(job.outputPath!) : undefined}
+        />
         <div>
           {naming ? (
             <form

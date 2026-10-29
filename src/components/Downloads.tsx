@@ -85,7 +85,7 @@ export function Downloads({ queue, onAdd }: DownloadsProps) {
                     <tr key={file.path}>
                       <td>
                         <span className="library__name">
-                          <FileThumb path={file.path} icon={SOUND.test(file.name) ? "music" : "film"} />
+                          <FileThumb path={file.path} icon={SOUND.test(file.name) ? "music" : "film"} play={!SOUND.test(file.name)} />
                           <span className="mono truncate" title={file.name}>
                             {file.name}
                           </span>

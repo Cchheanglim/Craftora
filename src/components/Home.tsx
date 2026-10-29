@@ -1,8 +1,8 @@
 import type { Job } from "../types";
-import type { ProjectEntry } from "../lib/storage";
+import { loadProject, type ProjectEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { inDesktopApp, revealFile } from "../lib/engine";
+import { inDesktopApp, playableFile, revealFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { storeEdition, type Updates } from "../lib/updates";
 import { checkSite, signedInSites, signOutOf, type SiteReport } from "../lib/engine";
@@ -111,7 +111,7 @@ export function ProjectList({
             {selected ? (
               <label className="home__project">
                 <input type="checkbox" checked={selected.has(p.id)} onChange={() => onToggle?.(p.id)} />
-                <Thumb src={p.thumbnail} icon="scissors" />
+                <Thumb src={p.thumbnail} icon="scissors" play={() => projectVideo(p.id)} />
                 <span className="home__project-text">
                   <span className="truncate">{p.name}</span>
                   <span className="home__project-meta">
@@ -122,7 +122,7 @@ export function ProjectList({
             ) : (
             <>
             <button type="button" className="home__project" onClick={() => onOpenProject(p.id)}>
-              <Thumb src={p.thumbnail} icon="scissors" />
+              <Thumb src={p.thumbnail} icon="scissors" play={() => projectVideo(p.id)} />
               <span className="home__project-text">
                 <span className="truncate">{p.name}</span>
                 <span className="home__project-meta">
@@ -237,7 +237,7 @@ export function Home({
               <ul className="home__recent">
                 {recent.slice(0, 5).map((job) => (
                   <li key={job.id}>
-                    <Thumb src={job.thumbnail} icon={job.kind === "audio" ? "music" : "film"} />
+                    <Thumb src={job.thumbnail} icon={job.kind === "audio" ? "music" : "film"} play={job.kind !== "audio" && job.outputPath ? () => playableFile(job.outputPath!) : undefined} />
                     <span className="truncate mono">{job.outputPath?.split(/[\\/]/).pop() ?? job.fileName}</span>
                     {job.outputPath && (
                       <>
@@ -350,6 +350,18 @@ function ReportDetails({ report }: { report: SiteReport }) {
       </button>
     </>
   );
+}
+
+/** A saved project's first video on this PC, from where its clip starts, to play while its row is hovered. */
+async function projectVideo(id: string): Promise<string | undefined> {
+  const { project } = await loadProject(id);
+  const onVideoTrack = (trackId: string) => project.tracks.find((t) => t.id === trackId)?.kind === "video";
+  for (const clip of [...project.clips].sort((a, b) => a.start - b.start)) {
+    const media = project.media.find((m) => m.id === clip.mediaId);
+    if (media?.source.local && !media.source.image && media.hasVideo && onVideoTrack(clip.trackId))
+      return `${await playableFile(media.source.url)}#t=${clip.in}`;
+  }
+  return undefined;
 }
 
 /** Signing in to websites for links that need a login, checking links, and keeping yt-dlp current. */
