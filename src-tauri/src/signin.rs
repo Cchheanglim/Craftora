@@ -352,48 +352,107 @@ pub async fn sign_out_everywhere(app: AppHandle) -> Result<(), String> {
 
 /// Deletes the sign-in window's cookies for `site`, or for every website.
 async fn forget_cookies(app: &AppHandle, site: Option<&str>) -> Result<(), String> {
-    let cookies: Vec<_> = web_cookies(app)
-        .await
-        .into_iter()
-        .filter(|c| site.is_none_or(|site| c.domain().is_some_and(|d| same_login(site).contains(&site_of(d).as_str()))))
-        .collect();
     let Some(main) = app.get_webview_window("main") else {
         return Ok(());
     };
-    // Not `delete_cookie`: the cookie library drops a site-wide cookie's leading dot
-    // (".youtube.com"), so WebView2 looked for a cookie of "youtube.com" alone and deleted nothing.
-    // WebView2 deletes by exact domain, so ask for both: the site-wide one and the host-only one.
-    let targets: Vec<(String, String, String)> = cookies
-        .iter()
-        .flat_map(|c| {
-            let (name, domain, path) = (c.name(), c.domain().unwrap_or_default(), c.path().unwrap_or("/"));
-            [domain.to_string(), format!(".{domain}")].map(|d| (name.to_string(), d, path.to_string()))
-        })
-        .collect();
-    let (done, finished) = std::sync::mpsc::channel();
+    // Through the browser's own DevTools commands, not `delete_cookie` or WebView2's cookie manager:
+    // those can't reach "partitioned" cookies (most of YouTube's), and the cookie library drops a
+    // site-wide cookie's leading dot, so they deleted nothing there. Tested in the owner's app.
+    let site = site.map(str::to_string);
+    let (done, finished) = std::sync::mpsc::channel::<Result<(), String>>();
     main.with_webview(move |webview| {
-        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_2;
-        use windows_core::{Interface, HSTRING};
-        // SAFETY: WebView2 calls on the window's own thread, where `with_webview` runs this.
-        let result = unsafe {
-            webview.controller().CoreWebView2().and_then(|w| w.cast::<ICoreWebView2_2>()).and_then(|w| w.CookieManager()).map(|manager| {
-                for (name, domain, path) in &targets {
-                    let _ = manager.DeleteCookiesWithDomainAndPath(&HSTRING::from(name), &HSTRING::from(domain), &HSTRING::from(path));
-                }
+        use std::{cell::Cell, rc::Rc};
+        use webview2_com::CallDevToolsProtocolMethodCompletedHandler as Handler;
+        use windows_core::HSTRING;
+        // SAFETY: WebView2 calls on the window's own thread, where `with_webview` and the handlers run.
+        let started = unsafe {
+            webview.controller().CoreWebView2().and_then(|core| {
+                let deleter = core.clone();
+                let done_all = done.clone();
+                let listed = Handler::create(Box::new(move |result, json: String| {
+                    if let Err(e) = result {
+                        let _ = done_all.send(Err(format!("Couldn't read the cookies: {e}")));
+                        return Ok(());
+                    }
+                    let targets = cookies_to_delete(&json, site.as_deref());
+                    let left = Rc::new(Cell::new(targets.len()));
+                    for params in targets {
+                        let (count, done) = (left.clone(), done_all.clone());
+                        let deleted = Handler::create(Box::new(move |_, _| {
+                            count.set(count.get() - 1);
+                            if count.get() == 0 {
+                                let _ = done.send(Ok(()));
+                            }
+                            Ok(())
+                        }));
+                        if deleter.CallDevToolsProtocolMethod(&HSTRING::from("Network.deleteCookies"), &HSTRING::from(params.to_string()), &deleted).is_err() {
+                            left.set(left.get() - 1);
+                        }
+                    }
+                    // Nothing to delete, or no call went out.
+                    if left.get() == 0 {
+                        let _ = done_all.send(Ok(()));
+                    }
+                    Ok(())
+                }));
+                core.CallDevToolsProtocolMethod(&HSTRING::from("Network.getAllCookies"), &HSTRING::from("{}"), &listed)
             })
         };
-        let _ = done.send(result.map_err(|e| format!("Couldn't delete the cookies: {e}")));
+        if let Err(e) = started {
+            let _ = done.send(Err(format!("Couldn't delete the cookies: {e}")));
+        }
     })
     .map_err(|e| e.to_string())?;
     // Wait so the list shown next no longer has the website.
-    tauri::async_runtime::spawn_blocking(move || finished.recv().unwrap_or(Ok(())))
+    tauri::async_runtime::spawn_blocking(move || finished.recv_timeout(std::time::Duration::from_secs(10)).unwrap_or(Ok(())))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// `Network.deleteCookies` parameters for each cookie in a `Network.getAllCookies` answer that
+/// belongs to `site` (and the websites sharing its login), or to any website. Exact domain, path
+/// and partition, so each call removes that one cookie.
+fn cookies_to_delete(json: &str, site: Option<&str>) -> Vec<serde_json::Value> {
+    let answer: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
+    let sites = site.map(same_login);
+    answer["cookies"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|c| {
+            let domain = c["domain"].as_str().unwrap_or_default();
+            !is_local(domain) && sites.as_ref().is_none_or(|sites| sites.contains(&site_of(domain).as_str()))
+        })
+        .map(|c| {
+            let mut params = serde_json::json!({ "name": c["name"], "domain": c["domain"], "path": c["path"] });
+            if !c["partitionKey"].is_null() {
+                params["partitionKey"] = c["partitionKey"].clone();
+            }
+            params
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deletes_each_cookie_of_the_site_with_its_partition() {
+        let json = r#"{"cookies":[
+            {"name":"PREF","domain":".youtube.com","path":"/"},
+            {"name":"YNID","domain":".youtube.com","path":"/","partitionKey":{"topLevelSite":"https://youtube.com","hasCrossSiteAncestor":false}},
+            {"name":"SID","domain":".google.com","path":"/"},
+            {"name":"keep","domain":"example.com","path":"/"},
+            {"name":"app","domain":"localhost","path":"/"}]}"#;
+        let names = |site| cookies_to_delete(json, site).iter().map(|p| p["name"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+        assert_eq!(names(Some("youtube.com")), ["PREF", "YNID", "SID"]);
+        assert_eq!(names(None), ["PREF", "YNID", "SID", "keep"]);
+        let partitioned = &cookies_to_delete(json, Some("youtube.com"))[1];
+        assert_eq!(partitioned["domain"], ".youtube.com");
+        assert_eq!(partitioned["partitionKey"]["topLevelSite"], "https://youtube.com");
+        assert!(cookies_to_delete(json, Some("youtube.com"))[0].get("partitionKey").is_none());
+    }
 
     #[test]
     fn google_and_youtube_sign_out_together() {
