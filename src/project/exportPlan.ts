@@ -5,7 +5,7 @@
  */
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
-import { clipLength, isCropped, projectDuration, trackOrder, transitionLength, type Clip, type MediaItem, type Project } from "./model";
+import { clipLength, isCropped, projectDuration, trackOrder, transitionLength, wrapText, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
   { id: "1080p", label: "16:9 · 1920 × 1080", width: 1920, height: 1080 },
@@ -168,7 +168,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       fill: Boolean(c.fill),
       x: c.x,
       y: c.y,
-      text: c.text ?? "",
+      // Letters of bold text are about 0.6 of their height wide; the preview wraps at 92% of the width.
+      text: wrapText(c.text ?? "", Math.max(8, Math.floor((0.92 * frame.width) / (0.6 * c.size * frame.height)))),
       color: c.color ?? "#ffffff",
     };
   });

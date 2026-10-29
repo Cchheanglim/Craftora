@@ -330,6 +330,17 @@ export function readableCaptions(lines: Caption[], max = CAPTION_CHARS): Caption
   });
 }
 
+/**
+ * Text broken into lines of at most `max` characters at whole words, as the preview wraps it:
+ * FFmpeg draws each line as given, so a long caption ran off the picture's edges.
+ */
+export function wrapText(text: string, max: number): string {
+  return text
+    .split("\n")
+    .map((line) => readableCaptions([{ start: 0, end: 1, text: line }], max).map((piece) => piece.text).join("\n"))
+    .join("\n");
+}
+
 /** A spoken line on the timeline: a caption piece of a clip that plays it. */
 export interface TranscriptLine {
   id: string;

@@ -156,6 +156,16 @@ test("shown captions go into the export, at the chosen place, until they're on t
   expect(withShownCaptions(p)).toBe(p);
 });
 
+test("exported text wraps at whole words to fit the frame", async () => {
+  const { wrapText } = await import("../src/project/model");
+  expect(wrapText("Welcome to the shop. Today we are looking at a new camera.", 30)).toBe("Welcome to the shop. Today we
+are looking at a new camera.");
+  expect(wrapText("short", 30)).toBe("short");
+  expect(wrapText("one
+two", 30)).toBe("one
+two");
+});
+
 test("long caption lines become two-line pieces at whole words, timed by length", async () => {
   const { readableCaptions, CAPTION_CHARS } = await import("../src/project/model");
   const english = "After the war the gods came down to the mountain and asked who would guard the gate, and the monkey king answered that he would do it alone if they let him keep his staff.";

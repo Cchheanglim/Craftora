@@ -440,7 +440,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                     let size = ((h as f64) * clip.size).round().max(8.0) as u32;
                     let color = clip.color.trim_start_matches('#');
                     graph.push(format!(
-                        "[{picture}]drawtext=fontfile='{font}':textfile='{file}':expansion=none:fontsize={size}:fontcolor=0x{color}:shadowcolor=black@0.6:shadowx=2:shadowy=2:x='(w-text_w)*{x}':y='(h-text_h)*{y}'{alpha}:enable='between(t,{start},{end})'[p{i}]",
+                        "[{picture}]drawtext=fontfile='{font}':textfile='{file}':expansion=none:text_align=C:fontsize={size}:fontcolor=0x{color}:shadowcolor=black@0.6:shadowx=2:shadowy=2:x='(w-text_w)*{x}':y='(h-text_h)*{y}'{alpha}:enable='between(t,{start},{end})'[p{i}]",
                         x = clip.x,
                         y = clip.y,
                         alpha = clip.text_alpha()
