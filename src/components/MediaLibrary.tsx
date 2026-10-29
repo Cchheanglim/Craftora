@@ -4,6 +4,7 @@ import { formatClock } from "../lib/timecode";
 import { Icon } from "./Icon";
 import { FileThumb } from "./Thumb";
 import { useConfirm } from "./ConfirmDialog";
+import { HiddenFold, HideButton, useHidden } from "./Hidden";
 import "./Library.css";
 
 interface MediaLibraryProps {
@@ -43,8 +44,81 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget }: 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const words = search.trim().toLowerCase();
-  const shown = entries.filter(
+  const hidden = useHidden("media");
+  const matching = entries.filter(
     (e) => (filter === "all" || (filter === "saved" ? e.saved : e.kind === filter)) && (!words || e.name.toLowerCase().includes(words)),
+  );
+  const shown = matching.filter((e) => !hidden.isHidden(e.path));
+  const hiddenShown = matching.filter((e) => hidden.isHidden(e.path));
+
+  const table = (list: LibraryEntry[]) => (
+    <div className="library__table-wrap">
+      <table className="library__table">
+        <thead>
+          <tr>
+            <th scope="col">File</th>
+            <th scope="col" className="is-num">
+              Length
+            </th>
+            <th scope="col">Imported</th>
+            <th scope="col">
+              <span className="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((entry) => (
+            <tr key={entry.path}>
+              <td>
+                <span className="library__name">
+                  <FileThumb
+                    path={entry.path}
+                    src={entry.thumbnail}
+                    image={entry.kind === "image"}
+                    icon={entry.kind === "image" ? "image" : entry.kind === "audio" ? "music" : "film"}
+                    onMade={(thumbnail) => onThumbnail(entry.path, thumbnail)}
+                    play={entry.kind === "video"}
+                  />
+                  <span className="mono truncate" title={entry.path}>
+                    {entry.name}
+                  </span>
+                </span>
+              </td>
+              <td className="mono is-num">{entry.kind === "image" ? "Picture" : formatClock(entry.duration)}</td>
+              <td className="library__detail">{dateFormat.format(entry.addedAt)}</td>
+              <td className="is-num">
+                <span className="library__actions">
+                  <HideButton hidden={hidden} id={entry.path} name={entry.name} />
+                  <button
+                    type="button"
+                    className={entry.saved ? "btn btn--icon is-on" : "btn btn--icon"}
+                    aria-pressed={Boolean(entry.saved)}
+                    aria-label={`${entry.saved ? "Unstar" : "Star"} ${entry.name}`}
+                    title={entry.saved ? "Remove from Saved" : "Save it (shown under ★ Saved)"}
+                    onClick={() => onSave(entry.path, !entry.saved)}
+                  >
+                    <Icon name="star" size={14} />
+                  </button>
+                  <button type="button" className="btn btn--ghost" onClick={() => onAdd(entry.path)}>
+                    <Icon name="plus" size={14} />
+                    Add to project
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--icon"
+                    aria-label={`Remove ${entry.name} from the list`}
+                    title="Remove from this list (the file stays)"
+                    onClick={() => void forget(entry)}
+                  >
+                    <Icon name="x" size={14} />
+                  </button>
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 
   return (
@@ -80,75 +154,13 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget }: 
       {entries.length === 0 ? (
         <p className="library__muted">Files you import into a project show up here, so you can find them again.</p>
       ) : shown.length === 0 ? (
-        <p className="library__muted">Nothing matches.</p>
+        <p className="library__muted">{hiddenShown.length ? "Everything here is hidden." : "Nothing matches."}</p>
       ) : (
-        <div className="library__table-wrap">
-          <table className="library__table">
-            <thead>
-              <tr>
-                <th scope="col">File</th>
-                <th scope="col" className="is-num">
-                  Length
-                </th>
-                <th scope="col">Imported</th>
-                <th scope="col">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((entry) => (
-                <tr key={entry.path}>
-                  <td>
-                    <span className="library__name">
-                      <FileThumb
-                        path={entry.path}
-                        src={entry.thumbnail}
-                        image={entry.kind === "image"}
-                        icon={entry.kind === "image" ? "image" : entry.kind === "audio" ? "music" : "film"}
-                        onMade={(thumbnail) => onThumbnail(entry.path, thumbnail)}
-                        play={entry.kind === "video"}
-                      />
-                      <span className="mono truncate" title={entry.path}>
-                        {entry.name}
-                      </span>
-                    </span>
-                  </td>
-                  <td className="mono is-num">{entry.kind === "image" ? "Picture" : formatClock(entry.duration)}</td>
-                  <td className="library__detail">{dateFormat.format(entry.addedAt)}</td>
-                  <td className="is-num">
-                    <span className="library__actions">
-                      <button
-                        type="button"
-                        className={entry.saved ? "btn btn--icon is-on" : "btn btn--icon"}
-                        aria-pressed={Boolean(entry.saved)}
-                        aria-label={`${entry.saved ? "Unstar" : "Star"} ${entry.name}`}
-                        title={entry.saved ? "Remove from Saved" : "Save it (shown under ★ Saved)"}
-                        onClick={() => onSave(entry.path, !entry.saved)}
-                      >
-                        <Icon name="star" size={14} />
-                      </button>
-                      <button type="button" className="btn btn--ghost" onClick={() => onAdd(entry.path)}>
-                        <Icon name="plus" size={14} />
-                        Add to project
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--icon"
-                        aria-label={`Remove ${entry.name} from the list`}
-                        title="Remove from this list (the file stays)"
-                        onClick={() => void forget(entry)}
-                      >
-                        <Icon name="x" size={14} />
-                      </button>
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        table(shown)
       )}
+      <HiddenFold count={hiddenShown.length} note="Hidden from this list only. The files stay on your PC and in your projects.">
+        {table(hiddenShown)}
+      </HiddenFold>
     </section>
   );
 }

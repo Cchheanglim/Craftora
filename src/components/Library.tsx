@@ -6,6 +6,7 @@ import { PlayFile } from "./PlayFile";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
 import { useConfirm } from "./ConfirmDialog";
+import { HiddenFold } from "./Hidden";
 import "./Library.css";
 
 interface LibraryProps {
@@ -44,8 +45,6 @@ export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace, o
       /* not essential */
     }
   };
-  // Hidden files stay folded away each time the page opens, so they're out of sight by default.
-  const [hiddenOpen, setHiddenOpen] = useState(false);
 
   return (
     <section className="library" aria-labelledby="library-title">
@@ -82,33 +81,16 @@ export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace, o
             {open &&
               (shown.length === 0 ? (
                 <p className="library__muted" id="library-files">
-                  Every export is hidden. They're under Hidden below.
+                  Every export is hidden.
                 </p>
               ) : (
                 <ExportTable id="library-files" jobs={shown} onHide={onHide} onDelete={onDelete} />
               ))}
           </div>
 
-          {hidden.length > 0 && (
-            <div className="library__group">
-              <button
-                type="button"
-                className="library__toggle"
-                aria-expanded={hiddenOpen}
-                aria-controls="library-hidden"
-                onClick={() => setHiddenOpen(!hiddenOpen)}
-              >
-                <Icon name="chevronDown" size={14} />
-                Hidden <span className="library__count">{hidden.length}</span>
-              </button>
-              {hiddenOpen && (
-                <>
-                  <p className="library__muted">Hidden here and on Home. The files are still in your save folder.</p>
-                  <ExportTable id="library-hidden" jobs={hidden} onHide={onHide} onDelete={onDelete} />
-                </>
-              )}
-            </div>
-          )}
+          <HiddenFold count={hidden.length} note="Hidden here and on Home. The files are still in your save folder.">
+            <ExportTable id="library-hidden" jobs={hidden} onHide={onHide} onDelete={onDelete} />
+          </HiddenFold>
         </>
       )}
     </section>

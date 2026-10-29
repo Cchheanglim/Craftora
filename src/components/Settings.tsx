@@ -5,6 +5,7 @@ import { checkAddress, getProxy, inDesktopApp, setProxy, type ProxyState } from 
 import { Icon } from "./Icon";
 import { Links, UpdateControls, type LinkSettings } from "./Home";
 import type { Updates } from "../lib/updates";
+import { setShowHiddenLists, showHiddenLists } from "./Hidden";
 import "./Library.css";
 
 interface SettingsProps {
@@ -134,6 +135,11 @@ export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaul
 
 /** A proxy for every connection Craftora makes, and a check of the address websites see. */
 function Privacy() {
+  const [showHidden, setShowHidden] = useState(showHiddenLists);
+  const chooseShowHidden = (on: boolean) => {
+    setShowHidden(on);
+    setShowHiddenLists(on);
+  };
   const [state, setState] = useState<ProxyState | null>(null);
   const [draft, setDraft] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -168,46 +174,62 @@ function Privacy() {
       setChecking(false);
     }
   };
-  if (!state) return null;
   return (
     <div className="library__group">
       <h2 className="section-label">Privacy</h2>
-      <form className="library__save" onSubmit={submit}>
-        <label htmlFor="proxy">Proxy</label>
-        <input
-          id="proxy"
-          className="field mono"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="http://127.0.0.1:8080"
-          spellCheck={false}
-        />
-        <button type="submit" className="btn btn--secondary" disabled={draft.trim() === (state.proxy ?? "")}>
-          Save
+      <div className="segmented library__choice" role="group" aria-label="Hidden items">
+        <button type="button" aria-pressed={showHidden} onClick={() => chooseShowHidden(true)}>
+          Show hidden items
         </button>
-        {state.proxy && (
-          <button type="button" className="btn btn--ghost" onClick={() => void save(null)}>
-            Turn off
-          </button>
-        )}
-        <button type="button" className="btn btn--ghost" disabled={checking} onClick={() => void check()}>
-          <Icon name="shield" size={14} />
-          {checking ? "Checking…" : "Check"}
+        <button type="button" aria-pressed={!showHidden} onClick={() => chooseShowHidden(false)}>
+          Don't show them
         </button>
-      </form>
+      </div>
       <p className="library__muted">
-        Fetching, downloads, previews, pictures, captions and the AI assistant go through this proxy, so websites see its
-        address instead of yours. Only http:// proxies: FFmpeg can't use SOCKS ones. A VPN app needs nothing here, it already
-        covers your whole PC. <strong>Check</strong> asks Cloudflare which address it sees.
+        Things you hide on Projects, Media library, Downloads, History and Exports go into a folded Hidden list at the bottom of each
+        page. Choose Don't show them and those lists disappear completely, so nobody using this PC can open them. Nothing is deleted:
+        choose Show hidden items to find and unhide them again.
       </p>
-      {message && <p className="library__muted">{message}</p>}
-      {state.proxy !== state.window && (
-        <p className="library__save">
-          <span>Restart Craftora so its own window (signing in, some previews and pictures) uses this too.</span>
-          <button type="button" className="btn btn--secondary" onClick={() => void relaunch()}>
-            Restart now
-          </button>
-        </p>
+      {state && (
+        <>
+          <form className="library__save" onSubmit={submit}>
+            <label htmlFor="proxy">Proxy</label>
+            <input
+              id="proxy"
+              className="field mono"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="http://127.0.0.1:8080"
+              spellCheck={false}
+            />
+            <button type="submit" className="btn btn--secondary" disabled={draft.trim() === (state.proxy ?? "")}>
+              Save
+            </button>
+            {state.proxy && (
+              <button type="button" className="btn btn--ghost" onClick={() => void save(null)}>
+                Turn off
+              </button>
+            )}
+            <button type="button" className="btn btn--ghost" disabled={checking} onClick={() => void check()}>
+              <Icon name="shield" size={14} />
+              {checking ? "Checking…" : "Check"}
+            </button>
+          </form>
+          <p className="library__muted">
+            Fetching, downloads, previews, pictures, captions and the AI assistant go through this proxy, so websites see its
+            address instead of yours. Only http:// proxies: FFmpeg can't use SOCKS ones. A VPN app needs nothing here, it already
+            covers your whole PC. <strong>Check</strong> asks Cloudflare which address it sees.
+          </p>
+          {message && <p className="library__muted">{message}</p>}
+          {state.proxy !== state.window && (
+            <p className="library__save">
+              <span>Restart Craftora so its own window (signing in, some previews and pictures) uses this too.</span>
+              <button type="button" className="btn btn--secondary" onClick={() => void relaunch()}>
+                Restart now
+              </button>
+            </p>
+          )}
+        </>
       )}
     </div>
   );
