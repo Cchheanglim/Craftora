@@ -16,6 +16,7 @@ import {
   isStill,
   readableCaptions,
   transitionLength,
+  type CaptionPlace,
   type Clip,
   type MediaItem,
   type Project,
@@ -40,6 +41,8 @@ export type EditAction =
   | { type: "addText"; clipId: string; at: number; text?: string }
   /** The media's captions as text clips on a new "Captions" track, lined up with each of its clips. */
   | { type: "addCaptions"; mediaId: string; trackId: string }
+  /** Where captions sit: the ones shown from the media and every clip on a "Captions" track. */
+  | { type: "placeCaptions"; place: CaptionPlace }
   /** On a magnetic track, `start` picks the slot: the clip goes where its left edge lands. */
   | { type: "moveClip"; clipId: string; start: number; trackId?: string }
   /** Moves one edge of a clip to a timeline time. */
@@ -296,7 +299,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
       // shortcut: reversed clips get no captions; map them backwards if anyone reverses captioned clips.
       const clips = p.clips.filter((c) => c.mediaId === action.mediaId && !c.reverse);
       if (lines.length === 0 || clips.length === 0 || p.tracks.some((t) => t.id === action.trackId)) return p;
-      const bottom = POSITIONS.bottom;
+      const place = POSITIONS[p.captionPlace ?? "bottom"];
       const added: Clip[] = [];
       for (const clip of clips) {
         for (const line of lines) {
@@ -313,8 +316,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
               text: line.text,
               color: "#ffffff",
               size: 0.055,
-              x: bottom.x,
-              y: bottom.y,
+              x: place.x,
+              y: place.y,
             }),
           );
         }
@@ -509,7 +512,28 @@ export function applyEdit(p: Project, action: EditAction): Project {
       if (!p.tracks.some((t) => t.id === action.trackId && t.kind !== "text")) return p;
       return { ...p, tracks: p.tracks.map((t) => (t.id === action.trackId ? { ...t, muted: action.muted || undefined } : t)) };
 
+    case "placeCaptions": {
+      const { x, y } = POSITIONS[action.place];
+      const captions = new Set(p.tracks.filter((t) => t.name === "Captions").map((t) => t.id));
+      return { ...p, captionPlace: action.place, clips: p.clips.map((c) => (captions.has(c.trackId) ? { ...c, x, y } : c)) };
+    }
+
     case "settle":
       return settle(p);
   }
+}
+
+/** Track ids of captions that are shown but not on the timeline (see `withShownCaptions`). */
+export const SHOWN_CAPTIONS = "shown-captions-";
+
+/**
+ * The project with the captions of its media added as text, as the preview shows them with
+ * captions on, so the export has them too. Nothing changes once captions are on the timeline
+ * ("Add captions"): those are edited there instead.
+ */
+export function withShownCaptions(p: Project): Project {
+  if (p.tracks.some((t) => t.name === "Captions")) return p;
+  return p.media
+    .filter((m) => m.captions)
+    .reduce((project, m) => applyEdit(project, { type: "addCaptions", mediaId: m.id, trackId: `${SHOWN_CAPTIONS}${m.id}` }), p);
 }
