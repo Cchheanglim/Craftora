@@ -72,10 +72,11 @@ Write-Host "Laying out the package..."
 if (Test-Path $layout) { Remove-Item -Recurse -Force $layout }
 New-Item -ItemType Directory -Force $layout, (Join-Path $layout "Assets"), (Join-Path $layout "licenses") | Out-Null
 
-foreach ($item in "craftora.exe", "ffmpeg.exe", "ffprobe.exe", "yt-dlp") {
+foreach ($item in "craftora.exe", "ffmpeg.exe", "ffprobe.exe", "yt-dlp", "deno", "whisper") {
   $source = Join-Path $release $item
   if (-not (Test-Path $source)) { throw "Missing $source. Run without -SkipBuild (and scripts/fetch-sidecars.ps1 first)." }
-  # yt-dlp is a folder (its unpacked build), which the app runs from next to itself.
+  # yt-dlp, Deno (which yt-dlp needs for YouTube) and whisper (captions from the sound) are folders
+  # the app runs from next to itself.
   Copy-Item $source $layout -Recurse
 }
 Copy-Item (Join-Path $release "licenses\*") (Join-Path $layout "licenses")

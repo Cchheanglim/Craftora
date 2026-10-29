@@ -1,5 +1,17 @@
 # What's new in Craftora
 
+## Next version
+
+**New**
+
+- **Report an AI reply.** **Report a reply** under the assistant's chat opens a short form to tell us
+  about a wrong or inappropriate answer (it names the AI and model; you paste the reply yourself).
+
+**Fixed**
+
+- **Microsoft Store version:** it now includes Deno and whisper.cpp like the GitHub installer, so
+  YouTube and captions from the sound work there too.
+
 ## 0.4.0 (October 2026)
 
 **New**
