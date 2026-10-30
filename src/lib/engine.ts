@@ -33,8 +33,17 @@ export type JobEvent =
   | { kind: "cancelled"; id: string }
   | { kind: "paused"; id: string };
 
-/** Rust commands reject with a plain message string. */
-const message = (err: unknown) => (typeof err === "string" ? err : err instanceof Error ? err.message : String(err));
+/**
+ * An error as a sentence to show. Rust commands reject with a plain message string; a JavaScript
+ * slip (TypeError…) is a bug in Craftora, and its programmer text means nothing to the user.
+ */
+export function errorText(err: unknown): string {
+  if (typeof err === "string") return err;
+  if (err instanceof Error && !["TypeError", "ReferenceError", "RangeError", "SyntaxError"].includes(err.name)) return err.message;
+  console.error(err);
+  return "Something went wrong inside Craftora. Try again, or restart Craftora if it keeps happening.";
+}
+const message = errorText;
 
 export const engineStatus = () => invoke<EngineStatus>("engine_status");
 

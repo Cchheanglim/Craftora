@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { relaunch } from "@tauri-apps/plugin-process";
 import type { OutputKind } from "../types";
-import { checkAddress, getProxy, inDesktopApp, setProxy, type ProxyState } from "../lib/engine";
+import { checkAddress, errorText, getProxy, inDesktopApp, setProxy, type ProxyState } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Links, UpdateControls, type LinkSettings } from "./Home";
 import type { Updates } from "../lib/updates";
@@ -157,7 +157,7 @@ function Privacy() {
       setDraft(next.proxy ?? "");
       setMessage(next.proxy ? `Saved. Connections now go through ${next.proxy}.` : "Proxy off. Connections go directly.");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err));
+      setMessage(errorText(err));
     }
   };
   const submit = (e: FormEvent) => {
@@ -169,7 +169,7 @@ function Privacy() {
     try {
       setMessage(`Websites see your connection as ${await checkAddress()}.`);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err));
+      setMessage(errorText(err));
     } finally {
       setChecking(false);
     }

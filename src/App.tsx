@@ -14,6 +14,7 @@ import {
   onFileDrop,
   localThumbnail,
   audioPeaks,
+  errorText,
   linkPeaks,
   loadCaptions,
   makeCaptions,
@@ -184,7 +185,6 @@ function remember(key: string, value: boolean) {
 const isTyping = (el: EventTarget | null) =>
   el instanceof HTMLElement && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
 
-const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /** The project's picture for lists: the first media that has one. */
 /**

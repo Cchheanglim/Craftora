@@ -18,6 +18,10 @@
   in Craftora's own folder and only Craftora saves into Videos; if Windows blocks that too, Craftora
   says how to allow it. A save folder named Downloads no longer gets a second Downloads inside.
 - **No more "Saved info" list** popping up under the link box and other fields.
+- **Captions made from the sound show up with the words,** not seconds before them, and go away
+  when the talking stops instead of staying through the silence. Captions made earlier are made
+  again by themselves. (Under music the timing stays as before.)
+- **Music notes (♪) and Khmer in exported videos** showed as empty boxes; they're drawn now.
 
 ## 0.4.0 (October 2026)
 

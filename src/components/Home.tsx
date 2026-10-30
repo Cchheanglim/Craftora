@@ -2,7 +2,7 @@ import type { Job } from "../types";
 import { loadProject, type ProjectEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { inDesktopApp, playableFile, revealFile } from "../lib/engine";
+import { errorText, inDesktopApp, playableFile, revealFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { storeEdition, type Updates } from "../lib/updates";
 import { checkSite, signedInSites, signOutOf, type SiteReport } from "../lib/engine";
@@ -433,7 +433,7 @@ export function Links({ links }: { links: LinkSettings }) {
     try {
       setVerdict(siteVerdict(await checkSite(toCheck.trim())));
     } catch (err) {
-      setVerdict({ tone: "warn", text: err instanceof Error ? err.message : String(err) });
+      setVerdict({ tone: "warn", text: errorText(err) });
     } finally {
       setChecking(false);
     }
