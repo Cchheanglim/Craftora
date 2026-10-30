@@ -2,6 +2,19 @@
 
 ## Next version
 
+**Better**
+
+- **The queue gets out of the way.** It opens when a download or export starts and folds down to
+  its one-line header when everything is done (it stays open if something failed). The arrow still
+  opens and closes it.
+- **Pages line up.** Home and every sidebar page share one centred column, and long explanations
+  wrap at a comfortable width.
+- **Sharper previews of YouTube links.** The Smooth preview now really goes up to 720p: it used to
+  pick YouTube's only file with sound built in, which is 360p and looked blurry, especially full
+  screen. (Sharp still takes the highest there is.)
+- **Plain error messages.** A slip inside Craftora now says "Something went wrong inside
+  Craftora…" instead of showing programmer text.
+
 **New**
 
 - **Report an AI reply.** **Report a reply** under the assistant's chat opens a short form to tell us
