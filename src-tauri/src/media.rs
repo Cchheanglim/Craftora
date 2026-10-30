@@ -236,21 +236,29 @@ fn audio_streams(formats: &[Format], duration: f64) -> Vec<Stream> {
     streams
 }
 
-/// Picks a direct file the preview player can open, H.264 first (every WebView decodes it) and
-/// whether it has sound: the highest up to `max_height` (picked in the preview; None: the highest
-/// there is). A video-only file plays next to a sound stream (`preview_audio`): YouTube's
-/// only file with sound is 360p, which looked blurry.
+/// Picks a direct file the preview player can open and whether it has sound: the highest up to
+/// `max_height` (picked in the preview; None: the best there is, 4K included), H.264 before VP9 at
+/// the same height (every WebView decodes H.264; YouTube's 1440p and 4K are VP9 only). A video-only
+/// file plays next to a sound stream (`preview_audio`): YouTube's only file with sound is 360p,
+/// which looked blurry.
 fn preview(formats: &[Format], max_height: Option<u32>) -> (String, bool) {
     // Video-only files need a sound stream beside them, else the preview would be silent.
     let separate_sound = !preview_audio(formats).is_empty();
     formats
         .iter()
-        .filter(|f| f.has_video() && f.plays_in_webview() && f.url.is_some() && (f.has_audio() || separate_sound))
+        // Not AV1: WebView2 plays it only with an extra Windows add-on.
+        .filter(|f| f.has_video() && f.plays_in_webview() && codec_name(f.vcodec.as_deref()) != "AV1")
+        .filter(|f| f.has_audio() || separate_sound)
         .min_by_key(|f| {
             let h = i64::from(f.height.unwrap_or(480));
             let too_big = max_height.is_some_and(|max| h > i64::from(max));
+            let codec = match codec_name(f.vcodec.as_deref()).as_str() {
+                "H.264" => 0,
+                "VP9" => 1,
+                _ => 2,
+            };
             // Within the limit the highest; over it (when nothing is smaller) the smallest.
-            (codec_name(f.vcodec.as_deref()) != "H.264", too_big, if too_big { h } else { -h }, !f.has_audio())
+            (too_big, if too_big { h } else { -h }, codec, !f.has_audio())
         })
         .map(|f| (f.url.clone().unwrap_or_default(), f.has_audio()))
         .unwrap_or_default()
@@ -614,6 +622,16 @@ mod tests {
         assert_eq!(preview(&info.formats, None), ("https://v/1080".into(), false));
         // Below everything there is: the smallest.
         assert_eq!(preview(&info.formats, Some(144)), ("https://v/360".into(), true));
+        // 4K comes as VP9 (and AV1, which WebView2 can't play); at 1080p H.264 still wins.
+        let json = br#"{"title":"T","formats":[
+            {"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"url":"https://v/1080","protocol":"https"},
+            {"format_id":"248","ext":"webm","vcodec":"vp9","acodec":"none","height":1080,"url":"https://v/1080vp9","protocol":"https"},
+            {"format_id":"313","ext":"webm","vcodec":"vp9","acodec":"none","height":2160,"url":"https://v/2160","protocol":"https"},
+            {"format_id":"401","ext":"mp4","vcodec":"av01.0.12M.08","acodec":"none","height":2160,"url":"https://v/2160av1","protocol":"https"},
+            {"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a","url":"https://a/140","protocol":"https"}]}"#;
+        let big: Info = serde_json::from_slice(json).unwrap();
+        assert_eq!(preview(&big.formats, None), ("https://v/2160".into(), false));
+        assert_eq!(preview(&big.formats, Some(1080)), ("https://v/1080".into(), false));
         // Without a sound stream to pair with, the file with sound wins, so the preview isn't silent.
         let silent: Vec<Format> = info.formats.into_iter().filter(|f| f.format_id != "140").collect();
         assert_eq!(preview(&silent, None), ("https://v/360".into(), true));
