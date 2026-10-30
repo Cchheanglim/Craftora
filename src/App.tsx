@@ -105,6 +105,8 @@ import "./App.css";
 const DEMO = DEMO_SOURCES[0];
 /** Quiet time after the last edit before the project is saved. */
 const AUTOSAVE_MS = 600;
+/** The label of captions Craftora made from the sound (whisper). */
+const SPOKEN = "Made from the sound";
 
 /** Browser preview: the sample film already on the timeline, trimmed. */
 function demoProject(): Project {
@@ -579,7 +581,7 @@ export default function App() {
       const current = projectRef.current.media.find((m) => m.id === id);
       if (!current) return;
       const lines = current.captions?.partial ? [...current.captions.lines, line] : [line];
-      api.refreshMedia(id, { captions: { label: "Made from the sound", lines, partial: true } });
+      api.refreshMedia(id, { captions: { label: SPOKEN, lines, partial: true, fitted: true } });
     });
     return () => {
       void unlisten.then((stop) => stop());
@@ -590,7 +592,8 @@ export default function App() {
     if (!inDesktopApp || !autoCaptions) return;
     for (const m of project.media) {
       const s = m.source;
-      if ((m.captions && !m.captions.partial) || s.captions || !m.hasAudio || s.image || s.live || m.missing || spoken.current.has(m.id)) continue;
+      const made = m.captions && !m.captions.partial && (m.captions.fitted || m.captions.label !== SPOKEN);
+      if (made || s.captions || !m.hasAudio || s.image || s.live || m.missing || spoken.current.has(m.id)) continue;
       spoken.current.add(m.id);
       setCaptioning((all) => ({ ...all, [m.id]: "captions waiting…" }));
       const done = (label?: string) =>
@@ -605,7 +608,7 @@ export default function App() {
           .then((lines) => {
             done();
             // The finished file replaces the lines shown along the way.
-            if (lines.length) api.refreshMedia(m.id, { captions: { label: "Made from the sound", lines } });
+            if (lines.length) api.refreshMedia(m.id, { captions: { label: SPOKEN, lines, fitted: true } });
           })
           .catch(() => done("couldn't make captions"));
       });

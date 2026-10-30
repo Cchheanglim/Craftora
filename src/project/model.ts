@@ -69,7 +69,14 @@ export interface MediaItem {
   /** Set when a saved project is reopened and the file can't be found any more. */
   missing?: boolean;
   /** The captions that came with a fetched video, kept after it's downloaded; with their name. */
-  captions?: { label: string; lines: Caption[]; /** Still being made from the sound (redone if Craftora closed meanwhile). */ partial?: boolean };
+  captions?: {
+    label: string;
+    lines: Caption[];
+    /** Still being made from the sound (redone if Craftora closed meanwhile). */
+    partial?: boolean;
+    /** Made from the sound with each line fitted to its words; older ones are made again. */
+    fitted?: boolean;
+  };
 }
 
 /** Fractions of the picture cut off each side. */

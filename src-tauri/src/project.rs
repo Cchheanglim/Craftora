@@ -416,7 +416,6 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         let mut picture = String::from("base");
         let mut layered: Vec<(usize, &ClipSpec)> = spec.clips.iter().enumerate().filter(|(_, c)| c.role != Role::Audio).collect();
         layered.sort_by_key(|(_, c)| c.layer);
-        let font = font_path();
         for (i, clip) in layered {
             let (start, end) = (secs(clip.start), secs(clip.end()));
             match clip.role {
@@ -446,6 +445,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                     std::fs::write(work.join(&file), clip.text.as_bytes()).map_err(|e| format!("Couldn't prepare text: {e}"))?;
                     let size = ((h as f64) * clip.size).round().max(8.0) as u32;
                     let color = clip.color.trim_start_matches('#');
+                    let font = font_path(&clip.text);
                     graph.push(format!(
                         "[{picture}]drawtext=fontfile='{font}':textfile='{file}':expansion=none:text_align=C:fontsize={size}:fontcolor=0x{color}:shadowcolor=black@0.6:shadowx=2:shadowy=2:x='(w-text_w)*{x}':y='(h-text_h)*{y}'{alpha}:enable='between(t,{start},{end})'[p{i}]",
                         x = clip.x,
@@ -528,10 +528,20 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
     }
 }
 
-/// A bold Windows font for text clips, escaped for FFmpeg's filter syntax.
-fn font_path() -> String {
+/// A bold Windows font that has the text's letters, escaped for FFmpeg's filter syntax. drawtext
+/// shows a missing letter as an empty box and, unlike the preview, never tries another font.
+fn font_path(text: &str) -> String {
     let fonts = std::env::var("WINDIR").map(|w| PathBuf::from(w).join("Fonts")).unwrap_or_else(|_| PathBuf::from(r"C:\Windows\Fonts"));
-    let path = ["segoeuib.ttf", "segoeui.ttf", "arialbd.ttf", "arial.ttf"]
+    let has = |from: char, to: char| text.chars().any(|c| (from..=to).contains(&c));
+    // Segoe UI has neither Khmer nor music notes and other symbols (♪ ♫ →…).
+    let names: &[&str] = if has('\u{1780}', '\u{17FF}') {
+        &["KhmerUIb.ttf", "KhmerUI.ttf"]
+    } else if has('\u{2190}', '\u{2BFF}') {
+        &["arialbd.ttf", "arial.ttf"]
+    } else {
+        &["segoeuib.ttf", "segoeui.ttf", "arialbd.ttf", "arial.ttf"]
+    };
+    let path = names
         .iter()
         .map(|name| fonts.join(name))
         .find(|p| p.exists())
