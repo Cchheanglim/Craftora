@@ -141,6 +141,12 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, mo
         return Err("Craftora couldn't read this video's sound.".into());
     }
 
+    // Where it's quiet, to fit each line to its words (`fit_to_speech`). Quick, even for hours of sound.
+    let silences = run_to_end(app, FFMPEG, &["-hide_banner", "-nostats", "-i", &wav_text, "-af", "silencedetect=n=-35dB:d=0.4", "-f", "null", "-"])
+        .await
+        .map(|o| crate::local::parse_silences(&String::from_utf8_lossy(&o.stderr), 0.0, f64::MAX))
+        .unwrap_or_default();
+
     report(app, id, "listening", 0.0);
     // Half the processor: fetching, the preview and exports stay quick while captions are made.
     let threads = std::thread::available_parallelism().map_or(2, |n| (n.get() / 2).clamp(1, 8)).to_string();
@@ -157,7 +163,8 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, mo
                 for line in String::from_utf8_lossy(&bytes).lines().map(str::trim).filter(|l| !l.is_empty()) {
                     // "whisper_print_progress_callback: progress =  45%"
                     // Each line goes to the editor right away: a long video's captions fill in as they're made.
-                    if let Some(caption) = printed_line(line) {
+                    if let Some(mut caption) = printed_line(line) {
+                        fit_to_speech(&mut caption, &silences);
                         let _ = app.emit("speech-line", Line { id, line: caption });
                         continue;
                     }
@@ -175,7 +182,38 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, mo
         return Err(format!("Making captions failed: {last_line}"));
     }
     let vtt = std::fs::read_to_string(work.join("captions.vtt")).map_err(|_| "whisper finished but made no captions.".to_string())?;
-    Ok(parse_vtt(&vtt))
+    let mut captions = parse_vtt(&vtt);
+    for caption in &mut captions {
+        fit_to_speech(caption, &silences);
+    }
+    Ok(captions)
+}
+
+/// Trims a line to the sound inside it. whisper starts a line where the last one ended and ends it
+/// where the next one begins, so lines showed seconds before their words and stayed through the
+/// silence after (measured: speech at 3.1–6.1 s was captioned 0–11 s). Under music nothing is quiet,
+/// and the line keeps whisper's times.
+fn fit_to_speech(caption: &mut Caption, silences: &[(f64, f64)]) {
+    // Sound shorter than this at a line's edge is the neighbouring line's word, not this one's.
+    const SHORTEST: f64 = 0.3;
+    // Stays up a moment after the last word, as subtitles do.
+    const LINGER: f64 = 0.3;
+    let mut sounds = Vec::new();
+    let mut at = caption.start;
+    for &(quiet_from, quiet_to) in silences.iter().filter(|(a, b)| *b > caption.start && *a < caption.end) {
+        if quiet_from > at {
+            sounds.push((at, quiet_from));
+        }
+        at = at.max(quiet_to);
+    }
+    if caption.end > at {
+        sounds.push((at, caption.end));
+    }
+    sounds.retain(|(a, b)| b - a >= SHORTEST);
+    if let (Some(first), Some(last)) = (sounds.first(), sounds.last()) {
+        caption.end = (last.1 + LINGER).min(caption.end);
+        caption.start = first.0;
+    }
 }
 
 /// Downloads just the sound of a fetched link (with its sign-in, Referer and bot-check settings).
@@ -203,6 +241,25 @@ async fn link_sound(app: &AppHandle, link: &str, work: &Path) -> Result<PathBuf,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lines_fit_their_words() {
+        // Measured on Windows speech with pauses: whisper said 0–11, 11–20 and 20–22.04 s.
+        let silences = [(0.0, 3.13), (3.81, 4.24), (6.14, 11.05), (12.12, 12.6), (13.92, 19.84), (21.89, f64::MAX)];
+        let fitted: Vec<(f64, f64)> = [(0.0, 11.0), (11.0, 20.0), (20.0, 22.04)]
+            .into_iter()
+            .map(|(start, end)| {
+                let mut c = Caption { start, end, text: "x".into() };
+                fit_to_speech(&mut c, &silences);
+                ((c.start * 100.0).round() / 100.0, (c.end * 100.0).round() / 100.0)
+            })
+            .collect();
+        assert_eq!(fitted, [(3.13, 6.44), (11.05, 14.22), (20.0, 22.04)]);
+        // All quiet (or music only): whisper's times stay.
+        let mut c = Caption { start: 1.0, end: 2.0, text: "x".into() };
+        fit_to_speech(&mut c, &[(0.0, 5.0)]);
+        assert_eq!((c.start, c.end), (1.0, 2.0));
+    }
 
     #[test]
     fn reads_lines_as_whisper_prints_them() {
