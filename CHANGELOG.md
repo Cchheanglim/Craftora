@@ -13,6 +13,11 @@
   YouTube and captions from the sound work there too.
 - **Exporting with captions:** captions no longer count toward the 150-clip limit, so long videos
   with hundreds of captions export (up to 5,000 texts and captions).
+- **Windows Security blocking downloads and exports:** with Controlled folder access on, Windows
+  blocked FFmpeg and yt-dlp from writing into Videos and the download started over. They now work
+  in Craftora's own folder and only Craftora saves into Videos; if Windows blocks that too, Craftora
+  says how to allow it. A save folder named Downloads no longer gets a second Downloads inside.
+- **No more "Saved info" list** popping up under the link box and other fields.
 
 ## 0.4.0 (October 2026)
 
