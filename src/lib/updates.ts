@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { inDesktopApp } from "./engine";
+import { errorText, inDesktopApp } from "./engine";
 
 const AUTO_KEY = "craftora.autoUpdateCheck";
 
@@ -46,7 +46,7 @@ export function useUpdates() {
       update.current = found;
       setStatus(found ? { kind: "available", version: found.version } : { kind: "current" });
     } catch (err) {
-      setStatus({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+      setStatus({ kind: "error", message: errorText(err) });
     }
   }, []);
 
@@ -67,7 +67,7 @@ export function useUpdates() {
       });
       await relaunch();
     } catch (err) {
-      setStatus({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+      setStatus({ kind: "error", message: errorText(err) });
     }
   }, []);
 

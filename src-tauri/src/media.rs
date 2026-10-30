@@ -236,40 +236,32 @@ fn audio_streams(formats: &[Format], duration: f64) -> Vec<Stream> {
     streams
 }
 
-/// Picks a direct file the preview player can open: a stream with sound if one exists,
-/// otherwise a silent video-only stream (YouTube usually offers only separate streams).
-/// `sharp` (Settings → Preview quality) takes the highest resolution instead, even video-only:
-/// YouTube's only file with sound is 360p.
-fn preview(formats: &[Format], sharp: bool) -> (String, bool) {
-    if sharp {
-        let best = formats
-            .iter()
-            .filter(|f| f.has_video() && f.plays_in_webview())
-            .min_by_key(|f| (codec_name(f.vcodec.as_deref()) != "H.264", std::cmp::Reverse(f.height.unwrap_or(0)), !f.has_audio()));
-        if let Some(url) = best.and_then(|f| f.url.clone()) {
-            return (url, best.is_some_and(|f| f.has_audio()));
-        }
-    }
-    // Prefer modest resolutions (fast to start, enough to find a cut), then H.264,
-    // which every WebView decodes.
-    let rank = |f: &&Format| {
-        let h = f.height.unwrap_or(480);
-        let size = if h <= 720 { 10_000 - h } else { h };
-        let h264 = codec_name(f.vcodec.as_deref()) == "H.264";
-        (!h264, size)
-    };
-    let pick = |with_audio: bool| {
-        let mut candidates: Vec<&Format> = formats
-            .iter()
-            .filter(|f| f.has_video() && f.has_audio() == with_audio && f.plays_in_webview())
-            .collect();
-        candidates.sort_by_key(rank);
-        candidates.first().and_then(|f| f.url.clone())
-    };
-    match pick(true) {
-        Some(url) => (url, true),
-        None => pick(false).map(|url| (url, false)).unwrap_or_default(),
-    }
+/// Picks a direct file the preview player can open and whether it has sound: the highest up to
+/// `max_height` (picked in the preview; None: the best there is, 4K included), H.264 before VP9 at
+/// the same height (every WebView decodes H.264; YouTube's 1440p and 4K are VP9 only). A video-only
+/// file plays next to a sound stream (`preview_audio`): YouTube's only file with sound is 360p,
+/// which looked blurry.
+fn preview(formats: &[Format], max_height: Option<u32>) -> (String, bool) {
+    // Video-only files need a sound stream beside them, else the preview would be silent.
+    let separate_sound = !preview_audio(formats).is_empty();
+    formats
+        .iter()
+        // Not AV1: WebView2 plays it only with an extra Windows add-on.
+        .filter(|f| f.has_video() && f.plays_in_webview() && codec_name(f.vcodec.as_deref()) != "AV1")
+        .filter(|f| f.has_audio() || separate_sound)
+        .min_by_key(|f| {
+            let h = i64::from(f.height.unwrap_or(480));
+            let too_big = max_height.is_some_and(|max| h > i64::from(max));
+            let codec = match codec_name(f.vcodec.as_deref()).as_str() {
+                "H.264" => 0,
+                "VP9" => 1,
+                _ => 2,
+            };
+            // Within the limit the highest; over it (when nothing is smaller) the smallest.
+            (too_big, if too_big { h } else { -h }, codec, !f.has_audio())
+        })
+        .map(|f| (f.url.clone().unwrap_or_default(), f.has_audio()))
+        .unwrap_or_default()
 }
 
 /// Reads `mediaPresentationDuration="PT1H2M3.5S"` from a DASH (.mpd) manifest.
@@ -428,7 +420,7 @@ pub(crate) fn is_bot_check(error: &str) -> bool {
 
 /// Runs `yt-dlp --dump-single-json` on a link and maps the result for the editor.
 #[tauri::command]
-pub async fn fetch_media(app: AppHandle, url: String, sharp: Option<bool>) -> Result<MediaSource, String> {
+pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Result<MediaSource, String> {
     let url = url.trim().to_string();
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return Err("That doesn't look like a web link. Paste a link starting with https://".into());
@@ -502,7 +494,8 @@ pub async fn fetch_media(app: AppHandle, url: String, sharp: Option<bool>) -> Re
         return Err("No downloadable video or audio was found at this link.".into());
     }
 
-    let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats, sharp.unwrap_or(false)) {
+    // The preview quality picked by the preview (`height`), else the best the video has.
+    let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats, height) {
         _ if !length_known => (String::new(), true, false),
         // Behind a bot check the byte cache and the stream relay fetch through the page window.
         (url, audio) if !url.is_empty() => (url, audio, false),
@@ -592,7 +585,7 @@ fn pick_live(formats: &[Format]) -> Option<Vec<(String, BTreeMap<String, String>
 
 #[cfg(test)]
 mod tests {
-    use super::{is_bot_check, parse_mpd_duration, preview, Info};
+    use super::{is_bot_check, parse_mpd_duration, preview, Format, Info};
 
     #[test]
     fn knows_a_bot_check_answer() {
@@ -616,14 +609,31 @@ mod tests {
     }
 
     #[test]
-    fn sharp_preview_takes_the_highest_resolution() {
-        // Like YouTube: one small file with sound, bigger video-only ones.
+    fn preview_takes_the_highest_up_to_its_limit() {
+        // Like YouTube: one small file with sound, bigger video-only ones, and sound on its own.
         let json = br#"{"title":"T","formats":[
             {"format_id":"18","ext":"mp4","vcodec":"avc1","acodec":"mp4a","height":360,"url":"https://v/360","protocol":"https"},
             {"format_id":"136","ext":"mp4","vcodec":"avc1","acodec":"none","height":720,"url":"https://v/720","protocol":"https"},
-            {"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"url":"https://v/1080","protocol":"https"}]}"#;
+            {"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"url":"https://v/1080","protocol":"https"},
+            {"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a","url":"https://a/140","protocol":"https"}]}"#;
         let info: Info = serde_json::from_slice(json).unwrap();
-        assert_eq!(preview(&info.formats, false), ("https://v/360".into(), true));
-        assert_eq!(preview(&info.formats, true), ("https://v/1080".into(), false));
+        assert_eq!(preview(&info.formats, Some(720)), ("https://v/720".into(), false));
+        assert_eq!(preview(&info.formats, Some(1080)), ("https://v/1080".into(), false));
+        assert_eq!(preview(&info.formats, None), ("https://v/1080".into(), false));
+        // Below everything there is: the smallest.
+        assert_eq!(preview(&info.formats, Some(144)), ("https://v/360".into(), true));
+        // 4K comes as VP9 (and AV1, which WebView2 can't play); at 1080p H.264 still wins.
+        let json = br#"{"title":"T","formats":[
+            {"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"url":"https://v/1080","protocol":"https"},
+            {"format_id":"248","ext":"webm","vcodec":"vp9","acodec":"none","height":1080,"url":"https://v/1080vp9","protocol":"https"},
+            {"format_id":"313","ext":"webm","vcodec":"vp9","acodec":"none","height":2160,"url":"https://v/2160","protocol":"https"},
+            {"format_id":"401","ext":"mp4","vcodec":"av01.0.12M.08","acodec":"none","height":2160,"url":"https://v/2160av1","protocol":"https"},
+            {"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a","url":"https://a/140","protocol":"https"}]}"#;
+        let big: Info = serde_json::from_slice(json).unwrap();
+        assert_eq!(preview(&big.formats, None), ("https://v/2160".into(), false));
+        assert_eq!(preview(&big.formats, Some(1080)), ("https://v/1080".into(), false));
+        // Without a sound stream to pair with, the file with sound wins, so the preview isn't silent.
+        let silent: Vec<Format> = info.formats.into_iter().filter(|f| f.format_id != "140").collect();
+        assert_eq!(preview(&silent, None), ("https://v/360".into(), true));
     }
 }

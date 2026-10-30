@@ -33,8 +33,17 @@ export type JobEvent =
   | { kind: "cancelled"; id: string }
   | { kind: "paused"; id: string };
 
-/** Rust commands reject with a plain message string. */
-const message = (err: unknown) => (typeof err === "string" ? err : err instanceof Error ? err.message : String(err));
+/**
+ * An error as a sentence to show. Rust commands reject with a plain message string; a JavaScript
+ * slip (TypeError…) is a bug in Craftora, and its programmer text means nothing to the user.
+ */
+export function errorText(err: unknown): string {
+  if (typeof err === "string") return err;
+  if (err instanceof Error && !["TypeError", "ReferenceError", "RangeError", "SyntaxError"].includes(err.name)) return err.message;
+  console.error(err);
+  return "Something went wrong inside Craftora. Try again, or restart Craftora if it keeps happening.";
+}
+const message = errorText;
 
 export const engineStatus = () => invoke<EngineStatus>("engine_status");
 
@@ -127,19 +136,10 @@ export const stopRecording = (id: string) => invoke<boolean>("stop_recording", {
 /** Lets the preview and exports read a file on this PC without probing it. */
 export const allowLocal = (path: string) => invoke("allow_local", { path });
 
-/** Settings → Preview quality: "1" previews links at their best quality instead of up to 720p. */
-export const SHARP_PREVIEW = "craftora.sharpPreview";
-export function sharpPreview(): boolean {
+/** Reads a link. Its preview plays the best quality the video has, or the highest up to `height`. */
+export async function fetchMedia(url: string, height?: number): Promise<MediaSource> {
   try {
-    return localStorage.getItem(SHARP_PREVIEW) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export async function fetchMedia(url: string): Promise<MediaSource> {
-  try {
-    const source = await invoke<MediaSource>("fetch_media", { url, sharp: sharpPreview() });
+    const source = await invoke<MediaSource>("fetch_media", { url, height: height ?? null });
     // The preview plays through the disk cache, so parts already fetched scrub instantly.
     const ids: string[] = [];
     const cached = async (remote?: string) => {

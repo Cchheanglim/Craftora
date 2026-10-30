@@ -6,7 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Job } from "../types";
 import type { Project } from "../project/model";
-import { inDesktopApp } from "./engine";
+import { errorText, inDesktopApp } from "./engine";
 
 /** What the project list shows. */
 export interface ProjectEntry {
@@ -31,7 +31,7 @@ const BROWSER_HISTORY = "craftora.history";
 const FETCH_HISTORY = "craftora.fetchHistory";
 const PAUSED_DOWNLOADS = "craftora.pausedDownloads";
 
-const message = (err: unknown) => (typeof err === "string" ? err : err instanceof Error ? err.message : String(err));
+const message = errorText;
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {

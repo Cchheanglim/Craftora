@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Job } from "../types";
 import type { Queue } from "../state/useQueue";
-import { listDownloads, revealFile, type DownloadedFile } from "../lib/engine";
+import { errorText, listDownloads, revealFile, type DownloadedFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
@@ -31,7 +31,7 @@ export function Downloads({ queue, onAdd }: DownloadsProps) {
   const hiddenFiles = folder?.files.filter((f) => hidden.isHidden(f.path)) ?? [];
   // The folder is the record of finished downloads (it outlives the queue): read it again whenever one finishes.
   useEffect(() => {
-    listDownloads().then(setFolder, (err) => setProblem(String(err)));
+    listDownloads().then(setFolder, (err) => setProblem(errorText(err)));
   }, [finished]);
 
   const table = (list: DownloadedFile[]) => (

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { openFile } from "../lib/engine";
+import { errorText, openFile } from "../lib/engine";
 import { Icon } from "./Icon";
 import "./PlayFile.css";
 
@@ -23,7 +23,7 @@ export function PlayFile({ path, name, label = false }: { path: string; name: st
       className={label ? "btn btn--ghost" : "btn btn--icon"}
       aria-label={`Play ${name}`}
       title={label ? undefined : "Play"}
-      onClick={() => openFile(path).catch((err) => setProblem(String(err)))}
+      onClick={() => openFile(path).catch((err) => setProblem(errorText(err)))}
     >
       <Icon name="play" size={14} />
       {label && "Play"}

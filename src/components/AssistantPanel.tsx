@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { inDesktopApp } from "../lib/engine";
+import { errorText, inDesktopApp } from "../lib/engine";
 import type { Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
 import { fallbackModels, hasKey, listModels, preferredModel, recommendedModels, setKey, useAssistant, type ModelInfo } from "../assistant/useAssistant";
@@ -129,7 +129,7 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
         const saved = remembered(modelKey(provider));
         setModel(list.some((m) => m.id === saved) ? saved! : (preferredModel(list, provider) ?? ""));
       })
-      .catch((err) => live && setModelsError(err instanceof Error ? err.message : String(err)));
+      .catch((err) => live && setModelsError(errorText(err)));
     return () => {
       live = false;
     };
@@ -351,7 +351,7 @@ function KeySetup({ provider, onProvider, onSaved }: { provider: Provider; onPro
       setKeyText("");
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

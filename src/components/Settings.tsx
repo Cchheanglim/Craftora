@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { relaunch } from "@tauri-apps/plugin-process";
 import type { OutputKind } from "../types";
-import { checkAddress, getProxy, inDesktopApp, setProxy, type ProxyState } from "../lib/engine";
+import { checkAddress, errorText, getProxy, inDesktopApp, setProxy, type ProxyState } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Links, UpdateControls, type LinkSettings } from "./Home";
 import type { Updates } from "../lib/updates";
@@ -20,16 +20,10 @@ interface SettingsProps {
   onMaxRunning: (count: number) => void;
   /** Settings for fetching links; absent in the browser preview. */
   links?: LinkSettings;
-  /** Make captions from the sound for videos that come without any. */
-  autoCaptions: boolean;
-  onAutoCaptions: (on: boolean) => void;
-  /** Preview links at their best quality instead of up to 720p. */
-  sharpPreview: boolean;
-  onSharpPreview: (on: boolean) => void;
   updates: Updates;
 }
 
-export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, autoCaptions, onAutoCaptions, sharpPreview, onSharpPreview, updates }: SettingsProps) {
+export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, updates }: SettingsProps) {
   return (
     <section className="library" aria-labelledby="settings-title">
       <header className="library__head">
@@ -79,37 +73,7 @@ export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaul
         <p className="library__muted">More at once finishes a long queue sooner but makes each job slower. Live recordings don't count.</p>
       </div>
 
-      <div className="library__group">
-        <h2 className="section-label">Captions for videos without any</h2>
-        <div className="segmented library__choice" role="group" aria-label="Captions for videos without any">
-          <button type="button" aria-pressed={autoCaptions} onClick={() => onAutoCaptions(true)}>
-            Make them from the sound
-          </button>
-          <button type="button" aria-pressed={!autoCaptions} onClick={() => onAutoCaptions(false)}>
-            Off
-          </button>
-        </div>
-        <p className="library__muted">
-          Craftora listens to what's said and writes it down, on this PC: nothing is sent anywhere. The first time, it downloads a
-          148 MB speech model. A long video takes a few minutes and keeps the processor busy meanwhile.
-        </p>
-      </div>
 
-      <div className="library__group">
-        <h2 className="section-label">Preview quality of links</h2>
-        <div className="segmented library__choice" role="group" aria-label="Preview quality of links">
-          <button type="button" aria-pressed={!sharpPreview} onClick={() => onSharpPreview(false)}>
-            Smooth (up to 720p)
-          </button>
-          <button type="button" aria-pressed={sharpPreview} onClick={() => onSharpPreview(true)}>
-            Sharp (best quality)
-          </button>
-        </div>
-        <p className="library__muted">
-          Smooth starts fast and plays well on slow Wi-Fi. Sharp looks crisper but loads more. Used for links fetched from now on
-          and projects opened again; files on this PC always preview as they are. Exports are never affected.
-        </p>
-      </div>
 
       <div className="library__group">
         <h2 className="section-label">Updates</h2>
@@ -157,7 +121,7 @@ function Privacy() {
       setDraft(next.proxy ?? "");
       setMessage(next.proxy ? `Saved. Connections now go through ${next.proxy}.` : "Proxy off. Connections go directly.");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err));
+      setMessage(errorText(err));
     }
   };
   const submit = (e: FormEvent) => {
@@ -169,7 +133,7 @@ function Privacy() {
     try {
       setMessage(`Websites see your connection as ${await checkAddress()}.`);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err));
+      setMessage(errorText(err));
     } finally {
       setChecking(false);
     }

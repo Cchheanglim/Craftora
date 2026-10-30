@@ -2,6 +2,20 @@
 
 ## Next version
 
+**Better**
+
+- **The queue gets out of the way.** It opens when a download or export starts and folds down to
+  its one-line header when everything is done (it stays open if something failed). The arrow still
+  opens and closes it.
+- **Pages line up.** Home and every sidebar page share one centred column, and long explanations
+  wrap at a comfortable width.
+- **Previews of links play the best quality the video has** (up to 4K). They used to pick YouTube's
+  only file with sound built in, which is 360p and looked blurry full screen. A new quality picker
+  next to the speed (**Best**, 1080p, 720p…) lowers it for slow Wi-Fi; exports keep their own quality.
+  The Smooth/Sharp setting is gone.
+- **Plain error messages.** A slip inside Craftora now says "Something went wrong inside
+  Craftora…" instead of showing programmer text.
+
 **New**
 
 - **Report an AI reply.** **Report a reply** under the assistant's chat opens a short form to tell us
@@ -18,6 +32,14 @@
   in Craftora's own folder and only Craftora saves into Videos; if Windows blocks that too, Craftora
   says how to allow it. A save folder named Downloads no longer gets a second Downloads inside.
 - **No more "Saved info" list** popping up under the link box and other fields.
+- **Captions made from the sound show up with the words,** not seconds before them, and go away
+  when the talking stops instead of staying through the silence. (Under music the timing stays as
+  before.)
+- **Captions from the sound only when you ask.** They no longer start by themselves (they kept the
+  processor busy for minutes): press **CC** on the preview, or **Make captions from the sound** in the
+  Transcript tab. It also
+  redoes captions made before this version, with the better timing. The Settings choice is gone.
+- **Music notes (♪) and Khmer in exported videos** showed as empty boxes; they're drawn now.
 
 ## 0.4.0 (October 2026)
 

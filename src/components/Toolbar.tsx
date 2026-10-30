@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type RefObject } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { checkSite } from "../lib/engine";
+import { checkSite, errorText } from "../lib/engine";
 import { siteVerdict, type Verdict } from "./Home";
 import { Icon } from "./Icon";
 import { CopyReport } from "./CopyReport";
@@ -61,7 +61,7 @@ export function Toolbar({
     try {
       setVerdict(siteVerdict(await checkSite(url.trim())));
     } catch (err) {
-      setVerdict({ tone: "warn", text: err instanceof Error ? err.message : String(err) });
+      setVerdict({ tone: "warn", text: errorText(err) });
     } finally {
       setChecking(false);
     }

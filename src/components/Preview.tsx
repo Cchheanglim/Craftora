@@ -34,6 +34,10 @@ interface PreviewProps {
   /** Captions on (CC): shown here and exported. */
   showCaptions: boolean;
   onToggleCaptions: () => void;
+  /** Makes captions from the sound (CC when there are none yet); absent when there's nothing to make. */
+  onMakeCaptions?: () => void;
+  /** Links' preview quality: a height, or none for the best the video has; separate from export quality. */
+  quality?: { height?: number; heights: number[]; onChange: (height?: number) => void };
 }
 
 const WAVE_BARS = 140;
@@ -117,7 +121,7 @@ function placeAlong(offset: number, free: number): number {
 }
 
 /** Plays the timeline: every clip's media follows the playhead, stacked like the export. */
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality }: PreviewProps) {
   const [muted, setMuted] = useState(false);
   // Exactly the captions the export adds (see `withShownCaptions`), unless they're on the timeline.
   const shownCaptions = useMemo(
@@ -547,6 +551,27 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               </option>
             ))}
           </select>
+          {quality && (
+            <>
+              <label htmlFor="preview-quality" className="sr-only">
+                Preview quality
+              </label>
+              <select
+                id="preview-quality"
+                className="field mono"
+                title="Preview quality (exports use the quality picked in Edit & export)"
+                value={quality.height ?? ""}
+                onChange={(e) => quality.onChange(e.target.value ? Number(e.target.value) : undefined)}
+              >
+                <option value="">Best</option>
+                {quality.heights.map((h) => (
+                  <option key={h} value={h}>
+                    {h}p
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
           {onSnapshot && (
             <button
               type="button"
@@ -560,6 +585,20 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             </button>
           )}
           {captionStatus && <span className="preview__cc-status">{captionStatus}</span>}
+          {!hasCaptions && !captionStatus && onMakeCaptions && (
+            <button
+              type="button"
+              className="btn btn--icon preview__cc"
+              aria-label="Make captions from the sound"
+              title="No captions yet: click to make them from the sound"
+              onClick={() => {
+                onMakeCaptions();
+                if (!showCaptions) onToggleCaptions();
+              }}
+            >
+              <Icon name="captionsOff" />
+            </button>
+          )}
           {(hasCaptions || captionStatus) && (
             <button
               type="button"
