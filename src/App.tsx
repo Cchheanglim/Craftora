@@ -1274,6 +1274,7 @@ export default function App() {
               captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
               showCaptions={showCaptions}
               onToggleCaptions={toggleCaptions}
+              onMakeCaptions={uncaptioned.length ? makeSpokenCaptions : undefined}
               quality={
                 inDesktopApp && previewHeights.length
                   ? { height: links[0]?.previewHeight, heights: previewHeights, onChange: choosePreviewHeight }
