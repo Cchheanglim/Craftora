@@ -795,6 +795,14 @@ mod tests {
     }
 
     #[test]
+    fn a_blocked_save_folder_says_what_to_do() {
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert!(save_error(Path::new("C:/Videos"), &denied).contains("Controlled folder access"));
+        let full = std::io::Error::other("disk full");
+        assert!(save_error(Path::new("C:/Videos"), &full).ends_with("disk full"));
+    }
+
+    #[test]
     fn deliver_never_replaces_an_existing_export() {
         let dir = std::env::temp_dir().join(format!("craftora-deliver-{}", std::process::id()));
         let work = dir.join(".craftora-job");
