@@ -14,7 +14,7 @@ use tauri::http::{header, Response, StatusCode};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::engine::FFMPEG;
-use crate::jobs::{deliver, downloads_dir, is_web_link, progress_event, run_ffmpeg, run_streaming, safe_stem, spawn_job, Jobs};
+use crate::jobs::{deliver, downloads_dir, is_web_link, progress_event, run_ffmpeg, run_streaming, safe_stem, spawn_job, work_root, Jobs};
 
 const PLAYLIST: &str = "index.m3u8";
 
@@ -48,7 +48,8 @@ pub async fn record_live(app: AppHandle, recordings: State<'_, Recordings>, spec
     let dir = downloads_dir(&app)?;
     let stem = safe_stem(&spec.title);
     let short_id: String = safe_stem(&spec.id).chars().take(8).collect();
-    let folder = dir.join(format!("{stem} (live recording {short_id})"));
+    // FFmpeg records in Craftora's own folder (`work_root`); the finished MP4 goes into Downloads.
+    let folder = work_root(&app)?.join(format!("{stem} (live recording {short_id})"));
     std::fs::create_dir_all(&folder).map_err(|e| format!("Couldn't create the recording folder: {e}"))?;
     recordings.0.lock().unwrap().insert(spec.id.clone(), folder.clone());
 
