@@ -32,8 +32,11 @@
   says how to allow it. A save folder named Downloads no longer gets a second Downloads inside.
 - **No more "Saved info" list** popping up under the link box and other fields.
 - **Captions made from the sound show up with the words,** not seconds before them, and go away
-  when the talking stops instead of staying through the silence. Captions made earlier are made
-  again by themselves. (Under music the timing stays as before.)
+  when the talking stops instead of staying through the silence. (Under music the timing stays as
+  before.)
+- **Captions from the sound only when you ask.** They no longer start by themselves (they kept the
+  processor busy for minutes): press **Make captions from the sound** in the Transcript tab. It also
+  redoes captions made before this version, with the better timing. The Settings choice is gone.
 - **Music notes (♪) and Khmer in exported videos** showed as empty boxes; they're drawn now.
 
 ## 0.4.0 (October 2026)

@@ -38,7 +38,6 @@ import {
   signOutEverywhere,
   tellSignIn,
   updateYtDlp,
-  SHARP_PREVIEW,
   type EngineStatus,
 } from "./lib/engine";
 import {
@@ -547,12 +546,6 @@ export default function App() {
     }
   }, [project.media, api]);
 
-  // Preview quality of links; fetchMedia and the stream player read it from storage themselves.
-  const [sharpPreview, setSharpPreview] = useState(() => remembered(SHARP_PREVIEW, false));
-  const chooseSharpPreview = (on: boolean) => {
-    setSharpPreview(on);
-    remember(SHARP_PREVIEW, on);
-  };
   /** Media id → how making its captions is going, for the Media list. */
   const [captioning, setCaptioning] = useState<Record<string, string>>({});
   const speechTurn = useRef<Promise<unknown>>(Promise.resolve());
@@ -834,7 +827,7 @@ export default function App() {
     if (!inDesktopApp) return;
     for (const item of media) {
       const source = item.source;
-      const refreshed = source.local ? openLocal(source.url) : fetchMedia(source.url);
+      const refreshed = source.local ? openLocal(source.url) : fetchMedia(source.url, item.previewHeight);
       refreshed
         .then((fresh) => {
           // The picture kept last time stays (no need to fetch it from the site again).
@@ -849,6 +842,20 @@ export default function App() {
           if (source.local) api.refreshMedia(item.id, { missing: true });
         });
     }
+  };
+
+  /**
+   * A quality picked for a clip from a link. The preview follows the picture quality: the link is read
+   * again for a preview at that height (the old one plays meanwhile), and reopening the project keeps it.
+   */
+  const chooseFormat = (mediaId: string, format: { videoFormat?: string; audioFormat?: string }) => {
+    api.edit({ type: "setMediaFormat", mediaId, ...format });
+    const item = project.media.find((m) => m.id === mediaId);
+    const label = item?.source.streams.find((s) => s.id === format.videoFormat)?.label;
+    const height = label ? parseInt(label, 10) : NaN;
+    if (!inDesktopApp || !item || item.source.local || !Number.isFinite(height)) return;
+    api.refreshMedia(mediaId, { previewHeight: height });
+    reconnect([{ ...item, previewHeight: height }]);
   };
 
   /** A file that was moved or renamed: the user points to it, and its clips play again. */
@@ -1242,8 +1249,6 @@ export default function App() {
             maxRunning={maxRunning}
             onMaxRunning={chooseMaxRunning}
             links={linkSettings}
-            sharpPreview={sharpPreview}
-            onSharpPreview={chooseSharpPreview}
             updates={updates}
           />
         )}
@@ -1361,7 +1366,7 @@ export default function App() {
                       : undefined
                   }
                   onCheckpoint={api.checkpoint}
-                  onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
+                  onFormat={(format) => selected.mediaId && chooseFormat(selected.mediaId, format)}
                   onSplit={split}
                   onDuplicate={duplicate}
                   onCutSilences={

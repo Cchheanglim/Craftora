@@ -66,6 +66,8 @@ export interface MediaItem {
   videoFormat: string;
   /** Links: the yt-dlp format used when only the sound is needed. */
   audioFormat: string;
+  /** Links: the picture quality picked for this clip (e.g. 1080), which its preview plays at too. */
+  previewHeight?: number;
   /** Set when a saved project is reopened and the file can't be found any more. */
   missing?: boolean;
   /** The captions that came with a fetched video, kept after it's downloaded; with their name. */

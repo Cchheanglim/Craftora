@@ -136,19 +136,10 @@ export const stopRecording = (id: string) => invoke<boolean>("stop_recording", {
 /** Lets the preview and exports read a file on this PC without probing it. */
 export const allowLocal = (path: string) => invoke("allow_local", { path });
 
-/** Settings → Preview quality: "1" previews links at their best quality instead of up to 720p. */
-export const SHARP_PREVIEW = "craftora.sharpPreview";
-export function sharpPreview(): boolean {
+/** Reads a link. Its preview plays the clip's picture quality: `height` once one is picked, else 1080p. */
+export async function fetchMedia(url: string, height?: number): Promise<MediaSource> {
   try {
-    return localStorage.getItem(SHARP_PREVIEW) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export async function fetchMedia(url: string): Promise<MediaSource> {
-  try {
-    const source = await invoke<MediaSource>("fetch_media", { url, sharp: sharpPreview() });
+    const source = await invoke<MediaSource>("fetch_media", { url, height: height ?? null });
     // The preview plays through the disk cache, so parts already fetched scrub instantly.
     const ids: string[] = [];
     const cached = async (remote?: string) => {

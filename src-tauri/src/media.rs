@@ -237,10 +237,10 @@ fn audio_streams(formats: &[Format], duration: f64) -> Vec<Stream> {
 }
 
 /// Picks a direct file the preview player can open, H.264 first (every WebView decodes it) and
-/// whether it has sound. Smooth (the default) takes the highest up to 720p, quick to start on slow
-/// Wi-Fi; `sharp` (Settings → Preview quality) the highest there is. A video-only file plays next to
-/// a sound stream (`preview_audio`): YouTube's only file with sound is 360p, which looked blurry.
-fn preview(formats: &[Format], sharp: bool) -> (String, bool) {
+/// whether it has sound: the highest up to `max_height` (the clip's picture quality; None: the
+/// highest there is). A video-only file plays next to a sound stream (`preview_audio`): YouTube's
+/// only file with sound is 360p, which looked blurry.
+fn preview(formats: &[Format], max_height: Option<u32>) -> (String, bool) {
     // Video-only files need a sound stream beside them, else the preview would be silent.
     let separate_sound = !preview_audio(formats).is_empty();
     formats
@@ -248,7 +248,7 @@ fn preview(formats: &[Format], sharp: bool) -> (String, bool) {
         .filter(|f| f.has_video() && f.plays_in_webview() && f.url.is_some() && (f.has_audio() || separate_sound))
         .min_by_key(|f| {
             let h = i64::from(f.height.unwrap_or(480));
-            let too_big = !sharp && h > 720;
+            let too_big = max_height.is_some_and(|max| h > i64::from(max));
             // Within the limit the highest; over it (when nothing is smaller) the smallest.
             (codec_name(f.vcodec.as_deref()) != "H.264", too_big, if too_big { h } else { -h }, !f.has_audio())
         })
@@ -412,7 +412,7 @@ pub(crate) fn is_bot_check(error: &str) -> bool {
 
 /// Runs `yt-dlp --dump-single-json` on a link and maps the result for the editor.
 #[tauri::command]
-pub async fn fetch_media(app: AppHandle, url: String, sharp: Option<bool>) -> Result<MediaSource, String> {
+pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Result<MediaSource, String> {
     let url = url.trim().to_string();
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return Err("That doesn't look like a web link. Paste a link starting with https://".into());
@@ -486,7 +486,8 @@ pub async fn fetch_media(app: AppHandle, url: String, sharp: Option<bool>) -> Re
         return Err("No downloadable video or audio was found at this link.".into());
     }
 
-    let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats, sharp.unwrap_or(false)) {
+    // The clip's picture quality: the one picked, else 1080p, which a new clip starts at (model.ts).
+    let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats, Some(height.unwrap_or(1080))) {
         _ if !length_known => (String::new(), true, false),
         // Behind a bot check the byte cache and the stream relay fetch through the page window.
         (url, audio) if !url.is_empty() => (url, audio, false),
@@ -600,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn preview_takes_up_to_720p_or_the_highest_when_sharp() {
+    fn preview_takes_the_highest_up_to_its_limit() {
         // Like YouTube: one small file with sound, bigger video-only ones, and sound on its own.
         let json = br#"{"title":"T","formats":[
             {"format_id":"18","ext":"mp4","vcodec":"avc1","acodec":"mp4a","height":360,"url":"https://v/360","protocol":"https"},
@@ -608,10 +609,13 @@ mod tests {
             {"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"url":"https://v/1080","protocol":"https"},
             {"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a","url":"https://a/140","protocol":"https"}]}"#;
         let info: Info = serde_json::from_slice(json).unwrap();
-        assert_eq!(preview(&info.formats, false), ("https://v/720".into(), false));
-        assert_eq!(preview(&info.formats, true), ("https://v/1080".into(), false));
+        assert_eq!(preview(&info.formats, Some(720)), ("https://v/720".into(), false));
+        assert_eq!(preview(&info.formats, Some(1080)), ("https://v/1080".into(), false));
+        assert_eq!(preview(&info.formats, None), ("https://v/1080".into(), false));
+        // Below everything there is: the smallest.
+        assert_eq!(preview(&info.formats, Some(144)), ("https://v/360".into(), true));
         // Without a sound stream to pair with, the file with sound wins, so the preview isn't silent.
         let silent: Vec<Format> = info.formats.into_iter().filter(|f| f.format_id != "140").collect();
-        assert_eq!(preview(&silent, true), ("https://v/360".into(), true));
+        assert_eq!(preview(&silent, None), ("https://v/360".into(), true));
     }
 }
