@@ -11,6 +11,8 @@
 
 - **Microsoft Store version:** it now includes Deno and whisper.cpp like the GitHub installer, so
   YouTube and captions from the sound work there too.
+- **Exporting with captions:** captions no longer count toward the 150-clip limit, so long videos
+  with hundreds of captions export (up to 5,000 texts and captions).
 
 ## 0.4.0 (October 2026)
 

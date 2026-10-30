@@ -19,7 +19,10 @@ use crate::jobs::{
 };
 use crate::local::{normalize, probe, OpenedFiles, ProbeInfo};
 
+/// Video and sound clips: each one is an FFmpeg input.
 const MAX_CLIPS: usize = 150;
+/// Text clips are only drawn on the picture: a 3-hour video's captions fit.
+const MAX_TEXT_CLIPS: usize = 5000;
 const MAX_TEXT: usize = 500;
 
 #[derive(Deserialize)]
@@ -274,8 +277,12 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
     if spec.clips.is_empty() {
         return Err("The timeline is empty.".into());
     }
-    if spec.clips.len() > MAX_CLIPS {
-        return Err(format!("A timeline can have at most {MAX_CLIPS} clips."));
+    let texts = spec.clips.iter().filter(|c| c.role == Role::Text).count();
+    if spec.clips.len() - texts > MAX_CLIPS {
+        return Err(format!("A timeline can have at most {MAX_CLIPS} video and sound clips."));
+    }
+    if texts > MAX_TEXT_CLIPS {
+        return Err(format!("A timeline can have at most {MAX_TEXT_CLIPS} texts and captions."));
     }
     if (spec.output == Output::Video) != spec.container.is_video() {
         return Err("That file type doesn't match the output.".into());
