@@ -26,12 +26,20 @@ function ago(ms: number): string {
 }
 
 export function QueueDock({ queue, freshId }: QueueDockProps) {
-  const [open, setOpen] = useState(true);
   const { jobs } = queue;
   const running = jobs.filter(isActive).length;
   const waiting = jobs.filter((j) => j.status === "waiting").length;
   const paused = jobs.filter((j) => j.status === "paused").length;
   const failed = jobs.filter((j) => j.status === "failed").length;
+  // Opens when work starts and folds to its header when it's all done (open while something failed,
+  // to show why), so idle pages get the room. A click holds until work starts or stops again.
+  const working = running + waiting > 0;
+  const [open, setOpen] = useState(working || failed > 0);
+  const [wasWorking, setWasWorking] = useState(working);
+  if (working !== wasWorking) {
+    setWasWorking(working);
+    setOpen(working || failed > 0);
+  }
   const finished = jobs.filter((j) => j.status === "finished").length;
   const unfinished = jobs.filter((j) => j.status !== "finished" && j.status !== "failed");
   const overall = unfinished.length

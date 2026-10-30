@@ -69,6 +69,8 @@
   --toolbar-h: 52px;
   --rail-w: 208px;
   --panel-w: 340px;
+  /* Home and the sidebar pages: one centred column, so every page starts in the same place. */
+  --page-w: 960px;
 
   /* Motion */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
