@@ -136,7 +136,7 @@ export const stopRecording = (id: string) => invoke<boolean>("stop_recording", {
 /** Lets the preview and exports read a file on this PC without probing it. */
 export const allowLocal = (path: string) => invoke("allow_local", { path });
 
-/** Reads a link. Its preview plays the clip's picture quality: `height` once one is picked, else 1080p. */
+/** Reads a link. Its preview plays the best quality the video has, or the highest up to `height`. */
 export async function fetchMedia(url: string, height?: number): Promise<MediaSource> {
   try {
     const source = await invoke<MediaSource>("fetch_media", { url, height: height ?? null });

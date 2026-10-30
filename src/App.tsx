@@ -844,18 +844,16 @@ export default function App() {
     }
   };
 
-  /**
-   * A quality picked for a clip from a link. The preview follows the picture quality: the link is read
-   * again for a preview at that height (the old one plays meanwhile), and reopening the project keeps it.
-   */
-  const chooseFormat = (mediaId: string, format: { videoFormat?: string; audioFormat?: string }) => {
-    api.edit({ type: "setMediaFormat", mediaId, ...format });
-    const item = project.media.find((m) => m.id === mediaId);
-    const label = item?.source.streams.find((s) => s.id === format.videoFormat)?.label;
-    const height = label ? parseInt(label, 10) : NaN;
-    if (!inDesktopApp || !item || item.source.local || !Number.isFinite(height)) return;
-    api.refreshMedia(mediaId, { previewHeight: height });
-    reconnect([{ ...item, previewHeight: height }]);
+  // Preview quality of the project's links (the picker by the speed): the best each video has unless
+  // a height is picked. Separate from the quality exports use.
+  const links = project.media.filter((m) => !m.source.local && m.hasVideo && !m.source.live);
+  const previewHeights = [...new Set(links.flatMap((m) => m.source.streams.filter((s) => s.kind === "video").map((s) => parseInt(s.label, 10))))]
+    .filter(Number.isFinite)
+    .sort((a, b) => b - a);
+  /** Reads the links again for previews at `height` (the old ones play meanwhile); reopening keeps it. */
+  const choosePreviewHeight = (height?: number) => {
+    for (const item of links) api.refreshMedia(item.id, { previewHeight: height });
+    reconnect(links.map((item) => ({ ...item, previewHeight: height })));
   };
 
   /** A file that was moved or renamed: the user points to it, and its clips play again. */
@@ -1276,6 +1274,11 @@ export default function App() {
               captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
               showCaptions={showCaptions}
               onToggleCaptions={toggleCaptions}
+              quality={
+                inDesktopApp && previewHeights.length
+                  ? { height: links[0]?.previewHeight, heights: previewHeights, onChange: choosePreviewHeight }
+                  : undefined
+              }
             />
             <TimelineEditor
               project={project}
@@ -1366,7 +1369,7 @@ export default function App() {
                       : undefined
                   }
                   onCheckpoint={api.checkpoint}
-                  onFormat={(format) => selected.mediaId && chooseFormat(selected.mediaId, format)}
+                  onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
                   onSplit={split}
                   onDuplicate={duplicate}
                   onCutSilences={

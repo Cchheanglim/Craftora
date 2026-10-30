@@ -237,8 +237,8 @@ fn audio_streams(formats: &[Format], duration: f64) -> Vec<Stream> {
 }
 
 /// Picks a direct file the preview player can open, H.264 first (every WebView decodes it) and
-/// whether it has sound: the highest up to `max_height` (the clip's picture quality; None: the
-/// highest there is). A video-only file plays next to a sound stream (`preview_audio`): YouTube's
+/// whether it has sound: the highest up to `max_height` (picked in the preview; None: the highest
+/// there is). A video-only file plays next to a sound stream (`preview_audio`): YouTube's
 /// only file with sound is 360p, which looked blurry.
 fn preview(formats: &[Format], max_height: Option<u32>) -> (String, bool) {
     // Video-only files need a sound stream beside them, else the preview would be silent.
@@ -486,8 +486,8 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
         return Err("No downloadable video or audio was found at this link.".into());
     }
 
-    // The clip's picture quality: the one picked, else 1080p, which a new clip starts at (model.ts).
-    let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats, Some(height.unwrap_or(1080))) {
+    // The preview quality picked by the preview (`height`), else the best the video has.
+    let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats, height) {
         _ if !length_known => (String::new(), true, false),
         // Behind a bot check the byte cache and the stream relay fetch through the page window.
         (url, audio) if !url.is_empty() => (url, audio, false),
