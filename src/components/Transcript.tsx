@@ -13,6 +13,18 @@ interface TranscriptProps {
   seek: (t: number) => void;
   /** How making captions from the sound is going, while it is. */
   captionStatus?: string;
+  /** Makes captions from the sound for the media that has none; absent when there's nothing to do. */
+  onMakeCaptions?: () => void;
+}
+
+/** Captions are made only when asked: whisper keeps the processor busy for minutes. */
+function MakeCaptions({ onMake }: { onMake: () => void }) {
+  return (
+    <button type="button" className="btn btn--secondary" onClick={onMake}>
+      <Icon name="captions" size={14} />
+      Make captions from the sound
+    </button>
+  );
 }
 
 /** A word's key: line index and word index. */
@@ -22,7 +34,7 @@ const keyOf = (line: number, word: number) => `${line}:${word}`;
  * What's said on the timeline, to edit by text: click a sentence or word to jump there, select words
  * and press Delete (or the button) to cut them out of the video.
  */
-export function Transcript({ project, api, time, seek, captionStatus }: TranscriptProps) {
+export function Transcript({ project, api, time, seek, captionStatus, onMakeCaptions }: TranscriptProps) {
   const lines = useMemo(() => transcript(project), [project]);
   const words = useMemo(() => lines.map(wordsOf), [lines]);
   const [query, setQuery] = useState("");
@@ -100,9 +112,16 @@ export function Transcript({ project, api, time, seek, captionStatus }: Transcri
       <div className="transcript transcript--empty">
         <Icon name="captions" size={18} />
         <p>{captionStatus ? `${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. The transcript fills in as it's heard.` : "Nothing said on the timeline yet."}</p>
-        <p className="transcript__muted">
-          Videos that come with captions, or get them made from the sound (Settings), show what's said here, to edit by text.
-        </p>
+        <p className="transcript__muted">Videos that come with captions show what's said here, to edit by text.</p>
+        {onMakeCaptions && (
+          <>
+            <MakeCaptions onMake={onMakeCaptions} />
+            <p className="transcript__muted">
+              Craftora listens to what's said and writes it down, on this PC: nothing is sent anywhere. The first time, it downloads a
+              148 MB speech model. A long video takes a few minutes and keeps the processor busy meanwhile.
+            </p>
+          </>
+        )}
       </div>
     );
   }
@@ -120,6 +139,7 @@ export function Transcript({ project, api, time, seek, captionStatus }: Transcri
             ? `${shown.length} line${shown.length === 1 ? "" : "s"} with “${query.trim()}”.`
             : "Click a sentence or word to jump there. Select words and press Delete to cut them out of the video."}
         </p>
+        {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
       </div>
 
       <ol ref={listRef} className="transcript__lines" tabIndex={0} aria-label="What's said" onKeyDown={onKeyDown} onMouseUp={() => void pickSelection()}>

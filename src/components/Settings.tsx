@@ -20,16 +20,13 @@ interface SettingsProps {
   onMaxRunning: (count: number) => void;
   /** Settings for fetching links; absent in the browser preview. */
   links?: LinkSettings;
-  /** Make captions from the sound for videos that come without any. */
-  autoCaptions: boolean;
-  onAutoCaptions: (on: boolean) => void;
   /** Preview links at their best quality instead of up to 720p. */
   sharpPreview: boolean;
   onSharpPreview: (on: boolean) => void;
   updates: Updates;
 }
 
-export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, autoCaptions, onAutoCaptions, sharpPreview, onSharpPreview, updates }: SettingsProps) {
+export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, sharpPreview, onSharpPreview, updates }: SettingsProps) {
   return (
     <section className="library" aria-labelledby="settings-title">
       <header className="library__head">
@@ -79,21 +76,6 @@ export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaul
         <p className="library__muted">More at once finishes a long queue sooner but makes each job slower. Live recordings don't count.</p>
       </div>
 
-      <div className="library__group">
-        <h2 className="section-label">Captions for videos without any</h2>
-        <div className="segmented library__choice" role="group" aria-label="Captions for videos without any">
-          <button type="button" aria-pressed={autoCaptions} onClick={() => onAutoCaptions(true)}>
-            Make them from the sound
-          </button>
-          <button type="button" aria-pressed={!autoCaptions} onClick={() => onAutoCaptions(false)}>
-            Off
-          </button>
-        </div>
-        <p className="library__muted">
-          Craftora listens to what's said and writes it down, on this PC: nothing is sent anywhere. The first time, it downloads a
-          148 MB speech model. A long video takes a few minutes and keeps the processor busy meanwhile.
-        </p>
-      </div>
 
       <div className="library__group">
         <h2 className="section-label">Preview quality of links</h2>

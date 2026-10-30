@@ -547,12 +547,6 @@ export default function App() {
     }
   }, [project.media, api]);
 
-  // Videos without captions get some made from their sound, one at a time (it keeps the processor busy).
-  const [autoCaptions, setAutoCaptions] = useState(() => remembered("craftora.autoCaptions", true));
-  const chooseAutoCaptions = (on: boolean) => {
-    setAutoCaptions(on);
-    remember("craftora.autoCaptions", on);
-  };
   // Preview quality of links; fetchMedia and the stream player read it from storage themselves.
   const [sharpPreview, setSharpPreview] = useState(() => remembered(SHARP_PREVIEW, false));
   const chooseSharpPreview = (on: boolean) => {
@@ -561,7 +555,6 @@ export default function App() {
   };
   /** Media id → how making its captions is going, for the Media list. */
   const [captioning, setCaptioning] = useState<Record<string, string>>({});
-  const spoken = useRef(new Set<string>());
   const speechTurn = useRef<Promise<unknown>>(Promise.resolve());
   // Captions wait their turn: on a slow connection, getting the model or a link's sound would slow
   // the fetch, preview, downloads and exports going on (and whisper would slow exports).
@@ -588,13 +581,20 @@ export default function App() {
       void unlines.then((stop) => stop());
     };
   }, [api]);
-  useEffect(() => {
-    if (!inDesktopApp || !autoCaptions) return;
-    for (const m of project.media) {
+  // Media that captions can be made for from its sound: none yet, unfinished, or made before lines
+  // were fitted to their words. Not while it's being done (a failed try can be tried again).
+  const uncaptioned = inDesktopApp
+    ? project.media.filter((m) => {
+        const s = m.source;
+        const made = m.captions && !m.captions.partial && (m.captions.fitted || m.captions.label !== SPOKEN);
+        const going = captioning[m.id] && captioning[m.id] !== "couldn't make captions";
+        return !made && !going && !s.captions && m.hasAudio && !s.image && !s.live && !m.missing;
+      })
+    : [];
+  // Only when asked (Transcript → Make captions): it keeps the processor busy for minutes.
+  const makeSpokenCaptions = () => {
+    for (const m of uncaptioned) {
       const s = m.source;
-      const made = m.captions && !m.captions.partial && (m.captions.fitted || m.captions.label !== SPOKEN);
-      if (made || s.captions || !m.hasAudio || s.image || s.live || m.missing || spoken.current.has(m.id)) continue;
-      spoken.current.add(m.id);
       setCaptioning((all) => ({ ...all, [m.id]: "captions waiting…" }));
       const done = (label?: string) =>
         setCaptioning((all) => {
@@ -602,7 +602,6 @@ export default function App() {
           return label ? { ...rest, [m.id]: label } : rest;
         });
       speechTurn.current = speechTurn.current.then(async () => {
-        await new Promise((r) => window.setTimeout(r, 15_000)); // the new video's preview loads first
         while (!idle.current) await new Promise((r) => window.setTimeout(r, 3_000));
         return makeCaptions(m.id, s.url, Boolean(s.local))
           .then((lines) => {
@@ -613,7 +612,7 @@ export default function App() {
           .catch(() => done("couldn't make captions"));
       });
     }
-  }, [project.media, api, autoCaptions]);
+  };
 
   /** Queues a whole link to download, so it edits like a file on this PC. */
   const downloadForEditing = (item: MediaItem) => {
@@ -1243,8 +1242,6 @@ export default function App() {
             maxRunning={maxRunning}
             onMaxRunning={chooseMaxRunning}
             links={linkSettings}
-            autoCaptions={autoCaptions}
-            onAutoCaptions={chooseAutoCaptions}
             sharpPreview={sharpPreview}
             onSharpPreview={chooseSharpPreview}
             updates={updates}
@@ -1314,6 +1311,7 @@ export default function App() {
               time={playback.time}
               seek={playback.seek}
               captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
+              onMakeCaptions={uncaptioned.length ? makeSpokenCaptions : undefined}
             />
           ) : rightTab === "assistant" ? (
             <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} />
