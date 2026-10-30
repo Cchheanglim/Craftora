@@ -58,6 +58,21 @@ pub fn run() {
             // Everything a little larger than 100%: text, pictures and controls alike.
             if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
                 let _ = main.set_zoom(1.1);
+                // No "Saved info" list under the link box and other fields (the sign-in window keeps it).
+                #[cfg(windows)]
+                let _ = main.with_webview(|webview| {
+                    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings4;
+                    use windows_core::Interface;
+                    // SAFETY: `with_webview` runs on the window's own thread.
+                    let _ = unsafe {
+                        webview.controller().CoreWebView2().and_then(|core| core.Settings()).and_then(|s| s.cast::<ICoreWebView2Settings4>()).and_then(
+                            |s| {
+                                s.SetIsGeneralAutofillEnabled(false)?;
+                                s.SetIsPasswordAutosaveEnabled(false)
+                            },
+                        )
+                    };
+                });
             }
             Ok(())
         })

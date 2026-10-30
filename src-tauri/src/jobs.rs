@@ -267,7 +267,7 @@ pub fn pause_job(jobs: State<'_, Jobs>, id: String) -> bool {
 /// Throws away what a paused download saved (cancelling it from the queue).
 #[tauri::command]
 pub fn discard_download(app: AppHandle, id: String) -> Result<(), String> {
-    let work = downloads_dir(&app)?.join(format!("{WORK_PREFIX}{}", safe_stem(&id)));
+    let work = work_root(&app)?.join(format!("{WORK_PREFIX}{}", safe_stem(&id)));
     match std::fs::remove_dir_all(&work) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(format!("Couldn't remove the paused download: {e}")),
         _ => Ok(()),
@@ -288,8 +288,23 @@ pub(crate) fn output_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .video_dir()
         .map_err(|e| format!("Couldn't find your Videos folder: {e}"))?
         .join("Craftora");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create {}: {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir).map_err(|e| save_error(&dir, &e))?;
     Ok(dir)
+}
+
+/// Why saving into `dir` failed. Windows Security's Controlled folder access answers "access
+/// denied" in Videos, Documents… to apps it doesn't know, and says so only in a notification.
+pub(crate) fn save_error(dir: &Path, e: &std::io::Error) -> String {
+    if e.kind() == std::io::ErrorKind::PermissionDenied {
+        format!(
+            "Windows blocked Craftora from saving to {}. In Windows Security, open Virus & threat protection → \
+             Ransomware protection → Allow an app through Controlled folder access and add Craftora, or choose \
+             another save folder in Settings.",
+            dir.display()
+        )
+    } else {
+        format!("Couldn't save the file to {}: {e}", dir.display())
+    }
 }
 
 /// A file stem from a title or a name the user typed, never empty. Spaces and accents stay; what
@@ -312,11 +327,19 @@ pub(crate) fn safe_stem(name: &str) -> String {
     }
 }
 
-/// A job's private working folder, `.craftora-<id>` in the export folder (the same drive,
-/// so the finished file moves into place instantly). Removed when the job ends; leftovers
-/// from a crash are removed at the next start (`clean_work_dirs`).
-pub(crate) fn work_dir(dir: &Path, job_id: &str) -> Result<PathBuf, String> {
-    let work = dir.join(format!("{WORK_PREFIX}{}", safe_stem(job_id)));
+/// Where jobs work: Craftora's own app data, which Controlled folder access doesn't guard. So
+/// FFmpeg and yt-dlp never write into Videos or Documents (Windows blocked each of them there);
+/// only Craftora itself does, moving finished files in (`deliver`).
+pub(crate) fn work_root(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| format!("Couldn't find Craftora's data folder: {e}"))?.join("work");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create a working folder: {e}"))?;
+    Ok(dir)
+}
+
+/// A job's private working folder, `.craftora-<id>` in `work_root`. Removed when the job ends;
+/// leftovers from a crash are removed at the next start (`clean_work_dirs`).
+pub(crate) fn work_dir(app: &AppHandle, job_id: &str) -> Result<PathBuf, String> {
+    let work = work_root(app)?.join(format!("{WORK_PREFIX}{}", safe_stem(job_id)));
     std::fs::create_dir_all(&work).map_err(|e| format!("Couldn't create a working folder: {e}"))?;
     Ok(work)
 }
@@ -340,12 +363,12 @@ pub(crate) fn deliver(finished: &Path, dir: &Path, stem: &str, ext: &str) -> Res
                     Ok(()) => Ok(path),
                     Err(e) => {
                         let _ = std::fs::remove_file(&path);
-                        Err(format!("Couldn't save the file to {}: {e}", dir.display()))
+                        Err(save_error(dir, &e))
                     }
                 };
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(format!("Couldn't save the file to {}: {e}", dir.display())),
+            Err(e) => return Err(save_error(dir, &e)),
         }
     }
     Err("There are too many files with this name in the export folder.".into())
@@ -354,11 +377,13 @@ pub(crate) fn deliver(finished: &Path, dir: &Path, stem: &str, ext: &str) -> Res
 /// Removes working folders left behind when Craftora was closed during an export or a
 /// download. Called at startup, when nothing can be running.
 pub(crate) fn clean_work_dirs(app: &AppHandle) {
-    for dir in [output_dir(app), downloads_dir(app)].into_iter().flatten() {
+    // Before 0.4.1 jobs worked in the save folders; nothing resumes from there any more.
+    let earlier = [output_dir(app), downloads_dir(app)].into_iter().flatten().map(|dir| (dir, false));
+    for (dir, keep_paused) in earlier.chain(work_root(app).map(|dir| (dir, true))) {
         let Ok(entries) = std::fs::read_dir(&dir) else { continue };
         for entry in entries.flatten() {
             let is_ours = entry.file_name().to_string_lossy().starts_with(WORK_PREFIX);
-            let paused = entry.path().join(PAUSED_MARK).exists();
+            let paused = keep_paused && entry.path().join(PAUSED_MARK).exists();
             if is_ours && !paused && entry.file_type().is_ok_and(|t| t.is_dir()) {
                 let _ = std::fs::remove_dir_all(entry.path());
             }
@@ -369,8 +394,10 @@ pub(crate) fn clean_work_dirs(app: &AppHandle) {
 /// `Downloads` in the save folder (`Videos\Craftora\Downloads` by default): whole links downloaded
 /// to edit like files on this PC, and live recordings.
 pub(crate) fn downloads_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = output_dir(app)?.join("Downloads");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create {}: {e}", dir.display()))?;
+    let out = output_dir(app)?;
+    // A save folder that is itself called Downloads isn't given another one inside.
+    let dir = if out.file_name().is_some_and(|n| n.eq_ignore_ascii_case("Downloads")) { out } else { out.join("Downloads") };
+    std::fs::create_dir_all(&dir).map_err(|e| save_error(&dir, &e))?;
     Ok(dir)
 }
 
@@ -458,7 +485,7 @@ pub async fn download_media(app: AppHandle, spec: MediaDownload) -> Result<(), S
     spawn_job(app, spec.id.clone(), async move {
         let dir = downloads_dir(&task_app)?;
         // A paused download continues here: yt-dlp picks up the parts it already saved.
-        let work = work_dir(&dir, &spec.id)?;
+        let work = work_dir(&task_app, &spec.id)?;
         let _ = std::fs::remove_file(work.join(PAUSED_MARK));
         let request = Download {
             url: &spec.url,
@@ -504,7 +531,7 @@ pub(crate) fn secs(t: f64) -> String {
 
 async fn run_simple(app: &AppHandle, spec: &JobSpec) -> Result<PathBuf, String> {
     let dir = output_dir(app)?;
-    let work = work_dir(&dir, &spec.id)?;
+    let work = work_dir(app, &spec.id)?;
     let result = run_simple_in(app, spec, &dir, &work).await;
     let _ = std::fs::remove_dir_all(&work);
     result

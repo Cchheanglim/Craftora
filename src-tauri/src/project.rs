@@ -358,7 +358,7 @@ struct Source {
 
 async fn render(app: &AppHandle, spec: &RenderSpec) -> Result<PathBuf, String> {
     let dir = output_dir(app)?;
-    let work = work_dir(&dir, &spec.id)?;
+    let work = work_dir(app, &spec.id)?;
     let ext = spec.container.ext();
     // Rendered inside the working folder; only a finished file reaches the export folder.
     let temp = work.join(format!("output.{ext}"));
