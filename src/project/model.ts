@@ -307,6 +307,17 @@ export function mediaFromSource(source: MediaSource): MediaItem {
   };
 }
 
+/**
+ * The export quality picked before, in a fresh read of the same link. YouTube can list the same
+ * quality under another format next time (1080p as 270 instead of 137); the old id then matched
+ * nothing, the size read 0 MB and the download could ask for a format that's gone.
+ */
+export function sameFormat(format: string, before: MediaSource, after: MediaSource): string {
+  if (after.streams.some((s) => s.id === format)) return format;
+  const label = before.streams.find((s) => s.id === format)?.label;
+  return after.streams.find((s) => s.label === label)?.id ?? format;
+}
+
 /** About two lines of captions on screen. */
 export const CAPTION_CHARS = 80;
 

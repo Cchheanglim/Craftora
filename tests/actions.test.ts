@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEdit } from "../src/project/actions";
-import { emptyProject, mediaFromSource, type Project } from "../src/project/model";
+import { emptyProject, mediaFromSource, sameFormat, type Project } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
 const source = (kind: "video" | "audio" | "image"): MediaSource => ({
@@ -22,6 +22,18 @@ function moved(kind: "video" | "audio" | "image", to: string): string | undefine
   p = applyEdit(p, { type: "moveClip", clipId: "c", trackId: to, start: 0 });
   return p.clips.find((c) => c.id === "c")?.trackId;
 }
+
+test("the export quality survives a site listing it under another format", () => {
+  const read = (ids: string[]): MediaSource => ({
+    ...source("video"),
+    streams: ids.map((id, i) => ({ id, kind: "video", label: ["1080p · 24 fps", "720p · 24 fps"][i], detail: "", sizeMb: 1 })),
+  });
+  const first = read(["137+bestaudio/137", "136+bestaudio/136"]);
+  expect(sameFormat("137+bestaudio/137", first, read(["270+bestaudio/270", "232+bestaudio/232"]))).toBe("270+bestaudio/270");
+  expect(sameFormat("136+bestaudio/136", first, read(["137+bestaudio/137", "136+bestaudio/136"]))).toBe("136+bestaudio/136");
+  // Nothing of that quality any more: the old choice stays.
+  expect(sameFormat("136+bestaudio/136", first, read(["270+bestaudio/270"]))).toBe("136+bestaudio/136");
+});
 
 test("a video can move onto an audio track for its sound, and back", () => {
   expect(moved("video", "audio-1")).toBe("audio-1");

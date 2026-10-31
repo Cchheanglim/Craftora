@@ -74,6 +74,7 @@ import {
   clipEnd,
   emptyProject,
   mediaFromSource,
+  sameFormat,
   previousOnTrack,
   projectDuration,
   projectName,
@@ -835,7 +836,10 @@ export default function App() {
           const thumbnail = source.thumbnail?.startsWith("data:") ? source.thumbnail : fresh.thumbnail;
           // The wave drawn last time stays too (it's the same sound).
           const wave = source.peaksRate === 10 ? { peaks: source.peaks, peaksRate: 10 } : {};
-          api.refreshMedia(item.id, { source: { ...fresh, duration: source.duration, thumbnail, ...wave }, missing: false });
+          // As it is now: the export quality may have been changed while the link was read.
+          const current = projectRef.current.media.find((m) => m.id === item.id) ?? item;
+          const videoFormat = sameFormat(current.videoFormat, current.source, fresh);
+          api.refreshMedia(item.id, { source: { ...fresh, duration: source.duration, thumbnail, ...wave }, missing: false, videoFormat });
           prepare(item.id, fresh);
         })
         .catch(() => {
