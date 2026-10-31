@@ -29,6 +29,12 @@
 - **"Is this link safe?" was missing** from the installed app. **Check** is back next to Fetch:
   add your own free VirusTotal key once in **Settings → Links** (Check takes you there), and
   Craftora tries it before keeping it in Windows Credential Manager.
+- **YouTube previews stuck on a blurry picture** (or "can't play in the preview"): YouTube sometimes
+  refuses the file it has just listed, and the preview showed only the video's cover picture.
+  Craftora now checks the file first and plays the next best one if it's refused.
+- **Export size showing 0 MB** after changing the preview quality or reopening a project: YouTube can
+  list the same quality under another format the next time. The export keeps the quality you
+  picked (or 1080p if it's gone).
 - **Microsoft Store version:** it now includes Deno and whisper.cpp like the GitHub installer, so
   YouTube and captions from the sound work there too.
 - **Exporting with captions:** captions no longer count toward the 150-clip limit, so long videos

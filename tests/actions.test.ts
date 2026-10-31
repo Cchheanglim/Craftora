@@ -31,8 +31,11 @@ test("the export quality survives a site listing it under another format", () =>
   const first = read(["137+bestaudio/137", "136+bestaudio/136"]);
   expect(sameFormat("137+bestaudio/137", first, read(["270+bestaudio/270", "232+bestaudio/232"]))).toBe("270+bestaudio/270");
   expect(sameFormat("136+bestaudio/136", first, read(["137+bestaudio/137", "136+bestaudio/136"]))).toBe("136+bestaudio/136");
-  // Nothing of that quality any more: the old choice stays.
-  expect(sameFormat("136+bestaudio/136", first, read(["270+bestaudio/270"]))).toBe("136+bestaudio/136");
+  // That quality is gone, or the old id is known nowhere (saved before the fix): the usual 1080p.
+  expect(sameFormat("136+bestaudio/136", first, read(["270+bestaudio/270"]))).toBe("270+bestaudio/270");
+  expect(sameFormat("999+bestaudio/999", first, read(["270+bestaudio/270", "232+bestaudio/232"]))).toBe("270+bestaudio/270");
+  // A sound-only link has no video format to keep.
+  expect(sameFormat("", first, { ...first, streams: [] })).toBe("");
 });
 
 test("a video can move onto an audio track for its sound, and back", () => {
