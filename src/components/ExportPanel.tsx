@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AudioContainer, ExportSettings, VideoContainer } from "../types";
 import { FRAMES, formatSize, type ExportPlan } from "../project/exportPlan";
 import { Icon } from "./Icon";
+import { useConfirm } from "./ConfirmDialog";
 import "./ExportPanel.css";
 
 interface ExportPanelProps {
@@ -13,6 +14,8 @@ interface ExportPanelProps {
   /** Whether anything on the timeline has a picture. */
   hasPicture: boolean;
   onAddToQueue: () => void;
+  /** Captions are on (CC) and will be drawn into the picture. */
+  captionsDrawn: boolean;
   /** Bumps each time a job is queued, to replay the confirmation. */
   queuedCount: number;
   /** Where exports are saved. */
@@ -44,6 +47,7 @@ export function ExportPanel({
   cutModeApplies,
   hasPicture,
   onAddToQueue,
+  captionsDrawn,
   queuedCount,
   outputDir,
   onChooseOutputDir,
@@ -67,6 +71,48 @@ export function ExportPanel({
     observer.observe(end);
     return () => observer.disconnect();
   }, []);
+
+  const { ask, dialog } = useConfirm();
+  // What the file will be, before it's queued: quality, how it's made, size, where it goes.
+  const confirmAdd = async () => {
+    if (plan.kind === "empty") return;
+    const how =
+      plan.kind === "simple"
+        ? !isVideo
+          ? `The sound only, as ${plan.fileName.split(".").pop()?.toUpperCase()}.`
+          : settings.cutMode === "fast"
+            ? "Copied as it is: no quality lost. The start snaps to the nearest keyframe, up to a second or two early."
+            : "Re-made only around the cut, so it starts exactly where you set it."
+        : !isVideo
+          ? "The timeline's sound, mixed into one file."
+          : settings.quality === "fast"
+            ? `Re-made quickly${fastEncoder ? ` with ${fastEncoder}` : ""} (Fast).`
+            : "Re-made at the best quality, slower and smaller (Best).";
+    const rows: [string, string][] = [
+      [isVideo ? "Picture" : "Sound", plan.quality],
+      ["How", how],
+      ["What", plan.summary],
+      ["File", `${plan.fileName} · ≈ ${formatSize(plan.sizeMb)}`],
+      ["Saves to", outputDir],
+    ];
+    if (isVideo && captionsDrawn) rows.push(["Captions", "On: drawn into the picture. Turn CC off on the preview to leave them out."]);
+    const ok = await ask({
+      title: "Add to queue?",
+      message: (
+        <dl className="export__summary">
+          {rows.map(([term, text]) => (
+            <div key={term}>
+              <dt>{term}</dt>
+              <dd>{text}</dd>
+            </div>
+          ))}
+        </dl>
+      ),
+      confirmLabel: "Add to queue",
+      note: "You can cancel it from the queue while it runs.",
+    });
+    if (ok) onAddToQueue();
+  };
 
   const copy = async () => {
     if (plan.kind === "empty") return;
@@ -263,7 +309,7 @@ export function ExportPanel({
             </dd>
           </dl>
         )}
-        <button type="button" className="btn btn--primary export__add" onClick={onAddToQueue} disabled={!ready}>
+        <button type="button" className="btn btn--primary export__add" onClick={() => void confirmAdd()} disabled={!ready}>
           <span key={queuedCount} className={queuedCount > 0 ? "export__add-label is-queued" : "export__add-label"}>
             Add to queue
           </span>
@@ -271,6 +317,7 @@ export function ExportPanel({
         </button>
         {plan.kind === "empty" && <p className="export__hint">{plan.reason}</p>}
       </div>
+      {dialog}
     </aside>
   );
 }

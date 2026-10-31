@@ -1332,6 +1332,7 @@ export default function App() {
               cutModeApplies={cutModeApplies(toExport, effective)}
               hasPicture={hasPicture}
               onAddToQueue={addToQueue}
+              captionsDrawn={showCaptions && project.media.some((m) => m.captions)}
               onPreset={(frameId, fill) => {
                 setSettings((prev) => ({ ...prev, frameId }));
                 // Every picture on a video track fits or fills the new frame, as one undo step.

@@ -237,8 +237,9 @@ fn audio_streams(formats: &[Format], duration: f64) -> Vec<Stream> {
 }
 
 /// Picks a direct file the preview player can open and whether it has sound: the highest up to
-/// `max_height` (picked in the preview; None: the best there is, 4K included), H.264 before VP9 at
-/// the same height (every WebView decodes H.264; YouTube's 1440p and 4K are VP9 only). A video-only
+/// `max_height` (picked in the preview; None: the best there is, 4K included), VP9 before H.264 at
+/// the same height (YouTube's VP9 looks sharper at the same size, and its 1440p and 4K are VP9 only;
+/// WebView2 decodes both, on the graphics card). A video-only
 /// file plays next to a sound stream (`preview_audio`): YouTube's only file with sound is 360p,
 /// which looked blurry.
 fn preview(formats: &[Format], max_height: Option<u32>) -> (String, bool) {
@@ -253,8 +254,8 @@ fn preview(formats: &[Format], max_height: Option<u32>) -> (String, bool) {
             let h = i64::from(f.height.unwrap_or(480));
             let too_big = max_height.is_some_and(|max| h > i64::from(max));
             let codec = match codec_name(f.vcodec.as_deref()).as_str() {
-                "H.264" => 0,
-                "VP9" => 1,
+                "VP9" => 0,
+                "H.264" => 1,
                 _ => 2,
             };
             // Within the limit the highest; over it (when nothing is smaller) the smallest.
@@ -622,7 +623,7 @@ mod tests {
         assert_eq!(preview(&info.formats, None), ("https://v/1080".into(), false));
         // Below everything there is: the smallest.
         assert_eq!(preview(&info.formats, Some(144)), ("https://v/360".into(), true));
-        // 4K comes as VP9 (and AV1, which WebView2 can't play); at 1080p H.264 still wins.
+        // 4K comes as VP9 (and AV1, which WebView2 can't play); at 1080p VP9 wins too.
         let json = br#"{"title":"T","formats":[
             {"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"url":"https://v/1080","protocol":"https"},
             {"format_id":"248","ext":"webm","vcodec":"vp9","acodec":"none","height":1080,"url":"https://v/1080vp9","protocol":"https"},
@@ -631,7 +632,7 @@ mod tests {
             {"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a","url":"https://a/140","protocol":"https"}]}"#;
         let big: Info = serde_json::from_slice(json).unwrap();
         assert_eq!(preview(&big.formats, None), ("https://v/2160".into(), false));
-        assert_eq!(preview(&big.formats, Some(1080)), ("https://v/1080".into(), false));
+        assert_eq!(preview(&big.formats, Some(1080)), ("https://v/1080vp9".into(), false));
         // Without a sound stream to pair with, the file with sound wins, so the preview isn't silent.
         let silent: Vec<Format> = info.formats.into_iter().filter(|f| f.format_id != "140").collect();
         assert_eq!(preview(&silent, None), ("https://v/360".into(), true));

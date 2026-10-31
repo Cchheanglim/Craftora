@@ -26,6 +26,8 @@ export type ExportPlan =
       sizeMb: number;
       fileName: string;
       summary: string;
+      /** The picture (or sound) quality of the file, e.g. "1080p · 24 fps". */
+      quality: string;
       command: string;
       title: string;
     }
@@ -35,6 +37,8 @@ export type ExportPlan =
       sizeMb: number;
       fileName: string;
       summary: string;
+      /** The picture (or sound) quality of the file, e.g. "1080p · 24 fps". */
+      quality: string;
       command: string;
       title: string;
     }
@@ -123,6 +127,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       sizeMb: stream && src.duration > 0 ? (stream.sizeMb * length) / src.duration : 0,
       fileName,
       title: media.name,
+      quality: stream?.label ?? (src.local ? "As the file is" : "Best available"),
       summary: [
         `${formatClock(clip.in)} → ${formatClock(clip.out)}`,
         container.toUpperCase(),
@@ -232,6 +237,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     fileName,
     title,
     summary,
+    quality: isVideo ? `${frame.width} × ${frame.height} · ${FPS} fps` : container.toUpperCase(),
     command,
   };
 }

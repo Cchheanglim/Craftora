@@ -173,6 +173,11 @@
   color: var(--text-3);
 }
 
+/* Rows wrapped for their keys still lay out as the grid's two columns. */
+.export__summary > div {
+  display: contents;
+}
+
 .export__summary dt:has(label) {
   align-self: center;
 }
