@@ -1,0 +1,269 @@
+/*
+ * The glass themes (Settings → Theme, lib/theme.ts): see-through panels over a soft glow taken
+ * from the video playing (components/Ambient.tsx). Classic is tokens.css as it is: no data-theme.
+ * Only tokens and surfaces change here; the layout and every control stay the same.
+ */
+
+:root[data-theme="dark"] {
+  --bg-input: rgb(0 0 0 / 0.28);
+  --bg-canvas: #08080a;
+  --bg-rail: rgb(26 26 31 / 0.6);
+  --bg-panel: rgb(30 30 36 / 0.6);
+  --bg-raised: rgb(38 38 45 / 0.9);
+  --bg-hover: rgb(255 255 255 / 0.07);
+  --bg-selected: rgb(255 255 255 / 0.12);
+  --line-soft: rgb(255 255 255 / 0.05);
+  --line: rgb(255 255 255 / 0.09);
+  --line-strong: rgb(255 255 255 / 0.14);
+  --line-hover: rgb(255 255 255 / 0.24);
+  --text-2: #c2c2c8;
+  --text-3: #93939c;
+  --clip-video: rgb(86 124 196 / 0.32);
+  --clip-video-line: rgb(130 165 230 / 0.45);
+  --clip-audio: rgb(56 160 112 / 0.28);
+  --clip-audio-line: rgb(110 200 150 / 0.42);
+  --clip-text: rgb(206 156 64 / 0.3);
+  --clip-text-line: rgb(230 190 110 / 0.45);
+  --radius: 10px;
+  --radius-sm: 7px;
+  --glass-edge: rgb(255 255 255 / 0.1);
+  --glass-hi: rgb(255 255 255 / 0.14);
+  --glass-shadow: 0 20px 50px rgb(0 0 0 / 0.4);
+  --glass-thumb: rgb(255 255 255 / 0.13);
+  --glass-thumb-shadow: rgb(0 0 0 / 0.3);
+  --glow-a: 0.34;
+  --glow-b: 0.26;
+  --glow-c: 0.28;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-input: rgb(255 255 255 / 0.72);
+  --bg-canvas: #e8eaef;
+  --bg-rail: rgb(255 255 255 / 0.52);
+  --bg-panel: rgb(255 255 255 / 0.58);
+  --bg-raised: rgb(255 255 255 / 0.94);
+  --bg-hover: rgb(15 23 42 / 0.055);
+  --bg-selected: rgb(15 23 42 / 0.09);
+  --line-soft: rgb(15 23 42 / 0.05);
+  --line: rgb(15 23 42 / 0.09);
+  --line-strong: rgb(15 23 42 / 0.15);
+  --line-hover: rgb(15 23 42 / 0.26);
+  --text: #16161a;
+  --text-2: #44444d;
+  --text-3: #62626c;
+  --accent: #e5193d;
+  --accent-fill: #e0203f;
+  --accent-fill-hover: #c8183a;
+  --accent-wash: rgb(229 25 61 / 0.1);
+  --clip-video: rgb(96 136 214 / 0.22);
+  --clip-video-line: rgb(74 112 196 / 0.5);
+  --clip-audio: rgb(52 160 104 / 0.2);
+  --clip-audio-line: rgb(44 140 92 / 0.5);
+  --clip-text: rgb(214 152 40 / 0.22);
+  --clip-text-line: rgb(186 128 24 / 0.5);
+  --ok: #187a3b;
+  --warn: #9a5b00;
+  --danger: #cc2929;
+  --radius: 10px;
+  --radius-sm: 7px;
+  --glass-edge: rgb(255 255 255 / 0.85);
+  --glass-hi: rgb(255 255 255 / 1);
+  --glass-shadow: 0 16px 40px rgb(40 50 80 / 0.13), 0 0 0 1px rgb(15 23 42 / 0.05);
+  --glass-thumb: rgb(255 255 255 / 0.95);
+  --glass-thumb-shadow: rgb(30 40 70 / 0.12);
+  --glow-a: 0.42;
+  --glow-b: 0.3;
+  --glow-c: 0.34;
+}
+
+/* Floating glass panels with room around them, the glow showing through. */
+:root[data-theme] .app {
+  position: relative;
+  z-index: 0;
+  gap: 12px;
+  padding: 12px;
+}
+
+:root[data-theme] .app__editor {
+  padding: 0;
+}
+
+:root[data-theme] :is(.toolbar, .side, .app__panel, .queue, .preview, .tl, .home, .library) {
+  border: 1px solid var(--glass-edge);
+  border-radius: 18px;
+  background: var(--bg-panel);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  box-shadow: inset 0 1px 0 var(--glass-hi), var(--glass-shadow);
+}
+
+:root[data-theme] .preview {
+  padding: 10px;
+}
+
+:root[data-theme] .preview__screen {
+  border-color: transparent;
+  border-radius: 12px;
+}
+
+:root[data-theme] .tl__toolbar {
+  background: transparent;
+}
+
+/* Closed, the panel also takes the gap before it along. */
+:root[data-theme] .app__panel.is-closed {
+  margin-right: calc(-1 * var(--panel-w) - 12px);
+}
+
+:root[data-theme] :is(.confirm, .welcome, .text-menu, .export__more) {
+  border-color: var(--glass-edge);
+  -webkit-backdrop-filter: blur(30px) saturate(170%);
+  backdrop-filter: blur(30px) saturate(170%);
+  box-shadow: inset 0 1px 0 var(--glass-hi), var(--glass-shadow);
+}
+
+:root[data-theme] :is(.confirm, .welcome) {
+  border-radius: 20px;
+}
+
+:root[data-theme] .text-menu {
+  border-radius: 14px;
+}
+
+/* Picked things sit on a raised pane of glass. */
+:root[data-theme] .segmented::before,
+:root[data-theme] .side__item[aria-current="page"] {
+  background: var(--glass-thumb);
+  box-shadow: inset 0 1px 0 var(--glass-hi), 0 3px 12px var(--glass-thumb-shadow);
+}
+
+:root[data-theme] .btn--secondary {
+  box-shadow: inset 0 1px 0 var(--glass-hi);
+}
+
+:root[data-theme] .btn--primary {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 8px 22px rgb(229 25 61 / 0.32);
+}
+
+/* Light glass: what Classic draws in white on dark turns dark on light. */
+:root[data-theme="light"] .btn--secondary {
+  background: rgb(255 255 255 / 0.8);
+}
+
+:root[data-theme="light"] .btn--secondary:hover:not(:disabled) {
+  background: #ffffff;
+}
+
+:root[data-theme="light"] .btn--icon {
+  border-color: rgb(15 23 42 / 0.08);
+  background: rgb(255 255 255 / 0.65);
+  box-shadow: inset 0 1px 0 #ffffff, 0 1px 2px rgb(15 23 42 / 0.06);
+}
+
+:root[data-theme="light"] .btn--icon:hover:not(:disabled) {
+  border-color: rgb(15 23 42 / 0.14);
+  background: #ffffff;
+}
+
+:root[data-theme="light"] .preview__play:hover:not(:disabled) {
+  background: #000000;
+}
+
+:root[data-theme="light"] .preview__wave > span {
+  background: rgb(15 23 42 / 0.22);
+}
+
+:root[data-theme="light"] .tl__lane:hover {
+  background: rgb(15 23 42 / 0.02);
+}
+
+:root[data-theme="light"] .tl__wave > span {
+  background: rgb(15 23 42 / 0.3);
+}
+
+:root[data-theme="light"] .tl__chapter {
+  background: rgb(15 23 42 / 0.55);
+}
+
+:root[data-theme="light"] .tl__trans {
+  background: rgb(15 23 42 / 0.08);
+  border-right-color: rgb(15 23 42 / 0.4);
+}
+
+:root[data-theme="light"] .tl__clip:hover .tl__trim {
+  background: rgb(15 23 42 / 0.3);
+}
+
+:root[data-theme="light"] .tl__clip.is-selected .tl__trim {
+  background: rgb(15 23 42 / 0.7);
+}
+
+:root[data-theme="light"] .export__code pre {
+  color: var(--text-2);
+}
+
+:root[data-theme="light"] .export__more {
+  box-shadow: inset 0 1px 0 var(--glass-hi), 0 -8px 16px -8px rgb(40 50 80 / 0.18);
+}
+
+:root[data-theme="light"] .transcript__text .is-picked {
+  background: rgb(229 25 61 / 0.12);
+  color: #b5122f;
+}
+
+/* The glow behind the glass: blurred colours of the video playing, easing to each new one. */
+.ambient {
+  display: none;
+}
+
+:root[data-theme] .ambient {
+  --glow-1: 255 110 64;
+  --glow-2: 214 36 70;
+  --glow-3: 34 128 150;
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ambient i {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(110px);
+  transition: background-color 1.6s var(--ease-out);
+}
+
+.ambient i:nth-child(1) {
+  left: 20%;
+  top: 2%;
+  width: 44%;
+  height: 54%;
+  background: rgb(var(--glow-1) / var(--glow-a));
+}
+
+.ambient i:nth-child(2) {
+  left: 52%;
+  top: 32%;
+  width: 40%;
+  height: 50%;
+  background: rgb(var(--glow-2) / var(--glow-b));
+}
+
+.ambient i:nth-child(3) {
+  left: -8%;
+  top: 46%;
+  width: 42%;
+  height: 50%;
+  background: rgb(var(--glow-3) / var(--glow-c));
+}
+
+/* Switching themes: colours, corners and spacing ease over instead of jumping (lib/theme.ts). */
+:root.is-retheming,
+:root.is-retheming * {
+  transition: background-color 0.6s var(--ease-out), border-color 0.6s var(--ease-out), color 0.6s var(--ease-out),
+    box-shadow 0.6s var(--ease-out), border-radius 0.6s var(--ease-out), gap 0.6s var(--ease-out),
+    padding 0.6s var(--ease-out) !important;
+}
