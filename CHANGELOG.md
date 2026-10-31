@@ -12,7 +12,10 @@
 - **Previews of links play the best quality the video has** (up to 4K). They used to pick YouTube's
   only file with sound built in, which is 360p and looked blurry full screen. A new quality picker
   next to the speed (**Best**, 1080p, 720p…) lowers it for slow Wi-Fi; exports keep their own quality.
-  The Smooth/Sharp setting is gone.
+  The Smooth/Sharp setting is gone. At the same size, YouTube's sharper VP9 file is preferred.
+- **Know what you'll get before it's queued.** Add to queue shows a short summary first: picture
+  quality, whether it's copied as is or re-made, length, file name and size, where it's saved, and
+  whether captions are drawn in. (Ctrl+Enter still adds straight away.)
 - **Plain error messages.** A slip inside Craftora now says "Something went wrong inside
   Craftora…" instead of showing programmer text.
 
