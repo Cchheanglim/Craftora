@@ -118,6 +118,7 @@ pub fn run() {
             speech::make_captions,
             store::save_snapshot,
             virustotal::site_check_available,
+            virustotal::set_site_check_key,
             virustotal::check_site,
             media::fetch_thumbnail,
             signin::open_sign_in,
