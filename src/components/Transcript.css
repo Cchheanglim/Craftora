@@ -129,6 +129,35 @@
   text-decoration: line-through;
 }
 
+/* Fixing a name: the search's matches retyped in one go. */
+.transcript__replace {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.transcript__replace .field {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Edit a caption: shown on the line under the pointer or when tabbed to. */
+.transcript__edit {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-left: auto;
+  opacity: 0;
+}
+
+.transcript__line:hover .transcript__edit,
+.transcript__edit:focus-visible {
+  opacity: 1;
+}
+
+.transcript__input {
+  flex: 1;
+  min-width: 0;
+}
+
 .transcript__pending {
   color: var(--text-3);
   font-style: italic;

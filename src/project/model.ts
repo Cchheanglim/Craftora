@@ -368,9 +368,11 @@ export function readableCaptions(lines: Caption[], max = CAPTION_CHARS): Caption
  * TV-style captions (YouTube's among them) put where a new speaker starts.
  */
 export function captionLines(lines: Caption[]): Caption[] {
-  const unmarked = lines.map((line) => ({ ...line, text: line.text.replace(/(^|\s)>>\s*/g, "$1").trim() }));
-  return readableCaptions(unmarked.filter((line) => line.text));
+  return readableCaptions(lines.map((line) => ({ ...line, text: unmarked(line.text) })).filter((line) => line.text));
 }
+
+/** Caption text without speaker marks (">>"). */
+export const unmarked = (text: string) => text.replace(/(^|\s)>>\s*/g, "$1").trim();
 
 /**
  * Text broken into lines of at most `max` characters at whole words, as the preview wraps it:

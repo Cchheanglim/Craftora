@@ -15,6 +15,7 @@ import {
   clipLength,
   isStill,
   captionLines,
+  unmarked,
   transitionLength,
   CAPTIONS,
   type CaptionLayout,
@@ -44,6 +45,11 @@ export type EditAction =
   | { type: "addCaptions"; mediaId: string; trackId: string }
   /** Moves or resizes every caption at once: the ones shown from the media and every clip on a "Captions" track. */
   | { type: "layoutCaptions"; patch: Partial<CaptionLayout> }
+  /**
+   * Changes caption text, `find` → `replace`: in every caption of every media, whatever the case
+   * (and on "Captions" tracks); with `line`, only in that media's caption playing at `line.at`.
+   */
+  | { type: "editCaptions"; find: string; replace: string; line?: { mediaId: string; at: number } }
   /** On a magnetic track, `start` picks the slot: the clip goes where its left edge lands. */
   | { type: "moveClip"; clipId: string; start: number; trackId?: string }
   /** Moves one edge of a clip to a timeline time. */
@@ -517,6 +523,23 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const layout = { ...(p.captionLayout ?? CAPTIONS), ...action.patch };
       const captions = new Set(p.tracks.filter((t) => t.name === "Captions").map((t) => t.id));
       return { ...p, captionLayout: layout, clips: p.clips.map((c) => (captions.has(c.trackId) ? { ...c, ...layout } : c)) };
+    }
+
+    case "editCaptions": {
+      const { find, replace, line } = action;
+      if (!find) return p;
+      const pattern = new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), line ? "" : "gi");
+      // A function, so a "$" typed in the new text stays as typed.
+      const change = (text: string) => text.replace(pattern, () => replace);
+      const media = p.media.map((m) => {
+        if (!m.captions || (line && m.id !== line.mediaId)) return m;
+        // One line is edited as shown: without speaker marks, which the shown text doesn't have.
+        const lines = m.captions.lines.map((c) => (!line ? { ...c, text: change(c.text) } : line.at >= c.start && line.at < c.end ? { ...c, text: change(unmarked(c.text)) } : c));
+        return { ...m, captions: { ...m.captions, lines } };
+      });
+      if (line) return { ...p, media };
+      const captions = new Set(p.tracks.filter((t) => t.name === "Captions").map((t) => t.id));
+      return { ...p, media, clips: p.clips.map((c) => (captions.has(c.trackId) && c.text ? { ...c, text: change(c.text) } : c)) };
     }
 
     case "settle":

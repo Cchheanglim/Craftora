@@ -46,6 +46,20 @@ test("captions drop the >> that marks a new speaker", () => {
   expect(captionLines([line("a->b, c>>d")])[0].text).toBe("a->b, c>>d");
 });
 
+test("a wrong name is fixed in every caption, or in just the line retyped", () => {
+  const media = { ...mediaFromSource(source("video")), captions: { label: "English", lines: [
+    { start: 0, end: 2, text: ">> Mr. Crabs! Mr. crabs?" },
+    { start: 2, end: 4, text: "Me? >> Yes, Mr. Crabs." },
+  ] } };
+  const p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  const texts = (q: Project) => q.media[0].captions!.lines.map((c) => c.text);
+  // Every caption, whatever the case; a "$" in the new name stays as typed.
+  expect(texts(applyEdit(p, { type: "editCaptions", find: "mr. crabs", replace: "Mr. Krab$" }))).toEqual([">> Mr. Krab$! Mr. Krab$?", "Me? >> Yes, Mr. Krab$."]);
+  // One line, as the Transcript shows it (no speaker marks); the other line is untouched.
+  const one = applyEdit(p, { type: "editCaptions", find: "Me? Yes, Mr. Crabs.", replace: "Me? Yes, SpongeBob.", line: { mediaId: media.id, at: 3 } });
+  expect(texts(one)).toEqual([">> Mr. Crabs! Mr. crabs?", "Me? Yes, SpongeBob."]);
+});
+
 test("a video can move onto an audio track for its sound, and back", () => {
   expect(moved("video", "audio-1")).toBe("audio-1");
 });
