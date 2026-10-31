@@ -73,9 +73,11 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
   edits the downloaded copy.
 - **Not sure a link is safe?** Click **Check** next to the top link box: Craftora asks
   [VirusTotal](https://www.virustotal.com) whether security vendors flag its website (only the
-  website's name is sent, never the full link).
-- Link previews are cached on your PC as they play, so jumping back is instant. Pick **Smooth**
-  (up to 720p, good on slow Wi-Fi) or **Sharp** (best quality) in Settings.
+  website's name is sent, never the full link). It uses your own free VirusTotal key, added once
+  in Settings → Links.
+- Link previews are cached on your PC as they play, so jumping back is instant. They play the
+  best quality the video has; the picker next to the speed (**Best**, 1080p, 720p…) lowers it for
+  slow Wi-Fi.
 
 **Captions and edit by text**
 - Captions come from the website when it has them; otherwise Craftora **listens to the sound and

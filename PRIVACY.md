@@ -14,9 +14,10 @@ These are the only times Craftora goes online:
 - **Pictures of fetched videos.** When you fetch a video, Craftora downloads its picture once and
   keeps a small copy on your PC for History, Media, Projects and Exports. (Videos fetched with
   version 0.3.0 or earlier still load their picture from the website each time.)
-- **"Is this link safe?"** Only when you paste a link into the check box under Settings → Links and
-  click **Check**: Craftora sends VirusTotal the website's name (for example `youtube.com`),
-  never the full link, using Craftora's own VirusTotal key. VirusTotal's
+- **"Is this link safe?"** Only when you click **Check** next to the link box or under Settings →
+  Links: Craftora sends VirusTotal the website's name (for example `youtube.com`), never the full
+  link, using the VirusTotal key you added in Settings → Links (kept in Windows Credential
+  Manager; adding it sends it to VirusTotal once to see that it works). VirusTotal's
   [terms and privacy policy](https://www.virustotal.com/gui/terms-of-service) apply.
 - **A proxy, if you set one.** In Settings → Privacy you can enter an HTTP proxy. Fetching,
   downloads, previews, pictures, captions, the speech model, "Is this link safe?" and the AI

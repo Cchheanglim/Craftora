@@ -116,8 +116,14 @@ export interface SiteReport {
   /** The full report on VirusTotal's website. */
   reportUrl: string;
 }
-/** Whether this copy of Craftora was built with a VirusTotal key ("Is this link safe?"). */
-export const siteCheckAvailable = () => invoke<boolean>("site_check_available");
+/** Whether links can be checked ("Is this link safe?"): a VirusTotal key is there, and whether it's the user's own. */
+export interface SiteChecks {
+  available: boolean;
+  ownKey: boolean;
+}
+export const siteCheckAvailable = () => invoke<SiteChecks>("site_check_available");
+/** Saves the user's VirusTotal key once VirusTotal accepts it; null forgets it. */
+export const setSiteCheckKey = (key: string | null) => invoke("set_site_check_key", { key });
 export const checkSite = (link: string) => invoke<SiteReport>("check_site", { link });
 
 /** Carries the page a link's servers want (`REFERER_MARK` in src-tauri/src/signin.rs). */

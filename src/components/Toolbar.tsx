@@ -16,6 +16,8 @@ interface ToolbarProps {
   errorAction?: { label: string; onClick: () => void };
   /** This copy can ask VirusTotal whether a link's website is safe. */
   canCheckSite?: boolean;
+  /** Without a VirusTotal key, Check opens Settings to add one. */
+  onSetUpSiteCheck?: () => void;
   /** Imports files from this PC; absent in the browser preview. */
   onImport?: () => void;
   /** Lets Home's "Paste a link" focus the field. */
@@ -37,6 +39,7 @@ export function Toolbar({
   error,
   errorAction,
   canCheckSite,
+  onSetUpSiteCheck,
   onImport,
   inputRef,
   leftOpen,
@@ -107,13 +110,13 @@ export function Toolbar({
             spellCheck={false}
           />
         </div>
-        {canCheckSite && (
+        {(canCheckSite || onSetUpSiteCheck) && (
           <button
             type="button"
             className="btn btn--secondary"
-            disabled={checking || !url.trim()}
-            title="Ask VirusTotal whether this link's website is safe"
-            onClick={() => void checkUrl()}
+            disabled={checking || (canCheckSite && !url.trim())}
+            title={canCheckSite ? "Ask VirusTotal whether this link's website is safe" : "Add your free VirusTotal key in Settings to check links"}
+            onClick={() => (canCheckSite ? void checkUrl() : onSetUpSiteCheck?.())}
           >
             <Icon name="shield" size={14} />
             {checking ? "Checking…" : "Check"}

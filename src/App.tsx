@@ -7,6 +7,7 @@ import {
   fetchMedia,
   keptThumbnail,
   siteCheckAvailable,
+  setSiteCheckKey,
   inDesktopApp,
   makePreview,
   onPreviewCache,
@@ -283,7 +284,7 @@ export default function App() {
   const [fastEncoder, setFastEncoder] = useState<string | null>(null);
   const [signInMessage, setSignInMessage] = useState<string | null>(null);
   /** This copy was built with a VirusTotal key, so Home → Links can check links. */
-  const [siteChecks, setSiteChecks] = useState(false);
+  const [siteChecks, setSiteChecks] = useState({ available: false, ownKey: false });
   /** A link that failed in a way the sign-in window can fix: a login, or a page yt-dlp doesn't know. */
   const [pageAction, setPageAction] = useState<{ label: string; link: string } | null>(null);
   const [ytDlpUpdate, setYtDlpUpdate] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null });
@@ -1095,6 +1096,10 @@ export default function App() {
             .catch((err) => setSignInMessage(errorText(err))),
         signInMessage,
         siteChecks,
+        onSiteCheckKey: async (key) => {
+          await setSiteCheckKey(key);
+          setSiteChecks(await siteCheckAvailable());
+        },
         onUpdateYtDlp: storeEdition ? undefined : refreshYtDlp,
         updating: ytDlpUpdate.busy,
         ytDlpMessage: ytDlpUpdate.message,
@@ -1130,7 +1135,16 @@ export default function App() {
               }
             : undefined
         }
-        canCheckSite={inDesktopApp && siteChecks}
+        canCheckSite={inDesktopApp && siteChecks.available}
+        onSetUpSiteCheck={
+          inDesktopApp
+            ? () => {
+                setView("settings");
+                // The key field is at the foot of Settings: bring it into view once the page is drawn.
+                window.setTimeout(() => document.getElementById("vt-key")?.focus(), 100);
+              }
+            : undefined
+        }
         onImport={inDesktopApp ? () => void importFiles() : undefined}
         inputRef={urlRef}
         leftOpen={leftOpen}
