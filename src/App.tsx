@@ -64,6 +64,8 @@ import { captureThumbnail } from "./lib/thumbnail";
 import { MAX_RUNNING, useQueue } from "./state/useQueue";
 import { storeEdition, useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
+import { applyTheme, saveTheme, savedTheme, type Theme } from "./lib/theme";
+import { useGlideScroll } from "./lib/glide";
 import { useProject } from "./project/useProject";
 import { applyEdit, withShownCaptions } from "./project/actions";
 import { usePlayback } from "./project/usePlayback";
@@ -102,6 +104,7 @@ import { Settings } from "./components/Settings";
 import { AssistantPanel } from "./components/AssistantPanel";
 import { TextMenu } from "./components/TextMenu";
 import { WelcomeDialog, alreadyWelcomed } from "./components/WelcomeDialog";
+import { Ambient } from "./components/Ambient";
 import "./App.css";
 
 const DEMO = DEMO_SOURCES[0];
@@ -254,6 +257,14 @@ export default function App() {
   // Settings page: what new projects export as, and how many jobs run at once.
   const [defaultOutput, setDefaultOutput] = useState<OutputKind>(() => (remembered("craftora.exportSound", false) ? "audio" : "video"));
   const [maxRunning, setMaxRunning] = useState(() => rememberedCount("craftora.maxRunning", MAX_RUNNING));
+  // Settings → Theme; main.tsx already put the saved one on the page.
+  const [theme, setTheme] = useState(savedTheme);
+  const chooseTheme = (next: Theme) => {
+    setTheme(next);
+    applyTheme(next, true);
+    saveTheme(next);
+  };
+  useGlideScroll();
   const [settings, setSettings] = useState<ExportSettings>(() => ({ ...DEFAULT_SETTINGS, output: defaultOutput }));
   const [freshId, setFreshId] = useState<string | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
@@ -1121,6 +1132,7 @@ export default function App() {
 
   return (
     <div className="app" data-left={leftOpen ? "open" : "closed"}>
+      <Ambient active={theme !== "classic"} />
       <Toolbar
         url={url}
         onUrlChange={(next) => {
@@ -1262,6 +1274,8 @@ export default function App() {
             onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
             defaultOutput={defaultOutput}
             onDefaultOutput={chooseDefaultOutput}
+            theme={theme}
+            onTheme={chooseTheme}
             maxRunning={maxRunning}
             onMaxRunning={chooseMaxRunning}
             links={linkSettings}
