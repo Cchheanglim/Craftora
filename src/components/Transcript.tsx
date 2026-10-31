@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { cutRanges, isFiller, transcript, wordsOf, type Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
 import { formatClock } from "../lib/timecode";
@@ -39,6 +39,11 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
   const words = useMemo(() => lines.map(wordsOf), [lines]);
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [replacement, setReplacement] = useState("");
+  /** The line being retyped (its id), and its text so far. */
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const cancelled = useRef(false);
   const listRef = useRef<HTMLOListElement>(null);
   const currentRef = useRef<HTMLLIElement>(null);
   // Edits change the lines: earlier picks would point at other words.
@@ -99,6 +104,26 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
     setPicked(next);
     return true;
   };
+  // A wrong name, fixed in every caption at once; the search then shows the lines it changed.
+  const replaceAll = (e: FormEvent) => {
+    e.preventDefault();
+    if (!replacement.trim()) return;
+    api.edit({ type: "editCaptions", find: query.trim(), replace: replacement });
+    setQuery(replacement.trim());
+    setReplacement("");
+  };
+  /** Keeps the retyped line (Enter or clicking away); Escape drops it. */
+  const finishEditing = (i: number) => {
+    const line = lines[i];
+    const text = draft.trim();
+    const mediaId = clipOf(i)?.mediaId;
+    if (!cancelled.current && mediaId && text && text !== line.text) {
+      api.edit({ type: "editCaptions", find: line.text, replace: text, line: { mediaId, at: (line.mediaStart + line.mediaEnd) / 2 } });
+    }
+    cancelled.current = false;
+    setEditing(null);
+  };
+
   const onKeyDown = (e: KeyboardEvent) => {
     if ((e.key === "Delete" || e.key === "Backspace") && pickedWords.length) {
       e.preventDefault();
@@ -139,6 +164,24 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
             ? `${shown.length} line${shown.length === 1 ? "" : "s"} with “${query.trim()}”.`
             : "Click a sentence or word to jump there. Select words and press Delete to cut them out of the video."}
         </p>
+        {needle && shown.length > 0 && (
+          <form className="transcript__replace" onSubmit={replaceAll}>
+            <label htmlFor="transcript-replace" className="sr-only">
+              Replace with
+            </label>
+            <input
+              id="transcript-replace"
+              className="field"
+              value={replacement}
+              onChange={(e) => setReplacement(e.target.value)}
+              placeholder={`Replace “${query.trim()}” with…`}
+              spellCheck={false}
+            />
+            <button type="submit" className="btn btn--secondary" disabled={!replacement.trim()}>
+              Replace all
+            </button>
+          </form>
+        )}
         {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
       </div>
 
@@ -150,21 +193,53 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
               <button type="button" className="transcript__time mono" onClick={() => seek(line.start)} aria-label={`Jump to ${formatClock(line.start)}`}>
                 {formatClock(line.start)}
               </button>
-              <span className="transcript__text">
-                {words[i].map((w, j) => kept(i, j) && (
-                  <span
-                    key={j}
-                    data-word={w.word ? keyOf(i, j) : undefined}
-                    className={picked.has(keyOf(i, j)) ? "is-picked" : undefined}
+              {editing === line.id ? (
+                <input
+                  className="field transcript__input"
+                  aria-label="Caption text"
+                  autoFocus
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onBlur={() => finishEditing(i)}
+                  // Not the list's Delete (which cuts picked words) or its word picking.
+                  onMouseUp={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Escape") cancelled.current = true;
+                    if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+                  }}
+                />
+              ) : (
+                <>
+                  <span className="transcript__text">
+                    {words[i].map((w, j) => kept(i, j) && (
+                      <span
+                        key={j}
+                        data-word={w.word ? keyOf(i, j) : undefined}
+                        className={picked.has(keyOf(i, j)) ? "is-picked" : undefined}
+                        onClick={() => {
+                          if (!window.getSelection()?.isCollapsed) return;
+                          seek(timelineAt(i, w.start));
+                        }}
+                      >
+                        {w.text}
+                      </span>
+                    ))}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn--icon transcript__edit"
+                    aria-label={`Edit the caption at ${formatClock(line.start)}`}
+                    title="Edit this caption"
                     onClick={() => {
-                      if (!window.getSelection()?.isCollapsed) return;
-                      seek(timelineAt(i, w.start));
+                      setDraft(line.text);
+                      setEditing(line.id);
                     }}
                   >
-                    {w.text}
-                  </span>
-                ))}
-              </span>
+                    <Icon name="pencil" size={13} />
+                  </button>
+                </>
+              )}
             </li>
           );
         })}

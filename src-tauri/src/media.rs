@@ -236,33 +236,51 @@ fn audio_streams(formats: &[Format], duration: f64) -> Vec<Stream> {
     streams
 }
 
-/// Picks a direct file the preview player can open and whether it has sound: the highest up to
-/// `max_height` (picked in the preview; None: the best there is, 4K included), VP9 before H.264 at
-/// the same height (YouTube's VP9 looks sharper at the same size, and its 1440p and 4K are VP9 only;
-/// WebView2 decodes both, on the graphics card). A video-only
-/// file plays next to a sound stream (`preview_audio`): YouTube's only file with sound is 360p,
-/// which looked blurry.
-fn preview(formats: &[Format], max_height: Option<u32>) -> (String, bool) {
+/// Direct files the preview player can open, best first: the highest up to `max_height` (picked
+/// in the preview; None: the best there is, 4K included), VP9 before H.264 at the same height
+/// (YouTube's VP9 looks sharper at the same size, and its 1440p and 4K are VP9 only; WebView2
+/// decodes both, on the graphics card). A video-only file plays next to a sound stream
+/// (`preview_audio`): YouTube's only file with sound is 360p, which looked blurry.
+fn preview_choices(formats: &[Format], max_height: Option<u32>) -> Vec<&Format> {
     // Video-only files need a sound stream beside them, else the preview would be silent.
     let separate_sound = !preview_audio(formats).is_empty();
-    formats
+    let mut choices: Vec<&Format> = formats
         .iter()
         // Not AV1: WebView2 plays it only with an extra Windows add-on.
         .filter(|f| f.has_video() && f.plays_in_webview() && codec_name(f.vcodec.as_deref()) != "AV1")
         .filter(|f| f.has_audio() || separate_sound)
-        .min_by_key(|f| {
-            let h = i64::from(f.height.unwrap_or(480));
-            let too_big = max_height.is_some_and(|max| h > i64::from(max));
-            let codec = match codec_name(f.vcodec.as_deref()).as_str() {
-                "VP9" => 0,
-                "H.264" => 1,
-                _ => 2,
-            };
-            // Within the limit the highest; over it (when nothing is smaller) the smallest.
-            (too_big, if too_big { h } else { -h }, codec, !f.has_audio())
-        })
-        .map(|f| (f.url.clone().unwrap_or_default(), f.has_audio()))
-        .unwrap_or_default()
+        .collect();
+    choices.sort_by_key(|f| {
+        let h = i64::from(f.height.unwrap_or(480));
+        let too_big = max_height.is_some_and(|max| h > i64::from(max));
+        let codec = match codec_name(f.vcodec.as_deref()).as_str() {
+            "VP9" => 0,
+            "H.264" => 1,
+            _ => 2,
+        };
+        // Within the limit the highest; over it (when nothing is smaller) the smallest.
+        (too_big, if too_big { h } else { -h }, codec, !f.has_audio())
+    });
+    choices
+}
+
+/// The first of `choices` whose server hands out its file. YouTube sometimes refuses a file it has
+/// just listed (403; measured: its 1080p VP9 for the TV player yt-dlp uses, 3 times in 5), and the
+/// preview then showed only the blurry cover picture. Anything but a clear refusal (offline, slow)
+/// counts as served, so a fetch never gets slower or fails over this; None when all were refused.
+async fn first_served<'a>(choices: &[&'a Format], page: Option<&str>) -> Option<&'a Format> {
+    for f in choices.iter().take(5) {
+        let Some(url) = f.url.as_deref() else { continue };
+        let mut request = crate::media_cache::client().get(url).header("Range", "bytes=0-0").timeout(std::time::Duration::from_secs(5));
+        if let Some(page) = page {
+            request = request.header("Referer", page);
+        }
+        match request.send().await.map(|r| r.status().as_u16()) {
+            Ok(code @ (401 | 403 | 404 | 410)) => crate::diag::note(format!("preview file {url} refused ({code}), trying the next")),
+            _ => return Some(f),
+        }
+    }
+    None
 }
 
 /// Reads `mediaPresentationDuration="PT1H2M3.5S"` from a DASH (.mpd) manifest.
@@ -328,6 +346,11 @@ fn hls_preview(formats: &[Format]) -> Option<String> {
 /// The sound stream to play next to a video-only preview: AAC (m4a) first, which every
 /// WebView decodes, then the highest bitrate.
 fn preview_audio(formats: &[Format]) -> String {
+    preview_audio_choices(formats).first().and_then(|f| f.url.clone()).unwrap_or_default()
+}
+
+/// The sound-only files `preview_audio` can pick, best first.
+fn preview_audio_choices(formats: &[Format]) -> Vec<&Format> {
     let mut candidates: Vec<&Format> = formats
         .iter()
         .filter(|f| f.has_audio() && !f.has_video() && f.plays_in_webview())
@@ -336,7 +359,7 @@ fn preview_audio(formats: &[Format]) -> String {
         let aac = |f: &Format| f.ext.as_deref() == Some("m4a");
         aac(b).cmp(&aac(a)).then(b.abr.unwrap_or(0.0).total_cmp(&a.abr.unwrap_or(0.0)))
     });
-    candidates.first().and_then(|f| f.url.clone()).unwrap_or_default()
+    candidates
 }
 
 /// The lightest stream to draw a link's sound wave from: its smallest sound-only file, else a small
@@ -495,15 +518,24 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
         return Err("No downloadable video or audio was found at this link.".into());
     }
 
-    // The preview quality picked by the preview (`height`), else the best the video has.
-    let (preview_url, preview_has_audio, preview_hls) = match preview(&info.formats, height) {
+    // The preview quality picked by the preview (`height`), else the best the video has; the first
+    // file the site really hands out. Behind a bot check only the page window gets through, so the
+    // byte cache and the stream relay fetch through it, untried.
+    let choices = if length_known { preview_choices(&info.formats, height) } else { Vec::new() };
+    let chosen = if bot_checked { choices.first().copied() } else { first_served(&choices, page.as_deref()).await };
+    let (preview_url, preview_has_audio, preview_hls) = match chosen {
         _ if !length_known => (String::new(), true, false),
-        // Behind a bot check the byte cache and the stream relay fetch through the page window.
-        (url, audio) if !url.is_empty() => (url, audio, false),
+        Some(f) => (f.url.clone().unwrap_or_default(), f.has_audio(), false),
         // Only stream playlists, which the WebView plays itself; the master one carries the sound.
-        _ => hls_preview(&info.formats).map_or((String::new(), false, false), |url| (url, true, true)),
+        None => hls_preview(&info.formats).map_or((String::new(), false, false), |url| (url, true, true)),
     };
-    let preview_audio_url = if preview_has_audio || preview_url.is_empty() { String::new() } else { preview_audio(&info.formats) };
+    let preview_audio_url = if preview_has_audio || preview_url.is_empty() {
+        String::new()
+    } else {
+        let sounds = preview_audio_choices(&info.formats);
+        let served = if bot_checked { None } else { first_served(&sounds, page.as_deref()).await };
+        served.or(sounds.first().copied()).and_then(|f| f.url.clone()).unwrap_or_default()
+    };
     let kinds: Vec<String> = info
         .formats
         .iter()
@@ -586,7 +618,12 @@ fn pick_live(formats: &[Format]) -> Option<Vec<(String, BTreeMap<String, String>
 
 #[cfg(test)]
 mod tests {
-    use super::{is_bot_check, parse_mpd_duration, preview, Format, Info};
+    use super::{first_served, is_bot_check, parse_mpd_duration, preview_choices, Format, Info};
+
+    /// The preview file picked first, and whether it has sound.
+    fn preview(formats: &[Format], max_height: Option<u32>) -> (String, bool) {
+        preview_choices(formats, max_height).first().map(|f| (f.url.clone().unwrap_or_default(), f.has_audio())).unwrap_or_default()
+    }
 
     #[test]
     fn knows_a_bot_check_answer() {
@@ -636,5 +673,33 @@ mod tests {
         // Without a sound stream to pair with, the file with sound wins, so the preview isn't silent.
         let silent: Vec<Format> = info.formats.into_iter().filter(|f| f.format_id != "140").collect();
         assert_eq!(preview(&silent, None), ("https://v/360".into(), true));
+    }
+
+    #[tokio::test]
+    async fn a_refused_preview_file_gives_way_to_the_next() {
+        use std::io::{Read, Write};
+        // Like YouTube now and then: 403 for its best file, the next one served.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let at = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for mut stream in listener.incoming().flatten().take(2) {
+                let mut request = [0u8; 2048];
+                let n = stream.read(&mut request).unwrap_or(0);
+                let answer = if request[..n].starts_with(b"GET /best") {
+                    "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n"
+                } else {
+                    "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-0/10\r\nContent-Length: 1\r\n\r\nx"
+                };
+                let _ = stream.write_all(answer.as_bytes());
+            }
+        });
+        let json = format!(
+            r#"{{"title":"T","formats":[
+            {{"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"mp4a","height":1080,"url":"http://{at}/best","protocol":"http"}},
+            {{"format_id":"22","ext":"mp4","vcodec":"avc1","acodec":"mp4a","height":720,"url":"http://{at}/next","protocol":"http"}}]}}"#
+        );
+        let info: Info = serde_json::from_str(&json).unwrap();
+        let served = first_served(&preview_choices(&info.formats, None), None).await;
+        assert_eq!(served.map(|f| f.format_id.as_str()), Some("22"));
     }
 }

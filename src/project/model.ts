@@ -301,10 +301,27 @@ export function mediaFromSource(source: MediaSource): MediaItem {
     source,
     hasVideo: video.length > 0,
     hasAudio: audio.length > 0 || source.previewHasAudio !== false,
-    // 1080p is a sensible default when offered; otherwise the best available.
-    videoFormat: (video.find((s) => s.label.startsWith("1080p")) ?? video[0])?.id ?? "",
+    videoFormat: usualFormat(source) ?? "",
     audioFormat: audio[0]?.id ?? "",
   };
+}
+
+/** 1080p is a sensible default when offered; otherwise the best available. */
+const usualFormat = (source: MediaSource) => {
+  const video = source.streams.filter((s) => s.kind === "video");
+  return (video.find((s) => s.label.startsWith("1080p")) ?? video[0])?.id;
+};
+
+/**
+ * The export quality picked before, in a fresh read of the same link. YouTube can list the same
+ * quality under another format next time (1080p as 270 instead of 137); the old id then matched
+ * nothing, the size read 0 MB and the download could ask for a format that's gone. A quality
+ * that's gone (or an id saved before this was fixed) gets the usual default, as a new fetch does.
+ */
+export function sameFormat(format: string, before: MediaSource, after: MediaSource): string {
+  if (after.streams.some((s) => s.id === format)) return format;
+  const label = before.streams.find((s) => s.id === format)?.label;
+  return after.streams.find((s) => s.label === label)?.id ?? usualFormat(after) ?? format;
 }
 
 /** About two lines of captions on screen. */
@@ -347,6 +364,17 @@ export function readableCaptions(lines: Caption[], max = CAPTION_CHARS): Caption
 }
 
 /**
+ * A media's captions as shown, exported and transcribed: readable pieces, without the ">>" that
+ * TV-style captions (YouTube's among them) put where a new speaker starts.
+ */
+export function captionLines(lines: Caption[]): Caption[] {
+  return readableCaptions(lines.map((line) => ({ ...line, text: unmarked(line.text) })).filter((line) => line.text));
+}
+
+/** Caption text without speaker marks (">>"). */
+export const unmarked = (text: string) => text.replace(/(^|\s)>>\s*/g, "$1").trim();
+
+/**
  * Text broken into lines of at most `max` characters at whole words, as the preview wraps it:
  * FFmpeg draws each line as given, so a long caption ran off the picture's edges.
  */
@@ -384,7 +412,7 @@ export function transcript(p: Project): TranscriptLine[] {
     const captions = p.media.find((m) => m.id === clip.mediaId)?.captions?.lines;
     // shortcut: reversed clips play their words backwards; left out until someone edits one by text.
     if (!captions?.length || clip.reverse) continue;
-    for (const piece of readableCaptions(captions)) {
+    for (const piece of captionLines(captions)) {
       const from = Math.max(piece.start, clip.in);
       const to = Math.min(piece.end, clip.out);
       if (to - from < 0.05) continue;
