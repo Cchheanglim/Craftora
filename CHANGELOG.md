@@ -21,6 +21,9 @@
 
 **New**
 
+- **Fix caption text.** In the **Transcript** tab, search a wrong word or name and **Replace all**
+  changes it in every caption at once; the pencil on a line retypes just that caption (Enter keeps
+  it, Escape drops it). The preview, exports and the Transcript all show the fix, and Ctrl+Z undoes it.
 - **Report an AI reply.** **Report a reply** under the assistant's chat opens a short form to tell us
   about a wrong or inappropriate answer (it names the AI and model; you paste the reply yourself).
 
