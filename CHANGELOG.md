@@ -21,6 +21,11 @@
 
 **New**
 
+- **Themes.** **Settings → Theme**: **Classic** (the look you know, still the default), **Dark glass**
+  or **Light glass**. The glass themes are see-through panels over a soft glow that takes the
+  colours of the video playing and eases into each new one.
+- **Smoother everywhere.** Switches slide to the option you pick, buttons give a soft press,
+  changing the theme fades over, and the mouse wheel scrolls with a gentle glide.
 - **Fix caption text.** In the **Transcript** tab, search a wrong word or name and **Replace all**
   changes it in every caption at once; the pencil on a line retypes just that caption (Enter keeps
   it, Escape drops it). The preview, exports and the Transcript all show the fix, and Ctrl+Z undoes it.
