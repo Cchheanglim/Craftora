@@ -364,6 +364,15 @@ export function readableCaptions(lines: Caption[], max = CAPTION_CHARS): Caption
 }
 
 /**
+ * A media's captions as shown, exported and transcribed: readable pieces, without the ">>" that
+ * TV-style captions (YouTube's among them) put where a new speaker starts.
+ */
+export function captionLines(lines: Caption[]): Caption[] {
+  const unmarked = lines.map((line) => ({ ...line, text: line.text.replace(/(^|\s)>>\s*/g, "$1").trim() }));
+  return readableCaptions(unmarked.filter((line) => line.text));
+}
+
+/**
  * Text broken into lines of at most `max` characters at whole words, as the preview wraps it:
  * FFmpeg draws each line as given, so a long caption ran off the picture's edges.
  */
@@ -401,7 +410,7 @@ export function transcript(p: Project): TranscriptLine[] {
     const captions = p.media.find((m) => m.id === clip.mediaId)?.captions?.lines;
     // shortcut: reversed clips play their words backwards; left out until someone edits one by text.
     if (!captions?.length || clip.reverse) continue;
-    for (const piece of readableCaptions(captions)) {
+    for (const piece of captionLines(captions)) {
       const from = Math.max(piece.start, clip.in);
       const to = Math.min(piece.end, clip.out);
       if (to - from < 0.05) continue;

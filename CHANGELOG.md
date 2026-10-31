@@ -32,6 +32,8 @@
 - **YouTube previews stuck on a blurry picture** (or "can't play in the preview"): YouTube sometimes
   refuses the file it has just listed, and the preview showed only the video's cover picture.
   Craftora now checks the file first and plays the next best one if it's refused.
+- **">>" before captions** whenever someone starts talking (YouTube's mark for a new speaker) is
+  gone from the preview, exports and the Transcript.
 - **Export size showing 0 MB** after changing the preview quality or reopening a project: YouTube can
   list the same quality under another format the next time. The export keeps the quality you
   picked (or 1080p if it's gone).

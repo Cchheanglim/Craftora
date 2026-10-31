@@ -14,7 +14,7 @@ import {
   clipEnd,
   clipLength,
   isStill,
-  readableCaptions,
+  captionLines,
   transitionLength,
   CAPTIONS,
   type CaptionLayout,
@@ -296,7 +296,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
     }
 
     case "addCaptions": {
-      const lines = readableCaptions(p.media.find((m) => m.id === action.mediaId)?.captions?.lines ?? []);
+      const lines = captionLines(p.media.find((m) => m.id === action.mediaId)?.captions?.lines ?? []);
       // shortcut: reversed clips get no captions; map them backwards if anyone reverses captioned clips.
       const clips = p.clips.filter((c) => c.mediaId === action.mediaId && !c.reverse);
       if (lines.length === 0 || clips.length === 0 || p.tracks.some((t) => t.id === action.trackId)) return p;

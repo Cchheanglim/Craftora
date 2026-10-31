@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEdit } from "../src/project/actions";
-import { emptyProject, mediaFromSource, sameFormat, type Project } from "../src/project/model";
+import { captionLines, emptyProject, mediaFromSource, sameFormat, type Project } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
 const source = (kind: "video" | "audio" | "image"): MediaSource => ({
@@ -36,6 +36,14 @@ test("the export quality survives a site listing it under another format", () =>
   expect(sameFormat("999+bestaudio/999", first, read(["270+bestaudio/270", "232+bestaudio/232"]))).toBe("270+bestaudio/270");
   // A sound-only link has no video format to keep.
   expect(sameFormat("", first, { ...first, streams: [] })).toBe("");
+});
+
+test("captions drop the >> that marks a new speaker", () => {
+  const line = (text: string) => ({ start: 0, end: 1, text });
+  const shown = captionLines([line(">> I don't understand, Mr. Krabs."), line("Me? >> Yes, you!"), line("Hi\n>>Bye"), line(">>")]);
+  expect(shown.map((c) => c.text)).toEqual(["I don't understand, Mr. Krabs.", "Me? Yes, you!", "Hi\nBye"]);
+  // Arrows inside words stay.
+  expect(captionLines([line("a->b, c>>d")])[0].text).toBe("a->b, c>>d");
 });
 
 test("a video can move onto an audio track for its sound, and back", () => {
