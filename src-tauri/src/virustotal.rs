@@ -1,28 +1,71 @@
 //! "Is this link safe?": asks VirusTotal what security vendors say about the website a link
 //! comes from. Only the website's name is looked up, never the video's link.
 //!
-//! The VirusTotal key is the project's own, added at build time from the `CRAFTORA_VT_KEY`
-//! environment variable (a GitHub secret in the release build), so it's never in the source.
-//! shortcut: a key built into the app can be extracted from it, and its free allowance (about
-//! 4 checks a minute, 500 a day) is shared by every user; move it behind a small server if
-//! either becomes a problem.
+//! The key is the user's own free VirusTotal key (Settings → Links), kept in Windows Credential
+//! Manager like the AI keys. A copy built with `CRAFTORA_VT_KEY` (the owner's `.env`) falls back
+//! to that one when no key is saved.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use tauri::Url;
 
-const KEY: Option<&str> = option_env!("CRAFTORA_VT_KEY");
+const BUILT_IN: Option<&str> = option_env!("CRAFTORA_VT_KEY");
 
-fn key() -> Option<&'static str> {
-    KEY.filter(|k| !k.trim().is_empty())
+fn entry() -> Result<Entry, String> {
+    Entry::new("Craftora", "virustotal").map_err(|e| format!("Couldn't reach Windows Credential Manager: {e}"))
 }
 
-/// Whether this copy of Craftora was built with a VirusTotal key.
+fn own_key() -> Option<String> {
+    entry().ok()?.get_password().ok()
+}
+
+fn key() -> Option<String> {
+    own_key().or_else(|| BUILT_IN.map(str::trim).filter(|k| !k.is_empty()).map(String::from))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SiteChecks {
+    /// A key is there (the user's or a built-in one): links can be checked.
+    available: bool,
+    /// The user saved their own key (Settings shows Remove).
+    own_key: bool,
+}
+
 #[tauri::command]
-pub fn site_check_available() -> bool {
-    key().is_some()
+pub fn site_check_available() -> SiteChecks {
+    SiteChecks { available: key().is_some(), own_key: own_key().is_some() }
+}
+
+/// Saves the user's VirusTotal key once VirusTotal accepts it, or forgets it with `None`.
+#[tauri::command]
+pub async fn set_site_check_key(key: Option<String>) -> Result<(), String> {
+    let Some(pasted) = key.filter(|k| !k.trim().is_empty()) else {
+        return match entry()?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(format!("Couldn't remove the VirusTotal key: {e}")),
+        };
+    };
+    let key = clean_key(&pasted)?;
+    match lookup("virustotal.com", &key).await?.status().as_u16() {
+        401 | 403 => Err("VirusTotal didn't accept that key. Copy it again from virustotal.com (your name → API key).".into()),
+        _ => entry()?.set_password(&key).map_err(|e| format!("Couldn't save the VirusTotal key: {e}")),
+    }
+}
+
+/// The key in what was pasted, without the spaces, quotes or a name in front that copying brings
+/// along. VirusTotal keys are 64 letters and digits (hex), so nothing else gets through.
+fn clean_key(pasted: &str) -> Result<String, String> {
+    let kept: String = pasted.chars().filter(|c| !c.is_whitespace() && !matches!(c, '"' | '\'' | '`' | '\u{200B}'..='\u{200D}' | '\u{2060}' | '\u{FEFF}')).collect();
+    let key = kept.rsplit([':', '=']).next().unwrap_or_default();
+    if key.len() == 64 && key.chars().all(|c| c.is_ascii_hexdigit()) {
+        Ok(key.to_string())
+    } else {
+        Err("That isn't a VirusTotal API key: it's 64 letters and digits. Copy the whole key from virustotal.com (your name → API key).".into())
+    }
 }
 
 /// What VirusTotal knows about a website.
@@ -148,21 +191,27 @@ fn report_url(site: &str) -> String {
 /// The VirusTotal report on the website `link` comes from.
 #[tauri::command]
 pub async fn check_site(link: String) -> Result<SiteReport, String> {
-    let key = key().ok_or("Website checks aren't set up in this copy of Craftora.")?;
+    let key = key().ok_or("Add your free VirusTotal API key in Settings → Links to check links.")?;
     let site = site_of(link.trim()).ok_or("That doesn't look like a link to a website. Paste one starting with https://")?;
-    let response = crate::media_cache::client()
+    let response = lookup(&site, &key).await?;
+    match response.status().as_u16() {
+        200 => report(site, &response.text().await.map_err(|e| e.to_string())?),
+        404 => Ok(SiteReport { report_url: report_url(&site), site, ..Default::default() }),
+        401 | 403 => Err("VirusTotal didn't accept the key. Add it again in Settings → Links.".into()),
+        429 => Err("Too many checks for now: VirusTotal's free key allows about 4 a minute and 500 a day. Try again in a minute.".into()),
+        code => Err(format!("The website check isn't working right now (VirusTotal error {code}).")),
+    }
+}
+
+/// Asks VirusTotal about `site` with `key`.
+async fn lookup(site: &str, key: &str) -> Result<reqwest::Response, String> {
+    crate::media_cache::client()
         .get(format!("https://www.virustotal.com/api/v3/domains/{site}"))
         .header("x-apikey", key)
         .timeout(Duration::from_secs(20))
         .send()
         .await
-        .map_err(|e| format!("Couldn't reach VirusTotal: {e}"))?;
-    match response.status().as_u16() {
-        200 => report(site, &response.text().await.map_err(|e| e.to_string())?),
-        404 => Ok(SiteReport { report_url: report_url(&site), site, ..Default::default() }),
-        429 => Err("Lots of people are checking links right now. Try again in a minute.".into()),
-        code => Err(format!("The website check isn't working right now (VirusTotal error {code}).")),
-    }
+        .map_err(|e| format!("Couldn't reach VirusTotal: {e}"))
 }
 
 #[cfg(test)]
@@ -203,5 +252,15 @@ mod tests {
         assert_eq!(got.categories, vec!["entertainment".to_string(), "video sharing".to_string()]);
         assert_eq!((got.reputation, got.votes_safe, got.votes_dangerous, got.scanned_at), (-12, 4, 9, Some(1761100000)));
         assert_eq!(got.report_url, "https://www.virustotal.com/gui/domain/bad.example");
+    }
+
+    #[test]
+    fn keeps_only_a_real_key_from_what_was_pasted() {
+        let key = "0123456789abcdef".repeat(4);
+        assert_eq!(clean_key(&key).unwrap(), key);
+        assert_eq!(clean_key(&format!(" \"x-apikey: {key}\"\n")).unwrap(), key);
+        assert!(clean_key(&key[..63]).is_err());
+        assert!(clean_key(&format!("{}z", &key[..63])).is_err());
+        assert!(clean_key(&format!("{key}\r\nX-Other: 1")).is_err());
     }
 }

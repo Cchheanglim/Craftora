@@ -26,6 +26,9 @@
 
 **Fixed**
 
+- **"Is this link safe?" was missing** from the installed app. **Check** is back next to Fetch:
+  add your own free VirusTotal key once in **Settings → Links** (Check takes you there), and
+  Craftora tries it before keeping it in Windows Credential Manager.
 - **Microsoft Store version:** it now includes Deno and whisper.cpp like the GitHub installer, so
   YouTube and captions from the sound work there too.
 - **Exporting with captions:** captions no longer count toward the 150-clip limit, so long videos

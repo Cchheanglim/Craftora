@@ -3,9 +3,9 @@ fn main() {
     tauri_build::build()
 }
 
-/// "Is this link safe?" needs the project's VirusTotal key at build time (`CRAFTORA_VT_KEY`, see
-/// src/virustotal.rs). The release build gets it from a GitHub secret; on the owner's PC it can sit
-/// in the gitignored `.env` file at the repository root as `CRAFTORA_VT_KEY = …`.
+/// "Is this link safe?" uses the user's own VirusTotal key (Settings → Links). A build on the
+/// owner's PC can also carry one as a fallback, from `CRAFTORA_VT_KEY` or the gitignored `.env`
+/// at the repository root (`CRAFTORA_VT_KEY = …`); release builds don't.
 fn vt_key_from_dot_env() {
     println!("cargo:rerun-if-env-changed=CRAFTORA_VT_KEY");
     if std::env::var_os("CRAFTORA_VT_KEY").is_some() {

@@ -5,7 +5,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { errorText, inDesktopApp, playableFile, revealFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { storeEdition, type Updates } from "../lib/updates";
-import { checkSite, signedInSites, signOutOf, type SiteReport } from "../lib/engine";
+import { checkSite, signedInSites, signOutOf, type SiteChecks, type SiteReport } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
 import { useEffect, useState, type FormEvent } from "react";
@@ -37,8 +37,10 @@ export interface LinkSettings {
   onSignOut: () => void;
   /** The answer to the last sign-in or sign-out. */
   signInMessage: string | null;
-  /** This copy can ask VirusTotal whether a link's website is safe. */
-  siteChecks: boolean;
+  /** Whether links can be checked with VirusTotal, and whether the user saved their own key. */
+  siteChecks: SiteChecks;
+  /** Saves the user's VirusTotal key (rejects with why VirusTotal refused it); null removes it. */
+  onSiteCheckKey: (key: string | null) => Promise<void>;
   /** Absent in the Store edition, whose install folder can't be changed. */
   onUpdateYtDlp?: () => void;
   updating: boolean;
@@ -438,6 +440,36 @@ export function Links({ links }: { links: LinkSettings }) {
       setChecking(false);
     }
   };
+  const [vtKey, setVtKey] = useState("");
+  const [vtSaving, setVtSaving] = useState(false);
+  const [vtMessage, setVtMessage] = useState<string | null>(null);
+  const saveVtKey = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!vtKey.trim() || vtSaving) return;
+    setVtSaving(true);
+    setVtMessage(null);
+    try {
+      await links.onSiteCheckKey(vtKey);
+      setVtKey("");
+      setVtMessage("Key saved. Check next to Fetch now asks VirusTotal.");
+    } catch (err) {
+      setVtMessage(errorText(err));
+    } finally {
+      setVtSaving(false);
+    }
+  };
+  const removeVtKey = async () => {
+    const ok = await ask({
+      title: "Remove your VirusTotal key?",
+      message: "Links can't be checked until you add a key again.",
+      confirmLabel: "Remove key",
+      danger: true,
+      note: "You can add it again any time from virustotal.com.",
+    });
+    if (!ok) return;
+    setVtMessage(null);
+    await links.onSiteCheckKey(null).catch((err) => setVtMessage(errorText(err)));
+  };
   const signOut = async () => {
     const ok = await ask({
       title: "Sign out of all websites?",
@@ -508,7 +540,7 @@ export function Links({ links }: { links: LinkSettings }) {
           </ul>
           </>
         )}
-        {links.siteChecks && (
+        {links.siteChecks.available && (
           <>
             <form className="home__about-row home__gap-sm" onSubmit={checkLink}>
               <label htmlFor="check-link" className="sr-only">
@@ -541,6 +573,43 @@ export function Links({ links }: { links: LinkSettings }) {
             )}
           </>
         )}
+        {links.siteChecks.ownKey ? (
+          <div className="home__about-row home__gap-sm">
+            <p className="home__muted">Your VirusTotal key is saved on this PC, in Windows Credential Manager.</p>
+            <button type="button" className="btn btn--ghost" onClick={() => void removeVtKey()}>
+              Remove key
+            </button>
+          </div>
+        ) : (
+          <>
+            <form className="home__about-row home__gap-sm" onSubmit={saveVtKey}>
+              <label htmlFor="vt-key" className="sr-only">
+                VirusTotal API key
+              </label>
+              <input
+                id="vt-key"
+                type="password"
+                className="field home__site"
+                value={vtKey}
+                onChange={(e) => setVtKey(e.target.value)}
+                placeholder="Paste your VirusTotal API key"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <button type="submit" className="btn btn--secondary" disabled={!vtKey.trim() || vtSaving}>
+                {vtSaving ? "Trying the key…" : "Save"}
+              </button>
+              <button type="button" className="btn btn--ghost" onClick={() => void openUrl("https://www.virustotal.com/gui/my-apikey")}>
+                Get a free key
+              </button>
+            </form>
+            <p className="home__muted">
+              Checking links uses your own free VirusTotal key: sign up at virustotal.com, then copy the key from your name → API
+              key. It stays on this PC, in Windows Credential Manager.
+            </p>
+          </>
+        )}
+        {vtMessage && <p className="home__muted">{vtMessage}</p>}
         {links.onUpdateYtDlp && (
           <>
             <div className="home__about-row">
