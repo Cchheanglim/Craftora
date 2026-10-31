@@ -1,6 +1,6 @@
 import { useEffect, useRef, type CSSProperties, type SyntheticEvent } from "react";
 import Hls from "hls.js";
-import { HLS_RELAY, RECORDINGS, noteDiagnostic } from "../lib/engine";
+import { CRAFTORA_MEDIA, HLS_RELAY, RECORDINGS, noteDiagnostic } from "../lib/engine";
 
 interface SyncedMediaProps {
   kind: "video" | "audio";

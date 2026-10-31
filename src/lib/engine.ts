@@ -128,6 +128,8 @@ export const checkSite = (link: string) => invoke<SiteReport>("check_site", { li
 
 /** Carries the page a link's servers want (`REFERER_MARK` in src-tauri/src/signin.rs). */
 const PAGE_MARK = "#craftora-referer=";
+/** Craftora's own media addresses (the `cmedia` scheme): cached previews, files on this PC, the relay, recordings. */
+export const CRAFTORA_MEDIA = "http://cmedia.localhost/";
 /** The HLS relay in src-tauri/src/media_cache.rs (Windows' address for the `cmedia` scheme). */
 export const HLS_RELAY = "http://cmedia.localhost/hls";
 /** Where the preview plays live recordings in progress (src-tauri/src/live.rs). */
