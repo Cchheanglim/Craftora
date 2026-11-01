@@ -111,6 +111,11 @@
   background: transparent;
 }
 
+/* Windows draws a dropdown's list over light grey when its colour is see-through: give it a solid one. */
+:root[data-theme] option {
+  background-color: var(--bg-canvas);
+}
+
 /* Closed, the panel also takes the gap before it along. */
 :root[data-theme] .app__panel.is-closed {
   margin-right: calc(-1 * var(--panel-w) - 12px);
