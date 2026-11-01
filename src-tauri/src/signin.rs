@@ -27,17 +27,28 @@ pub(crate) const REFERER_MARK: &str = "#craftora-referer=";
 /// `#EXTM3U`), and each video that starts playing and how: a file, the site's own stream player,
 /// or a direct live connection (WebRTC), which has no address to fetch. The browser's own list keeps only the first 250 things a page loads (a shop's pictures can fill
 /// it) and never shows what a player in an embedded frame does, so frames pass all this to the page.
+/// Each thing is noted with when it loaded, and the page with when the video playing now started
+/// loading: a player's "next episode" plays on the same page, after the earlier episode's streams.
 const WATCH_MEDIA: &str = r#"(() => {
   if (window.__craftoraMedia) return;
   const seen = (window.__craftoraMedia = []);
+  const loadedAt = (window.__craftoraLoadedAt = new Map());
   const playing = (window.__craftoraPlaying = []);
   const tell = (data) => { if (window.top !== window) try { window.top.postMessage(data, "*"); } catch {} };
   const MEDIA_URL = /\.(m3u8|mpd|mp4|webm|m4v|mov)(\?|$)/i;
+  const MEDIA_FILE = /\.(mp4|webm|m4v|mov)(\?|$)/i;
   const PLAYLIST_TYPE = /mpegurl|dash\+xml/i;
   const isPlaylist = (type, start) => PLAYLIST_TYPE.test(type) || /^\s*(#EXTM3U|(<\?xml[^>]*>\s*)?<MPD)/.test(start);
   const keep = (u, sure) => {
-    if (typeof u !== "string" || !/^https?:/.test(u) || !(sure || MEDIA_URL.test(u)) || seen.includes(u) || seen.length >= 100) return;
+    if (typeof u !== "string" || !/^https?:/.test(u) || !(sure || MEDIA_URL.test(u)) || seen.includes(u)) return;
+    // Full: a long video's files make room, so the next episode's stream is still noted.
+    if (seen.length >= 100) {
+      const old = seen.findIndex((s) => MEDIA_FILE.test(s));
+      if (old < 0) return;
+      loadedAt.delete(seen.splice(old, 1)[0]);
+    }
     seen.push(u);
+    loadedAt.set(u, Date.now());
     tell({ craftoraMedia: u });
   };
   const note = (what) => {
@@ -45,14 +56,22 @@ const WATCH_MEDIA: &str = r#"(() => {
     playing.push(what);
     tell({ craftoraPlaying: what });
   };
+  const started = (at) => {
+    window.__craftoraStarted = at;
+    tell({ craftoraStarted: at });
+  };
   window.addEventListener("message", (e) => {
     keep(e.data?.craftoraMedia, true);
     if (typeof e.data?.craftoraPlaying === "string") note(e.data.craftoraPlaying);
+    if (typeof e.data?.craftoraStarted === "number") started(e.data.craftoraStarted);
   });
+  document.addEventListener("loadstart", (e) => { e.target.__craftoraLoadStart = Date.now(); }, true);
   document.addEventListener("playing", (e) => {
     const v = e.target;
     const how = v.srcObject ? "webrtc" : /^blob:/.test(v.currentSrc) ? "player" : "file";
     note(how + (window.top === window ? "" : " in a frame from " + location.hostname));
+    // Not short ones: an ad or a preview playing doesn't move on from the episode.
+    if (v instanceof HTMLVideoElement && !(v.duration < 60)) started(v.__craftoraLoadStart || Date.now());
   }, true);
   const fetch0 = window.fetch;
   if (fetch0) window.fetch = function (...args) {
@@ -81,16 +100,25 @@ const WATCH_MEDIA: &str = r#"(() => {
 
 /// Run in the sign-in window by "Fetch this video": what the page plays, best guesses first.
 /// Video elements' files, then streaming manifests and video files the page (or a frame in it)
-/// loaded, then embedded players (their pages are often ones yt-dlp knows). `playing` says how
-/// videos were seen playing, for the message when nothing can be fetched.
+/// loaded, then embedded players (their pages are often ones yt-dlp knows). What the video playing
+/// now loaded comes before what earlier ones did (the episode before a "next episode"). `playing`
+/// says how videos were seen playing, for the message when nothing can be fetched.
 const FIND_MEDIA: &str = r#"(() => {
   const media = [];
   const add = (u) => { if (u && /^https?:/.test(u) && !media.includes(u)) media.push(u); };
   document.querySelectorAll("video, audio, video source, audio source").forEach((e) => add(e.currentSrc || e.src));
   const watched = window.__craftoraMedia || [];
+  const loadedAt = new Map(window.__craftoraLoadedAt || []);
+  performance.getEntriesByType("resource").forEach((e) => loadedAt.has(e.name) || loadedAt.set(e.name, performance.timeOrigin + e.startTime));
   const loaded = [...watched, ...performance.getEntriesByType("resource").map((e) => e.name)];
-  loaded.filter((u) => /\.(m3u8|mpd)(\?|$)/i.test(u) || (watched.includes(u) && !/\.(mp4|webm|m4v|mov)(\?|$)/i.test(u))).forEach(add);
-  loaded.filter((u) => /\.(mp4|webm|m4v|mov)(\?|$)/i.test(u)).forEach(add);
+  // A player asks for its stream just before or after it starts loading the video.
+  const now = (window.__craftoraStarted || 0) - 3000;
+  const pick = (list) => {
+    list.filter((u) => /\.(m3u8|mpd)(\?|$)/i.test(u) || (watched.includes(u) && !/\.(mp4|webm|m4v|mov)(\?|$)/i.test(u))).forEach(add);
+    list.filter((u) => /\.(mp4|webm|m4v|mov)(\?|$)/i.test(u)).forEach(add);
+  };
+  pick(loaded.filter((u) => loadedAt.get(u) >= now));
+  pick(loaded.filter((u) => !(loadedAt.get(u) >= now)));
   document.querySelectorAll("iframe[src]").forEach((e) => add(e.src));
   const meta = (name) => document.querySelector(`meta[property="${name}"], meta[name="${name}"]`)?.content;
   const image = meta("og:image") || meta("twitter:image") || document.querySelector("video[poster]")?.poster || "";
