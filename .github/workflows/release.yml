@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 120
     env:
       IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
-      SIDECAR_FFMPEG: src-tauri/bin/ffmpeg-x86_64-pc-windows-msvc.exe
+      SIDECAR_FFMPEG: src-tauri/bin/ffmpeg/ffmpeg.exe
     steps:
       - uses: actions/checkout@v5
 

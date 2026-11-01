@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 
-use crate::engine::{last_error, sidecar_dir, FFMPEG, YT_DLP};
+use crate::engine::{ffmpeg_dir, last_error, FFMPEG, YT_DLP};
 use crate::local::{normalize, OpenedFiles};
 
 #[derive(Deserialize, Clone, Copy, PartialEq)]
@@ -597,7 +597,7 @@ pub(crate) struct Download<'a> {
 
 /// yt-dlp downloads (only the requested section of) a link into `dir/stem.<ext>`.
 pub(crate) async fn download(app: &AppHandle, job_id: &str, request: &Download<'_>, dir: &Path, stem: &str) -> Result<PathBuf, String> {
-    let engines = sidecar_dir()?;
+    let engines = ffmpeg_dir(app)?;
     let template = dir.join(format!("{stem}.%(ext)s"));
 
     let mut args: Vec<String> = vec![

@@ -1,5 +1,5 @@
 import { useEffect, useRef, type CSSProperties, type SyntheticEvent } from "react";
-import Hls from "hls.js";
+import type Hls from "hls.js";
 import { CRAFTORA_MEDIA, HLS_RELAY, RECORDINGS, noteDiagnostic } from "../lib/engine";
 
 interface SyncedMediaProps {
@@ -114,17 +114,26 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
   useEffect(() => {
     const el = ref.current;
     if (!el || !viaHls) return;
-    // Start sharp: hls.js otherwise starts at its lowest quality until it has measured the
-    // connection, and through the relay it can stay there. It still steps down if needed.
-    const player = new Hls({ abrEwmaDefaultEstimate: 50_000_000 });
-    player.on(Hls.Events.ERROR, (_event, data) => {
-      if (data.fatal || data.response?.code)
-        noteDiagnostic(`preview player: ${data.fatal ? "stopped" : "problem"}: ${data.details}${data.response?.code ? ` (answered ${data.response.code})` : ""} ${data.url ?? ""}`);
-      if (data.fatal) failedRef.current();
-    });
-    player.loadSource(src);
-    player.attachMedia(el);
-    return () => player.destroy();
+    let player: Hls | undefined;
+    let gone = false;
+    // Loaded when a stream first needs it: hls.js is half of Craftora's page code.
+    void import("hls.js").then(({ default: Hls }) => {
+      if (gone) return;
+      // Start sharp: hls.js otherwise starts at its lowest quality until it has measured the
+      // connection, and through the relay it can stay there. It still steps down if needed.
+      player = new Hls({ abrEwmaDefaultEstimate: 50_000_000 });
+      player.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal || data.response?.code)
+          noteDiagnostic(`preview player: ${data.fatal ? "stopped" : "problem"}: ${data.details}${data.response?.code ? ` (answered ${data.response.code})` : ""} ${data.url ?? ""}`);
+        if (data.fatal) failedRef.current();
+      });
+      player.loadSource(src);
+      player.attachMedia(el);
+    }, () => failedRef.current());
+    return () => {
+      gone = true;
+      player?.destroy();
+    };
   }, [src, viaHls]);
   // Leaving hls.js (a stream that finished downloading): its cleanup removes the element's src,
   // which React had already set to the file, so the player would sit empty. Set it again.

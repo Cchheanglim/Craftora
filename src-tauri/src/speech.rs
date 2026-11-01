@@ -10,7 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::process::CommandEvent;
 
 use crate::captions::{parse_vtt, seconds, Caption};
-use crate::engine::{last_error, run_to_end, sidecar_dir, FFMPEG, WHISPER, YT_DLP};
+use crate::engine::{ffmpeg_dir, last_error, run_to_end, FFMPEG, WHISPER, YT_DLP};
 use crate::local::{normalize, OpenedFiles};
 
 /// whisper.cpp's multilingual "base" model: quick on a laptop processor, and it finds the language.
@@ -220,7 +220,7 @@ fn fit_to_speech(caption: &mut Caption, silences: &[(f64, f64)]) {
 async fn link_sound(app: &AppHandle, link: &str, work: &Path) -> Result<PathBuf, String> {
     let (link_args, _cookies) = crate::signin::link_args(app, link).await;
     let template = work.join("sound.%(ext)s").to_string_lossy().into_owned();
-    let engines = sidecar_dir()?.to_string_lossy().into_owned();
+    let engines = ffmpeg_dir(app)?.to_string_lossy().into_owned();
     let mut args: Vec<String> = ["--no-playlist", "--no-warnings", "--encoding", "utf-8", "--ffmpeg-location", &engines, "-f", "bestaudio/best", "-o", &template]
         .map(String::from)
         .to_vec();

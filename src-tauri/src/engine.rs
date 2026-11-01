@@ -14,19 +14,16 @@ pub const FFMPEG: &str = "ffmpeg";
 /// whisper.cpp's command-line tool (speech to text), bundled as the `whisper` resource folder.
 pub const WHISPER: &str = "whisper";
 
-/// Folder holding the sidecars. Tauri copies them next to the app executable,
-/// both in `tauri dev` (target/debug) and in installed builds.
-pub fn sidecar_dir() -> Result<PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    exe.parent()
-        .map(PathBuf::from)
-        .ok_or_else(|| "Could not locate the app folder".to_string())
+/// The bundled FFmpeg: ffmpeg.exe and ffprobe.exe with the libraries they share, as the `ffmpeg`
+/// resource folder (one copy of the libraries instead of one built into each, 127 MB less).
+pub fn ffmpeg_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app.path().resource_dir().map_err(|e| e.to_string())?.join("ffmpeg"))
 }
 
 /// The command that runs an engine. yt-dlp is its unpacked build, bundled as the `yt-dlp`
 /// resource folder: the one-file build unpacks itself on every run, and with the virus scanner
 /// checking those files each time it took about 4 s to start (28 s on the first run), against
-/// under 1 s unpacked. FFmpeg and FFprobe are ordinary sidecars.
+/// under 1 s unpacked. FFmpeg and FFprobe run from `ffmpeg_dir`.
 pub fn command(app: &AppHandle, name: &str) -> Result<Command, String> {
     if name == YT_DLP {
         let resources = app.path().resource_dir().map_err(|e| e.to_string())?;
@@ -51,11 +48,15 @@ pub fn command(app: &AppHandle, name: &str) -> Result<Command, String> {
         }
         return Ok(app.shell().command(exe));
     }
-    let sidecar = app.shell().sidecar(name).map_err(|e| format!("{name} is not bundled: {e}"))?;
+    let exe = ffmpeg_dir(app)?.join(format!("{name}.exe"));
+    if !exe.is_file() {
+        return Err(format!("{name} is not bundled. Run scripts/fetch-sidecars.ps1, then restart Craftora."));
+    }
+    let command = app.shell().command(exe);
     // FFmpeg and FFprobe read http_proxy for web addresses (https ones too, tunnelled through it).
     Ok(match crate::privacy::proxy() {
-        Some(proxy) => sidecar.env("http_proxy", proxy),
-        None => sidecar,
+        Some(proxy) => command.env("http_proxy", proxy),
+        None => command,
     })
 }
 
