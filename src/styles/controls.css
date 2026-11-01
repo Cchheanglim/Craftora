@@ -13,7 +13,12 @@
   font-weight: 500;
   white-space: nowrap;
   transition: background-color var(--dur-fast) linear, color var(--dur-fast) linear,
-    border-color var(--dur-fast) linear;
+    border-color var(--dur-fast) linear, transform 0.35s var(--spring);
+}
+
+/* A soft press, springing back on release. */
+.btn:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .btn:disabled {
@@ -105,6 +110,8 @@ select.field {
 }
 
 .segmented {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-auto-columns: minmax(0, 1fr);
   grid-auto-flow: column;
@@ -112,6 +119,53 @@ select.field {
   background: var(--bg-input);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
+}
+
+/* The picked option's highlight slides over to the new one instead of jumping. */
+.segmented::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / var(--count, 2));
+  border-radius: var(--radius-sm);
+  background: var(--line-strong);
+  transform: translateX(calc(var(--at, 0) * 100%));
+  transition: transform 0.45s var(--spring), opacity var(--dur-fast) linear;
+}
+
+.segmented:has(> button:nth-child(3)) {
+  --count: 3;
+}
+
+.segmented:has(> button:nth-child(4)) {
+  --count: 4;
+}
+
+.segmented:has(> button:nth-child(5)) {
+  --count: 5;
+}
+
+.segmented:has(> button:nth-child(2)[aria-pressed="true"]) {
+  --at: 1;
+}
+
+.segmented:has(> button:nth-child(3)[aria-pressed="true"]) {
+  --at: 2;
+}
+
+.segmented:has(> button:nth-child(4)[aria-pressed="true"]) {
+  --at: 3;
+}
+
+.segmented:has(> button:nth-child(5)[aria-pressed="true"]) {
+  --at: 4;
+}
+
+.segmented:not(:has(> button[aria-pressed="true"]))::before {
+  opacity: 0;
 }
 
 .segmented button {
@@ -134,7 +188,6 @@ select.field {
 }
 
 .segmented button[aria-pressed="true"] {
-  background: var(--line-strong);
   color: var(--text);
   font-weight: 500;
 }

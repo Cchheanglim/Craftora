@@ -5,10 +5,19 @@ import { checkAddress, errorText, getProxy, inDesktopApp, setProxy, type ProxySt
 import { Icon } from "./Icon";
 import { Links, UpdateControls, type LinkSettings } from "./Home";
 import type { Updates } from "../lib/updates";
+import type { Theme } from "../lib/theme";
 import { setShowHiddenLists, showHiddenLists } from "./Hidden";
 import "./Library.css";
 
+const THEMES: [Theme, string][] = [
+  ["classic", "Classic"],
+  ["dark", "Dark glass"],
+  ["light", "Light glass"],
+];
+
 interface SettingsProps {
+  theme: Theme;
+  onTheme: (theme: Theme) => void;
   outputDir: string;
   /** Picks the save folder; absent in the browser preview. */
   onChooseOutputDir?: () => void;
@@ -23,13 +32,28 @@ interface SettingsProps {
   updates: Updates;
 }
 
-export function Settings({ outputDir, onChooseOutputDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, updates }: SettingsProps) {
+export function Settings({ theme, onTheme, outputDir, onChooseOutputDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, updates }: SettingsProps) {
   return (
     <section className="library" aria-labelledby="settings-title">
       <header className="library__head">
         <h1 id="settings-title">Settings</h1>
-        <p>Where files go, what new projects export, and how links are fetched.</p>
+        <p>How Craftora looks, where files go, what new projects export, and how links are fetched.</p>
       </header>
+
+      <div className="library__group">
+        <h2 className="section-label">Theme</h2>
+        <div className="segmented library__choice" role="group" aria-label="Theme">
+          {THEMES.map(([id, label]) => (
+            <button key={id} type="button" aria-pressed={theme === id} onClick={() => onTheme(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="library__muted">
+          Classic is Craftora's flat dark look. The glass themes are see-through and glow softly with the colours of the video
+          playing.
+        </p>
+      </div>
 
       <div className="library__group">
         <h2 className="section-label">Saving</h2>

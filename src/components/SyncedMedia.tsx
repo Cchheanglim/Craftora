@@ -1,6 +1,6 @@
 import { useEffect, useRef, type CSSProperties, type SyntheticEvent } from "react";
 import Hls from "hls.js";
-import { HLS_RELAY, RECORDINGS, noteDiagnostic } from "../lib/engine";
+import { CRAFTORA_MEDIA, HLS_RELAY, RECORDINGS, noteDiagnostic } from "../lib/engine";
 
 interface SyncedMediaProps {
   kind: "video" | "audio";
@@ -148,6 +148,8 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
   return kind === "video" ? (
     <video
       ref={ref}
+      // Craftora's own addresses allow it (they answer with CORS), so the glass themes' glow can read the picture.
+      crossOrigin={src.startsWith(CRAFTORA_MEDIA) ? "anonymous" : undefined}
       src={viaHls ? undefined : src}
       className={className}
       style={style}

@@ -5,7 +5,12 @@ import "@fontsource-variable/geist-mono";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/controls.css";
+import "./styles/themes.css";
+import { applyTheme, savedTheme } from "./lib/theme";
 import App from "./App";
+
+// Before the first paint, so a glass theme doesn't flash the classic colours at startup.
+applyTheme(savedTheme());
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

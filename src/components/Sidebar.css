@@ -39,6 +39,11 @@
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
+  transition: background-color var(--dur) var(--ease-out), color var(--dur-fast) linear, transform 0.35s var(--spring);
+}
+
+.side__item:active {
+  transform: scale(0.97);
 }
 
 .side__item svg {
