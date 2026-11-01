@@ -41,9 +41,9 @@ const WATCH_MEDIA: &str = r#"(() => {
   const isPlaylist = (type, start) => PLAYLIST_TYPE.test(type) || /^\s*(#EXTM3U|(<\?xml[^>]*>\s*)?<MPD)/.test(start);
   const keep = (u, sure) => {
     if (typeof u !== "string" || !/^https?:/.test(u) || !(sure || MEDIA_URL.test(u)) || seen.includes(u)) return;
-    // Full: a long video's files make room, so the next episode's stream is still noted.
+    // Full: a long video's files make room (not one playing here), so the next episode's stream is still noted.
     if (seen.length >= 100) {
-      const old = seen.findIndex((s) => MEDIA_FILE.test(s));
+      const old = seen.findIndex((s) => MEDIA_FILE.test(s) && ![...document.querySelectorAll("video, audio")].some((v) => v.currentSrc === s));
       if (old < 0) return;
       loadedAt.delete(seen.splice(old, 1)[0]);
     }
