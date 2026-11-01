@@ -16,6 +16,20 @@ mod speech;
 mod store;
 mod virustotal;
 
+/// WebView2's memory target: low gives back its caches (for a window nobody sees), normal is for use.
+#[cfg(windows)]
+fn memory_target(window: &tauri::WebviewWindow, low: bool) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+    };
+    use windows_core::Interface;
+    let level = if low { COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW } else { COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL };
+    let _ = window.with_webview(move |webview| {
+        // SAFETY: `with_webview` runs on the window's own thread.
+        let _ = unsafe { webview.controller().CoreWebView2().and_then(|core| core.cast::<ICoreWebView2_19>()).and_then(|core| core.SetMemoryUsageTargetLevel(level)) };
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Before any window: WebView2 only takes a proxy when it starts.
@@ -73,6 +87,16 @@ pub fn run() {
                         )
                     };
                 });
+                // Minimized, WebView2 lets go of what it can (about 40 MB of picture memory); shown again, back to normal.
+                #[cfg(windows)]
+                {
+                    let window = main.clone();
+                    main.on_window_event(move |event| {
+                        if let tauri::WindowEvent::Resized(_) = event {
+                            memory_target(&window, window.is_minimized().unwrap_or(false));
+                        }
+                    });
+                }
             }
             Ok(())
         })

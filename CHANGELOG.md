@@ -4,6 +4,13 @@
 
 **Better**
 
+- **Smaller.** FFmpeg's two programs now share one copy of their libraries instead of carrying a
+  full one each, and two whisper files Craftora never used are gone: about 135 MB less on disk, and
+  the installer is a third smaller (about 100 MB instead of 150). Updating removes the old copies.
+- **Less to load at start.** The stream player is loaded only when a stream preview needs it, which
+  halves the code Craftora reads when it opens.
+- **Less memory in the background.** While Craftora is minimized (say, during a long download or
+  export), it gives back about 55 MB of memory it only needs on screen.
 - **The queue gets out of the way.** It opens when a download or export starts and folds down to
   its one-line header when everything is done (it stays open if something failed). The arrow still
   opens and closes it.
@@ -34,6 +41,9 @@
 
 **Fixed**
 
+- **"Fetch this video" fetched the episode before.** After a player's "next episode" (or any new
+  video on the same page), it fetched the video that played first. It now fetches the one playing
+  when you click it.
 - **"Is this link safe?" was missing** from the installed app. **Check** is back next to Fetch:
   add your own free VirusTotal key once in **Settings → Links** (Check takes you there), and
   Craftora tries it before keeping it in Windows Credential Manager.
