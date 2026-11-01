@@ -30,7 +30,7 @@ A local desktop studio that puts yt-dlp and FFmpeg behind one honest interface: 
 
 ## Capabilities and Constraints
 
-- Engines: bundled **yt-dlp** (fetch and download, including section-only downloads) and **FFmpeg** (trim, mirror via `hflip`, reverse, convert), run as Tauri sidecars.
+- Engines: bundled **yt-dlp** (fetch and download, including section-only downloads) and **FFmpeg** (trim, mirror via `hflip`, reverse, convert), run as separate programs bundled with the app.
 - Two cut modes: **fast** (stream copy, no quality loss, start snaps to a keyframe) and **precise** (re-encode, frame-accurate, slower). Mirror and reverse always require re-encoding.
 - Outputs: video (MP4, MKV) or audio only (MP3, WAV, FLAC).
 - History of past jobs persists across app restarts; jobs can be re-run or reopened in the trimmer.

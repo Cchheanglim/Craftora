@@ -6,7 +6,8 @@ these programs, which keep their own licences.
 ## FFmpeg (GPL version 3)
 
 Craftora runs `ffmpeg.exe` and `ffprobe.exe` as separate programs for cutting, rendering and
-reading media. They come from the "gpl" build by
+reading media, with the FFmpeg libraries they share (`.dll` files) in the same folder. They come
+from the "gpl-shared" build by
 [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds). That build includes GPL
 libraries such as x264, so the binaries are licensed under the
 [GNU General Public License, version 3](https://www.gnu.org/licenses/gpl-3.0.html). The full
@@ -18,8 +19,8 @@ version it ships. It also attaches the matching source code: the FFmpeg source a
 and the BtbN build scripts used to compile it. FFmpeg's source is also at
 <https://github.com/FFmpeg/FFmpeg> and <https://ffmpeg.org/download.html>.
 
-You may replace the bundled `ffmpeg.exe` and `ffprobe.exe` with your own builds. Craftora
-finds them next to its own `.exe`.
+You may replace the bundled FFmpeg with your own build. Craftora runs `ffmpeg.exe` and
+`ffprobe.exe` from the `ffmpeg` folder next to its own `.exe`.
 
 ## yt-dlp (Unlicense)
 
