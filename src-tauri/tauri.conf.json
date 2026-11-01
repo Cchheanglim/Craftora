@@ -30,10 +30,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": [
-      "bin/ffmpeg",
-      "bin/ffprobe"
-    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -48,6 +44,7 @@
     "createUpdaterArtifacts": true,
     "resources": {
       "bin/yt-dlp/": "yt-dlp/",
+      "bin/ffmpeg/": "ffmpeg/",
       "bin/whisper/": "whisper/",
       "bin/deno/": "deno/",
       "bin/FFMPEG-LICENSE.txt": "licenses/FFMPEG-LICENSE.txt",
@@ -57,7 +54,8 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "installerIcon": "icons/icon.ico"
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "windows/hooks.nsh"
       }
     }
   },

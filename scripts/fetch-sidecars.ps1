@@ -4,17 +4,18 @@
 
 .DESCRIPTION
   Fetches official release builds, verifies their SHA-256 checksums, and places them in
-  src-tauri/bin/: FFmpeg and FFprobe named with this machine's Rust target triple (e.g.
-  ffmpeg-x86_64-pc-windows-msvc.exe), and yt-dlp's unpacked build as the folder bin/yt-dlp,
-  bundled as a resource. The binaries are gitignored; run this once per machine:
+  src-tauri/bin/ as folders bundled as resources: FFmpeg and FFprobe with the libraries they
+  share as bin/ffmpeg, yt-dlp's unpacked build as bin/yt-dlp, Deno and whisper.cpp. The
+  binaries are gitignored; run this once per machine:
 
     powershell -ExecutionPolicy Bypass -File scripts/fetch-sidecars.ps1
 
   Re-run with -Force to replace existing binaries (for example to update yt-dlp).
 #>
 param(
-  # BtbN FFmpeg build. "gpl" includes libx264 (used for precise cuts and transforms).
-  [string]$FfmpegBuild = "ffmpeg-n9.0-latest-win64-gpl-9.0",
+  # BtbN FFmpeg build. "gpl" includes libx264 (used for precise cuts and transforms); "shared"
+  # puts the libraries in DLLs that ffmpeg and ffprobe share, instead of a copy inside each.
+  [string]$FfmpegBuild = "ffmpeg-n9.0-latest-win64-gpl-shared-9.0",
   [switch]$Force
 )
 
@@ -66,8 +67,9 @@ if ($Force -or -not (Test-Path $ytdlpTarget)) {
 }
 
 # --- FFmpeg + ffprobe -----------------------------------------------------------
-$ffmpegTarget = Join-Path $binDir "ffmpeg-$triple.exe"
-$ffprobeTarget = Join-Path $binDir "ffprobe-$triple.exe"
+$ffmpegDir = Join-Path $binDir "ffmpeg"
+$ffmpegTarget = Join-Path $ffmpegDir "ffmpeg.exe"
+$ffprobeTarget = Join-Path $ffmpegDir "ffprobe.exe"
 if ($Force -or -not (Test-Path $ffmpegTarget) -or -not (Test-Path $ffprobeTarget)) {
   Write-Host "FFmpeg ($FfmpegBuild)"
   $base = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest"
@@ -79,9 +81,13 @@ if ($Force -or -not (Test-Path $ffmpegTarget) -or -not (Test-Path $ffprobeTarget
   if (Test-Path $unzipped) { Remove-Item -Recurse -Force $unzipped }
   Expand-Archive -Path $zip -DestinationPath $unzipped
   $bin = Join-Path $unzipped "$FfmpegBuild\bin"
-  Copy-Item (Join-Path $bin "ffmpeg.exe") $ffmpegTarget -Force
-  Copy-Item (Join-Path $bin "ffprobe.exe") $ffprobeTarget -Force
+  if (Test-Path $ffmpegDir) { Remove-Item -Recurse -Force $ffmpegDir }
+  New-Item -ItemType Directory -Force -Path $ffmpegDir | Out-Null
+  # Not ffplay.exe: Craftora doesn't use it.
+  Get-ChildItem $bin | Where-Object { $_.Name -in "ffmpeg.exe", "ffprobe.exe" -or $_.Extension -eq ".dll" } | Copy-Item -Destination $ffmpegDir
   Copy-Item (Join-Path $unzipped "$FfmpegBuild\LICENSE.txt") (Join-Path $binDir "FFMPEG-LICENSE.txt") -Force
+  # The old sidecars, from before the switch to the folder.
+  Remove-Item (Join-Path $binDir "ffmpeg-$triple.exe"), (Join-Path $binDir "ffprobe-$triple.exe") -ErrorAction SilentlyContinue
 } else {
   Write-Host "FFmpeg already present (use -Force to replace)"
 }
@@ -129,7 +135,8 @@ if ($Force -or -not (Test-Path $whisperTarget)) {
   New-Item -ItemType Directory -Force -Path $whisperDir | Out-Null
   # Only the command-line tool and the libraries it loads; the zip also has demos and tests.
   Copy-Item (Join-Path $unzipped "Release\whisper-cli.exe") $whisperDir
-  Get-ChildItem (Join-Path $unzipped "Release\*.dll") | Where-Object { $_.Name -ne "SDL2.dll" } | Copy-Item -Destination $whisperDir
+  # Only what whisper-cli loads: not SDL2, llama or parakeet (3.3 MB).
+  Get-ChildItem (Join-Path $unzipped "Release\*.dll") | Where-Object { $_.Name -like "ggml*.dll" -or $_.Name -eq "whisper.dll" } | Copy-Item -Destination $whisperDir
 } else {
   Write-Host "whisper.cpp already present (use -Force to replace)"
 }
