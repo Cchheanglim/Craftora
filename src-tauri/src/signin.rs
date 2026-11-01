@@ -65,8 +65,9 @@ const WATCH_MEDIA: &str = r#"(() => {
     if (typeof e.data?.craftoraPlaying === "string") note(e.data.craftoraPlaying);
     if (typeof e.data?.craftoraStarted === "number") started(e.data.craftoraStarted);
   });
-  document.addEventListener("loadstart", (e) => { e.target.__craftoraLoadStart = Date.now(); }, true);
-  document.addEventListener("playing", (e) => {
+  // On the window: a frame's first page keeps the window of the blank page this script ran in, not its document.
+  window.addEventListener("loadstart", (e) => { e.target.__craftoraLoadStart = Date.now(); }, true);
+  window.addEventListener("playing", (e) => {
     const v = e.target;
     const how = v.srcObject ? "webrtc" : /^blob:/.test(v.currentSrc) ? "player" : "file";
     note(how + (window.top === window ? "" : " in a frame from " + location.hostname));
