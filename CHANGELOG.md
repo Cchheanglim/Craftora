@@ -35,6 +35,10 @@
 
 **Fixed**
 
+- The welcome guide's speech bubble cut off its last letter.
+- **Export size showed 0 MB** for a video from your PC (exported as is).
+- **"~0.0 MB" in the queue** for downloads from sites that don't list a file's size: it shows the
+  real size once the download starts.
 - The mouse-wheel glide could stop short, freeze a list or shake it.
 - The "Saved info" list still popped up under some fields.
 - The sign-in window no longer opens pop-ups other than sign-in pages, starts downloads by
