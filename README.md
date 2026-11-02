@@ -35,7 +35,7 @@ Craftora is a [Tauri 2](https://tauri.app) app with a React and TypeScript inter
 [FFmpeg](https://ffmpeg.org) and [yt-dlp](https://github.com/yt-dlp/yt-dlp) ship inside it
 and do the cutting, rendering and downloading.
 
-> **Status:** young (v0.4) and changing quickly. Please
+> **Status:** young (v0.5) and changing quickly. Please
 > [report problems](https://github.com/Cchheanglim/Craftora/issues).
 
 ## Download
@@ -68,9 +68,11 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
   the error. Craftora opens its own small browser window (separate from your own browser); log
   in, then click **Fetch this video**. It finds players embedded from other sites too. The login
   is remembered and only used for that website, and Settings lists every website that saved
-  cookies, with **Forget** and **Hide**.
+  cookies, with **Forget** and **Hide**. Ads and trackers are blocked in that window (switch it
+  off in **Settings → Privacy** if a site's login stops working).
 - **Sites that block bots** (such as Cloudflare's check): Craftora tries again as a browser and
   edits the downloaded copy.
+- Downloads go to your **Downloads** folder, or one you choose in **Settings → Saving**.
 - **Not sure a link is safe?** Click **Check** next to the top link box: Craftora asks
   [VirusTotal](https://www.virustotal.com) whether security vendors flag its website (only the
   website's name is sent, never the full link). It uses your own free VirusTotal key, added once
@@ -85,8 +87,11 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
 - With **CC** on, captions show on the preview and go into the export. **Drag them anywhere** and
   **resize them from a corner** (all captions together), or pick **Top / Middle / Bottom**. Long
   lines wrap to fit the picture. **Add captions** puts them on a track as text you can edit.
+- **Style captions:** click them on the preview to pick the font, colour, size and a shadow,
+  outline or dark box. **Save as .srt** for YouTube or any player.
 - The **Transcript** tab shows what's said: click a word to jump there, select words and press
-  **Delete** to cut them out of the video, or **Cut every "um"** in one click.
+  **Delete** to cut them out of the video, or **Cut every "um"** in one click. **Replace all**
+  fixes a wrong word or name in every caption at once.
 
 **Edit on the timeline**
 - Every video track works the same way: higher tracks are drawn over lower ones, and any
@@ -107,7 +112,7 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
 - Crop, mirror, reverse, **fill the frame** (cutting off the edges instead of showing black
   bars), change speed (0.25× to 4×), fade in and out, and set the volume.
 - **Transitions** between clips on a magnetic track: crossfade or dip to black.
-- Text: words, size, colour and place.
+- Text: words, font, size, colour, edge (shadow, outline or box) and place.
 - A clip whose file moved or was renamed gets **Find file** to point Craftora to it.
 
 **AI assistant** (optional): describe an edit in your own words, such as "add the title My
@@ -121,10 +126,15 @@ uses your own API key for Gemini, ChatGPT or Claude; see [The AI assistant](#the
 - Type the file name yourself under **Add to queue**.
 - **Fast** export uses your graphics card (NVIDIA, Intel or AMD) when the PC has one, which is
   several times quicker; **Best quality** uses the processor for smaller files.
-- Exports run in a queue at the bottom while you keep editing. Choose the save folder next
-  to **Save to** in the Export panel or in Settings (default: `Videos\Craftora`).
+- **Add to queue** shows a short summary first (quality, length, size, where it's saved).
+- Exports run in a queue at the bottom while you keep editing. **Pause** anything in it
+  (downloads carry on where they stopped), and a notification tells you when it's done while
+  you're in another window. Choose the save folder next to **Save to** in the Export panel or
+  in Settings (default: `Videos\Craftora`).
 - Open **Command that will run** in the Export panel to see the exact FFmpeg and yt-dlp
   commands.
+
+**Make it yours:** **Settings → Theme** has **Classic**, **Dark glass** and **Light glass**.
 
 **Your work is kept**
 - Projects save themselves as you edit. The sidebar has a page for each kind of thing:
@@ -134,7 +144,7 @@ uses your own API key for Gemini, ChatGPT or Claude; see [The AI assistant](#the
 - **Hide** anything on those pages: it moves to a folded **Hidden** list (**Unhide** brings it
   back; nothing is deleted). Settings → Privacy can take the Hidden lists away completely.
 - Before anything that can't be undone (deleting a project or file, signing out of a website,
-  stopping a recording), Craftora asks first. Deleted exports go to the Recycle Bin. Edits on
+  stopping a recording, closing with a download or export unfinished), Craftora asks first. Deleted exports go to the Recycle Bin. Edits on
   the timeline can always be undone with `Ctrl+Z`.
 
 ### How export works
@@ -258,11 +268,14 @@ src-tauri/                Rust (Tauri 2)
   src/media.rs            Fetch: yt-dlp --dump-json → formats and preview
   src/media_cache.rs      Link previews from a disk cache; stream relay; big local files
   src/signin.rs           Craftora's browser window: logins, cookies, "Fetch this video"
-  src/captions.rs         Captions from websites; speech.rs makes them from the sound
+  src/captions.rs         Captions from websites, .srt files; speech.rs makes them from the sound
   src/live.rs             Recording live streams; page_fetch.rs for bot-checked sites
-  src/privacy.rs          The proxy for every connection
+  src/privacy.rs          The proxy for every connection; ad blocking in the sign-in window
   src/local.rs            Open files with ffprobe; preview copies; sound waves
-  src/jobs.rs             Queue plumbing, progress, cancelling, fast single cuts
+  src/jobs.rs             Queue plumbing, progress, pause and cancel, fast single cuts
+  src/engine.rs           Runs the engines; nothing keeps running after Craftora closes
+  src/notify.rs           Windows notifications when a job finishes
+  src/virustotal.rs       The link safety check
   src/project.rs          Timeline render: one FFmpeg filter graph
   src/store.rs            Projects, export history and settings on disk
   src/assistant.rs        AI requests (Gemini, OpenAI, Claude); keys in Credential Manager
@@ -274,12 +287,13 @@ scripts/                  fetch-sidecars.ps1, make-msix.ps1
 
 **Security:** the interface never builds command lines. It sends structured requests, and
 Rust checks them and builds every yt-dlp and FFmpeg argument itself. FFmpeg only reads files
-you have opened in Craftora.
+you have opened in Craftora. See [SECURITY.md](SECURITY.md) to report a problem.
+
+**Want to help?** Read [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Roadmap
 
 - Let the AI assistant hear the media (for example, to find silences).
-- Caption styles (font, colour) and saving captions as an `.srt` file.
 - Exact word timing for edit by text.
 - Faster previews of large files from this PC.
 - Code-signed installers on GitHub.
@@ -291,6 +305,10 @@ Craftora is [MIT-licensed](LICENSE). The bundled engines have their own licences
 - **yt-dlp:** [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE) (public domain).
 - **FFmpeg:** a **GPL** build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds),
   which includes libx264. The installer ships its licence, and every release attaches the
-  exact FFmpeg source and build scripts. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+  exact FFmpeg source and build scripts.
+- **Deno** (runs YouTube's player code for yt-dlp): MIT.
+- **whisper.cpp** and the Whisper "base" speech model: MIT.
+
+Full details: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Only download content you have the right to. Respect each site's terms of service.
