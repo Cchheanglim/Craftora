@@ -149,6 +149,10 @@ export interface RenderClip {
   y: number;
   text: string;
   color: string;
+  /** model.ts `TextFont`; Segoe UI when absent. */
+  font?: string;
+  /** "outline" or "box"; a soft shadow when absent. */
+  edge?: string;
 }
 
 export interface Job {

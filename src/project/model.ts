@@ -142,7 +142,21 @@ export interface Clip {
   text?: string;
   /** Text color, #rrggbb. */
   color?: string;
+  /** Text font (`TEXT_FONTS`); Segoe UI when absent. */
+  font?: TextFont;
+  /** What keeps text readable over the picture: an outline or a dark box; a soft shadow when absent. */
+  edge?: TextEdge;
 }
+
+/** Fonts offered for text: ones Windows has, so the export (project.rs `font_path`) draws the same letters. */
+export const TEXT_FONTS = [
+  { id: "arial", label: "Arial", css: "Arial" },
+  { id: "impact", label: "Impact", css: "Impact" },
+  { id: "georgia", label: "Georgia", css: "Georgia" },
+  { id: "comic", label: "Comic Sans", css: '"Comic Sans MS"' },
+] as const;
+export type TextFont = (typeof TEXT_FONTS)[number]["id"];
+export type TextEdge = "outline" | "box";
 
 export interface Project {
   media: MediaItem[];
@@ -152,11 +166,14 @@ export interface Project {
   captionLayout?: CaptionLayout;
 }
 
-/** `x`/`y` as for text clips; `size`: letter height as a fraction of the frame. */
+/** `x`/`y` as for text clips; `size`: letter height as a fraction of the frame. The look is as for text clips. */
 export interface CaptionLayout {
   x: number;
   y: number;
   size: number;
+  color?: string;
+  font?: TextFont;
+  edge?: TextEdge;
 }
 
 export const CAPTIONS: CaptionLayout = { x: 0.5, y: 0.9, size: 0.055 };

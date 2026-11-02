@@ -175,6 +175,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       y: c.y,
       text: textLines(c.text ?? "", c.size, frame),
       color: c.color ?? "#ffffff",
+      font: c.font,
+      edge: c.edge,
     };
   });
   const media = used.map((m) => {
