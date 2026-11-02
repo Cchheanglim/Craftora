@@ -313,14 +313,16 @@ const mb = (bytes: number) => formatSize(bytes / 1_000_000);
 function statusText(job: Job): string {
   switch (job.status) {
     case "downloading": {
+      // An export from a link fetches its video first; it isn't a download, so it doesn't say so.
+      const verb = job.prefetch || job.record ? "Downloading" : "Getting the video";
       if (job.downloadedBytes !== undefined) {
         const of = job.totalBytes ? ` of ${mb(job.totalBytes)}` : "";
         const speed = job.speedBps ? ` · ${mb(job.speedBps)}/s` : "";
-        return `Downloading · ${mb(job.downloadedBytes)}${of}${speed}`;
+        return `${verb} · ${mb(job.downloadedBytes)}${of}${speed}`;
       }
-      if (job.spec) return "Downloading…";
+      if (job.spec) return `${verb}…`;
       if (job.record) return "Recording live";
-      return `Downloading · ${formatSize((job.sizeMb * (job.progress ?? 0)) / 100)} of ${formatSize(job.sizeMb)}`;
+      return `${verb} · ${formatSize((job.sizeMb * (job.progress ?? 0)) / 100)} of ${formatSize(job.sizeMb)}`;
     }
     case "encoding":
       return job.phase === "processing" ? "Finishing with FFmpeg" : job.phase === "cutting" ? "Cutting with FFmpeg" : "Encoding with FFmpeg";

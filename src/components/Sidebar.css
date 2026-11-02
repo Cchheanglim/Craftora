@@ -83,15 +83,19 @@
   padding: 0 10px;
 }
 
-/* Settings, at the foot. */
+/* Settings, at the foot: never squeezed out. */
 .side__bottom {
+  flex-shrink: 0;
   margin-top: auto;
   padding-top: var(--space-2);
   border-top: 1px solid var(--line);
 }
 
-/* What's running now: downloads, exports, recordings, captions. */
+/* What's running now: downloads, exports, recordings, captions. Scrolls when there are many. */
 .side__activity {
+  min-height: 0;
+  max-height: 30%;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
