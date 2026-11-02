@@ -35,3 +35,9 @@ export function parseTimecode(text: string): number | null {
   }
   return total;
 }
+
+const thisYear = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const otherYear = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" });
+
+/** When something happened, short enough for one line of a list: "Nov 2, 12:49 PM", or "Nov 2, 2025" in another year. */
+export const formatWhen = (ms: number) => (new Date(ms).getFullYear() === new Date().getFullYear() ? thisYear : otherYear).format(ms);

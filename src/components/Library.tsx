@@ -6,6 +6,7 @@ import { playableFile, revealFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
+import { formatWhen } from "../lib/timecode";
 import { QueueRow } from "./QueueDock";
 import { useConfirm } from "./ConfirmDialog";
 import { HiddenFold } from "./Hidden";
@@ -28,7 +29,6 @@ interface LibraryProps {
 
 const HIDDEN_KEY = "craftora.hideExports";
 
-const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 export function Library({ jobs, queue, outputDir, onChooseOutputDir, onOpenWorkspace, onHide, onDelete }: LibraryProps) {
   const shown = jobs.filter((j) => !j.hidden);
@@ -168,40 +168,39 @@ function ExportTable({
                     <span className="mono truncate">{name}</span>
                   </span>
                 </td>
-                <td className="library__detail">{job.summary}</td>
+                <td className="library__detail" title={job.summary}>
+                  {job.summary}
+                </td>
                 <td className="mono is-num">{formatSize(job.sizeMb)}</td>
-                <td className="library__detail">{job.finishedAt ? dateFormat.format(job.finishedAt) : ""}</td>
+                <td className="library__detail">{job.finishedAt ? formatWhen(job.finishedAt) : ""}</td>
                 <td className="is-num">
                   <span className="library__actions">
                     {job.outputPath && (
                       <>
-                        <PlayFile path={job.outputPath} name={name} label />
-                        <button type="button" className="btn btn--ghost" onClick={() => void revealFile(job.outputPath!)}>
+                        <PlayFile path={job.outputPath} name={name} />
+                        <button type="button" className="btn btn--icon" aria-label={`Show ${name} in its folder`} title="Show in folder" onClick={() => void revealFile(job.outputPath!)}>
                           <Icon name="folder" size={14} />
-                          Show in folder
                         </button>
                       </>
                     )}
                     <button
                       type="button"
-                      className="btn btn--ghost"
+                      className="btn btn--icon"
                       aria-label={`${job.hidden ? "Unhide" : "Hide"} ${name}`}
-                      title={job.hidden ? "Show it in the list and on Home again" : "Hide it from this list and from Home (the file stays)"}
+                      title={job.hidden ? "Unhide: show it in the list and on Home again" : "Hide it from this list and from Home (the file stays)"}
                       onClick={() => onHide(job.id, !job.hidden)}
                     >
                       <Icon name={job.hidden ? "eye" : "eyeOff"} size={14} />
-                      {job.hidden ? "Unhide" : "Hide"}
                     </button>
                     {onDelete && (
                       <button
                         type="button"
-                        className="btn btn--ghost"
+                        className="btn btn--icon"
                         aria-label={`Delete ${name}`}
-                        title="Move the file to the Recycle Bin"
+                        title="Delete: move the file to the Recycle Bin"
                         onClick={() => void remove(job, name)}
                       >
                         <Icon name="trash" size={14} />
-                        Delete
                       </button>
                     )}
                   </span>

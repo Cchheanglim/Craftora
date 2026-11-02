@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FetchEntry } from "../lib/storage";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
+import { formatWhen } from "../lib/timecode";
 import { useConfirm } from "./ConfirmDialog";
 import { HiddenFold, HideButton, useHidden } from "./Hidden";
 import "./Library.css";
@@ -15,7 +16,6 @@ interface HistoryProps {
   onRemove: (urls: string[]) => void;
 }
 
-const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 /** Every link fetched: the video's title, the link itself, to fetch again, copy or remove. */
 export function History({ history, onFetchAgain, onRemove }: HistoryProps) {
@@ -91,7 +91,7 @@ export function History({ history, onFetchAgain, onRemove }: HistoryProps) {
                   </span>
                 </span>
               </td>
-              <td className="library__detail">{dateFormat.format(entry.fetchedAt)}</td>
+              <td className="library__detail">{formatWhen(entry.fetchedAt)}</td>
               <td className="is-num">
                 <span className="library__actions">
                   <HideButton hidden={hidden} id={entry.url} name={entry.title} />
