@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, transitionMix, CAPTIONS, type Clip, type Project } from "../project/model";
+import { clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
 import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -121,6 +121,15 @@ function placeAlong(offset: number, free: number): number {
 }
 
 /** Plays the timeline: every clip's media follows the playhead, stacked like the export. */
+/** Text's edge (outline or box) as classes; see Preview.css. */
+const textClass = (clip: Clip, selected: boolean) => ["preview__text", selected && "is-selected", clip.edge && `is-${clip.edge}`].filter(Boolean).join(" ");
+
+/** The clip's font, falling back like the export does for letters it lacks. Impact is bold by design. */
+function textFont(clip: Clip): CSSProperties {
+  const font = TEXT_FONTS.find((f) => f.id === clip.font);
+  return font ? { fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : {};
+}
+
 export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality }: PreviewProps) {
   const [muted, setMuted] = useState(false);
   // Exactly the captions the export adds (see `withShownCaptions`), unless they're on the timeline.
@@ -459,7 +468,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             return (
               <div
                 key={clip.id}
-                className={isSelected ? "preview__text is-selected" : "preview__text"}
+                className={textClass(clip, isSelected)}
                 style={{
                   left: `${clip.x * 100}%`,
                   top: `${clip.y * 100}%`,
@@ -467,6 +476,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   fontSize: `${clip.size * 100}cqh`,
                   color: clip.color,
                   opacity: fadeAt(clip, time),
+                  ...textFont(clip),
                 }}
                 onPointerDown={beginGesture(clip, "move")}
                 onClick={(e) => e.stopPropagation()}
@@ -479,7 +489,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           {shownCaptions.filter(active).map((clip) => (
             <div
               key={clip.id}
-              className={selectedId === SHOWN_CAPTIONS ? "preview__text is-selected" : "preview__text"}
+              className={textClass(clip, selectedId === SHOWN_CAPTIONS)}
               title="Captions: drag to move them all, drag a corner to resize"
               style={{
                 left: `${clip.x * 100}%`,
@@ -487,6 +497,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 translate: `${-clip.x * 100}% ${-clip.y * 100}%`,
                 fontSize: `${clip.size * 100}cqh`,
                 color: clip.color,
+                ...textFont(clip),
               }}
               onPointerDown={beginGesture(clip, "move")}
               onClick={(e) => e.stopPropagation()}
