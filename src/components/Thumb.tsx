@@ -50,13 +50,15 @@ export function Thumb({ src, icon, play }: { src?: string; icon: IconName; play?
           className="thumb__play"
           src={playing}
           muted
-          autoPlay
           loop
           playsInline
           onLoadedMetadata={(e) => {
             // From a tenth of the way in (past intros and black frames), unless the address says where.
             if (!playing.includes("#t=")) e.currentTarget.currentTime = (e.currentTarget.duration || 0) / 10;
           }}
+          // Not autoPlay: that waits until the whole video could play without a pause, which a
+          // link's stream (4K over the internet) never promises, so link videos never started.
+          onCanPlay={(e) => void e.currentTarget.play().catch(() => {})}
           onError={() => setPlaying(undefined)}
         />
       )}
