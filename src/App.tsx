@@ -1285,6 +1285,7 @@ export default function App() {
         {view === "library" && (
           <Library
             jobs={exported}
+            queue={queue}
             onHide={setExportHidden}
             onDelete={inDesktopApp ? (job) => void deleteExport(job) : undefined}
             outputDir={outputDir}
