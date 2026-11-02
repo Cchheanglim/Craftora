@@ -87,6 +87,16 @@ pub fn run() {
                             },
                         )
                     };
+                    // Ads and trackers: Edge's own blocking of the ad and tracking networks it
+                    // knows, at its strictest. Every Craftora window shares this profile, so the
+                    // sign-in window, where websites are browsed, has it from its first page.
+                    use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile3, ICoreWebView2_13, COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_STRICT};
+                    // SAFETY: as above.
+                    let _ = unsafe {
+                        webview.controller().CoreWebView2().and_then(|core| core.cast::<ICoreWebView2_13>()).and_then(|core| core.Profile()).and_then(|p| p.cast::<ICoreWebView2Profile3>()).and_then(
+                            |p| p.SetPreferredTrackingPreventionLevel(COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_STRICT),
+                        )
+                    };
                 });
                 // Minimized, WebView2 lets go of what it can (about 40 MB of picture memory); shown again, back to normal.
                 #[cfg(windows)]
