@@ -420,6 +420,9 @@ export interface ProxyState {
   window: string | null;
 }
 export const getProxy = () => invoke<ProxyState>("get_proxy");
+/** Whether ads and trackers are blocked in Craftora's windows (Settings → Privacy). */
+export const getAdBlock = () => invoke<boolean>("get_ad_block");
+export const setAdBlock = (on: boolean) => invoke<void>("set_ad_block", { on });
 /** Saves and uses a proxy ("http://host:port"), or none with null; rejects addresses that won't work. */
 export const setProxy = (proxy: string | null) => invoke<ProxyState>("set_proxy", { proxy });
 /** The internet address websites see now (asks Cloudflare). */

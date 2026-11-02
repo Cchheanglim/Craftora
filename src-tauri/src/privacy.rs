@@ -12,6 +12,34 @@ static PROXY: RwLock<Option<String>> = RwLock::new(None);
 /// The proxy Craftora's window started with (it can't change until a restart).
 static WINDOW_PROXY: RwLock<Option<String>> = RwLock::new(None);
 
+/// Ads and trackers: Edge's own blocking of the ad and tracking networks it knows, at its strictest
+/// when `on`, else Edge's usual balanced level. Every Craftora window shares the profile this
+/// sets, so the sign-in window, where websites are browsed, follows it (pages opened from now on).
+pub(crate) fn block_ads(app: &tauri::AppHandle, on: bool) {
+    #[cfg(windows)]
+    if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
+        let _ = main.with_webview(move |webview| {
+            use webview2_com::Microsoft::Web::WebView2::Win32::{
+                ICoreWebView2Profile3, ICoreWebView2_13, COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_BALANCED, COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_STRICT,
+            };
+            use windows_core::Interface;
+            let level = if on { COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_STRICT } else { COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_BALANCED };
+            // SAFETY: `with_webview` runs on the window's own thread.
+            let _ = unsafe {
+                webview
+                    .controller()
+                    .CoreWebView2()
+                    .and_then(|core| core.cast::<ICoreWebView2_13>())
+                    .and_then(|core| core.Profile())
+                    .and_then(|p| p.cast::<ICoreWebView2Profile3>())
+                    .and_then(|p| p.SetPreferredTrackingPreventionLevel(level))
+            };
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = (app, on);
+}
+
 pub(crate) fn proxy() -> Option<String> {
     PROXY.read().unwrap().clone()
 }

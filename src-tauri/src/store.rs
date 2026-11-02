@@ -131,6 +131,9 @@ struct Settings {
     /// The proxy Craftora's connections go through (privacy.rs); none for a direct connection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     proxy: Option<String>,
+    /// Ads and trackers blocked (privacy.rs `block_ads`); only `false` is stored, on otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    block_ads: Option<bool>,
 }
 
 fn write_settings(app: &AppHandle, settings: &Settings) -> Result<(), String> {
@@ -154,6 +157,22 @@ pub(crate) fn chosen_output_dir(app: &AppHandle) -> Option<PathBuf> {
 /// The downloads folder the user chose, if it still exists.
 pub(crate) fn chosen_downloads_dir(app: &AppHandle) -> Option<PathBuf> {
     read_settings(app).downloads_dir.map(PathBuf::from).filter(|dir| dir.is_dir())
+}
+
+/// Whether ads and trackers are blocked (Settings → Privacy); on unless turned off.
+#[tauri::command]
+pub fn get_ad_block(app: AppHandle) -> bool {
+    read_settings(&app).block_ads != Some(false)
+}
+
+/// Turns blocking ads and trackers on or off, saved and used from the next page on.
+#[tauri::command]
+pub fn set_ad_block(app: AppHandle, on: bool) -> Result<(), String> {
+    let mut settings = read_settings(&app);
+    settings.block_ads = (!on).then_some(false);
+    write_settings(&app, &settings)?;
+    crate::privacy::block_ads(&app, on);
+    Ok(())
 }
 
 /// The proxy now, and the one Craftora's window started with.

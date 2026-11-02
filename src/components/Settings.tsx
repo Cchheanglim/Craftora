@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { relaunch } from "@tauri-apps/plugin-process";
 import type { OutputKind } from "../types";
-import { checkAddress, errorText, getProxy, inDesktopApp, setProxy, type ProxyState } from "../lib/engine";
+import { checkAddress, errorText, getAdBlock, getProxy, inDesktopApp, setAdBlock, setProxy, type ProxyState } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Links, UpdateControls, type LinkSettings } from "./Home";
 import type { Updates } from "../lib/updates";
@@ -137,11 +137,17 @@ function Privacy() {
     setShowHidden(on);
     setShowHiddenLists(on);
   };
+  const [adBlock, setAdBlockState] = useState<boolean | null>(null);
+  const chooseAdBlock = (on: boolean) => {
+    setAdBlockState(on);
+    void setAdBlock(on).catch((err) => setMessage(errorText(err)));
+  };
   const [state, setState] = useState<ProxyState | null>(null);
   const [draft, setDraft] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   useEffect(() => {
+    void getAdBlock().then(setAdBlockState).catch(() => {});
     void getProxy().then((s) => {
       setState(s);
       setDraft(s.proxy ?? "");
@@ -187,6 +193,23 @@ function Privacy() {
         page. Choose Don't show them and those lists disappear completely, so nobody using this PC can open them. Nothing is deleted:
         choose Show hidden items to find and unhide them again.
       </p>
+      {adBlock !== null && (
+        <>
+          <div className="segmented library__choice" role="group" aria-label="Ads and trackers">
+            <button type="button" aria-pressed={adBlock} onClick={() => chooseAdBlock(true)}>
+              Block ads and trackers
+            </button>
+            <button type="button" aria-pressed={!adBlock} onClick={() => chooseAdBlock(false)}>
+              Don't block
+            </button>
+          </div>
+          <p className="library__muted">
+            In the sign-in window, where you browse websites: Microsoft Edge's own blocking of the ad and tracking networks it
+            knows. If a site's login or video player stops working, try Don't block. Pop-ups, downloads and links that start other
+            programs stay blocked either way, to keep malware out. A change applies to pages you open from then on.
+          </p>
+        </>
+      )}
       {state && (
         <>
           <form className="library__save" onSubmit={submit}>
