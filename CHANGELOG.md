@@ -1,5 +1,13 @@
 # What's new in Craftora
 
+## Next version
+
+**Fixed**
+
+- **Broken pictures on the timeline** for some files from your PC (ones whose sound the preview
+  can't play as is, such as AC3): the clip's picture turned into a broken image once Craftora's
+  preview copy was ready.
+
 ## 0.5.1 (November 2026)
 
 **New**
