@@ -1207,7 +1207,7 @@ export default function App() {
             .filter((j) => j.status === "downloading" || j.status === "encoding")
             .map((j) => ({
               id: j.id,
-              label: j.record ? "Recording live" : j.prefetch ? "Downloading" : j.status === "downloading" ? "Exporting · getting the video" : "Exporting",
+              label: j.record ? "Recording live" : j.prefetch ? "Downloading" : j.status === "downloading" ? "Getting video to export" : "Exporting",
               detail: j.rename ?? j.title,
               percent: j.record ? null : j.progress,
             })),

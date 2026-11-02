@@ -391,9 +391,12 @@ pub(crate) fn clean_work_dirs(app: &AppHandle) {
     }
 }
 
-/// `Downloads` in the save folder (`Videos\Craftora\Downloads` by default): whole links downloaded
-/// to edit like files on this PC, and live recordings.
+/// The downloads folder the user chose, or `Downloads` in the save folder (`Videos\Craftora\Downloads`
+/// by default): whole links downloaded to edit like files on this PC, and live recordings.
 pub(crate) fn downloads_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Some(dir) = crate::store::chosen_downloads_dir(app) {
+        return Ok(dir);
+    }
     let out = output_dir(app)?;
     // A save folder that is itself called Downloads isn't given another one inside.
     let dir = if out.file_name().is_some_and(|n| n.eq_ignore_ascii_case("Downloads")) { out } else { out.join("Downloads") };
