@@ -1,5 +1,45 @@
 # What's new in Craftora
 
+## 0.5.1 (November 2026)
+
+**New**
+
+- **Style your captions.** Click the captions on the preview (or a caption clip) to pick their
+  font (Segoe UI, Arial, Impact, Georgia, Comic Sans), colour, size and what keeps them readable:
+  a shadow, an outline or a dark box. Text clips get the same font and edge choices. The preview
+  and the export look the same.
+- **Save captions as .srt** from the Captions section or the Transcript tab, for YouTube or any
+  player.
+- **Pause anything in the queue.** Downloads carry on where they stopped; exports start again when
+  resumed. **Pause all** pauses everything (live recordings keep their Stop button).
+- **Notifications** when a download, export or recording finishes or fails while you're in another
+  window. Click one to jump back to it. The taskbar button shows overall progress.
+- **Choose your Downloads folder** in **Settings → Saving** or on the Downloads page.
+- **Ads and trackers blocked** in Craftora's sign-in window (**Settings → Privacy**, on by default;
+  turn it off if a site's login or player stops working).
+- **A new welcome.** The app icon comes alive when Craftora opens. It shows at every start until
+  you tick **Don't show this again**.
+
+**Better**
+
+- **Closing Craftora asks first** when a download or export is unfinished, and nothing it started
+  keeps running after it closes (or crashes). Paused downloads are kept for next time.
+- **Slow link previews** offer **Download for editing** right in the preview.
+- **Videos play when you hover them** in lists again, from a lighter stream so they start quickly.
+- **Tidier file lists:** Exports, Downloads and History show one line per file with round icon
+  buttons and short dates. The Exports page has an **In progress** section.
+- **Clearer words:** an export from a link says "Getting the video" while it fetches, instead of
+  looking like a download.
+- **Home** shows your 3 latest projects and **See all** for the rest.
+- The **Working on** box in the sidebar scrolls when it's full, so Settings never disappears.
+
+**Fixed**
+
+- The mouse-wheel glide could stop short, freeze a list or shake it.
+- The "Saved info" list still popped up under some fields.
+- The sign-in window no longer opens pop-ups other than sign-in pages, starts downloads by
+  itself or opens other programs from a link.
+
 ## 0.5.0 (November 2026)
 
 **Better**

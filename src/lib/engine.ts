@@ -465,8 +465,6 @@ export const onSpeechProgress = (handler: (progress: SpeechProgress) => void): P
 export const onSpeechLine = (handler: (id: string, line: Caption) => void): Promise<UnlistenFn> =>
   listen<{ id: string; line: Caption }>("speech-line", (e) => handler(e.payload.id, e.payload.line));
 export const detectSilences = (path: string, start: number, end: number) => invoke<[number, number][]>("detect_silences", { path, start, end });
-/** Table tennis: the stretches between rallies, heard from the ball, in media seconds. */
-export const detectRallies = (path: string, start: number, end: number) => invoke<[number, number][]>("detect_rallies", { path, start, end });
 export const saveSnapshot = (bytes: number[], title: string) => invoke<string>("save_snapshot", { bytes, title });
 
 /** Makes the app window fill the screen (desktop app only). */
