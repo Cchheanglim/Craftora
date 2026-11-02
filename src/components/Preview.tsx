@@ -38,6 +38,8 @@ interface PreviewProps {
   onMakeCaptions?: () => void;
   /** Links' preview quality: a height, or none for the best the video has; separate from export quality. */
   quality?: { height?: number; heights: number[]; onChange: (height?: number) => void };
+  /** Downloads a link for editing, so it plays from this PC (`downloadForEditing`); absent in the browser preview. */
+  onDownload?: (mediaId: string) => void;
 }
 
 const WAVE_BARS = 140;
@@ -130,7 +132,7 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : {};
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload }: PreviewProps) {
   const [muted, setMuted] = useState(false);
   // Exactly the captions the export adds (see `withShownCaptions`), unless they're on the timeline.
   const shownCaptions = useMemo(
@@ -205,6 +207,22 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const layout = project.captionLayout ?? CAPTIONS;
   const captionPlace = (layout.x === 0.5 && CAPTION_PLACES.find((p) => p.y === layout.y)?.place) || "custom";
   const nothingHere = !project.clips.some(active);
+  // A link playing here: when it's slow or can't play, the message offers to download it.
+  const linkHere = project.clips.filter(active).map(mediaOf).find((m) => m && !m.source.local && !m.source.live);
+  const downloadHere = linkHere && onDownload && (
+    <button
+      type="button"
+      className="btn btn--secondary preview__download"
+      title="Download the whole video: it then plays from this PC, smoothly and offline"
+      onClick={(e) => {
+        e.stopPropagation();
+        onDownload(linkHere.id);
+      }}
+    >
+      <Icon name="download" size={13} />
+      Download for editing
+    </button>
+  );
   const selected = project.clips.find((c) => c.id === selectedId);
   const editable = (c?: Clip) => Boolean(c && trackKind(c) !== "audio");
 
@@ -362,7 +380,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           }) && (
             <span className="preview__loading">
               <span className="preview__failed">
-                This video can't play in the preview. Download it with ⬇ in Media to watch and edit it.
+                This video can't play in the preview.{" "}
+                {downloadHere ?? "Download it with ⬇ under In this project to watch and edit it."}
                 <CopyReport />
               </span>
             </span>
@@ -510,7 +529,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
         {nothingHere && duration > 0 && <p className="preview__note">Nothing on the timeline here</p>}
         {playing && playback.waiting && (
           <p className="preview__waiting">
-            {playback.slow ? "Still loading from the website… Download it with ⬇ in Media for smooth editing." : "Loading…"}
+            {playback.slow ? "Still loading from the website…" : "Loading…"}
+            {playback.slow && downloadHere}
           </p>
         )}
       </div>

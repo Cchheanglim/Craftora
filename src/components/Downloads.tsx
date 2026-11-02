@@ -108,7 +108,7 @@ export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: Download
       <div className="library__group">
         <h2 className="section-label">In progress</h2>
         {active.length === 0 ? (
-          <p className="library__muted">Nothing downloading. Fetch a link, then press ⬇ next to it in Media.</p>
+          <p className="library__muted">Nothing downloading. Fetch a link, then press ⬇ next to it under In this project.</p>
         ) : (
           <div className="queue__list">
             <ul>

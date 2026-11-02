@@ -324,6 +324,8 @@ export default function App() {
   const currentProject = useCallback(() => projectRef.current, []);
   const currentTime = useCallback(() => timeRef.current, []);
   const queue = useQueue(inDesktopApp ? [] : DEMO_JOBS, inDesktopApp, maxRunning);
+  /** Media being downloaded for editing. */
+  const downloadingIds = new Set(queue.jobs.filter((j) => j.prefetch && j.status !== "finished" && j.status !== "failed").map((j) => j.prefetch!.mediaId));
   const downloadsCount = queue.jobs.filter((j) => (j.prefetch || j.record) && j.status !== "finished" && j.status !== "failed").length;
 
   // Every file on this PC used in a project is remembered in the Media library, across projects.
@@ -1048,7 +1050,7 @@ export default function App() {
           ? await detectSilences(media.source.url, clip.in, clip.out)
           : silencesFromPeaks(media, clip.in, clip.out);
       if (ranges.length === 0) {
-        setError(media.source.local || !inDesktopApp ? "No silent pauses were found in this clip." : "Download this link first (⬇ in Media) so Craftora can scan its sound for silences.");
+        setError(media.source.local || !inDesktopApp ? "No silent pauses were found in this clip." : "Download this link first (⬇ under In this project) so Craftora can scan its sound for silences.");
         return;
       }
       api.edit({ type: "cutSilences", clipId: clip.id, ranges });
@@ -1275,9 +1277,7 @@ export default function App() {
             .filter((m) => m.source.previewCacheIds?.some((id) => cached[id] !== undefined))
             .map((m) => [m.id, Math.min(...(m.source.previewCacheIds ?? []).map((id) => cached[id] ?? 0))]),
         )}
-        downloading={
-          new Set(queue.jobs.filter((j) => j.prefetch && j.status !== "finished" && j.status !== "failed").map((j) => j.prefetch!.mediaId))
-        }
+        downloading={downloadingIds}
         onDownload={inDesktopApp ? (mediaId) => {
           const item = project.media.find((m) => m.id === mediaId);
           if (item) downloadForEditing(item);
@@ -1395,6 +1395,14 @@ export default function App() {
               showCaptions={showCaptions}
               onToggleCaptions={toggleCaptions}
               onMakeCaptions={uncaptioned.length ? makeSpokenCaptions : undefined}
+              onDownload={
+                inDesktopApp
+                  ? (mediaId) => {
+                      const item = project.media.find((m) => m.id === mediaId);
+                      if (item && !downloadingIds.has(mediaId)) downloadForEditing(item);
+                    }
+                  : undefined
+              }
               quality={
                 inDesktopApp && previewHeights.length
                   ? { height: links[0]?.previewHeight, heights: previewHeights, onChange: choosePreviewHeight }
