@@ -95,7 +95,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     const length = clipLength(clip);
     const fileName = `${settings.name?.trim() || `${slug(media.name)}_${compact(clip.in)}-${compact(clip.out)}`}.${container}`;
     const format = src.local ? "local" : isVideo ? media.videoFormat : media.audioFormat;
-    const stream = src.streams.find((s) => s.id === format);
+    // A file from this PC lists its sizes as "local:video" and "local:audio".
+    const stream = src.streams.find((s) => s.id === (src.local ? `local:${isVideo ? "video" : "audio"}` : format));
     const whole = clip.in <= 0.05 && clip.out >= src.duration - 0.05;
     const command = src.local
       ? `ffmpeg${whole ? "" : ` -ss ${clip.in.toFixed(3)} -t ${length.toFixed(3)}`} -i "${src.url}" -c copy "${fileName}"`
@@ -127,7 +128,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       sizeMb: stream && src.duration > 0 ? (stream.sizeMb * length) / src.duration : 0,
       fileName,
       title: media.name,
-      quality: stream?.label ?? (src.local ? "As the file is" : "Best available"),
+      quality: src.local ? "As the file is" : (stream?.label ?? "Best available"),
       summary: [
         `${formatClock(clip.in)} → ${formatClock(clip.out)}`,
         container.toUpperCase(),
