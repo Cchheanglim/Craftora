@@ -380,7 +380,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           }) && (
             <span className="preview__loading">
               <span className="preview__failed">
-                This video can't play in the preview.{" "}
+                This video can't play in the preview you have to download it first.{" "}
                 {downloadHere ?? "Download it with ⬇ under In this project to watch and edit it."}
                 <CopyReport />
               </span>
