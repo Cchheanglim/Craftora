@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
+import { WelcomeScene } from "./WelcomeScene";
 import "./WelcomeDialog.css";
 
 // Not the old "craftora.welcomeDialog" (closed once): that ticked nothing, so it shows again until ticked.
@@ -77,8 +78,8 @@ export function WelcomeDialog({ onImport, onPasteLink, busy, onClose }: WelcomeD
       }}
     >
       <div className="welcome__box">
+        <WelcomeScene />
         <div className="welcome__head">
-          <img src="/craftora.svg" width={40} height={40} alt="" className="welcome__logo" />
           <div>
             <h2 id="welcome-title">Welcome to Craftora</h2>
             <p>Make a video in three steps.</p>

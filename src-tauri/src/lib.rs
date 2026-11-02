@@ -8,6 +8,7 @@ mod live;
 mod local;
 mod media_cache;
 mod media;
+mod notify;
 mod page_fetch;
 mod privacy;
 mod project;
@@ -41,7 +42,6 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
         .manage(jobs::Jobs::default())
         .manage(local::OpenedFiles::default())
         .manage(media_cache::MediaCache::default())
@@ -88,6 +88,8 @@ pub fn run() {
                         )
                     };
                 });
+                // Before any website is opened, so the sign-in window has it from its first page.
+                privacy::block_ads(app.handle(), store::get_ad_block(app.handle().clone()));
                 // Minimized, WebView2 lets go of what it can (about 40 MB of picture memory); shown again, back to normal.
                 #[cfg(windows)]
                 {
@@ -140,10 +142,13 @@ pub fn run() {
             store::delete_file,
             store::get_proxy,
             store::set_proxy,
+            store::get_ad_block,
+            store::set_ad_block,
             privacy::check_address,
             jobs::rename_download,
             captions::load_captions,
             captions::save_srt,
+            notify::notify,
             speech::make_captions,
             store::save_snapshot,
             virustotal::site_check_available,

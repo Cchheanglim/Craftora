@@ -11,6 +11,7 @@ use std::sync::Mutex;
 use tauri::webview::Cookie;
 use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuItem};
+use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 
 pub(crate) const WINDOW: &str = "sign-in";
@@ -284,6 +285,13 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
         .title("Craftora · log in if needed, play the video, then click Fetch this video")
         .inner_size(900.0, 760.0)
         .initialization_script_for_all_frames(WATCH_MEDIA)
+        // Websites here can't reach Craftora's commands (no capability names this window), but a
+        // bad site or ad could still push malware: so no pop-ups (but real sign-in ones), no
+        // downloads (Craftora fetches the video itself), and no links that start other programs
+        // on the PC (ms-msdt:, search-ms: and the like).
+        .on_navigation(|url| matches!(url.scheme(), "http" | "https" | "about" | "data" | "blob"))
+        .on_new_window(|url, _| if is_sign_in_popup(&url) { NewWindowResponse::Allow } else { NewWindowResponse::Deny })
+        .on_download(|_, _| false)
         .menu(menu)
         .on_menu_event(|window, event| {
             if event.id() != FETCH_ITEM {
@@ -312,6 +320,27 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
         .build()
         .map_err(|e| format!("Couldn't open the sign-in window: {e}"))?;
     Ok(())
+}
+
+/// Pop-ups the sign-in window lets open: logging in with another account. Any other pop-up is an
+/// ad, or worse.
+// shortcut: the big sign-in providers only; add one if a site's "Log in with …" button does nothing.
+fn is_sign_in_popup(url: &Url) -> bool {
+    const PROVIDERS: [&str; 12] = [
+        "accounts.google.com",
+        "appleid.apple.com",
+        "login.microsoftonline.com",
+        "login.live.com",
+        "www.facebook.com",
+        "m.facebook.com",
+        "api.twitter.com",
+        "x.com",
+        "twitter.com",
+        "discord.com",
+        "github.com",
+        "id.twitch.tv",
+    ];
+    url.scheme() == "https" && url.host_str().is_some_and(|host| PROVIDERS.contains(&host))
 }
 
 /// Shows a short message on top of the page in the sign-in window, such as "Sent to Craftora".
@@ -465,6 +494,16 @@ fn cookies_to_delete(json: &str, site: Option<&str>) -> Vec<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lets_only_sign_in_pop_ups_open() {
+        let popup = |u: &str| is_sign_in_popup(&u.parse().unwrap());
+        assert!(popup("https://accounts.google.com/o/oauth2/auth?x=1"));
+        assert!(!popup("http://accounts.google.com/"), "not over https");
+        assert!(!popup("https://accounts.google.com.evil.example/"), "a look-alike host");
+        assert!(!popup("https://ads.example.com/popunder"));
+        assert!(!popup("about:blank"));
+    }
 
     #[test]
     fn deletes_each_cookie_of_the_site_with_its_partition() {

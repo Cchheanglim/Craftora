@@ -72,7 +72,7 @@ import { useGlideScroll } from "./lib/glide";
 import { useProject } from "./project/useProject";
 import { applyEdit, SHOWN_CAPTIONS, timelineCaptions, withShownCaptions } from "./project/actions";
 import { usePlayback } from "./project/usePlayback";
-import { cutModeApplies, frameOf, planExport } from "./project/exportPlan";
+import { cutModeApplies, formatSize, frameOf, planExport } from "./project/exportPlan";
 import {
   CAPTIONS,
   NO_CROP,
@@ -111,6 +111,7 @@ import { WelcomeDialog, welcomeHidden } from "./components/WelcomeDialog";
 import { useConfirm } from "./components/ConfirmDialog";
 import { getCurrentWindow, ProgressBarStatus } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Ambient } from "./components/Ambient";
 import "./App.css";
 
@@ -324,6 +325,8 @@ export default function App() {
   const currentProject = useCallback(() => projectRef.current, []);
   const currentTime = useCallback(() => timeRef.current, []);
   const queue = useQueue(inDesktopApp ? [] : DEMO_JOBS, inDesktopApp, maxRunning);
+  /** Media being downloaded for editing. */
+  const downloadingIds = new Set(queue.jobs.filter((j) => j.prefetch && j.status !== "finished" && j.status !== "failed").map((j) => j.prefetch!.mediaId));
   const downloadsCount = queue.jobs.filter((j) => (j.prefetch || j.record) && j.status !== "finished" && j.status !== "failed").length;
 
   // Every file on this PC used in a project is remembered in the Media library, across projects.
@@ -348,6 +351,17 @@ export default function App() {
     void loadHistory().then(setHistory);
     void getOutputDir().then(setOutputDirState).catch(() => {});
     void getDownloadsDir().then(setDownloadsDirState).catch(() => {});
+  }, []);
+
+  // No "Saved info" list under Craftora's own fields: WebView2's autofill switch (lib.rs) doesn't
+  // reach every field, so each one is marked as it gets focus (ones that set their own are left).
+  useEffect(() => {
+    const noAutofill = (e: FocusEvent) => {
+      const field = e.target;
+      if ((field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) && !field.hasAttribute("autocomplete")) field.setAttribute("autocomplete", "off");
+    };
+    document.addEventListener("focusin", noAutofill);
+    return () => document.removeEventListener("focusin", noAutofill);
   }, []);
 
   // Save the project a moment after each change. Empty projects aren't worth keeping.
@@ -616,11 +630,22 @@ export default function App() {
       const was = before.get(j.id);
       if ((was !== "downloading" && was !== "encoding") || (j.status !== "finished" && j.status !== "failed")) continue;
       const what = j.record ? "Recording" : j.prefetch ? "Download" : "Export";
-      const name = j.rename ?? j.title;
-      const options = j.status === "finished" ? { title: `${what} finished`, body: name } : { title: `${what} failed`, body: `${name}: ${j.error ?? "it stopped"}` };
-      void invoke("plugin:notification|notify", { options }).catch(() => {});
+      const page: View = j.prefetch || j.record ? "downloads" : "library";
+      const open = `Click to open ${page === "downloads" ? "Downloads" : "Exports"}.`;
+      const saved = j.prefetch ? "Ready to edit" : `Saved as ${j.outputPath?.split(/[\\/]/).pop() ?? j.fileName}`;
+      const notice =
+        j.status === "finished"
+          ? { title: `${what} finished`, detail: `${saved} · ${formatSize(j.sizeMb)}. ${open}` }
+          : { title: `${what} failed`, detail: `${(j.error ?? "It stopped").replace(/\.?$/, ".")} ${open}` };
+      void invoke("notify", { ...notice, line: j.rename ?? j.title, page }).catch(() => {});
     }
   }, [queue.jobs]);
+  // A click on one of those notifications brings Craftora forward on that page (notify.rs).
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const stop = listen<View>("notification-clicked", (e) => setView(e.payload));
+    return () => void stop.then((unlisten) => unlisten());
+  }, []);
   const speechTurn = useRef<Promise<unknown>>(Promise.resolve());
   // Captions wait their turn: on a slow connection, getting the model or a link's sound would slow
   // the fetch, preview, downloads and exports going on (and whisper would slow exports).
@@ -1048,7 +1073,7 @@ export default function App() {
           ? await detectSilences(media.source.url, clip.in, clip.out)
           : silencesFromPeaks(media, clip.in, clip.out);
       if (ranges.length === 0) {
-        setError(media.source.local || !inDesktopApp ? "No silent pauses were found in this clip." : "Download this link first (⬇ in Media) so Craftora can scan its sound for silences.");
+        setError(media.source.local || !inDesktopApp ? "No silent pauses were found in this clip." : "Download this link first (⬇ under In this project) so Craftora can scan its sound for silences.");
         return;
       }
       api.edit({ type: "cutSilences", clipId: clip.id, ranges });
@@ -1275,9 +1300,7 @@ export default function App() {
             .filter((m) => m.source.previewCacheIds?.some((id) => cached[id] !== undefined))
             .map((m) => [m.id, Math.min(...(m.source.previewCacheIds ?? []).map((id) => cached[id] ?? 0))]),
         )}
-        downloading={
-          new Set(queue.jobs.filter((j) => j.prefetch && j.status !== "finished" && j.status !== "failed").map((j) => j.prefetch!.mediaId))
-        }
+        downloading={downloadingIds}
         onDownload={inDesktopApp ? (mediaId) => {
           const item = project.media.find((m) => m.id === mediaId);
           if (item) downloadForEditing(item);
@@ -1322,6 +1345,7 @@ export default function App() {
             outputDir={outputDir}
             updates={updates}
             onOpenWelcome={() => setWelcoming(true)}
+            onSeeProjects={() => setView("projects")}
           />
         )}
         {view === "projects" && (
@@ -1395,6 +1419,14 @@ export default function App() {
               showCaptions={showCaptions}
               onToggleCaptions={toggleCaptions}
               onMakeCaptions={uncaptioned.length ? makeSpokenCaptions : undefined}
+              onDownload={
+                inDesktopApp
+                  ? (mediaId) => {
+                      const item = project.media.find((m) => m.id === mediaId);
+                      if (item && !downloadingIds.has(mediaId)) downloadForEditing(item);
+                    }
+                  : undefined
+              }
               quality={
                 inDesktopApp && previewHeights.length
                   ? { height: links[0]?.previewHeight, heights: previewHeights, onChange: choosePreviewHeight }

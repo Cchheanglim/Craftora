@@ -145,6 +145,15 @@
 }
 
 /* Shown while the clock waits for a clip to load after a jump. */
+/* In the loading message, which otherwise lets clicks through to the preview. */
+.preview__download {
+  pointer-events: auto;
+  height: 24px;
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+}
+
 .preview__waiting {
   position: absolute;
   top: 10px;

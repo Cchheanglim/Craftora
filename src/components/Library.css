@@ -91,6 +91,18 @@
   color: var(--text-2);
 }
 
+/* One line per row: sizes and dates never break, long details end in "…" (whole in their tooltip). */
+.library__table .is-num,
+.library__table td.library__detail {
+  white-space: nowrap;
+}
+
+.library__table td.library__detail {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .library__save {
   margin-top: var(--space-3);
   display: flex;

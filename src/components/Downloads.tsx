@@ -7,6 +7,7 @@ import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
 import { QueueRow } from "./QueueDock";
 import { FileThumb } from "./Thumb";
+import { formatWhen } from "../lib/timecode";
 import { HiddenFold, HideButton, useHidden } from "./Hidden";
 import "./Library.css";
 
@@ -23,7 +24,6 @@ interface DownloadsProps {
 /** "Download for editing" and live recordings, as opposed to exports. */
 const isDownload = (j: Job) => Boolean(j.prefetch || j.record);
 const SOUND = /\.(mp3|m4a|wav|flac|opus|aac|ogg)$/i;
-const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: DownloadsProps) {
   const active = queue.jobs.filter((j) => isDownload(j) && j.status !== "finished");
@@ -65,7 +65,7 @@ export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: Download
                 </span>
               </td>
               <td className="mono is-num">{formatSize(file.sizeBytes / 1_000_000)}</td>
-              <td className="library__detail">{dateFormat.format(file.modifiedMs)}</td>
+              <td className="library__detail">{formatWhen(file.modifiedMs)}</td>
               <td className="is-num">
                 <span className="library__actions">
                   <HideButton hidden={hidden} id={file.path} name={file.name} />
@@ -73,10 +73,9 @@ export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: Download
                     <Icon name="plus" size={14} />
                     Add to project
                   </button>
-                  <PlayFile path={file.path} name={file.name} label />
-                  <button type="button" className="btn btn--ghost" onClick={() => void revealFile(file.path)}>
+                  <PlayFile path={file.path} name={file.name} />
+                  <button type="button" className="btn btn--icon" aria-label={`Show ${file.name} in its folder`} title="Show in folder" onClick={() => void revealFile(file.path)}>
                     <Icon name="folder" size={14} />
-                    Show in folder
                   </button>
                 </span>
               </td>
@@ -109,7 +108,7 @@ export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: Download
       <div className="library__group">
         <h2 className="section-label">In progress</h2>
         {active.length === 0 ? (
-          <p className="library__muted">Nothing downloading. Fetch a link, then press ⬇ next to it in Media.</p>
+          <p className="library__muted">Nothing downloading. Fetch a link, then press ⬇ next to it under In this project.</p>
         ) : (
           <div className="queue__list">
             <ul>

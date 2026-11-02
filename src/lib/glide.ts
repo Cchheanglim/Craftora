@@ -8,7 +8,8 @@ import { useEffect } from "react";
 export function useGlideScroll() {
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const glides = new WeakMap<HTMLElement, { target: number; running: boolean }>();
+    // `at`: where the glide last put the list, to notice when something else moves it.
+    const glides = new WeakMap<HTMLElement, { target: number; running: boolean; at: number }>();
     const onWheel = (e: WheelEvent) => {
       if (e.defaultPrevented || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
       // A wheel notch is about 100; a touchpad sends many small steps of its own.
@@ -16,21 +17,31 @@ export function useGlideScroll() {
       const box = scroller(e.target, Math.sign(e.deltaY));
       if (!box) return;
       e.preventDefault();
-      const glide = glides.get(box) ?? { target: box.scrollTop, running: false };
+      const glide = glides.get(box) ?? { target: box.scrollTop, running: false, at: box.scrollTop };
       // Moved some other way since (the scrollbar, a jump to a line): start from where it is.
       if (!glide.running) glide.target = box.scrollTop;
       glide.target = Math.max(0, Math.min(box.scrollHeight - box.clientHeight, glide.target + e.deltaY));
       glides.set(box, glide);
       if (glide.running) return;
       glide.running = true;
+      glide.at = box.scrollTop;
       const step = () => {
         const left = glide.target - box.scrollTop;
-        if (Math.abs(left) < 0.5 || !box.isConnected) {
-          box.scrollTop = glide.target;
+        // Done, gone, or moved some other way meanwhile (a touchpad, the scrollbar, the transcript
+        // following the line): it stops there instead of pulling the list back.
+        if (Math.abs(left) < 1 || !box.isConnected || Math.abs(box.scrollTop - glide.at) > 2) {
           glide.running = false;
           return;
         }
-        box.scrollTop += left * 0.18;
+        // At least a pixel a frame: scroll positions are whole pixels (at 110% zoom, too), and
+        // smaller steps rounded away to nothing, so a glide never ended and held the list still.
+        const before = box.scrollTop;
+        box.scrollTop += Math.sign(left) * Math.max(1, Math.abs(left) * 0.18);
+        glide.at = box.scrollTop;
+        if (box.scrollTop === before) {
+          glide.running = false;
+          return;
+        }
         requestAnimationFrame(step);
       };
       requestAnimationFrame(step);

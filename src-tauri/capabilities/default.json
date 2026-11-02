@@ -12,7 +12,6 @@
     "core:window:allow-set-fullscreen",
     "core:window:allow-destroy",
     "core:window:allow-set-progress-bar",
-    "notification:allow-notify",
     "clipboard-manager:allow-read-text"
   ]
 }
