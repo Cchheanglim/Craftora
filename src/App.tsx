@@ -452,7 +452,11 @@ export default function App() {
       if (!source.previewProxy) return;
       setPreparing((s) => new Set(s).add(mediaId));
       makePreview(source)
-        .then((ready) => api.refreshMedia(mediaId, { source: ready }))
+        .then(({ previewUrl, previewAudioUrl, previewProxy }) => {
+          // Onto the media as it is now: its picture and sound wave may have arrived while the copy was made.
+          const current = projectRef.current.media.find((m) => m.id === mediaId);
+          if (current?.source.url === source.url) api.refreshMedia(mediaId, { source: { ...current.source, previewUrl, previewAudioUrl, previewProxy } });
+        })
         .catch((err) => setError(errorText(err)))
         .finally(() =>
           setPreparing((s) => {
