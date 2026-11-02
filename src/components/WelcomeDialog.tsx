@@ -2,20 +2,22 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import "./WelcomeDialog.css";
 
-const WELCOMED_KEY = "craftora.welcomeDialog";
+// Not the old "craftora.welcomeDialog" (closed once): that ticked nothing, so it shows again until ticked.
+const HIDDEN_KEY = "craftora.hideWelcome";
 
-/** Whether the welcome guide was already closed once (it only shows on the first launch). */
-export function alreadyWelcomed(): boolean {
+/** Whether "Don't show this again" was ticked; until then the guide opens at every start. */
+export function welcomeHidden(): boolean {
   try {
-    return localStorage.getItem(WELCOMED_KEY) === "1";
+    return localStorage.getItem(HIDDEN_KEY) === "1";
   } catch {
     return false;
   }
 }
 
-function rememberWelcomed() {
+function setWelcomeHidden(hidden: boolean) {
   try {
-    localStorage.setItem(WELCOMED_KEY, "1");
+    if (hidden) localStorage.setItem(HIDDEN_KEY, "1");
+    else localStorage.removeItem(HIDDEN_KEY);
   } catch {
     /* not essential: it just shows again next time */
   }
@@ -29,17 +31,19 @@ interface WelcomeDialogProps {
   onImport?: () => void;
   onPasteLink: () => void;
   busy: boolean;
-  /** Called once the guide has faded out; it has been remembered as seen by then. */
+  /** Called once the guide has faded out; "Don't show this again" has been saved by then. */
   onClose: () => void;
 }
 
 /**
- * The first-launch guide: a pop-up that fades and slides in over the app with three steps.
- * Any way of closing it (a button, Escape, a click outside) counts as seen, so it never comes back.
+ * The welcome guide: a pop-up that fades and slides in over the app with three steps, at every
+ * start until "Don't show this again" is ticked (Home → Welcome guide opens it any time, and
+ * unticking it there brings it back).
  */
 export function WelcomeDialog({ onImport, onPasteLink, busy, onClose }: WelcomeDialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const [leaving, setLeaving] = useState(false);
+  const [hide, setHide] = useState(welcomeHidden);
 
   useEffect(() => {
     const el = ref.current;
@@ -48,7 +52,7 @@ export function WelcomeDialog({ onImport, onPasteLink, busy, onClose }: WelcomeD
 
   const close = (then?: () => void) => {
     if (leaving) return;
-    rememberWelcomed();
+    setWelcomeHidden(hide);
     setLeaving(true);
     window.setTimeout(() => {
       ref.current?.close();
@@ -98,6 +102,10 @@ export function WelcomeDialog({ onImport, onPasteLink, busy, onClose }: WelcomeD
           </li>
         </ol>
         <div className="welcome__actions">
+          <label className="welcome__hide">
+            <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} />
+            Don't show this again
+          </label>
           <button type="button" className="btn btn--ghost" onClick={() => close()}>
             Got it
           </button>

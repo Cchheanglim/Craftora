@@ -105,7 +105,7 @@ import { Transcript } from "./components/Transcript";
 import { Settings } from "./components/Settings";
 import { AssistantPanel } from "./components/AssistantPanel";
 import { TextMenu } from "./components/TextMenu";
-import { WelcomeDialog, alreadyWelcomed } from "./components/WelcomeDialog";
+import { WelcomeDialog, welcomeHidden } from "./components/WelcomeDialog";
 import { useConfirm } from "./components/ConfirmDialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Ambient } from "./components/Ambient";
@@ -307,7 +307,7 @@ export default function App() {
   const [ytDlpUpdate, setYtDlpUpdate] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null });
   const urlRef = useRef<HTMLInputElement>(null);
   /** The first-launch guide is open (it shows until it's closed once). */
-  const [welcoming, setWelcoming] = useState(() => !alreadyWelcomed());
+  const [welcoming, setWelcoming] = useState(() => !welcomeHidden());
 
   const api = useProject(() => (inDesktopApp ? emptyProject() : demoProject()));
   const { project } = api;
