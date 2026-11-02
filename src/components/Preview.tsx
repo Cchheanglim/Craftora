@@ -527,7 +527,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           ))}
         </div>
         {nothingHere && duration > 0 && <p className="preview__note">Nothing on the timeline here</p>}
-        {playing && playback.waiting && (
+        {/* While a link stays slow, the message stays between its short waits. */}
+        {playing && (playback.waiting || playback.slow) && (
           <p className="preview__waiting">
             {playback.slow ? "Still loading from the website…" : "Loading…"}
             {playback.slow && downloadHere}
