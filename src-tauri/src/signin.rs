@@ -496,6 +496,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn lets_only_sign_in_pop_ups_open() {
+        let popup = |u: &str| is_sign_in_popup(&u.parse().unwrap());
+        assert!(popup("https://accounts.google.com/o/oauth2/auth?x=1"));
+        assert!(!popup("http://accounts.google.com/"), "not over https");
+        assert!(!popup("https://accounts.google.com.evil.example/"), "a look-alike host");
+        assert!(!popup("https://ads.example.com/popunder"));
+        assert!(!popup("about:blank"));
+    }
+
+    #[test]
     fn deletes_each_cookie_of_the_site_with_its_partition() {
         let json = r#"{"cookies":[
             {"name":"PREF","domain":".youtube.com","path":"/"},
