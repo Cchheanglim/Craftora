@@ -19,9 +19,17 @@ export function WelcomeScene() {
     const words = svg?.querySelector<SVGTextElement>(".welcome__words");
     const box = svg?.querySelector(".welcome__bubble-box");
     if (!svg || !words || !box) return;
-    // The bubble fits its words.
+    // The bubble fits its words, measured whole whatever has been typed so far.
+    const fit = () => {
+      const shown = words.textContent;
+      words.textContent = SAYS;
+      box.setAttribute("d", bubble(words.getComputedTextLength() + 32));
+      words.textContent = shown;
+    };
     words.textContent = SAYS;
-    box.setAttribute("d", bubble(words.getComputedTextLength() + 32));
+    fit();
+    // Again once the UI font is in: at start-up it can still be loading, and the narrower fallback cut the bubble short.
+    void document.fonts.load(getComputedStyle(words).font, SAYS).then(fit);
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     words.textContent = "";
     const timers: number[] = [];
