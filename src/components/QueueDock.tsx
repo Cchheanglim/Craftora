@@ -142,6 +142,8 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
     if (ok) void stopRecording(job.id);
   };
   const done = job.status === "finished";
+  // Sites that don't list a file's size show 0 until yt-dlp reads the real one.
+  const sizeSoFar = job.totalBytes ? job.totalBytes / 1_000_000 : job.sizeMb;
   const failed = job.status === "failed";
 
   const copy = async () => {
@@ -235,7 +237,7 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
         )}
       </div>
 
-      <span className="queue__size mono">{done ? formatSize(job.sizeMb) : `~${formatSize(job.sizeMb)}`}</span>
+      <span className="queue__size mono">{done ? formatSize(job.sizeMb) : sizeSoFar > 0 ? `~${formatSize(sizeSoFar)}` : ""}</span>
 
       <div className="queue__row-actions">
         {canName && !naming && (

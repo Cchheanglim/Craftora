@@ -76,7 +76,10 @@ test("a picture that fills the frame is rendered, not copied as it is", async ()
   let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
   p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
   const settings = { output: "video", videoContainer: "mp4", audioContainer: "mp3", cutMode: "fast", frameId: "vertical", quality: "fast" } as const;
-  expect(planExport(p, settings).kind).toBe("simple");
+  const copy = planExport(p, settings);
+  expect(copy.kind).toBe("simple");
+  // A file from this PC: the whole 1 MB file is copied.
+  expect(copy.kind === "simple" && copy.sizeMb).toBe(1);
   p = applyEdit(p, { type: "updateClip", clipId: "c", patch: { fill: true } });
   const plan = planExport(p, settings);
   expect(plan.kind).toBe("render");
