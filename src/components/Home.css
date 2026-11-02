@@ -177,6 +177,13 @@ label.home__project {
   margin-right: 4px;
 }
 
+/* "See all N projects", under the few Home lists. */
+.home__more {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+  margin-left: -10px;
+}
+
 .home__muted {
   font-size: 12.5px;
   color: var(--text-3);

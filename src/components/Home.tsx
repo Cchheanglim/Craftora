@@ -30,7 +30,12 @@ interface HomeProps {
   outputDir: string;
   updates: Updates;
   onOpenWelcome: () => void;
+  /** Opens the Projects page, where all of them are. */
+  onSeeProjects: () => void;
 }
+
+/** Projects Home lists; the rest are a click away on the Projects page. */
+const HOME_PROJECTS = 3;
 
 export interface LinkSettings {
   onSignIn: (site: string) => void;
@@ -202,8 +207,10 @@ export function Home({
   outputDir,
   updates,
   onOpenWelcome,
+  onSeeProjects,
 }: HomeProps) {
   const hiddenProjects = useHidden("projects");
+  const shownProjects = projects.filter((p) => !hiddenProjects.isHidden(p.id));
   // Some people don't want their exports' pictures on the start screen; remembered.
   const [hideRecent, setHideRecent] = useState(() => {
     try {
@@ -262,7 +269,12 @@ export function Home({
                 New project
               </button>
             </div>
-            <ProjectList projects={projects.filter((p) => !hiddenProjects.isHidden(p.id))} currentId={currentId} onOpenProject={onOpenProject} onDeleteProject={onDeleteProject} />
+            <ProjectList projects={shownProjects.slice(0, HOME_PROJECTS)} currentId={currentId} onOpenProject={onOpenProject} onDeleteProject={onDeleteProject} />
+            {shownProjects.length > HOME_PROJECTS && (
+              <button type="button" className="btn btn--ghost home__more" onClick={onSeeProjects}>
+                See all {shownProjects.length} projects
+              </button>
+            )}
           </div>
 
           <div className="home__col">

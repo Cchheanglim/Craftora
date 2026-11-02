@@ -1322,6 +1322,7 @@ export default function App() {
             outputDir={outputDir}
             updates={updates}
             onOpenWelcome={() => setWelcoming(true)}
+            onSeeProjects={() => setView("projects")}
           />
         )}
         {view === "projects" && (
