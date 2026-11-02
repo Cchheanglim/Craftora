@@ -352,6 +352,17 @@ export default function App() {
     void getDownloadsDir().then(setDownloadsDirState).catch(() => {});
   }, []);
 
+  // No "Saved info" list under Craftora's own fields: WebView2's autofill switch (lib.rs) doesn't
+  // reach every field, so each one is marked as it gets focus (ones that set their own are left).
+  useEffect(() => {
+    const noAutofill = (e: FocusEvent) => {
+      const field = e.target;
+      if ((field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) && !field.hasAttribute("autocomplete")) field.setAttribute("autocomplete", "off");
+    };
+    document.addEventListener("focusin", noAutofill);
+    return () => document.removeEventListener("focusin", noAutofill);
+  }, []);
+
   // Save the project a moment after each change. Empty projects aren't worth keeping.
   useEffect(() => {
     if (project.media.length === 0 && project.clips.length === 0) return;
