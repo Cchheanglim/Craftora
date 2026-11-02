@@ -81,6 +81,8 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
   best quality the video has; the picker next to the speed (**Best**, 1080p, 720p…) lowers it for
   slow Wi-Fi.
 
+  
+
 **Captions and edit by text**
 - Captions come from the website when it has them; otherwise Craftora **listens to the sound and
   writes them**, on your PC, without internet (Khmer and Thai too).
@@ -156,6 +158,10 @@ uses your own API key for Gemini, ChatGPT or Claude; see [The AI assistant](#the
 - **Anything more** (several clips, tracks, text, crop, speed, fades or transitions):
   Craftora renders the whole timeline in one FFmpeg pass, each clip reading only its own part
   of its file. For links, yt-dlp first downloads just the parts the timeline uses.
+### Limitation
+
+- **Thought Craftora can fetch almost every video from any website** Some website will require you for login (often works without login)
+- **Some website will not work on preview** , so you need to download it fist
 
 ## The AI assistant
 
