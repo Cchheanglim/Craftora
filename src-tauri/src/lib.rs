@@ -132,6 +132,8 @@ pub fn run() {
             store::save_history,
             store::get_output_dir,
             store::set_output_dir,
+            store::get_downloads_dir,
+            store::set_downloads_dir,
             store::open_file,
             store::delete_file,
             store::get_proxy,

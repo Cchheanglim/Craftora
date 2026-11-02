@@ -125,6 +125,9 @@ struct Settings {
     /// Where exports are saved; the default is Videos\Craftora.
     #[serde(default)]
     output_dir: Option<String>,
+    /// Where downloads and live recordings are saved; the default is Downloads in the export folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    downloads_dir: Option<String>,
     /// The proxy Craftora's connections go through (privacy.rs); none for a direct connection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     proxy: Option<String>,
@@ -146,6 +149,11 @@ fn read_settings(app: &AppHandle) -> Settings {
 /// The save folder the user chose, if it still exists.
 pub(crate) fn chosen_output_dir(app: &AppHandle) -> Option<PathBuf> {
     read_settings(app).output_dir.map(PathBuf::from).filter(|dir| dir.is_dir())
+}
+
+/// The downloads folder the user chose, if it still exists.
+pub(crate) fn chosen_downloads_dir(app: &AppHandle) -> Option<PathBuf> {
+    read_settings(app).downloads_dir.map(PathBuf::from).filter(|dir| dir.is_dir())
 }
 
 /// The proxy now, and the one Craftora's window started with.
@@ -181,6 +189,24 @@ pub fn set_output_dir(app: AppHandle, path: Option<String>) -> Result<String, St
     settings.output_dir = path;
     write_settings(&app, &settings)?;
     get_output_dir(app)
+}
+
+/// Where downloads and live recordings go now.
+#[tauri::command]
+pub fn get_downloads_dir(app: AppHandle) -> Result<String, String> {
+    crate::jobs::downloads_dir(&app).map(|dir| dir.to_string_lossy().into_owned())
+}
+
+/// Sets the downloads folder (`None` goes back to Downloads in the export folder) and returns where downloads go now.
+#[tauri::command]
+pub fn set_downloads_dir(app: AppHandle, path: Option<String>) -> Result<String, String> {
+    if path.as_ref().is_some_and(|dir| !Path::new(dir).is_dir()) {
+        return Err("That folder doesn't exist.".into());
+    }
+    let mut settings = read_settings(&app);
+    settings.downloads_dir = path;
+    write_settings(&app, &settings)?;
+    get_downloads_dir(app)
 }
 
 /// Exports are only ever these kinds of file: Play and Delete refuse anything else.

@@ -146,3 +146,12 @@ export async function getOutputDir(): Promise<string> {
 export async function setOutputDir(path: string | null): Promise<string> {
   return inDesktopApp ? call<string>("set_output_dir", { path }) : DEFAULT_OUTPUT_DIR;
 }
+
+export async function getDownloadsDir(): Promise<string> {
+  return inDesktopApp ? call<string>("get_downloads_dir") : `${DEFAULT_OUTPUT_DIR}\\Downloads`;
+}
+
+/** `null` goes back to Downloads in the export folder. Returns where downloads go now. */
+export async function setDownloadsDir(path: string | null): Promise<string> {
+  return inDesktopApp ? call<string>("set_downloads_dir", { path }) : `${DEFAULT_OUTPUT_DIR}\\Downloads`;
+}

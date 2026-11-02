@@ -1,10 +1,12 @@
 import { useState } from "react";
 import type { Job } from "../types";
+import type { Queue } from "../state/useQueue";
 import { formatSize } from "../project/exportPlan";
 import { playableFile, revealFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
+import { QueueRow } from "./QueueDock";
 import { useConfirm } from "./ConfirmDialog";
 import { HiddenFold } from "./Hidden";
 import "./Library.css";
@@ -12,6 +14,8 @@ import "./Library.css";
 interface LibraryProps {
   /** Finished exports, newest first. */
   jobs: Job[];
+  /** Exports still running, waiting or failed show at the top. */
+  queue: Queue;
   outputDir: string;
   /** Picks the folder new exports are saved in; absent in the browser preview. */
   onChooseOutputDir?: () => void;
@@ -26,9 +30,10 @@ const HIDDEN_KEY = "craftora.hideExports";
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace, onHide, onDelete }: LibraryProps) {
+export function Library({ jobs, queue, outputDir, onChooseOutputDir, onOpenWorkspace, onHide, onDelete }: LibraryProps) {
   const shown = jobs.filter((j) => !j.hidden);
   const hidden = jobs.filter((j) => j.hidden);
+  const active = queue.jobs.filter((j) => !j.prefetch && !j.record && j.status !== "finished");
   // The list can be folded away, so its pictures don't show; remembered.
   const [open, setOpen] = useState(() => {
     try {
@@ -49,7 +54,7 @@ export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace, o
   return (
     <section className="library" aria-labelledby="library-title">
       <header className="library__head">
-        <h1 id="library-title">Library</h1>
+        <h1 id="library-title">Exports</h1>
         <p>Everything Craftora has exported.</p>
         <div className="library__save">
           <span>Save new exports to</span>
@@ -62,6 +67,21 @@ export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace, o
           )}
         </div>
       </header>
+
+      <div className="library__group">
+        <h2 className="section-label">In progress</h2>
+        {active.length === 0 ? (
+          <p className="library__muted">Nothing exporting. In the Editor, press Add to queue.</p>
+        ) : (
+          <div className="queue__list">
+            <ul>
+              {active.map((job) => (
+                <QueueRow key={job.id} job={job} queue={queue} fresh={false} />
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
 
       {jobs.length === 0 ? (
         <div className="library__empty">
@@ -76,7 +96,7 @@ export function Library({ jobs, outputDir, onChooseOutputDir, onOpenWorkspace, o
           <div className="library__group">
             <button type="button" className="library__toggle" aria-expanded={open} aria-controls="library-files" onClick={toggle}>
               <Icon name="chevronDown" size={14} />
-              Exported files <span className="library__count">{shown.length}</span>
+              Finished <span className="library__count">{shown.length}</span>
             </button>
             {open &&
               (shown.length === 0 ? (

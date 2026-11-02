@@ -65,18 +65,17 @@ export function QueueDock({ queue, freshId }: QueueDockProps) {
           </span>
         )}
         <div className="queue__actions">
-          {queue.canPause &&
-            (running + waiting > 0 ? (
-              <button type="button" className="btn btn--ghost" onClick={queue.pauseAll}>
-                Pause all
+          {jobs.some((j) => queue.canPauseJob(j) && (isActive(j) || j.status === "waiting")) ? (
+            <button type="button" className="btn btn--ghost" onClick={queue.pauseAll}>
+              Pause all
+            </button>
+          ) : (
+            paused > 0 && (
+              <button type="button" className="btn btn--ghost" onClick={queue.resumeAll}>
+                Resume all
               </button>
-            ) : (
-              paused > 0 && (
-                <button type="button" className="btn btn--ghost" onClick={queue.resumeAll}>
-                  Resume all
-                </button>
-              )
-            ))}
+            )
+          )}
           {finished > 0 && (
             <button type="button" className="btn btn--ghost" onClick={queue.clearFinished}>
               Clear finished
@@ -313,19 +312,22 @@ const mb = (bytes: number) => formatSize(bytes / 1_000_000);
 function statusText(job: Job): string {
   switch (job.status) {
     case "downloading": {
+      // An export from a link fetches its video first; it isn't a download, so it doesn't say so.
+      const verb = job.prefetch || job.record ? "Downloading" : "Getting the video";
       if (job.downloadedBytes !== undefined) {
         const of = job.totalBytes ? ` of ${mb(job.totalBytes)}` : "";
         const speed = job.speedBps ? ` · ${mb(job.speedBps)}/s` : "";
-        return `Downloading · ${mb(job.downloadedBytes)}${of}${speed}`;
+        return `${verb} · ${mb(job.downloadedBytes)}${of}${speed}`;
       }
-      if (job.spec) return "Downloading…";
+      if (job.spec) return `${verb}…`;
       if (job.record) return "Recording live";
-      return `Downloading · ${formatSize((job.sizeMb * (job.progress ?? 0)) / 100)} of ${formatSize(job.sizeMb)}`;
+      return `${verb} · ${formatSize((job.sizeMb * (job.progress ?? 0)) / 100)} of ${formatSize(job.sizeMb)}`;
     }
     case "encoding":
       return job.phase === "processing" ? "Finishing with FFmpeg" : job.phase === "cutting" ? "Cutting with FFmpeg" : "Encoding with FFmpeg";
     case "paused":
-      return "Paused";
+      // An export can't go on from the middle of a cut or an encode.
+      return !job.prefetch && (job.spec || job.render) ? "Paused · starts again when resumed" : "Paused";
     default:
       return "Waiting";
   }

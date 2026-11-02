@@ -4,10 +4,8 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
-use tauri_plugin_shell::{
-    process::{Command, Output},
-    ShellExt,
-};
+use std::process::Output;
+use tauri_plugin_shell::{process::Command, ShellExt};
 
 pub const YT_DLP: &str = "yt-dlp";
 pub const FFMPEG: &str = "ffmpeg";
@@ -62,12 +60,73 @@ pub fn command(app: &AppHandle, name: &str) -> Result<Command, String> {
 
 /// Runs an engine to completion and collects its output.
 pub async fn run_to_end(app: &AppHandle, name: &str, args: &[&str]) -> Result<Output, String> {
-    command(app, name)?
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| format!("Could not start {name}: {e}"))
+    let mut command: std::process::Command = command(app, name)?.args(args).into();
+    command.stdin(std::process::Stdio::null());
+    let child = command.spawn().map_err(|e| format!("Could not start {name}: {e}"))?;
+    let tied = tie(child.id());
+    let output = tauri::async_runtime::spawn_blocking(move || {
+        let output = child.wait_with_output();
+        drop(tied);
+        output
+    });
+    output.await.map_err(|e| e.to_string())?.map_err(|e| format!("Could not start {name}: {e}"))
 }
+
+/// Keeps a started engine, and whatever it starts (yt-dlp runs FFmpeg), from outliving Craftora:
+/// Windows ends them when this is dropped or when Craftora closes, even by a crash. Without it
+/// they kept downloading and encoding in the background after the window was closed.
+#[cfg(windows)]
+pub(crate) struct Tied(windows_sys::Win32::Foundation::HANDLE);
+
+// SAFETY: a job object handle can be used and closed from any thread.
+#[cfg(windows)]
+unsafe impl Send for Tied {}
+
+#[cfg(windows)]
+impl Drop for Tied {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            // SAFETY: the handle is ours and closed once.
+            unsafe { windows_sys::Win32::Foundation::CloseHandle(self.0) };
+        }
+    }
+}
+
+/// Puts the process `pid` in a job of its own that ends everything in it when the job is closed.
+/// One job each: a single shared one could fail when Craftora itself runs inside a job (MSIX).
+#[cfg(windows)]
+pub(crate) fn tie(pid: u32) -> Tied {
+    use windows_sys::Win32::{
+        Foundation::CloseHandle,
+        System::{
+            JobObjects::{
+                AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
+                JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            },
+            Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE},
+        },
+    };
+    // SAFETY: plain Win32 calls on handles created here; `info` outlives the call that reads it.
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job.is_null() {
+            return Tied(job);
+        }
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let size = std::mem::size_of_val(&info) as u32;
+        SetInformationJobObject(job, JobObjectExtendedLimitInformation, (&raw const info).cast(), size);
+        let process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
+        if !process.is_null() {
+            AssignProcessToJobObject(job, process);
+            CloseHandle(process);
+        }
+        Tied(job)
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn tie(_pid: u32) {}
 
 /// The last `ERROR:` line yt-dlp printed, without the prefix, as a user-facing message.
 pub fn last_error(stderr: &str) -> Option<String> {
@@ -118,4 +177,17 @@ pub async fn engine_status(app: AppHandle) -> EngineStatus {
         });
 
     EngineStatus { yt_dlp, ffmpeg }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    #[test]
+    fn dropping_the_tie_ends_the_process() {
+        let mut child = std::process::Command::new("ping").args(["-n", "30", "127.0.0.1"]).stdout(std::process::Stdio::null()).spawn().unwrap();
+        let tied = super::tie(child.id());
+        assert!(child.try_wait().unwrap().is_none());
+        drop(tied);
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        assert!(child.try_wait().unwrap().is_some(), "still running after its job was closed");
+    }
 }
