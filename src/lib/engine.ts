@@ -164,8 +164,10 @@ export async function fetchMedia(url: string, height?: number): Promise<MediaSou
         ? `${HLS_RELAY}?u=${encodeURIComponent(source.previewUrl)}`
         : source.previewUrl;
     const previewAudioUrl = await cached(source.previewAudioUrl);
+    // Through the cache too (sites that want their page), but not in `ids`: it isn't filled ahead like the preview.
+    const hoverUrl = source.hoverUrl ? convertFileSrc(await invoke<string>("cache_media", { url: source.hoverUrl }), "cmedia") : undefined;
     // The site's picture is kept (keptThumbnail) by the editor after the video shows up: not waited for here.
-    return { ...source, thumbnail: source.thumbnail || undefined, previewUrl, previewAudioUrl, previewCacheIds: ids };
+    return { ...source, thumbnail: source.thumbnail || undefined, previewUrl, previewAudioUrl, hoverUrl, previewCacheIds: ids };
   } catch (err) {
     throw new Error(message(err));
   }

@@ -171,7 +171,7 @@ export function Sidebar({
                     src={item.source.thumbnail || (item.source.image ? item.source.previewUrl : undefined)}
                     icon={item.source.image ? "image" : item.hasVideo ? "film" : "music"}
                     // Streams (HLS) need hls.js, and live ones keep growing: those don't play here.
-                    play={item.hasVideo && !item.source.image && !item.source.previewHls && !item.source.live && item.source.previewUrl ? () => Promise.resolve(item.source.previewUrl) : undefined}
+                    play={item.hasVideo && !item.source.image && !item.source.previewHls && !item.source.live && item.source.previewUrl ? () => Promise.resolve(item.source.hoverUrl || item.source.previewUrl) : undefined}
                   />
                   <span className="side__file-text">
                     <span className="truncate">{item.name}</span>

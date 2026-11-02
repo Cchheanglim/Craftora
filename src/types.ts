@@ -48,6 +48,8 @@ export interface MediaSource {
   peaksRate?: number;
   /** Links: a light stream of the sound to draw the wave from (`linkPeaks`). */
   peaksUrl?: string;
+  /** Links: a lighter video (up to 480p) the list picture plays while hovered, through the cache. */
+  hoverUrl?: string;
   /** Chapters from yt-dlp (e.g. YouTube chapters), in media seconds. */
   chapters?: { title: string; start: number; end: number }[];
   /** Links: the captions that come with the video, read with `loadCaptions`. */

@@ -136,6 +136,10 @@ pub struct MediaSource {
     /// Links: a light stream of the sound to draw the wave from (`link_peaks`); empty when none.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub(crate) peaks_url: String,
+    /// Links: a lighter video file (up to `HOVER_HEIGHT`) the list picture plays while hovered; the
+    /// preview's own can be 4K, far more than a thumbnail needs. Empty when there is none.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub(crate) hover_url: String,
     /// Links: the captions that come with the video (`load_captions` reads them).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) captions: Option<crate::captions::Track>,
@@ -235,6 +239,9 @@ fn audio_streams(formats: &[Format], duration: f64) -> Vec<Stream> {
     }
     streams
 }
+
+/// The height of the video a link's list picture plays while hovered (`MediaSource.hover_url`).
+const HOVER_HEIGHT: u32 = 480;
 
 /// Direct files the preview player can open, best first: the highest up to `max_height` (picked
 /// in the preview; None: the best there is, 4K included), VP9 before H.264 at the same height
@@ -472,6 +479,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
             thumbnail: info.thumbnail.unwrap_or_default(),
             chapters: Vec::new(),
             peaks_url: String::new(),
+            hover_url: String::new(),
             captions: None,
             streams: vec![Stream { id: "live".into(), kind: "video", label: "Live".into(), detail: "Recording".into(), size_mb: 0.0 }],
             live: true,
@@ -555,6 +563,9 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
     let (preview_url, preview_audio_url) = (with_page(preview_url), with_page(preview_audio_url));
     // Not behind a bot check: only the page window gets through there.
     let peaks_url = if bot_checked { String::new() } else { with_page(wave_source(&info.formats, duration)) };
+    // shortcut: not checked with `first_served` (that would slow every fetch); a refused file just doesn't play on hover.
+    let hover = if length_known { preview_choices(&info.formats, Some(HOVER_HEIGHT)).first().and_then(|f| f.url.clone()) } else { None };
+    let hover_url = with_page(hover.unwrap_or_default());
     let captions = crate::captions::pick(&info.subtitles, &info.automatic_captions, info.language.as_deref());
     Ok(MediaSource {
         url,
@@ -583,6 +594,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
             })
             .collect(),
         peaks_url,
+        hover_url,
         captions,
         streams,
         live: false,
