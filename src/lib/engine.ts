@@ -5,7 +5,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { Caption, JobSpec, MediaSource, RenderSpec } from "../types";
 import { captureThumbnail } from "./thumbnail";
@@ -171,6 +171,14 @@ export async function fetchMedia(url: string, height?: number): Promise<MediaSou
   } catch (err) {
     throw new Error(message(err));
   }
+}
+
+/** Asks where to save, then writes captions (timeline seconds) as an .srt file; false when the dialog was closed. */
+export async function saveSrt(lines: Caption[], name: string): Promise<boolean> {
+  const path = await save({ title: "Save captions", defaultPath: `${name}.srt`, filters: [{ name: "Captions", extensions: ["srt"] }] });
+  if (!path) return false;
+  await invoke("save_srt", { path, lines });
+  return true;
 }
 
 /** Fills a link's preview cache from start to end in the background ("Download first"). */

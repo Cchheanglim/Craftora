@@ -8,8 +8,11 @@
     "opener:default",
     "opener:allow-reveal-item-in-dir",
     "dialog:allow-open",
+    "dialog:allow-save",
     "core:window:allow-set-fullscreen",
     "core:window:allow-destroy",
+    "core:window:allow-set-progress-bar",
+    "notification:allow-notify",
     "clipboard-manager:allow-read-text"
   ]
 }

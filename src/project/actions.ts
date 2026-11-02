@@ -28,7 +28,7 @@ import {
 } from "./model";
 
 export type ClipPatch = Partial<
-  Pick<Clip, "volume" | "mirror" | "reverse" | "size" | "fill" | "x" | "y" | "text" | "color" | "fadeIn" | "fadeOut" | "crop">
+  Pick<Clip, "volume" | "mirror" | "reverse" | "size" | "fill" | "x" | "y" | "text" | "color" | "font" | "edge" | "fadeIn" | "fadeOut" | "crop">
 >;
 
 export type EditAction =
@@ -321,7 +321,9 @@ export function applyEdit(p: Project, action: EditAction): Project {
               in: 0,
               out: round((to - from) / clip.speed),
               text: line.text,
-              color: "#ffffff",
+              color: layout.color ?? "#ffffff",
+              font: layout.font,
+              edge: layout.edge,
               size: layout.size,
               x: layout.x,
               y: layout.y,
@@ -545,6 +547,16 @@ export function applyEdit(p: Project, action: EditAction): Project {
     case "settle":
       return settle(p);
   }
+}
+
+/** Every caption as the export draws it, in timeline seconds and order: what an .srt file holds. */
+export function timelineCaptions(p: Project): { start: number; end: number; text: string }[] {
+  const shown = withShownCaptions(p);
+  const tracks = new Set(shown.tracks.filter((t) => t.name === "Captions").map((t) => t.id));
+  return shown.clips
+    .filter((c) => tracks.has(c.trackId) && c.text?.trim())
+    .map((c) => ({ start: c.start, end: clipEnd(c), text: c.text ?? "" }))
+    .sort((a, b) => a.start - b.start);
 }
 
 /** Track ids of captions that are shown but not on the timeline (see `withShownCaptions`). */

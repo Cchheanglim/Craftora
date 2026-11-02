@@ -92,6 +92,19 @@
 /* The selected picture or text: an outline with four square corner handles, kept inside
    the box so the frame's edge never clips them. Stacking stays as in the export. */
 .preview__picture.is-selected,
+/* Edges as the export draws them (project.rs): an outline about 5% of the letter height, or a box. */
+.preview__text.is-outline {
+  text-shadow: none;
+  -webkit-text-stroke: 0.1em #000;
+  paint-order: stroke fill;
+}
+
+.preview__text.is-box {
+  text-shadow: none;
+  background: rgb(0 0 0 / 0.6);
+  box-shadow: 0 0 0 0.2em rgb(0 0 0 / 0.6);
+}
+
 .preview__text.is-selected {
   outline: 1.5px solid var(--text);
   outline-offset: -1px;

@@ -4,15 +4,19 @@ import {
   NO_CROP,
   POSITIONS,
   SPEEDS,
+  TEXT_FONTS,
   TRANSITION_KINDS,
   clipEnd,
   clipLength,
   isCropped,
   presetAt,
+  type CaptionLayout,
   type Clip,
   type Crop,
   type MediaItem,
   type Position,
+  type TextEdge,
+  type TextFont,
   type Track,
   type Transition,
 } from "../project/model";
@@ -166,24 +170,14 @@ export function Inspector({
               onChange={(e) => onChange({ text: e.target.value }, true)}
             />
           </div>
-          <Slider id="insp-text-size" label="Size" min={0.02} max={0.3} step={0.005} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
-          <PositionSelect clip={clip} onChange={onChange} />
-          <fieldset className="insp__field">
-            <legend>Color</legend>
-            <div className="insp__swatches">
-              {TEXT_COLORS.map((c) => (
-                <button
-                  key={c.value}
-                  type="button"
-                  className="insp__swatch"
-                  style={{ background: c.value }}
-                  aria-label={c.label}
-                  aria-pressed={clip.color === c.value}
-                  onClick={() => onChange({ color: c.value })}
-                />
-              ))}
-            </div>
-          </fieldset>
+          {/* A caption's size, place and look are set for all captions at once (Captions, above). */}
+          {track.name !== "Captions" && (
+            <>
+              <Slider id="insp-text-size" label="Size" min={0.02} max={0.3} step={0.005} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
+              <PositionSelect clip={clip} onChange={onChange} />
+              <TextLook id="insp" look={clip} onChange={onChange} />
+            </>
+          )}
         </>
       )}
 
@@ -387,6 +381,86 @@ export function Inspector({
 }
 
 /** A labelled range with its value; one undo step per drag. */
+type Look = { color?: string; font?: TextFont; edge?: TextEdge };
+
+/** Font, colour and edge of text: a text clip's own, or every caption's. */
+function TextLook({ id, look, onChange }: { id: string; look: Look; onChange: (patch: Look) => void }) {
+  return (
+    <>
+      <div className="insp__field">
+        <label htmlFor={`${id}-font`}>Font</label>
+        <select id={`${id}-font`} className="field" value={look.font ?? ""} onChange={(e) => onChange({ font: (e.target.value || undefined) as TextFont | undefined })}>
+          <option value="">Segoe UI</option>
+          {TEXT_FONTS.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <fieldset className="insp__field">
+        <legend>Color</legend>
+        <div className="insp__swatches">
+          {TEXT_COLORS.map((c) => (
+            <button
+              key={c.value}
+              type="button"
+              className="insp__swatch"
+              style={{ background: c.value }}
+              aria-label={c.label}
+              aria-pressed={(look.color ?? "#ffffff") === c.value}
+              onClick={() => onChange({ color: c.value })}
+            />
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="insp__field">
+        <legend>Edge</legend>
+        <div className="segmented" role="group" aria-label="Edge">
+          {([[undefined, "Shadow"], ["outline", "Outline"], ["box", "Box"]] as const).map(([edge, label]) => (
+            <button key={label} type="button" aria-pressed={look.edge === edge} onClick={() => onChange({ edge })}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+    </>
+  );
+}
+
+/** How every caption looks (and where it's saved as .srt): shown when the captions are selected. */
+export function CaptionStyle({
+  layout,
+  onChange,
+  onCheckpoint,
+  onSaveSrt,
+}: {
+  layout: CaptionLayout;
+  /** `live` skips the undo step (use after `onCheckpoint`). */
+  onChange: (patch: Partial<CaptionLayout>, live?: boolean) => void;
+  onCheckpoint: () => void;
+  /** Absent in the browser preview. */
+  onSaveSrt?: () => void;
+}) {
+  return (
+    <section className="insp" aria-labelledby="captions-title">
+      <header className="insp__head">
+        <Icon name="captions" size={14} />
+        <h2 id="captions-title">Captions</h2>
+      </header>
+      <p className="insp__meta">Changes every caption. Drag them on the preview to move them.</p>
+      <Slider id="captions-size" label="Size" min={0.02} max={0.15} step={0.005} value={layout.size} format={(v) => `${Math.round(v * 100)}%`} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
+      <TextLook id="captions" look={layout} onChange={onChange} />
+      {onSaveSrt && (
+        <button type="button" className="btn btn--secondary" onClick={onSaveSrt} title="For YouTube and video players: the captions as a file next to the video">
+          <Icon name="download" size={14} />
+          Save as .srt
+        </button>
+      )}
+    </section>
+  );
+}
+
 function Slider({
   id,
   label,

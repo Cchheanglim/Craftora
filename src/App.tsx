@@ -31,6 +31,7 @@ import {
   allowLocal,
   pickFolder,
   saveSnapshot,
+  saveSrt,
   pickMediaFiles,
   pickMediaFile,
   openSignIn,
@@ -69,10 +70,11 @@ import { formatClock } from "./lib/timecode";
 import { applyTheme, saveTheme, savedTheme, type Theme } from "./lib/theme";
 import { useGlideScroll } from "./lib/glide";
 import { useProject } from "./project/useProject";
-import { applyEdit, withShownCaptions } from "./project/actions";
+import { applyEdit, SHOWN_CAPTIONS, timelineCaptions, withShownCaptions } from "./project/actions";
 import { usePlayback } from "./project/usePlayback";
 import { cutModeApplies, frameOf, planExport } from "./project/exportPlan";
 import {
+  CAPTIONS,
   NO_CROP,
   baseVideoTrack,
   clipEnd,
@@ -93,7 +95,7 @@ import { Sidebar, type View } from "./components/Sidebar";
 import { Home, type LinkSettings } from "./components/Home";
 import { Preview } from "./components/Preview";
 import { TimelineEditor } from "./components/TimelineEditor";
-import { Inspector } from "./components/Inspector";
+import { CaptionStyle, Inspector } from "./components/Inspector";
 import { ExportPanel } from "./components/ExportPanel";
 import { QueueDock } from "./components/QueueDock";
 import { Library } from "./components/Library";
@@ -107,7 +109,8 @@ import { AssistantPanel } from "./components/AssistantPanel";
 import { TextMenu } from "./components/TextMenu";
 import { WelcomeDialog, welcomeHidden } from "./components/WelcomeDialog";
 import { useConfirm } from "./components/ConfirmDialog";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, ProgressBarStatus } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { Ambient } from "./components/Ambient";
 import "./App.css";
 
@@ -593,6 +596,31 @@ export default function App() {
     });
     return () => void stop.then((unlisten) => unlisten());
   }, [askClose]);
+
+  // The taskbar button fills with what's running (recordings have no end, so they don't count).
+  const filling = queue.jobs.filter((j) => (j.status === "downloading" || j.status === "encoding") && !j.record);
+  const taskbar = filling.length ? Math.round(filling.reduce((sum, j) => sum + (j.progress ?? 0), 0) / filling.length) : null;
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const bar = taskbar === null ? { status: ProgressBarStatus.None } : { status: ProgressBarStatus.Normal, progress: taskbar };
+    void getCurrentWindow().setProgressBar(bar).catch(() => {});
+  }, [taskbar]);
+
+  // While Craftora is in the background, Windows says when a download, export or recording ends.
+  const lastStatus = useRef(new Map<string, Job["status"]>());
+  useEffect(() => {
+    const before = lastStatus.current;
+    lastStatus.current = new Map(queue.jobs.map((j) => [j.id, j.status]));
+    if (!inDesktopApp || document.hasFocus()) return;
+    for (const j of queue.jobs) {
+      const was = before.get(j.id);
+      if ((was !== "downloading" && was !== "encoding") || (j.status !== "finished" && j.status !== "failed")) continue;
+      const what = j.record ? "Recording" : j.prefetch ? "Download" : "Export";
+      const name = j.rename ?? j.title;
+      const options = j.status === "finished" ? { title: `${what} finished`, body: name } : { title: `${what} failed`, body: `${name}: ${j.error ?? "it stopped"}` };
+      void invoke("plugin:notification|notify", { options }).catch(() => {});
+    }
+  }, [queue.jobs]);
   const speechTurn = useRef<Promise<unknown>>(Promise.resolve());
   // Captions wait their turn: on a slow connection, getting the model or a link's sound would slow
   // the fetch, preview, downloads and exports going on (and whisper would slow exports).
@@ -1030,6 +1058,19 @@ export default function App() {
       setCuttingSilences(false);
     }
   };
+  /** Every caption as exported, as an .srt file the user saves (for YouTube and video players). */
+  const saveCaptionsFile = async () => {
+    const lines = timelineCaptions(project);
+    if (lines.length === 0) {
+      setError("There are no captions on the timeline to save.");
+      return;
+    }
+    try {
+      await saveSrt(lines, projectName(project));
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
   const takeSnapshot = async (bytes: Uint8Array) => {
     setError(null);
     try {
@@ -1400,6 +1441,7 @@ export default function App() {
               seek={playback.seek}
               captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
               onMakeCaptions={uncaptioned.length ? makeSpokenCaptions : undefined}
+              onSaveSrt={inDesktopApp ? () => void saveCaptionsFile() : undefined}
             />
           ) : rightTab === "assistant" ? (
             <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} />
@@ -1424,6 +1466,14 @@ export default function App() {
               onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
               fastEncoder={fastEncoder}
             >
+              {(selectedId === SHOWN_CAPTIONS || selectedTrack?.name === "Captions") && (
+                <CaptionStyle
+                  layout={project.captionLayout ?? CAPTIONS}
+                  onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "layoutCaptions", patch })}
+                  onCheckpoint={api.checkpoint}
+                  onSaveSrt={inDesktopApp ? () => void saveCaptionsFile() : undefined}
+                />
+              )}
               {selected && selectedTrack && (
                 <Inspector
                   key={selected.id}

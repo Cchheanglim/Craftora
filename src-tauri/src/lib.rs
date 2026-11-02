@@ -41,6 +41,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(jobs::Jobs::default())
         .manage(local::OpenedFiles::default())
         .manage(media_cache::MediaCache::default())
@@ -141,6 +142,7 @@ pub fn run() {
             privacy::check_address,
             jobs::rename_download,
             captions::load_captions,
+            captions::save_srt,
             speech::make_captions,
             store::save_snapshot,
             virustotal::site_check_available,

@@ -135,6 +135,12 @@ struct ClipSpec {
     text: String,
     #[serde(default)]
     color: String,
+    /// Text font (model.ts `TEXT_FONTS`); Segoe UI when empty.
+    #[serde(default)]
+    font: String,
+    /// "outline", "box", or a soft shadow when empty.
+    #[serde(default)]
+    edge: String,
 }
 
 /// A fade over the clip's own time: `fade_in` from `start` for `length`, or out.
@@ -445,9 +451,15 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                     std::fs::write(work.join(&file), clip.text.as_bytes()).map_err(|e| format!("Couldn't prepare text: {e}"))?;
                     let size = ((h as f64) * clip.size).round().max(8.0) as u32;
                     let color = clip.color.trim_start_matches('#');
-                    let font = font_path(&clip.text);
+                    let font = font_path(&clip.text, &clip.font);
+                    // As the preview draws them (Preview.css): an outline about 5% of the letter height, or a box.
+                    let edge = match clip.edge.as_str() {
+                        "outline" => format!("borderw={}:bordercolor=black", (f64::from(size) * 0.05).round().max(1.0)),
+                        "box" => format!("box=1:boxcolor=black@0.6:boxborderw={}", (f64::from(size) * 0.2).round()),
+                        _ => "shadowcolor=black@0.6:shadowx=2:shadowy=2".into(),
+                    };
                     graph.push(format!(
-                        "[{picture}]drawtext=fontfile='{font}':textfile='{file}':expansion=none:text_align=C:fontsize={size}:fontcolor=0x{color}:shadowcolor=black@0.6:shadowx=2:shadowy=2:x='(w-text_w)*{x}':y='(h-text_h)*{y}'{alpha}:enable='between(t,{start},{end})'[p{i}]",
+                        "[{picture}]drawtext=fontfile='{font}':textfile='{file}':expansion=none:text_align=C:fontsize={size}:fontcolor=0x{color}:{edge}:x='(w-text_w)*{x}':y='(h-text_h)*{y}'{alpha}:enable='between(t,{start},{end})'[p{i}]",
                         x = clip.x,
                         y = clip.y,
                         alpha = clip.text_alpha()
@@ -528,9 +540,10 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
     }
 }
 
-/// A bold Windows font that has the text's letters, escaped for FFmpeg's filter syntax. drawtext
-/// shows a missing letter as an empty box and, unlike the preview, never tries another font.
-fn font_path(text: &str) -> String {
+/// The chosen font (`font`, model.ts `TEXT_FONTS`), or a bold Windows font, that has the text's
+/// letters, escaped for FFmpeg's filter syntax. drawtext shows a missing letter as an empty box
+/// and, unlike the preview, never tries another font.
+fn font_path(text: &str, font: &str) -> String {
     let fonts = std::env::var("WINDIR").map(|w| PathBuf::from(w).join("Fonts")).unwrap_or_else(|_| PathBuf::from(r"C:\Windows\Fonts"));
     let has = |from: char, to: char| text.chars().any(|c| (from..=to).contains(&c));
     // Segoe UI has neither Khmer nor music notes and other symbols (♪ ♫ →…).
@@ -541,8 +554,19 @@ fn font_path(text: &str) -> String {
     } else {
         &["segoeuib.ttf", "segoeui.ttf", "arialbd.ttf", "arial.ttf"]
     };
-    let path = names
+    // The chosen fonts have Latin letters only: Khmer and symbols keep the fonts above.
+    let chosen: &[&str] = match font {
+        "arial" => &["arialbd.ttf"],
+        "impact" => &["impact.ttf"],
+        "georgia" => &["georgiab.ttf"],
+        "comic" => &["comicbd.ttf"],
+        _ => &[],
+    };
+    let latin = !has('\u{1780}', '\u{17FF}') && !has('\u{2190}', '\u{2BFF}');
+    let path = chosen
         .iter()
+        .filter(|_| latin)
+        .chain(names)
         .map(|name| fonts.join(name))
         .find(|p| p.exists())
         .unwrap_or_else(|| fonts.join("arial.ttf"));
