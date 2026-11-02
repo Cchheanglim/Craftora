@@ -152,10 +152,11 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, mo
     let threads = std::thread::available_parallelism().map_or(2, |n| (n.get() / 2).clamp(1, 8)).to_string();
     let (model, out) = (model.to_string_lossy().into_owned(), work.join("captions").to_string_lossy().into_owned());
     let args = ["-m", &model, "-f", &wav_text, "-l", "auto", "-t", &threads, "-ovtt", "-of", &out, "-pp"];
-    let (mut rx, _child) = crate::engine::command(app, WHISPER)?
+    let (mut rx, child) = crate::engine::command(app, WHISPER)?
         .args(args)
         .spawn()
         .map_err(|e| format!("Couldn't start whisper: {e}"))?;
+    let _tied = crate::engine::tie(child.pid());
     let (mut last_line, mut code) = (String::new(), None);
     while let Some(event) = rx.recv().await {
         match event {

@@ -747,6 +747,7 @@ pub(crate) async fn run_streaming(
         command = command.current_dir(dir);
     }
     let (mut rx, child) = command.spawn().map_err(|e| format!("Couldn't start {program}: {e}"))?;
+    let _tied = crate::engine::tie(child.pid());
     if let Some(child) = jobs.attach(id, child) {
         let _ = child.kill();
         return Err("Cancelled".into());
