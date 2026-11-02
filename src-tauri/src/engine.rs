@@ -178,3 +178,16 @@ pub async fn engine_status(app: AppHandle) -> EngineStatus {
 
     EngineStatus { yt_dlp, ffmpeg }
 }
+
+#[cfg(all(test, windows))]
+mod tests {
+    #[test]
+    fn dropping_the_tie_ends_the_process() {
+        let mut child = std::process::Command::new("ping").args(["-n", "30", "127.0.0.1"]).stdout(std::process::Stdio::null()).spawn().unwrap();
+        let tied = super::tie(child.id());
+        assert!(child.try_wait().unwrap().is_none());
+        drop(tied);
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        assert!(child.try_wait().unwrap().is_some(), "still running after its job was closed");
+    }
+}
