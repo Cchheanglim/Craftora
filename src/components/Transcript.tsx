@@ -15,6 +15,8 @@ interface TranscriptProps {
   captionStatus?: string;
   /** Makes captions from the sound for the media that has none; absent when there's nothing to do. */
   onMakeCaptions?: () => void;
+  /** Saves the captions as an .srt file; absent in the browser preview. */
+  onSaveSrt?: () => void;
 }
 
 /** Captions are made only when asked: whisper keeps the processor busy for minutes. */
@@ -34,7 +36,7 @@ const keyOf = (line: number, word: number) => `${line}:${word}`;
  * What's said on the timeline, to edit by text: click a sentence or word to jump there, select words
  * and press Delete (or the button) to cut them out of the video.
  */
-export function Transcript({ project, api, time, seek, captionStatus, onMakeCaptions }: TranscriptProps) {
+export function Transcript({ project, api, time, seek, captionStatus, onMakeCaptions, onSaveSrt }: TranscriptProps) {
   const lines = useMemo(() => transcript(project), [project]);
   const words = useMemo(() => lines.map(wordsOf), [lines]);
   const [query, setQuery] = useState("");
@@ -183,6 +185,12 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
           </form>
         )}
         {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
+        {onSaveSrt && (
+          <button type="button" className="btn btn--secondary" onClick={onSaveSrt} title="For YouTube and video players: the captions as a file next to the video">
+            <Icon name="download" size={14} />
+            Save as .srt
+          </button>
+        )}
       </div>
 
       <ol ref={listRef} className="transcript__lines" tabIndex={0} aria-label="What's said" onKeyDown={onKeyDown} onMouseUp={() => void pickSelection()}>

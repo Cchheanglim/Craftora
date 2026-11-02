@@ -23,8 +23,8 @@ pub struct Track {
     pub(crate) label: String,
 }
 
-/// A line of captions, in media seconds.
-#[derive(Serialize, Clone, Debug, PartialEq)]
+/// A line of captions, in media seconds (timeline seconds when saved as .srt).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Caption {
     pub start: f64,
     pub end: f64,
@@ -136,9 +136,43 @@ pub(crate) fn parse_vtt(text: &str) -> Vec<Caption> {
     out
 }
 
+/// Saves captions as an .srt file, which YouTube and video players read next to the video.
+#[tauri::command]
+pub fn save_srt(path: String, lines: Vec<Caption>) -> Result<(), String> {
+    if !path.to_ascii_lowercase().ends_with(".srt") {
+        return Err("Captions are saved as .srt files.".into());
+    }
+    std::fs::write(&path, srt(&lines)).map_err(|e| format!("Couldn't save the captions: {e}"))
+}
+
+/// SubRip text: numbered blocks of "start --> end" and the words, a blank line between them.
+fn srt(lines: &[Caption]) -> String {
+    let time = |s: f64| {
+        let ms = (s.max(0.0) * 1000.0).round() as u64;
+        format!("{:02}:{:02}:{:02},{:03}", ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000)
+    };
+    let mut out = String::new();
+    // A blank line would end the block early, so the words keep only their non-empty lines.
+    let texts = lines.iter().map(|l| (l, l.text.lines().map(str::trim).filter(|t| !t.is_empty()).collect::<Vec<_>>().join("\r\n")));
+    for (n, (line, text)) in texts.filter(|(_, t)| !t.is_empty()).enumerate() {
+        out.push_str(&format!("{}\r\n{} --> {}\r\n{text}\r\n\r\n", n + 1, time(line.start), time(line.end)));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn writes_srt() {
+        let lines = [
+            Caption { start: 1.0, end: 3.25, text: "Hello\n\nthere".into() },
+            Caption { start: 2.0, end: 2.5, text: "  ".into() },
+            Caption { start: 3725.5, end: 3727.0, text: "Bye".into() },
+        ];
+        assert_eq!(srt(&lines), "1\r\n00:00:01,000 --> 00:00:03,250\r\nHello\r\nthere\r\n\r\n2\r\n01:02:05,500 --> 01:02:07,000\r\nBye\r\n\r\n");
+    }
 
     #[test]
     fn reads_plain_captions() {

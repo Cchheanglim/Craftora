@@ -142,6 +142,7 @@ pub fn run() {
             privacy::check_address,
             jobs::rename_download,
             captions::load_captions,
+            captions::save_srt,
             speech::make_captions,
             store::save_snapshot,
             virustotal::site_check_available,

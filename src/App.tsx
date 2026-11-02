@@ -31,6 +31,7 @@ import {
   allowLocal,
   pickFolder,
   saveSnapshot,
+  saveSrt,
   pickMediaFiles,
   pickMediaFile,
   openSignIn,
@@ -69,10 +70,11 @@ import { formatClock } from "./lib/timecode";
 import { applyTheme, saveTheme, savedTheme, type Theme } from "./lib/theme";
 import { useGlideScroll } from "./lib/glide";
 import { useProject } from "./project/useProject";
-import { applyEdit, withShownCaptions } from "./project/actions";
+import { applyEdit, SHOWN_CAPTIONS, timelineCaptions, withShownCaptions } from "./project/actions";
 import { usePlayback } from "./project/usePlayback";
 import { cutModeApplies, frameOf, planExport } from "./project/exportPlan";
 import {
+  CAPTIONS,
   NO_CROP,
   baseVideoTrack,
   clipEnd,
@@ -93,7 +95,7 @@ import { Sidebar, type View } from "./components/Sidebar";
 import { Home, type LinkSettings } from "./components/Home";
 import { Preview } from "./components/Preview";
 import { TimelineEditor } from "./components/TimelineEditor";
-import { Inspector } from "./components/Inspector";
+import { CaptionStyle, Inspector } from "./components/Inspector";
 import { ExportPanel } from "./components/ExportPanel";
 import { QueueDock } from "./components/QueueDock";
 import { Library } from "./components/Library";
@@ -1056,6 +1058,19 @@ export default function App() {
       setCuttingSilences(false);
     }
   };
+  /** Every caption as exported, as an .srt file the user saves (for YouTube and video players). */
+  const saveCaptionsFile = async () => {
+    const lines = timelineCaptions(project);
+    if (lines.length === 0) {
+      setError("There are no captions on the timeline to save.");
+      return;
+    }
+    try {
+      await saveSrt(lines, projectName(project));
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
   const takeSnapshot = async (bytes: Uint8Array) => {
     setError(null);
     try {
@@ -1426,6 +1441,7 @@ export default function App() {
               seek={playback.seek}
               captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
               onMakeCaptions={uncaptioned.length ? makeSpokenCaptions : undefined}
+              onSaveSrt={inDesktopApp ? () => void saveCaptionsFile() : undefined}
             />
           ) : rightTab === "assistant" ? (
             <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} />
@@ -1450,6 +1466,14 @@ export default function App() {
               onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
               fastEncoder={fastEncoder}
             >
+              {(selectedId === SHOWN_CAPTIONS || selectedTrack?.name === "Captions") && (
+                <CaptionStyle
+                  layout={project.captionLayout ?? CAPTIONS}
+                  onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "layoutCaptions", patch })}
+                  onCheckpoint={api.checkpoint}
+                  onSaveSrt={inDesktopApp ? () => void saveCaptionsFile() : undefined}
+                />
+              )}
               {selected && selectedTrack && (
                 <Inspector
                   key={selected.id}
