@@ -118,7 +118,6 @@ pub fn run() {
             local::audio_peaks,
             local::link_peaks,
             local::detect_silences,
-            local::detect_rallies,
             jobs::start_job,
             project::start_render,
             jobs::cancel_job,
