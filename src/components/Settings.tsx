@@ -21,6 +21,9 @@ interface SettingsProps {
   outputDir: string;
   /** Picks the save folder; absent in the browser preview. */
   onChooseOutputDir?: () => void;
+  downloadsDir: string;
+  /** Picks the downloads folder; absent in the browser preview. */
+  onChooseDownloadsDir?: () => void;
   /** What a new project exports as. */
   defaultOutput: OutputKind;
   onDefaultOutput: (output: OutputKind) => void;
@@ -32,7 +35,7 @@ interface SettingsProps {
   updates: Updates;
 }
 
-export function Settings({ theme, onTheme, outputDir, onChooseOutputDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, updates }: SettingsProps) {
+export function Settings({ theme, onTheme, outputDir, onChooseOutputDir, downloadsDir, onChooseDownloadsDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, updates }: SettingsProps) {
   return (
     <section className="library" aria-labelledby="settings-title">
       <header className="library__head">
@@ -69,7 +72,13 @@ export function Settings({ theme, onTheme, outputDir, onChooseOutputDir, default
         </div>
         <div className="library__save">
           <span>Downloads go to</span>
-          <span className="mono truncate">{outputDir}\Downloads</span>
+          <span className="mono truncate">{downloadsDir}</span>
+          {onChooseDownloadsDir && (
+            <button type="button" className="btn btn--secondary" onClick={onChooseDownloadsDir}>
+              <Icon name="folder" size={14} />
+              Change
+            </button>
+          )}
         </div>
       </div>
 

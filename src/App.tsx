@@ -44,6 +44,7 @@ import {
 import {
   DEFAULT_OUTPUT_DIR,
   deleteProject,
+  getDownloadsDir,
   getOutputDir,
   listProjects,
   loadFetchHistory,
@@ -52,6 +53,7 @@ import {
   saveFetchHistory,
   saveHistory,
   saveProject,
+  setDownloadsDir,
   setOutputDir,
   type FetchEntry,
   type ProjectEntry,
@@ -282,6 +284,7 @@ export default function App() {
     saveFetchHistory(next);
   };
   const [outputDir, setOutputDirState] = useState(DEFAULT_OUTPUT_DIR);
+  const [downloadsDir, setDownloadsDirState] = useState(`${DEFAULT_OUTPUT_DIR}\\Downloads`);
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const [cuttingSilences, setCuttingSilences] = useState(false);
@@ -339,6 +342,7 @@ export default function App() {
     void listProjects().then(setProjects).catch(() => setProjects([]));
     void loadHistory().then(setHistory);
     void getOutputDir().then(setOutputDirState).catch(() => {});
+    void getDownloadsDir().then(setDownloadsDirState).catch(() => {});
   }, []);
 
   // Save the project a moment after each change. Empty projects aren't worth keeping.
@@ -929,6 +933,18 @@ export default function App() {
     if (!picked) return;
     try {
       setOutputDirState(await setOutputDir(picked));
+      // Downloads sit inside the export folder unless they have their own.
+      setDownloadsDirState(await getDownloadsDir());
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+
+  const chooseDownloadsDir = async () => {
+    const picked = await pickFolder("Choose where downloads are saved");
+    if (!picked) return;
+    try {
+      setDownloadsDirState(await setDownloadsDir(picked));
     } catch (err) {
       setError(errorText(err));
     }
@@ -1257,7 +1273,7 @@ export default function App() {
             onForget={(path) => changeLibrary((entries) => entries.filter((e) => e.path !== path))}
           />
         )}
-        {view === "downloads" && <Downloads queue={queue} onAdd={(path) => void importFiles([path])} />}
+        {view === "downloads" && <Downloads queue={queue} folderPath={downloadsDir} onChooseFolder={inDesktopApp ? () => void chooseDownloadsDir() : undefined} onAdd={(path) => void importFiles([path])} />}
         {view === "history" && (
           <History
             history={fetchHistory}
@@ -1272,6 +1288,8 @@ export default function App() {
           <Settings
             outputDir={outputDir}
             onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
+            downloadsDir={downloadsDir}
+            onChooseDownloadsDir={inDesktopApp ? () => void chooseDownloadsDir() : undefined}
             defaultOutput={defaultOutput}
             onDefaultOutput={chooseDefaultOutput}
             theme={theme}

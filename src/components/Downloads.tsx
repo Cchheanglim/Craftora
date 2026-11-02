@@ -12,6 +12,10 @@ import "./Library.css";
 
 interface DownloadsProps {
   queue: Queue;
+  /** Where downloads are saved now: the list is read again when it changes. */
+  folderPath: string;
+  /** Picks the downloads folder; absent in the browser preview. */
+  onChooseFolder?: () => void;
   /** Adds a downloaded file to the project open in the editor. */
   onAdd: (path: string) => void;
 }
@@ -21,7 +25,7 @@ const isDownload = (j: Job) => Boolean(j.prefetch || j.record);
 const SOUND = /\.(mp3|m4a|wav|flac|opus|aac|ogg)$/i;
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function Downloads({ queue, onAdd }: DownloadsProps) {
+export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: DownloadsProps) {
   const active = queue.jobs.filter((j) => isDownload(j) && j.status !== "finished");
   const finished = queue.jobs.filter((j) => isDownload(j) && j.status === "finished").length;
   const [folder, setFolder] = useState<{ folder: string; files: DownloadedFile[] } | null>(null);
@@ -32,7 +36,7 @@ export function Downloads({ queue, onAdd }: DownloadsProps) {
   // The folder is the record of finished downloads (it outlives the queue): read it again whenever one finishes.
   useEffect(() => {
     listDownloads().then(setFolder, (err) => setProblem(errorText(err)));
-  }, [finished]);
+  }, [finished, folderPath]);
 
   const table = (list: DownloadedFile[]) => (
     <div className="library__table-wrap">
@@ -92,6 +96,12 @@ export function Downloads({ queue, onAdd }: DownloadsProps) {
           <div className="library__save">
             <span>Saved in</span>
             <span className="mono truncate">{folder.folder}</span>
+            {onChooseFolder && (
+              <button type="button" className="btn btn--secondary" onClick={onChooseFolder}>
+                <Icon name="folder" size={14} />
+                Change
+              </button>
+            )}
           </div>
         )}
       </header>
