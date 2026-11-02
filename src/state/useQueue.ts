@@ -46,7 +46,8 @@ function reducer(jobs: Job[], action: Action): Job[] {
     case "resume":
       return jobs.map((j) => (j.id === action.id && j.status === "paused" ? { ...j, status: "waiting" } : j));
     case "pauseAll":
-      return jobs.map((j) => (isRunning(j) || j.status === "waiting" ? { ...j, status: "paused" } : j));
+      // A live recording isn't paused: it has Stop instead.
+      return jobs.map((j) => ((isRunning(j) && !j.record) || j.status === "waiting" ? { ...j, status: "paused" } : j));
     case "resumeAll":
       return jobs.map((j) => (j.status === "paused" ? { ...j, status: "waiting" } : j));
     case "clearFinished":
@@ -178,12 +179,15 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
     },
     [real],
   );
+  const pauseAll = useCallback(() => {
+    if (real) for (const j of jobsRef.current) if (isRunning(j) && !j.record) void pauseJob(j.id);
+    dispatch({ type: "pauseAll" });
+  }, [real]);
 
   return {
     jobs,
-    /** Demo jobs pause; real ones too when they're whole downloads (exports' sections can't resume). */
-    canPause: !real,
-    canPauseJob: useCallback((job: Job) => !real || Boolean(job.prefetch), [real]),
+    /** Everything but live recordings. Downloads go on from where they were; exports start again. */
+    canPauseJob: useCallback((job: Job) => !job.record, []),
     add: useCallback((job: Job) => dispatch({ type: "add", job }), []),
     cancel,
     retry: useCallback((id: string) => dispatch({ type: "retry", id }), []),
@@ -192,7 +196,7 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
     edit: useCallback((id: string, patch: Pick<Job, "rename" | "outputPath">) => dispatch({ type: "edit", id, patch }), []),
     pause,
     resume: useCallback((id: string) => dispatch({ type: "resume", id }), []),
-    pauseAll: useCallback(() => dispatch({ type: "pauseAll" }), []),
+    pauseAll,
     resumeAll: useCallback(() => dispatch({ type: "resumeAll" }), []),
     clearFinished: useCallback(() => dispatch({ type: "clearFinished" }), []),
   };

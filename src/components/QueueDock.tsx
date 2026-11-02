@@ -65,18 +65,17 @@ export function QueueDock({ queue, freshId }: QueueDockProps) {
           </span>
         )}
         <div className="queue__actions">
-          {queue.canPause &&
-            (running + waiting > 0 ? (
-              <button type="button" className="btn btn--ghost" onClick={queue.pauseAll}>
-                Pause all
+          {jobs.some((j) => queue.canPauseJob(j) && (isActive(j) || j.status === "waiting")) ? (
+            <button type="button" className="btn btn--ghost" onClick={queue.pauseAll}>
+              Pause all
+            </button>
+          ) : (
+            paused > 0 && (
+              <button type="button" className="btn btn--ghost" onClick={queue.resumeAll}>
+                Resume all
               </button>
-            ) : (
-              paused > 0 && (
-                <button type="button" className="btn btn--ghost" onClick={queue.resumeAll}>
-                  Resume all
-                </button>
-              )
-            ))}
+            )
+          )}
           {finished > 0 && (
             <button type="button" className="btn btn--ghost" onClick={queue.clearFinished}>
               Clear finished
@@ -327,7 +326,8 @@ function statusText(job: Job): string {
     case "encoding":
       return job.phase === "processing" ? "Finishing with FFmpeg" : job.phase === "cutting" ? "Cutting with FFmpeg" : "Encoding with FFmpeg";
     case "paused":
-      return "Paused";
+      // An export can't go on from the middle of a cut or an encode.
+      return !job.prefetch && (job.spec || job.render) ? "Paused · starts again when resumed" : "Paused";
     default:
       return "Waiting";
   }

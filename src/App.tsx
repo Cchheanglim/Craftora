@@ -106,6 +106,8 @@ import { Settings } from "./components/Settings";
 import { AssistantPanel } from "./components/AssistantPanel";
 import { TextMenu } from "./components/TextMenu";
 import { WelcomeDialog, alreadyWelcomed } from "./components/WelcomeDialog";
+import { useConfirm } from "./components/ConfirmDialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Ambient } from "./components/Ambient";
 import "./App.css";
 
@@ -565,6 +567,32 @@ export default function App() {
 
   /** Media id → how making its captions is going, for the Media list. */
   const [captioning, setCaptioning] = useState<Record<string, string>>({});
+
+  // Closing stops everything still running (engine.rs `tie`), so ask first. Paused downloads are kept.
+  const running =
+    queue.jobs.filter((j) => j.status === "waiting" || j.status === "downloading" || j.status === "encoding" || (j.status === "paused" && !j.prefetch)).length +
+    Object.values(captioning).filter((text) => text !== "couldn't make captions").length;
+  const runningRef = useRef(running);
+  runningRef.current = running;
+  const { ask: askClose, dialog: closeDialog } = useConfirm();
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const win = getCurrentWindow();
+    const stop = win.onCloseRequested(async (event) => {
+      const count = runningRef.current;
+      if (count === 0) return;
+      event.preventDefault();
+      const ok = await askClose({
+        title: "Close Craftora?",
+        message: `${count === 1 ? "1 download, export or caption is" : `${count} downloads, exports or captions are`} not finished. Closing stops ${count === 1 ? "it" : "them"} and what ${count === 1 ? "it has" : "they have"} done so far is lost.`,
+        note: "Paused downloads are kept and wait in the queue next time.",
+        confirmLabel: "Stop and close",
+        danger: true,
+      });
+      if (ok) void win.destroy();
+    });
+    return () => void stop.then((unlisten) => unlisten());
+  }, [askClose]);
   const speechTurn = useRef<Promise<unknown>>(Promise.resolve());
   // Captions wait their turn: on a slow connection, getting the model or a link's sound would slow
   // the fetch, preview, downloads and exports going on (and whisper would slow exports).
@@ -1455,6 +1483,7 @@ export default function App() {
 
       <QueueDock queue={queue} freshId={freshId} />
       <TextMenu />
+      {closeDialog}
       {welcoming && (
         <WelcomeDialog
           onImport={inDesktopApp ? () => void importFiles() : undefined}
