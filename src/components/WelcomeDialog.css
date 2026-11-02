@@ -137,6 +137,13 @@
   animation: welcome-bubble 420ms 1.95s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
 }
 
+/* White in every theme; the outline and shadow keep it apart from a light dialog. */
+.welcome__bubble-box {
+  fill: #fff;
+  stroke: var(--line-strong);
+  filter: drop-shadow(0 2px 6px rgb(0 0 0 / 0.14));
+}
+
 .welcome__words {
   font: 600 17px var(--font-ui);
   fill: #18181b;

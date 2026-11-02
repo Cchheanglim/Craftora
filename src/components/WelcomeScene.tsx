@@ -21,7 +21,7 @@ export function WelcomeScene() {
     if (!svg || !words || !box) return;
     // The bubble fits its words.
     words.textContent = SAYS;
-    box.setAttribute("width", `${words.getComputedTextLength() + 32}`);
+    box.setAttribute("d", bubble(words.getComputedTextLength() + 32));
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     words.textContent = "";
     const timers: number[] = [];
@@ -136,8 +136,7 @@ export function WelcomeScene() {
 
       {/* What it says. */}
       <g className="welcome__bubble">
-        <rect className="welcome__bubble-box" x="210" y="92" width="270" height="48" rx="10" fill="#fff" stroke="rgb(0 0 0 / 0.08)" />
-        <path d="M 197 120 L 214 108 L 214 130 Z" fill="#fff" />
+        <path className="welcome__bubble-box" d={bubble(270)} />
         <text className="welcome__words" x="226" y="122">
           {SAYS}
         </text>
@@ -145,6 +144,10 @@ export function WelcomeScene() {
     </svg>
   );
 }
+
+/** The speech bubble, `width` wide: a rounded box with its tail pointing at the cat, as one outline. */
+const bubble = (width: number) =>
+  `M 220 92 H ${200 + width} A 10 10 0 0 1 ${210 + width} 102 V 130 A 10 10 0 0 1 ${200 + width} 140 H 220 A 10 10 0 0 1 210 130 L 197 120 L 210 110 V 102 A 10 10 0 0 1 220 92 Z`;
 
 /** The icon's rounded square, in its own 1024 units. */
 const TILE =
