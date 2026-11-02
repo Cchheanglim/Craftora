@@ -52,9 +52,209 @@
   color: var(--text-2);
 }
 
-.welcome__logo {
-  flex-shrink: 0;
-  animation: welcome-logo 420ms var(--ease-out) 60ms both;
+/* The app icon coming alive (WelcomeScene). Every part's resting look is its final one: the
+   animations only bring it there, so with reduced motion the finished picture simply shows. */
+.welcome__scene {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.welcome__tile {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: welcome-tile 450ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* The cat rises into its tile and lands with a little bounce, then breathes. */
+.welcome__cat {
+  animation: welcome-rise 700ms 250ms cubic-bezier(0.34, 1.45, 0.64, 1) backwards;
+}
+
+.welcome__breath {
+  transform-origin: 460px 1024px;
+  animation: welcome-breathe 3.6s 1s ease-in-out infinite;
+}
+
+/* While it talks (WelcomeScene sets is-talking and is-winking): it bobs, chews the pen, winks. */
+.is-talking .welcome__breath {
+  animation: welcome-talk 170ms ease-in-out infinite alternate;
+}
+
+.is-talking .welcome__pen {
+  transform-origin: 460px 790px;
+  animation: welcome-chew 120ms ease-in-out infinite alternate;
+}
+
+.welcome__wink,
+.is-winking .welcome__eye--right {
+  opacity: 0;
+}
+
+.is-winking .welcome__wink {
+  opacity: 1;
+}
+
+/* Ears perk up as it lands, then twitch now and then; the eyes blink together. */
+.welcome__ear-left {
+  transform-origin: 298px 531px;
+  animation: welcome-ear-left 6.4s 850ms ease-in-out infinite;
+}
+
+.welcome__ear-right {
+  transform-origin: 622px 531px;
+  animation: welcome-ear-right 5.1s 950ms ease-in-out infinite;
+}
+
+.welcome__eye {
+  transform-origin: 358px 650px;
+  animation: welcome-blink 4.2s 1.6s infinite;
+}
+
+.welcome__eye--right {
+  transform-origin: 562px 650px;
+}
+
+/* What it draws: the play button's outline, then its fill; then the twinkle. */
+.welcome__play {
+  stroke-dasharray: 1;
+  animation:
+    welcome-draw 650ms 1.05s ease-in-out backwards,
+    welcome-fill 300ms 1.6s ease-out backwards;
+}
+
+.welcome__twinkle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation:
+    welcome-twinkle-in 450ms 1.6s cubic-bezier(0.34, 1.56, 0.64, 1) backwards,
+    welcome-twinkle 3.2s 2.4s ease-in-out infinite;
+}
+
+/* What it says; WelcomeScene types the words. */
+.welcome__bubble {
+  transform-origin: 197px 120px;
+  animation: welcome-bubble 420ms 1.95s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+}
+
+.welcome__words {
+  font: 600 17px var(--font-ui);
+  fill: #18181b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome__scene * {
+    animation: none !important;
+  }
+}
+
+@keyframes welcome-tile {
+  from {
+    opacity: 0;
+    transform: scale(0.7) rotate(-6deg);
+  }
+}
+
+@keyframes welcome-rise {
+  from {
+    transform: translateY(560px);
+  }
+}
+
+@keyframes welcome-breathe {
+  50% {
+    transform: scale(1.012, 1.02);
+  }
+}
+
+@keyframes welcome-talk {
+  to {
+    transform: translateY(-10px) rotate(-1.2deg);
+  }
+}
+
+@keyframes welcome-chew {
+  from {
+    transform: rotate(-3deg);
+  }
+  to {
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes welcome-ear-left {
+  0%,
+  8%,
+  100% {
+    transform: none;
+  }
+  3% {
+    transform: rotate(-10deg);
+  }
+  5.5% {
+    transform: rotate(4deg);
+  }
+}
+
+@keyframes welcome-ear-right {
+  0%,
+  8%,
+  100% {
+    transform: none;
+  }
+  3% {
+    transform: rotate(12deg);
+  }
+  5.5% {
+    transform: rotate(-4deg);
+  }
+}
+
+@keyframes welcome-blink {
+  0%,
+  5%,
+  100% {
+    transform: none;
+  }
+  2.5% {
+    transform: scaleY(0.08);
+  }
+}
+
+@keyframes welcome-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+@keyframes welcome-fill {
+  from {
+    fill-opacity: 0;
+  }
+}
+
+@keyframes welcome-twinkle-in {
+  from {
+    transform: scale(0) rotate(-90deg);
+  }
+}
+
+@keyframes welcome-twinkle {
+  0%,
+  70%,
+  100% {
+    transform: none;
+  }
+  85% {
+    transform: scale(1.35) rotate(45deg);
+  }
+}
+
+@keyframes welcome-bubble {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
 }
 
 .welcome__close {
@@ -172,9 +372,3 @@
   }
 }
 
-@keyframes welcome-logo {
-  from {
-    opacity: 0;
-    transform: scale(0.6) rotate(-12deg);
-  }
-}
