@@ -30,7 +30,6 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 tokio = { version = "1", features = ["time"] }
 tauri-plugin-process = "2"
 tauri-plugin-clipboard-manager = "2"
-tauri-plugin-notification = "2"
 
 
 [dev-dependencies]
@@ -49,7 +48,9 @@ strip = true
 webview2-com = "0.39"
 windows-core = "0.62"
 # Also already in the build: job objects, so engines stop when Craftora closes (engine.rs `tie`).
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_Packaging_Appx", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_Threading"] }
+# Windows notifications that know when they're clicked (notify.rs); already in the build before through tauri-plugin-notification.
+tauri-winrt-notification = "0.8"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

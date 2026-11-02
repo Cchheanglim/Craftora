@@ -72,7 +72,7 @@ import { useGlideScroll } from "./lib/glide";
 import { useProject } from "./project/useProject";
 import { applyEdit, SHOWN_CAPTIONS, timelineCaptions, withShownCaptions } from "./project/actions";
 import { usePlayback } from "./project/usePlayback";
-import { cutModeApplies, frameOf, planExport } from "./project/exportPlan";
+import { cutModeApplies, formatSize, frameOf, planExport } from "./project/exportPlan";
 import {
   CAPTIONS,
   NO_CROP,
@@ -111,6 +111,7 @@ import { WelcomeDialog, welcomeHidden } from "./components/WelcomeDialog";
 import { useConfirm } from "./components/ConfirmDialog";
 import { getCurrentWindow, ProgressBarStatus } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Ambient } from "./components/Ambient";
 import "./App.css";
 
@@ -629,11 +630,22 @@ export default function App() {
       const was = before.get(j.id);
       if ((was !== "downloading" && was !== "encoding") || (j.status !== "finished" && j.status !== "failed")) continue;
       const what = j.record ? "Recording" : j.prefetch ? "Download" : "Export";
-      const name = j.rename ?? j.title;
-      const options = j.status === "finished" ? { title: `${what} finished`, body: name } : { title: `${what} failed`, body: `${name}: ${j.error ?? "it stopped"}` };
-      void invoke("plugin:notification|notify", { options }).catch(() => {});
+      const page: View = j.prefetch || j.record ? "downloads" : "library";
+      const open = `Click to open ${page === "downloads" ? "Downloads" : "Exports"}.`;
+      const saved = j.prefetch ? "Ready to edit" : `Saved as ${j.outputPath?.split(/[\\/]/).pop() ?? j.fileName}`;
+      const notice =
+        j.status === "finished"
+          ? { title: `${what} finished`, detail: `${saved} · ${formatSize(j.sizeMb)}. ${open}` }
+          : { title: `${what} failed`, detail: `${(j.error ?? "It stopped").replace(/\.?$/, ".")} ${open}` };
+      void invoke("notify", { ...notice, line: j.rename ?? j.title, page }).catch(() => {});
     }
   }, [queue.jobs]);
+  // A click on one of those notifications brings Craftora forward on that page (notify.rs).
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const stop = listen<View>("notification-clicked", (e) => setView(e.payload));
+    return () => void stop.then((unlisten) => unlisten());
+  }, []);
   const speechTurn = useRef<Promise<unknown>>(Promise.resolve());
   // Captions wait their turn: on a slow connection, getting the model or a link's sound would slow
   // the fetch, preview, downloads and exports going on (and whisper would slow exports).
