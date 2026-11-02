@@ -71,7 +71,7 @@ export function Library({ jobs, queue, outputDir, onChooseOutputDir, onOpenWorks
       <div className="library__group">
         <h2 className="section-label">In progress</h2>
         {active.length === 0 ? (
-          <p className="library__muted">Nothing exporting. Edit in the Workspace, then press Export.</p>
+          <p className="library__muted">Nothing exporting. In the Editor, press Add to queue.</p>
         ) : (
           <div className="queue__list">
             <ul>
