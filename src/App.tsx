@@ -107,7 +107,8 @@ import { AssistantPanel } from "./components/AssistantPanel";
 import { TextMenu } from "./components/TextMenu";
 import { WelcomeDialog, welcomeHidden } from "./components/WelcomeDialog";
 import { useConfirm } from "./components/ConfirmDialog";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, ProgressBarStatus } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { Ambient } from "./components/Ambient";
 import "./App.css";
 
@@ -593,6 +594,31 @@ export default function App() {
     });
     return () => void stop.then((unlisten) => unlisten());
   }, [askClose]);
+
+  // The taskbar button fills with what's running (recordings have no end, so they don't count).
+  const filling = queue.jobs.filter((j) => (j.status === "downloading" || j.status === "encoding") && !j.record);
+  const taskbar = filling.length ? Math.round(filling.reduce((sum, j) => sum + (j.progress ?? 0), 0) / filling.length) : null;
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const bar = taskbar === null ? { status: ProgressBarStatus.None } : { status: ProgressBarStatus.Normal, progress: taskbar };
+    void getCurrentWindow().setProgressBar(bar).catch(() => {});
+  }, [taskbar]);
+
+  // While Craftora is in the background, Windows says when a download, export or recording ends.
+  const lastStatus = useRef(new Map<string, Job["status"]>());
+  useEffect(() => {
+    const before = lastStatus.current;
+    lastStatus.current = new Map(queue.jobs.map((j) => [j.id, j.status]));
+    if (!inDesktopApp || document.hasFocus()) return;
+    for (const j of queue.jobs) {
+      const was = before.get(j.id);
+      if ((was !== "downloading" && was !== "encoding") || (j.status !== "finished" && j.status !== "failed")) continue;
+      const what = j.record ? "Recording" : j.prefetch ? "Download" : "Export";
+      const name = j.rename ?? j.title;
+      const options = j.status === "finished" ? { title: `${what} finished`, body: name } : { title: `${what} failed`, body: `${name}: ${j.error ?? "it stopped"}` };
+      void invoke("plugin:notification|notify", { options }).catch(() => {});
+    }
+  }, [queue.jobs]);
   const speechTurn = useRef<Promise<unknown>>(Promise.resolve());
   // Captions wait their turn: on a slow connection, getting the model or a link's sound would slow
   // the fetch, preview, downloads and exports going on (and whisper would slow exports).
