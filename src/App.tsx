@@ -94,6 +94,7 @@ import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { Home, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
+import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
 import { TimelineEditor } from "./components/TimelineEditor";
 import { CaptionStyle, Inspector } from "./components/Inspector";
@@ -831,6 +832,7 @@ export default function App() {
   }, [queue.jobs, queue.edit, queue.downloaded, api, prepare]);
 
   /** `found`: what "Fetch this video" saw the page play, tried when yt-dlp doesn't know the page. */
+  const fetchReview = useFetchReview(inDesktopApp && siteChecks.available);
   const fetchSource = async (link: string, found?: FoundPage) => {
     setUrl(link);
     setBusy(true);
@@ -846,6 +848,11 @@ export default function App() {
         const found = DEMO_SOURCES.find((s) => s.url.toLowerCase() === link.toLowerCase());
         if (!found) throw new Error("Real links need the desktop app.");
         source = found;
+      }
+      // The user sees what the link holds before anything from it is added or downloaded.
+      if (!(await fetchReview.review(source, link))) {
+        if (found) void tellSignIn("Not added to Craftora.").catch(() => {});
+        return;
       }
       // Straight onto the timeline, after the last clip, ready to edit. With nothing the preview
       // can play (some stream sites), it downloads too, so it can still be edited.
@@ -1265,6 +1272,7 @@ export default function App() {
   return (
     <div className="app" data-left={leftOpen ? "open" : "closed"}>
       <Ambient active={theme !== "classic"} />
+      {fetchReview.dialog}
       <Toolbar
         url={url}
         onUrlChange={(next) => {
