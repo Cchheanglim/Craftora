@@ -145,13 +145,14 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   // Everything else: one render of the whole timeline.
   const frame = frameOf(settings);
   const used = project.media.filter((m) => project.clips.some((c) => c.mediaId === m.id));
-  const clips: RenderClip[] = project.clips.map((c) => {
+  const hidden = new Set(project.tracks.filter((t) => t.hidden).map((t) => t.id));
+  const clips: RenderClip[] = project.clips.filter((c) => !hidden.has(c.trackId) || c.mediaId).map((c) => {
     const trackIndex = project.tracks.findIndex((t) => t.id === c.trackId);
     const track = project.tracks[trackIndex];
     const order = track?.magnetic ? trackOrder(project, track.id) : [];
     const i = order.findIndex((o) => o.id === c.id);
     const next = i >= 0 ? order[i + 1] : undefined;
-    const role: RenderClip["role"] = isBlock(c) ? "effect" : !c.mediaId ? "text" : track?.kind === "audio" ? "audio" : "video";
+    const role: RenderClip["role"] = isBlock(c) ? "effect" : !c.mediaId ? "text" : track?.kind === "audio" || track?.hidden ? "audio" : "video";
     return {
       role,
       // Lower tracks first; on a track, later clips over earlier ones (for transitions).

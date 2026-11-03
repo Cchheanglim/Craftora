@@ -48,3 +48,76 @@ export function captureThumbnail(previewUrl: string, image?: boolean): Promise<s
     video.src = previewUrl;
   });
 }
+
+/** One frame of a filmstrip, 16:9. */
+const FRAME_W = 128;
+const FRAME_H = 72;
+
+/** Frames across a whole video, side by side in one JPEG, for its clips on the timeline. */
+export interface Strip {
+  url: string;
+  frames: number;
+}
+
+const strips = new Map<string, Promise<Strip | undefined>>();
+let stripTurn: Promise<unknown> = Promise.resolve();
+
+/**
+ * A video's filmstrip, made once per address, one video at a time (a long project doesn't open
+ * them all at once). Undefined when it can't be read, or takes over a minute.
+ */
+export function filmstrip(previewUrl: string, duration: number): Promise<Strip | undefined> {
+  let made = strips.get(previewUrl);
+  if (!made) {
+    made = stripTurn.then(() => drawStrip(previewUrl, duration)).catch(() => undefined);
+    stripTurn = made;
+    strips.set(previewUrl, made);
+  }
+  return made;
+}
+
+function drawStrip(previewUrl: string, duration: number): Promise<Strip | undefined> {
+  // About one frame every 6 seconds, at least 6 and at most 40.
+  const frames = Math.round(Math.min(40, Math.max(6, duration / 6)));
+  return new Promise((resolve) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = frames * FRAME_W;
+    canvas.height = FRAME_H;
+    const ctx = canvas.getContext("2d")!;
+    const video = document.createElement("video");
+    let drawn = 0;
+    const finish = (strip?: Strip) => {
+      window.clearTimeout(timer);
+      video.removeAttribute("src");
+      video.load();
+      resolve(strip);
+    };
+    const timer = window.setTimeout(() => finish(), 60_000);
+    const seek = () => (video.currentTime = ((drawn + 0.5) / frames) * (video.duration || duration));
+    video.crossOrigin = "anonymous";
+    video.muted = true;
+    video.preload = "auto";
+    video.onloadedmetadata = seek;
+    video.onseeked = () => {
+      // Cover the frame, keeping the picture's shape.
+      const scale = Math.max(FRAME_W / video.videoWidth, FRAME_H / video.videoHeight);
+      const [w, h] = [video.videoWidth * scale, video.videoHeight * scale];
+      try {
+        ctx.drawImage(video, drawn * FRAME_W + (FRAME_W - w) / 2, (FRAME_H - h) / 2, w, h);
+      } catch {
+        return finish();
+      }
+      drawn++;
+      if (drawn < frames) seek();
+      else {
+        try {
+          finish({ url: canvas.toDataURL("image/jpeg", 0.7), frames });
+        } catch {
+          finish();
+        }
+      }
+    };
+    video.onerror = () => finish();
+    video.src = previewUrl;
+  });
+}

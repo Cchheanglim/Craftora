@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, trackLabel, trackOrder, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackKind } from "../project/model";
+import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, trackLabel, trackOrder, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackKind, type TrackSize } from "../project/model";
 import { blockLabel, type FxItem } from "../project/effects";
 import { fitsTrack, packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
@@ -84,6 +84,17 @@ interface Ghost {
 
 const TRACK_ICON: Record<Track["kind"], IconName> = { video: "film", audio: "music", text: "text", effect: "sparkle" };
 
+/** Track height and waveform size choices (the header's … menu). */
+const SIZES: { size: TrackSize; label: string }[] = [
+  { size: "s", label: "Small" },
+  { size: "m", label: "Medium" },
+  { size: "l", label: "Large" },
+];
+const ROW_PX: Record<TrackSize, number> = { s: 28, m: 44, l: 72 };
+/** A track's row height when it was changed in its menu (each kind has its usual one in the CSS). */
+const rowStyle = (t: Track) => (t.height ? { height: ROW_PX[t.height] } : undefined);
+const WAVE_HEIGHT: Record<TrackSize, string> = { s: "22%", m: "42%", l: "78%" };
+
 export function TimelineEditor({
   project,
   api,
@@ -115,6 +126,8 @@ export function TimelineEditor({
   const [fitted, setFitted] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  /** The track whose … menu is open, and where to draw it. */
+  const [menu, setMenu] = useState<{ trackId: string; x: number; y: number } | null>(null);
 
   // Track the visible width for "fit" and the content width.
   useEffect(() => {
@@ -210,7 +223,7 @@ export function TimelineEditor({
       start = Math.abs(snappedStart - start) <= Math.abs(snappedEnd - start) ? snappedStart : snappedEnd;
       // A video can also go on an audio track (just its sound); otherwise clips keep their kind.
       const lane = project.tracks.find((t) => t.id === laneAt(e.clientY));
-      const trackId = lane && fitsTrack(project, clip, lane) ? lane.id : (ghostRef.current?.trackId ?? clip.trackId);
+      const trackId = lane && !lane.locked && fitsTrack(project, clip, lane) ? lane.id : (ghostRef.current?.trackId ?? clip.trackId);
       setGhost({ clipId: clip.id, start: Math.max(0, start), trackId });
     } else {
       const scroller = scrollRef.current;
@@ -257,7 +270,8 @@ export function TimelineEditor({
   };
 
   const beginDrag = (clip: Clip, mode: DragMode) => (e: ReactPointerEvent<HTMLElement>) => {
-    if (e.button !== 0) return;
+    // On a locked track a press just moves the playhead (the lane does that).
+    if (e.button !== 0 || project.tracks.find((t) => t.id === clip.trackId)?.locked) return;
     e.stopPropagation();
     e.preventDefault();
     onSelect(clip.id);
@@ -284,6 +298,7 @@ export function TimelineEditor({
   };
 
   const onMediaDrop = (track: Track) => (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (track.locked) return;
     const mediaId = mediaDrag.current;
     if (mediaId) api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId, trackId: track.id, at: timeAt(e.clientX) });
     else if (fxDrag.current) onDropFx(fxDrag.current, track.id, timeAt(e.clientX));
@@ -412,11 +427,36 @@ export function TimelineEditor({
           {project.tracks.map((track) => {
             const clipCount = project.clips.filter((c) => c.trackId === track.id).length;
             const name = trackLabel(project, track);
+            const hasSound = track.kind === "video" || track.kind === "audio";
+            const menuOpen = menu?.trackId === track.id;
             return (
-              <div key={track.id} className={`tl__head is-${track.kind}`}>
-                <Icon name={TRACK_ICON[track.kind]} size={13} />
-                <span className="truncate">{name}</span>
-                {track.kind !== "text" && (
+              <div key={track.id} className={`tl__head is-${track.kind}`} style={rowStyle(track)} role="group" aria-label={name}>
+                <span className="tl__head-kind" title={name}>
+                  <Icon name={TRACK_ICON[track.kind]} size={13} />
+                </span>
+                <button
+                  type="button"
+                  className="tl__head-btn"
+                  aria-pressed={Boolean(track.locked)}
+                  aria-label={track.locked ? `Unlock ${name}` : `Lock ${name}`}
+                  title={track.locked ? "Locked: its clips can't be moved or changed. Click to unlock." : "Lock this track"}
+                  onClick={() => api.edit({ type: "updateTrack", trackId: track.id, patch: { locked: !track.locked || undefined } })}
+                >
+                  <Icon name={track.locked ? "lock" : "unlock"} size={12} />
+                </button>
+                {track.kind !== "audio" && (
+                  <button
+                    type="button"
+                    className="tl__head-btn"
+                    aria-pressed={Boolean(track.hidden)}
+                    aria-label={track.hidden ? `Show ${name}` : `Hide ${name}`}
+                    title={track.hidden ? "Hidden from the preview and the export. Click to show." : track.kind === "video" ? "Hide its pictures (the sound still plays)" : "Hide this track"}
+                    onClick={() => api.edit({ type: "updateTrack", trackId: track.id, patch: { hidden: !track.hidden || undefined } })}
+                  >
+                    <Icon name={track.hidden ? "eyeOff" : "eye"} size={12} />
+                  </button>
+                )}
+                {hasSound && (
                   <button
                     type="button"
                     className="tl__head-btn"
@@ -428,33 +468,95 @@ export function TimelineEditor({
                     <Icon name={track.muted ? "volumeOff" : "volume"} size={12} />
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="tl__head-btn"
-                  aria-pressed={Boolean(track.magnetic)}
-                  aria-label={`Magnet for ${name}`}
-                  title={
-                    track.magnetic
-                      ? "Magnet on: clips stay back to back and can have transitions. Click to turn off."
-                      : "Magnet off: clips go anywhere. Click to keep them back to back."
-                  }
-                  onClick={() => api.edit({ type: "setMagnetic", trackId: track.id, magnetic: !track.magnetic })}
+                <div
+                  className="tl__head-more"
+                  onBlur={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget)) setMenu(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setMenu(null);
+                  }}
                 >
-                  <Icon name="magnet" size={12} />
-                </button>
-                <button
-                  type="button"
-                  className="tl__head-btn"
-                  aria-label={`Remove ${name}`}
-                  title={
-                    clipCount
-                      ? `Remove ${name} and its ${clipCount} clip${clipCount === 1 ? "" : "s"} (Ctrl+Z brings it back)`
-                      : `Remove ${name}`
-                  }
-                  onClick={() => api.edit({ type: "removeTrack", trackId: track.id })}
-                >
-                  <Icon name="x" size={12} />
-                </button>
+                  <button
+                    type="button"
+                    className="tl__head-btn"
+                    aria-expanded={menuOpen}
+                    aria-haspopup="menu"
+                    aria-label={`More for ${name}`}
+                    title="Track height, waveform size and more"
+                    onClick={(e) => {
+                      const r = e.currentTarget.getBoundingClientRect();
+                      setMenu(menuOpen ? null : { trackId: track.id, x: r.left, y: r.bottom + 4 });
+                    }}
+                  >
+                    <Icon name="more" size={12} />
+                  </button>
+                  {menuOpen && (
+                    // Fixed, so the timeline's scrolling box doesn't cut it off.
+                    <div className="tl__menu tl__track-menu" role="menu" style={{ position: "fixed", left: menu.x, top: menu.y }}>
+                      <p className="tl__menu-label">Track height</p>
+                      <div className="tl__sizes" role="group" aria-label="Track height">
+                        {SIZES.map(({ size, label }) => (
+                          <button
+                            key={size}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={(track.height ?? "m") === size}
+                            autoFocus={(track.height ?? "m") === size}
+                            onClick={() => api.edit({ type: "updateTrack", trackId: track.id, patch: { height: size === "m" ? undefined : size } })}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {hasSound && (
+                        <>
+                          <p className="tl__menu-label">Waveform size</p>
+                          <div className="tl__sizes" role="group" aria-label="Waveform size">
+                            {SIZES.map(({ size, label }) => (
+                              <button
+                                key={size}
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={(track.wave ?? "m") === size}
+                                onClick={() => api.edit({ type: "updateTrack", trackId: track.id, patch: { wave: size === "m" ? undefined : size } })}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                      {track.kind !== "effect" && (
+                        <button
+                          type="button"
+                          role="menuitemcheckbox"
+                          aria-checked={Boolean(track.magnetic)}
+                          title="Clips stay back to back and can have transitions"
+                          onClick={() => {
+                            setMenu(null);
+                            api.edit({ type: "setMagnetic", trackId: track.id, magnetic: !track.magnetic });
+                          }}
+                        >
+                          <Icon name="magnet" size={13} />
+                          {track.magnetic ? "Magnet on" : "Magnet off"}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        title={clipCount ? `Removes its ${clipCount} clip${clipCount === 1 ? "" : "s"} too (Ctrl+Z brings it back)` : undefined}
+                        onClick={() => {
+                          setMenu(null);
+                          api.edit({ type: "removeTrack", trackId: track.id });
+                        }}
+                      >
+                        <Icon name="trash" size={13} />
+                        Remove track
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -485,7 +587,8 @@ export function TimelineEditor({
                   if (el) laneRefs.current.set(track.id, el);
                   else laneRefs.current.delete(track.id);
                 }}
-                className={`tl__lane is-${track.kind}`}
+                className={["tl__lane", `is-${track.kind}`, track.locked && "is-locked", track.hidden && "is-hidden"].filter(Boolean).join(" ")}
+                style={rowStyle(track)}
                 onPointerDown={(e) => {
                   onSelect(null);
                   beginScrub(e);
@@ -538,7 +641,7 @@ export function TimelineEditor({
                           />
                         )}
                         {media?.hasAudio && !media.source.image && (
-                          <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={Boolean(track.muted)} />
+                          <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={Boolean(track.muted)} height={track.wave && WAVE_HEIGHT[track.wave]} />
                         )}
                         {media?.source.chapters
                           ?.filter((ch) => ch.start > clip.in + 0.2 && ch.start < clip.out - 0.2)
@@ -594,9 +697,9 @@ export function TimelineEditor({
  * A clip's sound wave. Drawn again only when the clip, its media, the zoom or mute change, not on
  * every frame of playback (a long clip has up to 1,500 bars).
  */
-const ClipWave = memo(function ClipWave({ clip, media, bars, muted }: { clip: Clip; media: MediaItem; bars: number; muted: boolean }) {
+const ClipWave = memo(function ClipWave({ clip, media, bars, muted, height }: { clip: Clip; media: MediaItem; bars: number; muted: boolean; height?: string }) {
   return (
-    <span className="tl__wave" aria-hidden="true">
+    <span className="tl__wave" style={height ? { height } : undefined} aria-hidden="true">
       {clipPeaks(clip, media, bars, muted).map((h, i) => (
         <span key={i} style={{ height: `${h}%` }} />
       ))}

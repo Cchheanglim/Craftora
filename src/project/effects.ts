@@ -93,11 +93,11 @@ export function dropEdits(
 ): { edits: EditAction[]; select?: string } | null {
   if (item.kind === "filter" || item.kind === "effect") {
     const block = item.kind === "filter" ? { look: item.id } : { effect: item.id };
-    const onEffects = p.tracks.find((t) => t.id === trackId)?.kind === "effect" ? trackId : undefined;
+    const onEffects = p.tracks.find((t) => t.id === trackId && !t.locked)?.kind === "effect" ? trackId : undefined;
     return { edits: [{ type: "addBlock", clipId: newIds[0], at: time, length: BLOCK_LENGTH, trackId: onEffects, ...block }], select: newIds[0] };
   }
   const track = p.tracks.find((t) => t.id === trackId && (t.kind === "video" || t.kind === "audio")) ?? [...p.tracks].reverse().find((t) => t.kind === "video");
-  if (!track) return null;
+  if (!track || track.locked) return null;
   const order = trackOrder(p, track.id).filter((c) => c.mediaId);
   if (item.kind === "time") {
     const clip = order.find((c) => time >= c.start && time < clipEnd(c));

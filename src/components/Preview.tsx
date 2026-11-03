@@ -181,6 +181,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const trackIndex = new Map(project.tracks.map((t, i) => [t.id, i]));
   const trackKind = (c: Clip) => project.tracks.find((t) => t.id === c.trackId)?.kind;
   const trackMuted = (c: Clip) => Boolean(project.tracks.find((t) => t.id === c.trackId)?.muted);
+  const trackHidden = (c: Clip) => Boolean(project.tracks.find((t) => t.id === c.trackId)?.hidden);
   const mediaOf = (c: Clip) => project.media.find((m) => m.id === c.mediaId);
   const active = (c: Clip) => time >= c.start && time < clipEnd(c);
   const mediaTime = (c: Clip) => (active(c) ? mediaTimeAt(c, time) : null);
@@ -201,9 +202,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     return { picture: fade * t.picture, sound: fade * t.sound };
   };
   const sounds = project.clips.filter((c) => c.mediaId && trackKind(c) === "audio");
-  const texts = project.clips.filter((c) => !c.mediaId && !isBlock(c)).sort(byLayer);
+  const texts = project.clips.filter((c) => !c.mediaId && !isBlock(c) && !trackHidden(c)).sort(byLayer);
   // Filter and effect blocks showing now change the pictures (not text), lowest track first.
-  const blocks = blocksStyle(project.clips.filter((c) => trackKind(c) === "effect" && active(c)).sort(byLayer), time, stageRef.current?.clientWidth ?? frame.width);
+  const blocks = blocksStyle(project.clips.filter((c) => trackKind(c) === "effect" && active(c) && !trackHidden(c)).sort(byLayer), time, stageRef.current?.clientWidth ?? frame.width);
   const captionTracks = new Set(project.tracks.filter((t) => t.name === "Captions").map((t) => t.id));
   const hasCaptions = project.media.some((m) => m.captions) || captionTracks.size > 0;
   const isCaption = (c: Clip) => c.trackId.startsWith(SHOWN_CAPTIONS) || captionTracks.has(c.trackId);
@@ -404,7 +405,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 key={clip.id}
                 clip={clip}
                 stageAspect={stageAspect}
-                visible={t !== null}
+                visible={t !== null && !trackHidden(clip)}
                 opacity={t === null ? 0 : mix(clip).picture}
                 selected={isSelected}
                 poster={poster}

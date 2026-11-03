@@ -76,6 +76,8 @@ export type EditAction =
   | { type: "setMagnetic"; trackId: string; magnetic: boolean }
   /** Silences or restores a track's clips in both the preview and the export. */
   | { type: "setTrackMuted"; trackId: string; muted: boolean }
+  /** Locks, hides or resizes a track (the header's buttons and its … menu). */
+  | { type: "updateTrack"; trackId: string; patch: Partial<Pick<Track, "locked" | "hidden" | "height" | "wave">> }
   /** Tidies up after a drag: no overlapping clips on a track, magnetic tracks packed. */
   | { type: "settle" };
 
@@ -189,7 +191,7 @@ function withTrack(p: Project, kind: TrackKind, id = `${kind}-${crypto.randomUUI
 
 /** A track of `kind` where `probe` fits without overlapping, adding one if needed. */
 function freeTrack(p: Project, kind: TrackKind, probe: Clip, preferred?: string): { project: Project; trackId: string } {
-  const candidates = p.tracks.filter((t) => t.kind === kind && !t.magnetic);
+  const candidates = p.tracks.filter((t) => t.kind === kind && !t.magnetic && !t.locked);
   const ordered = preferred ? [...candidates.filter((t) => t.id === preferred), ...candidates.filter((t) => t.id !== preferred)] : candidates;
   for (const track of ordered) {
     const busy = p.clips.some((c) => c.trackId === track.id && overlaps({ ...probe, trackId: track.id }, c));
@@ -315,7 +317,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
     case "addBlock": {
       if (!action.look === !action.effect) return p;
       const clip = newClip({ id: action.clipId, trackId: "", start: 0, in: 0, out: round(Math.max(MIN_CLIP, action.length)), look: action.look, effect: action.effect });
-      const track = p.tracks.find((t) => t.kind === "effect" && (action.trackId ? t.id === action.trackId : true));
+      const track = p.tracks.find((t) => t.kind === "effect" && !t.locked && (action.trackId ? t.id === action.trackId : true));
       return place(p, track, "effect", clip, action.at);
     }
 
@@ -561,6 +563,9 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const clips = action.magnetic ? p.clips : p.clips.map((c) => (c.trackId === track.id ? { ...c, transition: undefined } : c));
       return packMagnetic({ ...p, tracks, clips });
     }
+
+    case "updateTrack":
+      return { ...p, tracks: p.tracks.map((t) => (t.id === action.trackId ? { ...t, ...action.patch } : t)) };
 
     case "setTrackMuted":
       if (!p.tracks.some((t) => t.id === action.trackId && t.kind !== "text" && t.kind !== "effect")) return p;

@@ -22,7 +22,17 @@ export interface Track {
   magnetic?: boolean;
   /** Silences every clip on this track in both the preview and the export. */
   muted?: boolean;
+  /** Its clips can't be picked, moved or trimmed, and nothing can be dropped on it. */
+  locked?: boolean;
+  /** Its pictures, text or effects don't show in the preview or the export (sound still plays). */
+  hidden?: boolean;
+  /** Row height on the timeline; the kind's usual height when absent. */
+  height?: TrackSize;
+  /** How tall sound waves are drawn on its clips; the usual height when absent. */
+  wave?: TrackSize;
 }
+
+export type TrackSize = "s" | "m" | "l";
 
 export type Position =
   | "top-left"

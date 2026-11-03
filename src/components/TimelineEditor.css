@@ -75,9 +75,53 @@
   color: var(--text-3);
 }
 
-.tl__head .truncate {
+/* What kind of track it is; the buttons sit to its right, like CapCut's. */
+.tl__head-kind {
   flex: 1;
-  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.tl__head-more {
+  position: relative;
+}
+
+/* The … menu: track height, waveform size, magnet, remove. */
+.tl__track-menu {
+  min-width: 190px;
+}
+
+.tl__menu-label {
+  padding: 4px var(--space-2) 2px;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.tl__sizes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.tl__menu .tl__sizes button {
+  justify-content: center;
+  height: 26px;
+  font-size: var(--text-xs);
+}
+
+.tl__menu button[aria-checked="true"] {
+  background: var(--bg-selected);
+}
+
+/* Locked: its clips can't be picked; hidden: they don't show. */
+.tl__lane.is-locked .tl__clip {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.tl__lane.is-hidden .tl__clip {
+  opacity: 0.4;
 }
 
 /* Magnet and remove: small square buttons, faint until the row is hovered. */
