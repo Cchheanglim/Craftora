@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Job } from "../types";
 import type { Queue } from "../state/useQueue";
-import { errorText, listDownloads, revealFile, type DownloadedFile } from "../lib/engine";
+import { deleteFile, errorText, listDownloads, revealFile, type DownloadedFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
@@ -9,6 +9,7 @@ import { QueueRow } from "./QueueDock";
 import { FileThumb } from "./Thumb";
 import { formatWhen } from "../lib/timecode";
 import { HiddenFold, HideButton, useHidden } from "./Hidden";
+import { useConfirm } from "./ConfirmDialog";
 import "./Library.css";
 
 interface DownloadsProps {
@@ -30,6 +31,25 @@ export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: Download
   const finished = queue.jobs.filter((j) => isDownload(j) && j.status === "finished").length;
   const [folder, setFolder] = useState<{ folder: string; files: DownloadedFile[] } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { ask, dialog } = useConfirm();
+  const remove = async (file: DownloadedFile) => {
+    const ok = await ask({
+      title: `Delete “${file.name}”?`,
+      message: "The file moves to the Recycle Bin. Projects that use it show it as missing until you put it back.",
+      note: "Craftora can't undo this, but you can restore the file from the Recycle Bin.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    setDeleteError(null);
+    try {
+      await deleteFile(file.path);
+      setFolder((f) => f && { ...f, files: f.files.filter((x) => x.path !== file.path) });
+    } catch (err) {
+      setDeleteError(errorText(err));
+    }
+  };
   const hidden = useHidden("downloads");
   const files = folder?.files.filter((f) => !hidden.isHidden(f.path)) ?? [];
   const hiddenFiles = folder?.files.filter((f) => hidden.isHidden(f.path)) ?? [];
@@ -77,6 +97,9 @@ export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: Download
                   <button type="button" className="btn btn--icon" aria-label={`Show ${file.name} in its folder`} title="Show in folder" onClick={() => void revealFile(file.path)}>
                     <Icon name="folder" size={14} />
                   </button>
+                  <button type="button" className="btn btn--icon" aria-label={`Delete ${file.name}`} title="Delete: move the file to the Recycle Bin" onClick={() => void remove(file)}>
+                    <Icon name="trash" size={14} />
+                  </button>
                 </span>
               </td>
             </tr>
@@ -88,6 +111,7 @@ export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: Download
 
   return (
     <section className="library" aria-labelledby="downloads-title">
+      {dialog}
       <header className="library__head">
         <h1 id="downloads-title">Downloads</h1>
         <p>Links downloaded to edit like files on this PC, and live recordings.</p>
@@ -122,6 +146,11 @@ export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: Download
 
       <div className="library__group">
         <h2 className="section-label">Finished</h2>
+        {deleteError && (
+          <p className="library__muted" role="alert">
+            {deleteError}
+          </p>
+        )}
         {problem ? (
           <p className="library__muted">{problem}</p>
         ) : folder && folder.files.length === 0 ? (

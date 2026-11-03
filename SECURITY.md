@@ -103,6 +103,9 @@ These are the kinds of reports I care most about:
 - **Minimal permissions.** Only the main window gets Tauri permissions, and only the ones it
   needs. Websites in the sign-in window can't call any command; pop-ups other than sign-in
   pages, downloads and other programs' links are blocked there.
+- **Downloads are checked before they're kept.** A file kept as a website sent it must be a
+  real video or sound file (FFmpeg reads it), and Windows' Attachment Services has the PC's
+  antivirus scan it, as browsers do (`src-tauri/src/scan.rs`). A file that fails is deleted.
 - **Keys stay out of the interface.** API keys live in Windows Credential Manager and are
   only sent to the service they belong to.
 - **Signed updates.** The updater only installs updates signed with the release key.

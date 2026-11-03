@@ -273,7 +273,7 @@ pub fn open_file(app: AppHandle, path: String) -> Result<(), String> {
         .map_err(|e| format!("Couldn't open the file: {e}"))
 }
 
-/// Moves an exported media file to the Recycle Bin, so a wrong click can be undone there. A file
+/// Moves an exported or downloaded media file to the Recycle Bin, so a wrong click can be undone there. A file
 /// that's already gone counts as done.
 #[tauri::command]
 pub async fn delete_file(path: String) -> Result<(), String> {
@@ -282,7 +282,7 @@ pub async fn delete_file(path: String) -> Result<(), String> {
         return Ok(());
     }
     if !is_media(&file) || !file.is_file() {
-        return Err("Only exported video and sound files can be deleted here.".into());
+        return Err("Only video and sound files can be deleted here.".into());
     }
     // The path reaches PowerShell through the environment, never inside the script text.
     let mut command = std::process::Command::new("powershell");
