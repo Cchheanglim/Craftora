@@ -249,7 +249,7 @@ async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource>
     for (const media of found.media) {
       try {
         const source = await fetchMedia(media);
-        const thumbnail = source.thumbnail || (found.image ? await keptThumbnail(found.image, found.page) : undefined);
+        const thumbnail = source.thumbnail || (found.image ? await keptThumbnail([found.image], found.page) : undefined);
         return { ...source, title: found.title || source.title, thumbnail };
       } catch (problem) {
         // An ad or a player that isn't the video: try the next guess.
@@ -565,14 +565,14 @@ export default function App() {
       const canDraw = (m.hasVideo || s.image) && (s.local || !(s.previewHls || s.live || !s.previewUrl)) && (inDesktopApp || !(s.previewProxy || !s.previewUrl));
       if (!sitePicture && !canDraw) continue;
       thumbTried.current.add(m.id);
-      const kept = sitePicture ? keptThumbnail(sitePicture, s.url).then((t) => (t.startsWith("data:") ? t : undefined)) : Promise.resolve(undefined);
+      const kept = sitePicture ? keptThumbnail([sitePicture, ...(s.thumbnails ?? [])], s.url).then((t) => (t.startsWith("data:") ? t : undefined)) : Promise.resolve(undefined);
       const task = kept
         .then((thumb) => thumb ?? (canDraw && s.previewUrl ? captureThumbnail(s.previewUrl, s.image) : undefined))
         .then((thumb) => thumb ?? (inDesktopApp && s.local ? localThumbnail(s.url, Boolean(s.image)).catch(() => undefined) : undefined));
       void task.then((thumbnail) => {
         const current = projectRef.current.media.find((x) => x.id === m.id);
         // Only the list picture: an image keeps its full-size previewUrl (Preview falls back to this if it can't load).
-        if (thumbnail && current) api.refreshMedia(m.id, { source: { ...current.source, thumbnail } });
+        if (thumbnail && current) api.refreshMedia(m.id, { source: { ...current.source, thumbnail, thumbnails: undefined } });
         // History saved the link before this picture existed.
         if (thumbnail && !s.local)
           setFetchHistory((list) => {

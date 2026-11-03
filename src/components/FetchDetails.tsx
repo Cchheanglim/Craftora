@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { MediaSource } from "../types";
-import { checkSite, errorText } from "../lib/engine";
+import { checkSite, errorText, keptThumbnail } from "../lib/engine";
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { mediaFromSource } from "../project/model";
@@ -31,7 +31,15 @@ function FetchDetails({ source, link, canCheckSite, onClose }: { source: MediaSo
     const el = ref.current;
     if (el && !el.open) el.showModal();
   }, []);
+  // Loaded as the editor keeps it (with the page as Referer, trying the video's other pictures),
+  // so this shows the same picture the editor will.
+  const [picture, setPicture] = useState<string>();
   const [pictureFailed, setPictureFailed] = useState(false);
+  useEffect(() => {
+    const pictures = [source.thumbnail, ...(source.thumbnails ?? [])].filter((p): p is string => Boolean(p));
+    if (pictures.length) void keptThumbnail(pictures, link).then(setPicture);
+    else setPictureFailed(true);
+  }, [source, link]);
   const [checking, setChecking] = useState(false);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const check = async () => {
@@ -84,8 +92,10 @@ function FetchDetails({ source, link, canCheckSite, onClose }: { source: MediaSo
     >
       <div className="confirm__box">
         <div className="fetch-details__picture">
-          {source.thumbnail && !pictureFailed ? (
-            <img src={source.thumbnail} alt="" referrerPolicy="no-referrer" onError={() => setPictureFailed(true)} />
+          {picture && !pictureFailed ? (
+            <img src={picture} alt="" referrerPolicy="no-referrer" onError={() => setPictureFailed(true)} />
+          ) : !pictureFailed ? (
+            <span className="fetch-details__no-picture">Loading the picture…</span>
           ) : (
             <span className="fetch-details__no-picture">
               <Icon name={hasVideo ? "film" : "music"} size={20} />

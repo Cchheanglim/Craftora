@@ -40,6 +40,8 @@ export interface MediaSource {
   image?: boolean;
   /** A small picture: the site's picture for a link, or a JPEG data URL of a file's first frame. */
   thumbnail?: string;
+  /** Links: the site's other pictures for the video, best first, tried when `thumbnail` won't load. */
+  thumbnails?: string[];
   /** Links: the preview streams' ids in the disk cache (src-tauri/src/media_cache.rs). */
   previewCacheIds?: string[];
   /** ~240 loudness bars (0–100) across the audio, for the radio wave under the video and on clips. */

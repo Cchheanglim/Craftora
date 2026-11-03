@@ -84,11 +84,13 @@ export const onFetchPage = (handler: (found: FoundPage) => void): Promise<Unlist
 /**
  * A video's picture as a small copy kept with the media: fetched once by Rust with the page it
  * belongs to (some sites refuse their pictures to other pages), so the site isn't asked again
- * each time it shows. Falls back to the picture's address.
+ * each time it shows. `urls`: its pictures, best first, each tried until one loads. Falls back to
+ * the first picture's address.
  */
-export async function keptThumbnail(url: string, link: string): Promise<string> {
+export async function keptThumbnail(urls: string[], link: string): Promise<string> {
+  const url = urls[0] ?? "";
   try {
-    const bytes = await invoke<ArrayBuffer>("fetch_thumbnail", { url, link });
+    const bytes = await invoke<ArrayBuffer>("fetch_thumbnail", { urls, link });
     const local = URL.createObjectURL(new Blob([bytes]));
     try {
       return (await captureThumbnail(local, true)) ?? url;

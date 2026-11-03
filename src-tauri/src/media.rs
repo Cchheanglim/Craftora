@@ -504,6 +504,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
 
     if info.is_live == Some(true) {
         // Nothing to preview or trim until `record_live` has saved the first part.
+        let thumbnails = other_pictures(&info);
         return Ok(MediaSource {
             url,
             title: info.title.unwrap_or_else(|| "Live stream".into()),
@@ -516,8 +517,8 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
             preview_hls: false,
             preview_proxy: "",
             image: false,
-            thumbnails: other_pictures(&info),
             thumbnail: info.thumbnail.unwrap_or_default(),
+            thumbnails,
             chapters: Vec::new(),
             peaks_url: String::new(),
             hover_url: String::new(),
@@ -608,6 +609,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
     let hover = if length_known { preview_choices(&info.formats, Some(HOVER_HEIGHT)).first().and_then(|f| f.url.clone()) } else { None };
     let hover_url = with_page(hover.unwrap_or_default());
     let captions = crate::captions::pick(&info.subtitles, &info.automatic_captions, info.language.as_deref());
+    let thumbnails = other_pictures(&info);
     Ok(MediaSource {
         url,
         title: info.title.unwrap_or_else(|| "Untitled".into()),
@@ -620,8 +622,8 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
         preview_hls,
         preview_proxy: "",
         image: false,
-        thumbnails: other_pictures(&info),
         thumbnail: info.thumbnail.unwrap_or_default(),
+        thumbnails,
         chapters: info
             .chapters
             .unwrap_or_default()
