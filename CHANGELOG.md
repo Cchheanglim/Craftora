@@ -17,8 +17,10 @@
 - **Rotate** a picture a quarter turn at a time (also in Edit & export).
 - **Cover** on the main track: the project's picture, from the frame at the playhead or a
   picture on your PC. Exported videos have it built in as their cover.
-- **Tracks** have lock, hide and mute buttons and a ⋯ menu (track height, waveform size,
-  magnet, remove). Video clips show frames along them, with their name, length and sound wave.
+- **Tracks** all have the same lock, hide and mute buttons, lined up, and a ⋯ menu (track
+  height, waveform size, magnet, remove). Hiding a sound track turns it off (left out of the
+  preview and the export); text and effects have no sound, so their mute is greyed out. Video
+  clips show frames along them, with their name, length and sound wave.
 
 **Changed**
 
@@ -72,6 +74,15 @@
 - **Broken pictures on the timeline** for some files from your PC (ones whose sound the preview
   can't play as is, such as AC3): the clip's picture turned into a broken image once Craftora's
   preview copy was ready.
+- **A black flash where clips meet** in the preview (after a split, a slow-motion part, or any
+  cut): the next clip only started looking for its first frame when its turn came. It now waits
+  on that frame beforehand.
+- **Sound files showed a broken picture** on their timeline clip and a black box under In this
+  project: they show a music note now.
+- **Dropping a video on the text track did nothing**: it now lands on a video track.
+- **The Duplicate button's icon was squashed** to a sliver in Edit & export.
+- **Hints in link, file name and key boxes** were in the code font; they now match the rest of
+  the app (what you type there stays in the code font).
 
 ## 0.5.1 (November 2026)
 
