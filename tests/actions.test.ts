@@ -70,6 +70,24 @@ test("sound files stay off video tracks, pictures off audio tracks, nothing medi
   expect(moved("video", "text-1")).not.toBe("text-1");
 });
 
+test("media dropped on a text track lands on a track that can take it", () => {
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, trackId: "text-1", at: 2 });
+  expect(p.clips.find((c) => c.id === "c")?.trackId).toBe("video-1");
+});
+
+test("an audio track turned off with its eye is silent in the export", async () => {
+  const { planExport } = await import("../src/project/exportPlan");
+  const media = mediaFromSource(source("audio"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
+  p = applyEdit(p, { type: "updateTrack", trackId: "audio-1", patch: { hidden: true } });
+  const settings = { output: "audio", videoContainer: "mp4", audioContainer: "mp3", cutMode: "fast", frameId: "1080p", quality: "fast" } as const;
+  const plan = planExport(p, settings);
+  expect(plan.kind === "render" && plan.spec.clips.map((c) => c.volume)).toEqual([0]);
+});
+
 test("a picture that fills the frame is rendered, not copied as it is", async () => {
   const { planExport } = await import("../src/project/exportPlan");
   const media = mediaFromSource(source("video"));
