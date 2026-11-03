@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mediaTimeAt, trackLabel, trackOrder, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackKind, type TrackSize } from "../project/model";
 import { blockLabel, type FxItem } from "../project/effects";
 import { fitsTrack, packedTrack, slotOn } from "../project/actions";
@@ -541,7 +542,8 @@ export function TimelineEditor({
                 <div
                   className="tl__head-more"
                   onBlur={(e) => {
-                    if (!e.currentTarget.contains(e.relatedTarget)) setMenu(null);
+                    // The menu is drawn on the page itself (a portal), outside this box in the page.
+                    if (!e.currentTarget.contains(e.relatedTarget) && !(e.relatedTarget instanceof Element && e.relatedTarget.closest(".tl__track-menu"))) setMenu(null);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Escape") setMenu(null);
@@ -563,8 +565,8 @@ export function TimelineEditor({
                   >
                     <Icon name="more" size={12} />
                   </button>
-                  {menuOpen && (
-                    // Fixed, so the timeline's scrolling box doesn't cut it off.
+                  {menuOpen && createPortal(
+                    // On the page itself, so the timeline's scrolling box (and a glass theme's blur) can't cut it off.
                     <div className="tl__menu tl__track-menu" role="menu" style={{ position: "fixed", left: menu.x, ...(menu.up ? { top: "auto", bottom: menu.y } : { top: menu.y }) }}>
                       <p className="tl__menu-label">Track height</p>
                       <div className="tl__sizes" role="group" aria-label="Track height">
@@ -626,7 +628,8 @@ export function TimelineEditor({
                         <Icon name="trash" size={13} />
                         Remove track
                       </button>
-                    </div>
+                    </div>,
+                    document.body,
                   )}
                 </div>
               </div>
@@ -765,7 +768,7 @@ export function TimelineEditor({
               </div>
             ))}
 
-            {coverMenu && (
+            {coverMenu && createPortal(
               <>
                 <div className="tl__menu-catcher" onPointerDown={() => setCoverMenu(null)} />
                 <div
@@ -800,7 +803,8 @@ export function TimelineEditor({
                     </button>
                   ))}
                 </div>
-              </>
+              </>,
+              document.body,
             )}
             {clipMenu && (() => {
               const clip = project.clips.find((c) => c.id === clipMenu.clipId);
@@ -926,7 +930,7 @@ function ClipMenu({
     </button>
   );
   const media = Boolean(clip.mediaId);
-  return (
+  return createPortal(
     <>
       <div
         className="tl__menu-catcher"
@@ -964,7 +968,8 @@ function ClipMenu({
             aria-haspopup="menu"
             aria-expanded={editOpen}
             disabled={locked || !(video || picture)}
-            onClick={() => setEditOpen((o) => !o)}
+            // Hovering already opened it: a click must not close it again.
+            onClick={() => setEditOpen(true)}
             onKeyDown={(e) => {
               if (e.key === "ArrowRight") setEditOpen(true);
             }}
@@ -995,6 +1000,7 @@ function ClipMenu({
         {item("replace", "Replace clip…", "image", media && !locked)}
         {item("reveal", "Open file location", "folder", local)}
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

@@ -122,8 +122,13 @@
   z-index: 40;
 }
 
-.tl__clip-menu {
+/* Over the catcher (.tl__menu, further down, would put it under). */
+.tl__menu.tl__clip-menu,
+.tl__menu.tl__track-menu {
   z-index: 41;
+}
+
+.tl__clip-menu {
   min-width: 220px;
 }
 
@@ -164,6 +169,16 @@
   top: -4px;
   left: 100%;
   margin-left: 4px;
+}
+
+/* Bridges the gap to the Edit item, so moving the pointer across doesn't close the list. */
+.tl__submenu-list::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  width: 10px;
 }
 
 /* The … menu: track height, waveform size, magnet, remove. */
