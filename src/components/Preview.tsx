@@ -185,6 +185,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const mediaOf = (c: Clip) => project.media.find((m) => m.id === c.mediaId);
   const active = (c: Clip) => time >= c.start && time < clipEnd(c);
   const mediaTime = (c: Clip) => (active(c) ? mediaTimeAt(c, time) : null);
+  /** A clip whose turn comes within a few seconds waits on its first frame (no black flash at a cut). */
+  const cueOf = (c: Clip) => (!active(c) && c.start >= time && c.start - time < 5 ? mediaTimeAt(c, c.start) : undefined);
   const stageAspect = frame.width / frame.height;
 
   // Each magnetic track's clips in play order, for transitions.
@@ -435,6 +437,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         kind="video"
                         src={media.source.previewUrl}
                         time={t}
+                        cue={cueOf(clip)}
                         playing={running}
                         volume={clip.volume * mix(clip).sound}
                         muted={muted || trackMuted(clip) || separateSound}
@@ -453,6 +456,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         kind="audio"
                         src={media.source.previewAudioUrl!}
                         time={t}
+                        cue={cueOf(clip)}
                         playing={running}
                         volume={clip.volume * mix(clip).sound}
                         muted={muted || trackMuted(clip)}
@@ -481,6 +485,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 kind="audio"
                 src={src}
                 time={mediaTime(clip)}
+                cue={cueOf(clip)}
                 playing={running}
                 volume={clip.volume * mix(clip).sound}
                 muted={muted || trackMuted(clip)}
