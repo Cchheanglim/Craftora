@@ -54,8 +54,12 @@ export const updateYtDlp = () => invoke<string>("update_yt_dlp");
 /** Opens a website or a video's page in a Craftora window, to log in and pick a video there. */
 export const openSignIn = (site: string) => invoke<void>("open_sign_in", { site });
 export const signOutEverywhere = () => invoke<void>("sign_out_everywhere");
-/** Websites Craftora keeps a login for, such as "youtube.com". */
-export const signedInSites = () => invoke<string[]>("signed_in_sites");
+/** A website Craftora keeps a login for, such as "youtube.com", and when it was last used (ms), if known. */
+export interface SignedInSite {
+  site: string;
+  used: number | null;
+}
+export const signedInSites = () => invoke<SignedInSite[]>("signed_in_sites");
 export const signOutOf = (site: string) => invoke<void>("sign_out_of", { site });
 /** A short message shown on top of the page in the sign-in window. */
 export const tellSignIn = (message: string) => invoke<void>("tell_sign_in", { message });
@@ -80,11 +84,13 @@ export const onFetchPage = (handler: (found: FoundPage) => void): Promise<Unlist
 /**
  * A video's picture as a small copy kept with the media: fetched once by Rust with the page it
  * belongs to (some sites refuse their pictures to other pages), so the site isn't asked again
- * each time it shows. Falls back to the picture's address.
+ * each time it shows. `urls`: its pictures, best first, each tried until one loads. Falls back to
+ * the first picture's address.
  */
-export async function keptThumbnail(url: string, link: string): Promise<string> {
+export async function keptThumbnail(urls: string[], link: string): Promise<string> {
+  const url = urls[0] ?? "";
   try {
-    const bytes = await invoke<ArrayBuffer>("fetch_thumbnail", { url, link });
+    const bytes = await invoke<ArrayBuffer>("fetch_thumbnail", { urls, link });
     const local = URL.createObjectURL(new Blob([bytes]));
     try {
       return (await captureThumbnail(local, true)) ?? url;
@@ -171,6 +177,29 @@ export async function fetchMedia(url: string, height?: number): Promise<MediaSou
   } catch (err) {
     throw new Error(message(err));
   }
+}
+
+// shortcut: kept for the session though a site's stream address can expire after hours; hovering then just shows the picture.
+const hovers = new Map<string, Promise<string | undefined>>();
+
+/**
+ * A light stream of a link's video for its list picture to play while hovered (as the editor's
+ * media list does), read once per link: yt-dlp takes a few seconds. Undefined for sound, pictures,
+ * live videos and streams only hls.js plays.
+ */
+export function hoverVideo(link: string): Promise<string | undefined> {
+  let found = hovers.get(link);
+  if (!found) {
+    found = fetchMedia(link).then(
+      (s) => (s.live || s.image || s.previewHls || !s.streams.some((x) => x.kind === "video") ? undefined : s.hoverUrl || s.previewUrl || undefined),
+      () => {
+        hovers.delete(link); // tried again on the next hover
+        return undefined;
+      },
+    );
+    hovers.set(link, found);
+  }
+  return found;
 }
 
 /** Asks where to save, then writes captions (timeline seconds) as an .srt file; false when the dialog was closed. */

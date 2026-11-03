@@ -2,7 +2,45 @@
 
 ## Next version
 
+**Changed**
+
+- **Settings → Links** lists each website with when it was last used (opened in Craftora's
+  window, or fetched from with its login). The box for typing a website to open is gone; when a
+  link needs a login, Fetch still offers to open its page. **Sign out of all** stays.
+- **Exporting an edited video that uses links** first downloads each link whole (a Download for
+  editing in the Queue; the export says "Waiting for its video to download"), then exports from
+  the file. After it, the editor plays the downloaded file instead of streaming the link.
+- **Fetch shows what a link holds before adding it**: its picture, title, website, who posted it,
+  length, what's in it, qualities, size, captions and what happens when it's added, with a
+  website check (VirusTotal key) and Cancel. Nothing is added or downloaded until you click
+  Add to project.
+- **Settings no longer has "New projects export as"**: every project starts as Video (MP4); pick
+  Audio only in Export when you want sound.
+- **Downloads can be deleted** from the Downloads page (the file goes to the Recycle Bin), not
+  only hidden.
+- **Craftora opens maximized.** Restore still gives the usual window.
+- **The preview can be made bigger or smaller**: drag the bar between the preview and the
+  timeline (or focus it and press ↑/↓). Craftora remembers the size.
+- **Every download is checked before Craftora keeps it** (Download for editing, and exports cut
+  straight from a link): it must really be a video or sound file, and your PC's antivirus
+  (Microsoft Defender or the one you installed) scans it, as browsers do. A file that fails is
+  deleted and the Queue says why.
+- **Websites in the sign-in window can't start other programs on your PC** (meeting apps, app
+  store links, Windows tools…), not even from an ad inside the page; before, Windows asked
+  "Open …?" and one click started it.
+
 **Fixed**
+
+- **Some videos from a website had no picture while others from the same site did**: Craftora
+  only tried the website's largest picture, which isn't there for every video (YouTube's, for
+  one), and gave up after one try. It now tries the video's other pictures in turn, and once
+  more after a dropped connection.
+- **Fetching sometimes failed on a website that usually works**: a moment's network trouble (a
+  timeout, a dropped connection, the site's server failing for a moment) now gets one more try.
+- **Pausing an export from a link started its download over**: the link's download is now a
+  Download for editing, which goes on from where it was.
+- **Hovering a project or a History row whose video is a link** didn't play it (only files on
+  this PC did): it now plays the link's light 480p stream, after a few seconds the first time.
 
 - **Broken pictures on the timeline** for some files from your PC (ones whose sound the preview
   can't play as is, such as AC3): the clip's picture turned into a broken image once Craftora's

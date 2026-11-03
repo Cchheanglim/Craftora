@@ -656,6 +656,7 @@ dependencies = [
  "tauri-winrt-notification",
  "tokio",
  "webview2-com",
+ "windows",
  "windows-core",
  "windows-sys 0.61.2",
 ]

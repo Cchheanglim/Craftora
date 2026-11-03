@@ -149,6 +149,32 @@ fn read_settings(app: &AppHandle) -> Settings {
         .unwrap_or_default()
 }
 
+/// When each website was last used (ms since 1970), shown in Settings → Links. Its own file, so
+/// page loads in the sign-in window never rewrite settings.json.
+pub(crate) type SitesUsed = std::collections::BTreeMap<String, i64>;
+static SITES_USED: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub(crate) fn sites_used(app: &AppHandle) -> SitesUsed {
+    data_dir(app)
+        .ok()
+        .and_then(|dir| std::fs::read_to_string(dir.join("sites-used.json")).ok())
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+/// Changes the record one caller at a time, so two pages loading at once don't lose a time.
+pub(crate) fn change_sites_used(app: &AppHandle, change: impl FnOnce(&mut SitesUsed)) {
+    let _one_at_a_time = SITES_USED.lock().unwrap_or_else(|e| e.into_inner());
+    let before = sites_used(app);
+    let mut used = before.clone();
+    change(&mut used);
+    if used != before
+        && let (Ok(dir), Ok(text)) = (data_dir(app), serde_json::to_string(&used))
+    {
+        let _ = write_json(&dir.join("sites-used.json"), &text);
+    }
+}
+
 /// The save folder the user chose, if it still exists.
 pub(crate) fn chosen_output_dir(app: &AppHandle) -> Option<PathBuf> {
     read_settings(app).output_dir.map(PathBuf::from).filter(|dir| dir.is_dir())
@@ -247,7 +273,7 @@ pub fn open_file(app: AppHandle, path: String) -> Result<(), String> {
         .map_err(|e| format!("Couldn't open the file: {e}"))
 }
 
-/// Moves an exported media file to the Recycle Bin, so a wrong click can be undone there. A file
+/// Moves an exported or downloaded media file to the Recycle Bin, so a wrong click can be undone there. A file
 /// that's already gone counts as done.
 #[tauri::command]
 pub async fn delete_file(path: String) -> Result<(), String> {
@@ -256,7 +282,7 @@ pub async fn delete_file(path: String) -> Result<(), String> {
         return Ok(());
     }
     if !is_media(&file) || !file.is_file() {
-        return Err("Only exported video and sound files can be deleted here.".into());
+        return Err("Only video and sound files can be deleted here.".into());
     }
     // The path reaches PowerShell through the environment, never inside the script text.
     let mut command = std::process::Command::new("powershell");

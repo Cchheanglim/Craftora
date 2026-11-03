@@ -17,6 +17,11 @@ pub struct Chapter {
 }
 
 #[derive(Deserialize)]
+struct RawThumbnail {
+    url: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct RawChapter {
     title: Option<String>,
     #[serde(alias = "start_time")]
@@ -33,6 +38,9 @@ struct Info {
     duration: Option<f64>,
     is_live: Option<bool>,
     thumbnail: Option<String>,
+    /// Every picture yt-dlp knows for the video, worst first (`thumbnail` is the last).
+    #[serde(default)]
+    thumbnails: Vec<RawThumbnail>,
     #[serde(default)]
     chapters: Option<Vec<RawChapter>>,
     #[serde(default)]
@@ -131,6 +139,9 @@ pub struct MediaSource {
     /// Links: the site's picture for the video; empty when there is none.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub(crate) thumbnail: String,
+    /// Links: the site's other pictures for the video, best first, tried when `thumbnail` won't load.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) thumbnails: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) chapters: Vec<Chapter>,
     /// Links: a light stream of the sound to draw the wave from (`link_peaks`); empty when none.
@@ -387,22 +398,51 @@ fn wave_source(formats: &[Format], duration: f64) -> String {
 
 /// Pictures bigger than this aren't thumbnails.
 const MAX_THUMBNAIL_BYTES: u64 = 8 * 1024 * 1024;
+/// How many of a video's pictures are tried, best first.
+const MAX_PICTURES: usize = 8;
+
+/// The site's pictures for the video after `thumbnail` (yt-dlp's best), best first. Its best one
+/// isn't there for every video on some sites (YouTube's largest), so the next ones are kept to try.
+fn other_pictures(info: &Info) -> Vec<String> {
+    let mut seen: Vec<&str> = info.thumbnail.as_deref().into_iter().collect();
+    let mut others = Vec::new();
+    for url in info.thumbnails.iter().rev().filter_map(|t| t.url.as_deref()) {
+        if others.len() + 1 >= MAX_PICTURES {
+            break;
+        }
+        if !seen.contains(&url) {
+            seen.push(url);
+            others.push(url.to_string());
+        }
+    }
+    others
+}
 
 /// A video's picture, fetched once with the page it belongs to as Referer: some sites refuse
 /// their pictures to other pages ("hotlink protection"). The UI keeps a small copy, so the site
-/// isn't asked again each time the picture shows.
+/// isn't asked again each time the picture shows. `urls`: the video's pictures, best first; one
+/// that isn't there moves on to the next.
 #[tauri::command]
-pub async fn fetch_thumbnail(url: String, link: String) -> Result<tauri::ipc::Response, String> {
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err("Not a web picture.".into());
-    }
+pub async fn fetch_thumbnail(urls: Vec<String>, link: String) -> Result<tauri::ipc::Response, String> {
     let (page, found_on) = crate::signin::split_referer(&link);
-    let response = crate::media_cache::client()
-        .get(&url)
-        .header(reqwest::header::REFERER, found_on.unwrap_or(page))
-        .send()
-        .await
-        .map_err(|e| format!("Couldn't load the picture: {e}"))?;
+    let mut problem = "No picture to load.".to_string();
+    for url in urls.iter().filter(|u| u.starts_with("https://") || u.starts_with("http://")).take(MAX_PICTURES) {
+        match fetch_picture(url, found_on.unwrap_or(page)).await {
+            Ok(bytes) => return Ok(tauri::ipc::Response::new(bytes)),
+            Err(e) => problem = e,
+        }
+    }
+    crate::diag::note(format!("picture of {link}: {problem}"));
+    Err(problem)
+}
+
+async fn fetch_picture(url: &str, referer: &str) -> Result<Vec<u8>, String> {
+    let send = || crate::media_cache::client().get(url).header(reqwest::header::REFERER, referer).send();
+    // A moment's network trouble (a dropped connection) gets one more try; an answer like 404 doesn't.
+    let response = match send().await {
+        Ok(response) => response,
+        Err(_) => send().await.map_err(|e| format!("Couldn't load the picture: {e}"))?,
+    };
     if !response.status().is_success() {
         return Err(format!("The picture's server answered {}.", response.status()));
     }
@@ -413,13 +453,14 @@ pub async fn fetch_thumbnail(url: String, link: String) -> Result<tauri::ipc::Re
     if bytes.len() as u64 > MAX_THUMBNAIL_BYTES {
         return Err("The picture is too big.".into());
     }
-    Ok(tauri::ipc::Response::new(bytes.to_vec()))
+    Ok(bytes.to_vec())
 }
 
 /// What yt-dlp says a link contains. A site whose bot check turns yt-dlp away is tried once more
 /// with yt-dlp posing as a browser (and remembered, so downloads from it do the same).
 async fn read_link(app: &AppHandle, url: &str) -> Result<Info, String> {
     let mut retried = false;
+    let mut hiccup = false;
     loop {
         let mut args: Vec<String> = ["--dump-single-json", "--no-playlist", "--no-warnings", "--encoding", "utf-8"].map(String::from).to_vec();
         let (link, _cookie_file) = crate::signin::link_args(app, url).await;
@@ -434,12 +475,29 @@ async fn read_link(app: &AppHandle, url: &str) -> Result<Info, String> {
         }
         let error = last_error(&String::from_utf8_lossy(&output.stderr)).unwrap_or_else(|| "yt-dlp couldn't read this link.".into());
         crate::diag::note(format!("yt-dlp read {url}{}: {error}", if retried { " (as a browser)" } else { "" }));
+        // The same site works one moment and not the next: a moment's network trouble gets one more try.
+        if !hiccup && is_network_hiccup(&error) {
+            hiccup = true;
+            crate::diag::note("network trouble: trying once more");
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            continue;
+        }
         if retried || !is_bot_check(&error) || !crate::signin::note_bot_check(url) {
             return Err(error);
         }
         crate::diag::note("bot check: trying again as a browser");
         retried = true;
     }
+}
+
+/// yt-dlp's words for trouble on the way to the site rather than with the link: a timeout, a
+/// dropped connection, a server that failed for a moment. (Not 429 "too many requests": trying
+/// again at once doesn't help there.)
+fn is_network_hiccup(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    ["timed out", "connection reset", "connection aborted", "remote end closed", "temporary failure in name resolution", "getaddrinfo failed", "incompleteread", "unexpected_eof", "http error 500", "http error 502", "http error 503", "http error 504"]
+        .iter()
+        .any(|words| error.contains(words))
 }
 
 /// yt-dlp's words for "a bot check turned me away", such as "Got HTTP Error 403 caused by
@@ -464,6 +522,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
 
     if info.is_live == Some(true) {
         // Nothing to preview or trim until `record_live` has saved the first part.
+        let thumbnails = other_pictures(&info);
         return Ok(MediaSource {
             url,
             title: info.title.unwrap_or_else(|| "Live stream".into()),
@@ -477,6 +536,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
             preview_proxy: "",
             image: false,
             thumbnail: info.thumbnail.unwrap_or_default(),
+            thumbnails,
             chapters: Vec::new(),
             peaks_url: String::new(),
             hover_url: String::new(),
@@ -567,6 +627,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
     let hover = if length_known { preview_choices(&info.formats, Some(HOVER_HEIGHT)).first().and_then(|f| f.url.clone()) } else { None };
     let hover_url = with_page(hover.unwrap_or_default());
     let captions = crate::captions::pick(&info.subtitles, &info.automatic_captions, info.language.as_deref());
+    let thumbnails = other_pictures(&info);
     Ok(MediaSource {
         url,
         title: info.title.unwrap_or_else(|| "Untitled".into()),
@@ -580,6 +641,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
         preview_proxy: "",
         image: false,
         thumbnail: info.thumbnail.unwrap_or_default(),
+        thumbnails,
         chapters: info
             .chapters
             .unwrap_or_default()
@@ -630,7 +692,17 @@ fn pick_live(formats: &[Format]) -> Option<Vec<(String, BTreeMap<String, String>
 
 #[cfg(test)]
 mod tests {
-    use super::{first_served, is_bot_check, parse_mpd_duration, preview_choices, Format, Info};
+    use super::{first_served, is_bot_check, is_network_hiccup, other_pictures, parse_mpd_duration, preview_choices, Format, Info, MAX_PICTURES};
+
+    #[test]
+    fn keeps_the_other_pictures_best_first() {
+        let info: Info = serde_json::from_str(r#"{"thumbnail":"c","thumbnails":[{"url":"a"},{"url":"b"},{"url":"c"},{"url":"b"},{}]}"#).unwrap();
+        assert_eq!(other_pictures(&info), ["b", "a"]);
+        let many: Vec<String> = (0..20).map(|n| format!(r#"{{"url":"p{n}"}}"#)).collect();
+        let info: Info = serde_json::from_str(&format!(r#"{{"thumbnail":"p19","thumbnails":[{}]}}"#, many.join(","))).unwrap();
+        assert_eq!(other_pictures(&info).len(), MAX_PICTURES - 1);
+        assert_eq!(other_pictures(&info)[0], "p18");
+    }
 
     /// The preview file picked first, and whether it has sound.
     fn preview(formats: &[Format], max_height: Option<u32>) -> (String, bool) {
@@ -641,6 +713,16 @@ mod tests {
     fn knows_a_bot_check_answer() {
         assert!(is_bot_check(r#"[generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again with --extractor-args "generic:impersonate""#));
         assert!(!is_bot_check("[generic] Unsupported URL: https://shop.example/"));
+    }
+
+    #[test]
+    fn tries_again_only_after_network_trouble() {
+        assert!(is_network_hiccup("[youtube] abc: Unable to download API page: <urlopen error [WinError 10054] Connection reset by peer>"));
+        assert!(is_network_hiccup("[generic] Unable to download webpage: The read operation timed out"));
+        assert!(is_network_hiccup("[vimeo] 123: Unable to download JSON metadata: HTTP Error 503: Service Unavailable"));
+        assert!(!is_network_hiccup("[youtube] abc: Video unavailable. This video is private"));
+        assert!(!is_network_hiccup("HTTP Error 429: Too Many Requests"));
+        assert!(!is_network_hiccup("[generic] Unsupported URL: https://shop.example/"));
     }
 
     #[test]

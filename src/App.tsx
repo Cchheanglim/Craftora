@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ExportSettings, Job, MediaSource, OutputKind } from "./types";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import type { ExportSettings, Job, MediaSource } from "./types";
 import { DEMO_JOBS, DEMO_SOURCES } from "./data/demo";
 import {
   engineStatus,
@@ -93,6 +93,8 @@ import {
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { Home, type LinkSettings } from "./components/Home";
+import { TimelineDivider } from "./components/TimelineDivider";
+import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
 import { TimelineEditor } from "./components/TimelineEditor";
 import { CaptionStyle, Inspector } from "./components/Inspector";
@@ -186,6 +188,14 @@ function remembered(key: string, fallback: boolean): boolean {
     return fallback;
   }
 }
+/** The timeline height (px) the user dragged it to, if they did; storage may be unavailable. */
+function rememberedHeight(): number | null {
+  try {
+    return Number(localStorage.getItem("craftora.timelineHeight")) || null;
+  } catch {
+    return null;
+  }
+}
 function remember(key: string, value: boolean) {
   try {
     localStorage.setItem(key, value ? "1" : "0");
@@ -239,7 +249,7 @@ async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource>
     for (const media of found.media) {
       try {
         const source = await fetchMedia(media);
-        const thumbnail = source.thumbnail || (found.image ? await keptThumbnail(found.image, found.page) : undefined);
+        const thumbnail = source.thumbnail || (found.image ? await keptThumbnail([found.image], found.page) : undefined);
         return { ...source, title: found.title || source.title, thumbnail };
       } catch (problem) {
         // An ad or a player that isn't the video: try the next guess.
@@ -252,7 +262,7 @@ async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource>
 }
 
 /** Finished exports as kept in the history: without what only a running job needs. */
-const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined });
+const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined, after: undefined });
 
 export default function App() {
   const [view, setView] = useState<View>(inDesktopApp ? "home" : "editor");
@@ -262,9 +272,13 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Settings page: what new projects export as, and how many jobs run at once.
-  const [defaultOutput, setDefaultOutput] = useState<OutputKind>(() => (remembered("craftora.exportSound", false) ? "audio" : "video"));
+  // Settings page: how many jobs run at once.
   const [maxRunning, setMaxRunning] = useState(() => rememberedCount("craftora.maxRunning", MAX_RUNNING));
+  const [timelineHeight, setTimelineHeight] = useState(rememberedHeight);
+  const resizeTimeline = (height: number) => {
+    setTimelineHeight(height);
+    rememberText("craftora.timelineHeight", String(height));
+  };
   // Settings → Theme; main.tsx already put the saved one on the page.
   const [theme, setTheme] = useState(savedTheme);
   const chooseTheme = (next: Theme) => {
@@ -273,7 +287,7 @@ export default function App() {
     saveTheme(next);
   };
   useGlideScroll();
-  const [settings, setSettings] = useState<ExportSettings>(() => ({ ...DEFAULT_SETTINGS, output: defaultOutput }));
+  const [settings, setSettings] = useState<ExportSettings>(DEFAULT_SETTINGS);
   const [freshId, setFreshId] = useState<string | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -551,14 +565,14 @@ export default function App() {
       const canDraw = (m.hasVideo || s.image) && (s.local || !(s.previewHls || s.live || !s.previewUrl)) && (inDesktopApp || !(s.previewProxy || !s.previewUrl));
       if (!sitePicture && !canDraw) continue;
       thumbTried.current.add(m.id);
-      const kept = sitePicture ? keptThumbnail(sitePicture, s.url).then((t) => (t.startsWith("data:") ? t : undefined)) : Promise.resolve(undefined);
+      const kept = sitePicture ? keptThumbnail([sitePicture, ...(s.thumbnails ?? [])], s.url).then((t) => (t.startsWith("data:") ? t : undefined)) : Promise.resolve(undefined);
       const task = kept
         .then((thumb) => thumb ?? (canDraw && s.previewUrl ? captureThumbnail(s.previewUrl, s.image) : undefined))
         .then((thumb) => thumb ?? (inDesktopApp && s.local ? localThumbnail(s.url, Boolean(s.image)).catch(() => undefined) : undefined));
       void task.then((thumbnail) => {
         const current = projectRef.current.media.find((x) => x.id === m.id);
         // Only the list picture: an image keeps its full-size previewUrl (Preview falls back to this if it can't load).
-        if (thumbnail && current) api.refreshMedia(m.id, { source: { ...current.source, thumbnail } });
+        if (thumbnail && current) api.refreshMedia(m.id, { source: { ...current.source, thumbnail, thumbnails: undefined } });
         // History saved the link before this picture existed.
         if (thumbnail && !s.local)
           setFetchHistory((list) => {
@@ -709,7 +723,7 @@ export default function App() {
     }
   };
 
-  /** Queues a whole link to download, so it edits like a file on this PC. */
+  /** Queues a whole link to download, so it edits like a file on this PC. Returns the queue job's id. */
   const downloadForEditing = (item: MediaItem) => {
     if (!inDesktopApp || item.source.local) return;
     // Meanwhile, fill the preview's cache from the start, so scrubbing what's done is instant. Not
@@ -717,8 +731,9 @@ export default function App() {
     if (!item.source.downloadFirst) for (const id of item.source.previewCacheIds ?? []) void prefetchPreview(id).catch(() => {});
     const format = item.hasVideo ? item.videoFormat : item.audioFormat;
     const stream = item.source.streams.find((s) => s.id === format);
+    const id = crypto.randomUUID();
     queue.add({
-      id: crypto.randomUUID(),
+      id,
       title: item.name,
       summary: `Download for editing · ${formatClock(item.source.duration)} · ${stream?.label ?? "best quality"}`,
       kind: item.hasVideo ? "video" : "audio",
@@ -731,6 +746,7 @@ export default function App() {
       thumbnail: item.source.thumbnail,
       prefetch: { mediaId: item.id, url: item.source.url, format, title: item.name, audioOnly: !item.hasVideo },
     });
+    return id;
   };
 
   /** A live link is recorded while it plays, so it can be edited before the stream ends. */
@@ -801,6 +817,7 @@ export default function App() {
         .then(async (path) => {
           if (path !== job.outputPath) queue.edit(job.id, { outputPath: path });
           const local = await openLocal(path);
+          if (job.prefetch) queue.downloaded(job.id, mediaId, path);
           const item = projectRef.current.media.find((m) => m.id === mediaId);
           if (!item) return;
           // Keep the link's length so clip times stay exactly where they were (a recording, or a
@@ -811,9 +828,10 @@ export default function App() {
         })
         .catch((err) => setError(`The download finished but couldn't be opened: ${errorText(err)}`));
     }
-  }, [queue.jobs, queue.edit, api, prepare]);
+  }, [queue.jobs, queue.edit, queue.downloaded, api, prepare]);
 
   /** `found`: what "Fetch this video" saw the page play, tried when yt-dlp doesn't know the page. */
+  const fetchReview = useFetchReview(inDesktopApp && siteChecks.available);
   const fetchSource = async (link: string, found?: FoundPage) => {
     setUrl(link);
     setBusy(true);
@@ -829,6 +847,11 @@ export default function App() {
         const found = DEMO_SOURCES.find((s) => s.url.toLowerCase() === link.toLowerCase());
         if (!found) throw new Error("Real links need the desktop app.");
         source = found;
+      }
+      // The user sees what the link holds before anything from it is added or downloaded.
+      if (!(await fetchReview.review(source, link))) {
+        if (found) void tellSignIn("Not added to Craftora.").catch(() => {});
+        return;
       }
       // Straight onto the timeline, after the last clip, ready to edit. With nothing the preview
       // can play (some stream sites), it downloads too, so it can still be edited.
@@ -1143,6 +1166,10 @@ export default function App() {
   const addToQueue = useCallback(() => {
     if (plan.kind === "empty") return;
     const id = crypto.randomUUID();
+    // An edited video renders links from whole downloads, which go on where they were after a pause,
+    // and then the editor plays the files instead of streaming the links.
+    const links = plan.kind === "render" ? project.media.filter((m) => !m.source.local && !m.source.live && plan.spec.media.some((s) => s.id === m.id)) : [];
+    const after = links.flatMap((m) => queue.jobs.find((j) => j.prefetch?.mediaId === m.id && j.status !== "failed")?.id ?? downloadForEditing(m) ?? []);
     const job: Job = {
       id,
       title: plan.title,
@@ -1156,6 +1183,7 @@ export default function App() {
       command: plan.command,
       spec: inDesktopApp && plan.kind === "simple" ? { ...plan.spec, id } : undefined,
       render: inDesktopApp && plan.kind === "render" ? { ...plan.spec, id } : undefined,
+      after: after.length ? after : undefined,
       thumbnail: coverOf(project),
     };
     queue.add(job);
@@ -1212,13 +1240,9 @@ export default function App() {
   const usedMedia = new Set(project.clips.map((c) => c.mediaId).filter((id): id is string => Boolean(id)));
   const selectedTrack = selected ? project.tracks.find((t) => t.id === selected.trackId) : undefined;
 
-  /** Signing in to websites, checking links and updating yt-dlp (Settings); absent in the browser preview. */
+  /** Signing out of websites, checking links and updating yt-dlp (Settings); absent in the browser preview. */
   const linkSettings: LinkSettings | undefined = inDesktopApp
     ? {
-        onSignIn: (site) => {
-          setSignInMessage(null);
-          openSignIn(site).catch((err) => setSignInMessage(errorText(err)));
-        },
         onSignOut: () =>
           void signOutEverywhere()
             .then(() => setSignInMessage("Signed out of all websites."))
@@ -1234,11 +1258,6 @@ export default function App() {
         ytDlpMessage: ytDlpUpdate.message,
       }
     : undefined;
-  const chooseDefaultOutput = (output: OutputKind) => {
-    setDefaultOutput(output);
-    remember("craftora.exportSound", output === "audio");
-    setSettings((current) => ({ ...current, output }));
-  };
   const chooseMaxRunning = (count: number) => {
     setMaxRunning(count);
     rememberText("craftora.maxRunning", String(count));
@@ -1247,6 +1266,7 @@ export default function App() {
   return (
     <div className="app" data-left={leftOpen ? "open" : "closed"}>
       <Ambient active={theme !== "classic"} />
+      {fetchReview.dialog}
       <Toolbar
         url={url}
         onUrlChange={(next) => {
@@ -1387,8 +1407,6 @@ export default function App() {
             onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
             downloadsDir={downloadsDir}
             onChooseDownloadsDir={inDesktopApp ? () => void chooseDownloadsDir() : undefined}
-            defaultOutput={defaultOutput}
-            onDefaultOutput={chooseDefaultOutput}
             theme={theme}
             onTheme={chooseTheme}
             maxRunning={maxRunning}
@@ -1409,7 +1427,11 @@ export default function App() {
           />
         )}
         {view === "editor" && (
-          <div className="app__editor">
+          <div
+            className="app__editor"
+            data-sized={timelineHeight ? "" : undefined}
+            style={timelineHeight ? ({ "--tl-h": `${timelineHeight}px` } as CSSProperties) : undefined}
+          >
             <Preview
               project={project}
               api={api}
@@ -1437,6 +1459,7 @@ export default function App() {
                   : undefined
               }
             />
+            <TimelineDivider height={timelineHeight} onResize={resizeTimeline} />
             <TimelineEditor
               project={project}
               api={api}

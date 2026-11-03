@@ -331,7 +331,7 @@ function statusText(job: Job): string {
       // An export can't go on from the middle of a cut or an encode.
       return !job.prefetch && (job.spec || job.render) ? "Paused · starts again when resumed" : "Paused";
     default:
-      return "Waiting";
+      return job.after?.length ? "Waiting for its video to download" : "Waiting";
   }
 }
 

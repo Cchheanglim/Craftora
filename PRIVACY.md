@@ -10,7 +10,8 @@ These are the only times Craftora goes online:
 - **Signing in to a website.** When a link needs a login, Craftora can open the website in its
   own small browser window, separate from your browser. Logins made there are kept on your PC,
   inside Craftora, and are only sent to the website they belong to, when you fetch from it.
-  **Sign out of all** (Settings → Links) removes them.
+  Settings → Links shows when each of those websites was last used; that time stays on your PC
+  too. **Sign out of all** (Settings → Links) removes the logins and the times.
 - **Pictures of fetched videos.** When you fetch a video, Craftora downloads its picture once and
   keeps a small copy on your PC for History, Media, Projects and Exports. (Videos fetched with
   version 0.3.0 or earlier still load their picture from the website each time.)

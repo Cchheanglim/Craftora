@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FetchEntry } from "../lib/storage";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
+import { hoverVideo, inDesktopApp } from "../lib/engine";
 import { formatWhen } from "../lib/timecode";
 import { useConfirm } from "./ConfirmDialog";
 import { HiddenFold, HideButton, useHidden } from "./Hidden";
@@ -80,7 +81,7 @@ export function History({ history, onFetchAgain, onRemove }: HistoryProps) {
                   {picked && (
                     <input type="checkbox" checked={picked.has(entry.url)} onChange={() => toggle(entry.url)} aria-label={`Select ${entry.title}`} />
                   )}
-                  <Thumb src={entry.thumbnail} icon="link" />
+                  <Thumb src={entry.thumbnail} icon="link" play={inDesktopApp ? () => hoverVideo(entry.url) : undefined} />
                   <span className="library__entry">
                     <span className="truncate" title={entry.title}>
                       {entry.title}
