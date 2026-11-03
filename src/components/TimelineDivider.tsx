@@ -1,15 +1,22 @@
 import type { KeyboardEvent, PointerEvent } from "react";
 
-/** The timeline keeps its tools, the ruler and one track; it never takes more than this share of the editor. */
+/** The timeline keeps its tools, the ruler and one track; the preview keeps room for its picture and
+ * controls (plus the 12px gap), as the CSS limit in App.css does. */
 const MIN_HEIGHT = 110;
-const MAX_SHARE = 0.75;
+const PREVIEW_ROOM = 252;
 
 /**
  * The bar between the preview and the timeline (the element right after it): drag it, or use
  * the arrow keys, to make the timeline taller and the preview smaller, or the other way round.
  */
 export function TimelineDivider({ height, onResize }: { height: number | null; onResize: (height: number) => void }) {
-  const fit = (bar: HTMLElement, h: number) => Math.round(Math.min(Math.max(h, MIN_HEIGHT), (bar.parentElement?.clientHeight ?? h) * MAX_SHARE));
+  const fit = (bar: HTMLElement, h: number) => {
+    // The editor's inside, as the CSS limit counts it.
+    const editor = bar.parentElement;
+    const style = editor && getComputedStyle(editor);
+    const inside = editor && style ? editor.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) : h + PREVIEW_ROOM;
+    return Math.round(Math.max(Math.min(h, inside - PREVIEW_ROOM), MIN_HEIGHT));
+  };
   const drag = (e: PointerEvent<HTMLDivElement>) => {
     const bar = e.currentTarget;
     const timeline = bar.nextElementSibling as HTMLElement | null;
