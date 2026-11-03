@@ -35,6 +35,7 @@ import {
   saveSrt,
   pickMediaFiles,
   pickMediaFile,
+  revealFile,
   pickPicture,
   fileThumbnail,
   openSignIn,
@@ -66,7 +67,7 @@ import {
   LIBRARY_LIMIT,
   type LibraryEntry,
 } from "./lib/storage";
-import { captureThumbnail } from "./lib/thumbnail";
+import { captureFrame, captureThumbnail } from "./lib/thumbnail";
 import { MAX_RUNNING, useQueue } from "./state/useQueue";
 import { storeEdition, useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
@@ -75,14 +76,17 @@ import { useGlideScroll } from "./lib/glide";
 import { useProject } from "./project/useProject";
 import { applyEdit, SHOWN_CAPTIONS, timelineCaptions, withShownCaptions } from "./project/actions";
 import { usePlayback } from "./project/usePlayback";
-import { cutModeApplies, formatSize, frameOf, planExport } from "./project/exportPlan";
+import { cutModeApplies, formatSize, frameOf, planExport, type ExportPlan } from "./project/exportPlan";
 import {
   CAPTIONS,
   NO_CROP,
   baseVideoTrack,
   clipEnd,
   emptyProject,
+  mediaTimeAt,
+  MIN_CLIP,
   trackLabel,
+  type Clip,
   mediaFromSource,
   sameFormat,
   previousOnTrack,
@@ -102,7 +106,7 @@ import { dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, type FxTab } from "./components/FxPanel";
 import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
-import { TimelineEditor } from "./components/TimelineEditor";
+import { TimelineEditor, type ClipCommand } from "./components/TimelineEditor";
 import { CaptionStyle, Inspector } from "./components/Inspector";
 import { ExportPanel } from "./components/ExportPanel";
 import { QueueDock } from "./components/QueueDock";
@@ -266,6 +270,9 @@ async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource>
     throw new Error(`A video was found on this page, but it couldn't be opened: ${errorText(firstProblem)}`);
   }
 }
+
+/** How long Freeze frame holds the picture, in seconds (like CapCut's). */
+const FREEZE_LENGTH = 3;
 
 /** Finished exports as kept in the history: without what only a running job needs. */
 const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined, after: undefined });
@@ -1227,12 +1234,13 @@ export default function App() {
     setView("editor");
   };
 
-  const addToQueue = useCallback(() => {
+  /** Queues `plan`, an export of `source` (the timeline, or one clip of it: Export this clip). */
+  const queueExport = (plan: ExportPlan, source: Project) => {
     if (plan.kind === "empty") return;
     const id = crypto.randomUUID();
     // An edited video renders links from whole downloads, which go on where they were after a pause,
     // and then the editor plays the files instead of streaming the links.
-    const links = plan.kind === "render" ? project.media.filter((m) => !m.source.local && !m.source.live && plan.spec.media.some((s) => s.id === m.id)) : [];
+    const links = plan.kind === "render" ? source.media.filter((m) => !m.source.local && !m.source.live && plan.spec.media.some((s) => s.id === m.id)) : [];
     const after = links.flatMap((m) => queue.jobs.find((j) => j.prefetch?.mediaId === m.id && j.status !== "failed")?.id ?? downloadForEditing(m) ?? []);
     const job: Job = {
       id,
@@ -1248,12 +1256,118 @@ export default function App() {
       spec: inDesktopApp && plan.kind === "simple" ? { ...plan.spec, id } : undefined,
       render: inDesktopApp && plan.kind === "render" ? { ...plan.spec, id } : undefined,
       after: after.length ? after : undefined,
-      thumbnail: coverOf(project),
+      thumbnail: coverOf(source),
     };
     queue.add(job);
     setFreshId(id);
     setQueuedCount((n) => n + 1);
-  }, [plan, effective.output, queue, project]);
+  };
+  const addToQueue = () => queueExport(plan, project);
+
+  // A clip's right-click menu (and Ctrl+C, Ctrl+X, Ctrl+V).
+  const clipboard = useRef<Clip | null>(null);
+  const [canPaste, setCanPaste] = useState(false);
+  const copyClip = (clip: Clip) => {
+    clipboard.current = clip;
+    setCanPaste(true);
+  };
+  /** The copied clip at the playhead, on its own track if it's free there. */
+  const pasteClip = () => {
+    const clip = clipboard.current;
+    if (!clip) return;
+    const newClipId = crypto.randomUUID();
+    api.edit({ type: "pasteClip", clip, newClipId, at: playback.time });
+    setSelectedId(newClipId);
+  };
+  /** One clip as its own file, from its start. */
+  const exportClip = (clip: Clip) => {
+    const media = project.media.find((m) => m.id === clip.mediaId);
+    const single: Project = { ...project, clips: [{ ...clip, start: 0, transition: undefined }] };
+    const name = `${(media?.name ?? "clip").replace(/\.[a-z0-9]{2,4}$/i, "")}_clip`;
+    queueExport(planExport(single, { ...effective, name }), single);
+  };
+  /** Another file from this PC in the clip's place, from that file's start. */
+  const replaceClip = async (clip: Clip) => {
+    const path = await pickMediaFile().catch(() => null);
+    if (!path) return;
+    try {
+      const source = await openLocal(path);
+      const onVideo = project.tracks.find((t) => t.id === clip.trackId)?.kind === "video";
+      if (onVideo && !source.image && !source.streams.some((s) => s.kind === "video")) {
+        setError("That file has no picture. Pick a video or a picture for a video track.");
+        return;
+      }
+      const item = importSource(source, false);
+      api.edit({ type: "replaceClipMedia", clipId: clip.id, mediaId: item.id });
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  /**
+   * The frame at `time` held still for a moment: the clip is cut there and the still goes in
+   * between, pushing what comes after along. One undo step.
+   */
+  const freezeFrame = async (clip: Clip, time: number) => {
+    const media = project.media.find((m) => m.id === clip.mediaId);
+    if (!media || media.source.image || !inDesktopApp) return;
+    const at = Math.min(Math.max(time, clip.start + MIN_CLIP), clipEnd(clip) - MIN_CLIP);
+    setError(null);
+    try {
+      const bytes = await captureFrame(media.source.previewUrl, mediaTimeAt(clip, at));
+      if (!bytes) throw new Error("Couldn't read that frame of the video. Download it for editing, then try again.");
+      const path = await saveSnapshot(Array.from(bytes), `${media.name.replace(/\.[a-z0-9]{2,4}$/i, "")}_freeze`);
+      const still = importSource(await openLocal(path), false);
+      const track = project.tracks.find((t) => t.id === clip.trackId);
+      const rest = crypto.randomUUID();
+      const stillId = crypto.randomUUID();
+      api.checkpoint();
+      api.editLive({ type: "splitClip", clipId: clip.id, newClipId: rest, at });
+      if (!track?.magnetic) {
+        // Make room: everything after the cut on this track moves along, last first.
+        const after = project.clips.filter((c) => c.trackId === clip.trackId && c.id !== clip.id && c.start >= at - 0.001);
+        for (const c of [...after].sort((a, b) => b.start - a.start)) api.editLive({ type: "moveClip", clipId: c.id, start: c.start + FREEZE_LENGTH, trackId: c.trackId });
+        api.editLive({ type: "moveClip", clipId: rest, start: at + FREEZE_LENGTH, trackId: clip.trackId });
+      }
+      api.editLive({ type: "addClip", clipId: stillId, mediaId: still.id, trackId: clip.trackId, at });
+      api.editLive({ type: "trimClip", clipId: stillId, edge: "end", time: at + FREEZE_LENGTH });
+      api.editLive({ type: "settle" });
+      setSelectedId(stillId);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  const clipCommand = (command: ClipCommand, clip: Clip, time: number) => {
+    const media = project.media.find((m) => m.id === clip.mediaId);
+    const patch = (p: Partial<Clip>) => api.edit({ type: "updateClip", clipId: clip.id, patch: p });
+    const actions: Record<ClipCommand, () => void> = {
+      copy: () => copyClip(clip),
+      cut: () => {
+        copyClip(clip);
+        api.edit({ type: "deleteClip", clipId: clip.id });
+        setSelectedId(null);
+      },
+      paste: pasteClip,
+      delete: () => {
+        api.edit({ type: "deleteClip", clipId: clip.id });
+        setSelectedId(null);
+      },
+      freeze: () => void freezeFrame(clip, time),
+      reverse: () => patch({ reverse: !clip.reverse }),
+      mirror: () => patch({ mirror: !clip.mirror }),
+      rotate: () => patch({ rotate: ((clip.rotate ?? 0) + 90) % 360 || undefined }),
+      crop: () => {
+        // The crop sliders in Edit & export.
+        setSelectedId(clip.id);
+        setRightTab("edit");
+        if (!rightOpen) toggleRight();
+        window.setTimeout(() => document.getElementById("insp-crop-left")?.focus(), 80);
+      },
+      export: () => exportClip(clip),
+      replace: () => void replaceClip(clip),
+      reveal: () => media?.source.local && void revealFile(media.source.url),
+    };
+    actions[command]();
+  };
 
   // Keyboard shortcuts, CapCut-style.
   const keys = useRef<(e: KeyboardEvent) => void>(() => {});
@@ -1269,6 +1383,9 @@ export default function App() {
     if (ctrl && key === "z" && !e.shiftKey) return (e.preventDefault(), api.undo());
     if (ctrl && (key === "y" || (key === "z" && e.shiftKey))) return (e.preventDefault(), api.redo());
     if (ctrl && key === "d") return (e.preventDefault(), duplicate());
+    if (ctrl && key === "c" && selected) return (e.preventDefault(), copyClip(selected));
+    if (ctrl && key === "x" && selected) return (e.preventDefault(), clipCommand("cut", selected, playback.time));
+    if (ctrl && key === "v" && clipboard.current) return (e.preventDefault(), pasteClip());
     if (ctrl || e.altKey) return;
     const target = e.target as HTMLElement;
     const onButton = target.tagName === "BUTTON" || target.getAttribute("role") === "button";
@@ -1539,6 +1656,8 @@ export default function App() {
               onDelete={remove}
               onAddText={addText}
               onDropFx={applyFx}
+              onClipCommand={clipCommand}
+              canPaste={canPaste}
             />
           </div>
         )}

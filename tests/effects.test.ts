@@ -97,3 +97,27 @@ test("tracks are called Track 1, Track 2… from the top", () => {
   const p = withClip();
   expect(p.tracks.map((t) => trackLabel(p, t))).toEqual(p.tracks.map((_, i) => `Track ${i + 1}`));
 });
+
+test("a pasted clip lands at the playhead, and a replaced one keeps its place", () => {
+  let p = withClip();
+  const clip = p.clips.find((c) => c.id === "c")!;
+  p = applyEdit(p, { type: "pasteClip", clip, newClipId: "copy", at: 3 });
+  const copy = p.clips.find((c) => c.id === "copy")!;
+  // The main track is magnetic: like dropped media, the copy goes in where the playhead is (here before the clip, 3 s is in its first half).
+  expect([copy.trackId, copy.start, copy.in, copy.out]).toEqual([clip.trackId, 0, 0, 10]);
+  expect(p.clips.find((c) => c.id === "c")!.start).toBe(10);
+  // A clip whose media was removed can't be pasted.
+  expect(applyEdit(p, { type: "pasteClip", clip: { ...clip, mediaId: "gone" }, newClipId: "x", at: 0 })).toBe(p);
+
+  const longer = mediaFromSource({ ...video, url: "C:\\long.mp4", duration: 60 });
+  const shorter = mediaFromSource({ ...video, url: "C:\\short.mp4", duration: 4 });
+  p = run(p, [
+    { type: "importMedia", item: longer },
+    { type: "importMedia", item: shorter },
+    { type: "replaceClipMedia", clipId: "c", mediaId: longer.id },
+  ]);
+  expect(p.clips.find((c) => c.id === "c")).toMatchObject({ mediaId: longer.id, start: 10, in: 0, out: 10 });
+  // A shorter file gives what it has.
+  p = applyEdit(p, { type: "replaceClipMedia", clipId: "c", mediaId: shorter.id });
+  expect(p.clips.find((c) => c.id === "c")).toMatchObject({ mediaId: shorter.id, in: 0, out: 4 });
+});

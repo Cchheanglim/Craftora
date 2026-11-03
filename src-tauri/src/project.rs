@@ -696,7 +696,16 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{effect_filter, look_filter};
+    use super::{effect_filter, look_filter, ClipSpec};
+
+    #[test]
+    fn turns_a_picture_after_its_crop() {
+        let clip: ClipSpec = serde_json::from_str(r#"{"role":"video","layer":0,"start":0,"in":0,"out":1,"crop":[0.1,0,0,0],"rotate":90}"#).unwrap();
+        let edits = clip.picture_edits();
+        assert!(edits.find("crop=").unwrap() < edits.find("transpose=clock").unwrap(), "{edits}");
+        let upside: ClipSpec = serde_json::from_str(r#"{"role":"video","layer":0,"start":0,"in":0,"out":1,"rotate":180}"#).unwrap();
+        assert_eq!(upside.picture_edits(), ",hflip,vflip");
+    }
 
     #[test]
     fn draws_each_effect_block() {
