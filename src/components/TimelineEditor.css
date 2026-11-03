@@ -155,7 +155,9 @@
 }
 
 .tl__head.is-text,
-.tl__lane.is-text {
+.tl__lane.is-text,
+.tl__head.is-effect,
+.tl__lane.is-effect {
   height: 32px;
 }
 
@@ -231,6 +233,12 @@
 .tl__clip.is-text {
   background: var(--clip-text);
   border-color: var(--clip-text-line);
+}
+
+/* Filter and effect blocks (effects.ts). */
+.tl__clip.is-effect {
+  background: var(--clip-effect);
+  border-color: var(--clip-effect-line);
 }
 
 .tl__clip.is-selected {

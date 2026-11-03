@@ -5,8 +5,10 @@
  */
 import type { Caption, MediaSource } from "../types";
 import type { LibraryEntry } from "../lib/storage";
+import type { LookId, PictureEffectId } from "./effects";
 
-export type TrackKind = "video" | "audio" | "text";
+/** "effect": filter and effect blocks (effects.ts), which change the pictures under them. */
+export type TrackKind = "video" | "audio" | "text" | "effect";
 
 /**
  * A row on the timeline. Every track of a kind works the same way; higher video tracks are
@@ -123,6 +125,10 @@ export interface Clip {
   volume: number;
   mirror: boolean;
   reverse: boolean;
+  /** A filter block (on an effects track): its colour look, effects.ts `LOOKS`. */
+  look?: LookId;
+  /** An effect block (on an effects track): effects.ts `PICTURE_EFFECTS`. */
+  effect?: PictureEffectId;
   /** Seconds of fade from black/silence at the start and to black/silence at the end. */
   fadeIn: number;
   fadeOut: number;
@@ -180,6 +186,12 @@ export const CAPTIONS: CaptionLayout = { x: 0.5, y: 0.9, size: 0.055 };
 
 /** Shortest clip a trim or split may leave, in seconds. */
 export const MIN_CLIP = 0.2;
+
+/** What the editor calls a track: "Track 1", "Track 2"… from the top, whatever is on it ("Captions" keeps its name). */
+export function trackLabel(project: Project, track: Track): string {
+  if (track.name === "Captions") return track.name;
+  return `Track ${project.tracks.filter((t) => t.name !== "Captions").findIndex((t) => t.id === track.id) + 1}`;
+}
 export const DEFAULT_TEXT_LENGTH = 3;
 /** How long an image is shown when first added. */
 export const DEFAULT_IMAGE_LENGTH = 5;
@@ -304,6 +316,9 @@ export const mediaOf = (p: Project, c: Clip) => p.media.find((m) => m.id === c.m
 
 /** A clip with no media time of its own (text, or a still image): it can be any length. */
 export const isStill = (p: Project, c: Clip) => !c.mediaId || Boolean(mediaOf(p, c)?.source.image);
+
+/** A filter or effect block (they live on effects tracks), rather than text. */
+export const isBlock = (c: Clip) => Boolean(c.look || c.effect);
 
 /** A name for the project list: the first thing imported. */
 export const projectName = (p: Project) => p.media[0]?.name.replace(/\.[a-z0-9]{2,4}$/i, "") ?? "Untitled project";

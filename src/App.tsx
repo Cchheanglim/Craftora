@@ -82,6 +82,7 @@ import {
   baseVideoTrack,
   clipEnd,
   emptyProject,
+  trackLabel,
   mediaFromSource,
   sameFormat,
   previousOnTrack,
@@ -89,6 +90,7 @@ import {
   projectName,
   silencesFromPeaks,
   upgradeProject,
+  type Clip,
   type MediaItem,
   type Project,
   withImported,
@@ -97,6 +99,7 @@ import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { Home, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
+import { effectEdits, type EffectChange } from "./project/effects";
 import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
 import { TimelineEditor } from "./components/TimelineEditor";
@@ -1128,6 +1131,16 @@ export default function App() {
     const clip = splitTarget();
     if (clip) api.edit({ type: "splitClip", clipId: clip.id, newClipId: crypto.randomUUID(), at: playback.time });
   };
+  /**
+   * Puts a catalog effect on a clip, or only on its part from `part[0]` to `part[1]`: the clip is
+   * cut there first and the effect goes on the middle piece, which is then selected. One undo step.
+   */
+  const addEffect = (clip: Clip, change: EffectChange, part?: [number, number]) => {
+    const { edits, target } = effectEdits(clip, change, part, [crypto.randomUUID(), crypto.randomUUID()]);
+    api.checkpoint();
+    for (const edit of edits) api.editLive(edit);
+    setSelectedId(target);
+  };
   const duplicate = () => {
     if (!selectedId) return;
     const newClipId = crypto.randomUUID();
@@ -1587,6 +1600,9 @@ export default function App() {
                   track={selectedTrack}
                   media={project.media.find((m) => m.id === selected.mediaId)}
                   onRelink={(item) => void relink(item)}
+                  trackName={trackLabel(project, selectedTrack)}
+                  playhead={playback.time}
+                  onAddEffect={(change, part) => addEffect(selected, change, part)}
                   onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
                   onDuration={
                     !selected.mediaId || project.media.find((m) => m.id === selected.mediaId)?.source.image

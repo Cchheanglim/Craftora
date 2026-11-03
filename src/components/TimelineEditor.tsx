@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, trackOrder, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackKind } from "../project/model";
+import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, trackLabel, trackOrder, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackKind } from "../project/model";
+import { blockLabel, type FxItem } from "../project/effects";
 import { fitsTrack, packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -16,16 +17,23 @@ import "./TimelineEditor.css";
 export const mediaDrag: { current: string | null } = { current: null };
 
 /** Starts dragging `mediaId` from the Media list; a lane adds it where the pointer is let go. */
-export function beginMediaDrag(mediaId: string, e: ReactPointerEvent) {
+export const beginMediaDrag = (mediaId: string, e: ReactPointerEvent) => followDrag(mediaDrag, mediaId, e);
+
+/** A filter, effect or transition being dragged from the right panel onto the timeline, or null. */
+export const fxDrag: { current: FxItem | null } = { current: null };
+export const beginFxDrag = (item: FxItem, e: ReactPointerEvent) => followDrag(fxDrag, item, e);
+
+/** Holds `value` in `holder` once the pointer has moved a little, until it's let go. */
+function followDrag<T>(holder: { current: T | null }, value: T, e: ReactPointerEvent) {
   const [x, y] = [e.clientX, e.clientY];
   const move = (ev: PointerEvent) => {
-    if (mediaDrag.current || Math.hypot(ev.clientX - x, ev.clientY - y) < 4) return;
-    mediaDrag.current = mediaId;
+    if (holder.current || Math.hypot(ev.clientX - x, ev.clientY - y) < 4) return;
+    holder.current = value;
     document.body.classList.add("is-dragging-media");
   };
-  // Lanes read `mediaDrag` in their own pointerup, which runs before this window listener.
+  // Lanes read the holder in their own pointerup, which runs before this window listener.
   const end = () => {
-    mediaDrag.current = null;
+    holder.current = null;
     document.body.classList.remove("is-dragging-media");
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", end);
@@ -56,6 +64,8 @@ interface TimelineEditorProps {
   cuttingSilences?: boolean;
   onDelete: () => void;
   onAddText: () => void;
+  /** A filter, effect or transition dropped on track `trackId` at `time`. */
+  onDropFx: (item: FxItem, trackId: string, time: number) => void;
 }
 
 type DragMode = "move" | "start" | "end";
@@ -72,7 +82,7 @@ interface Ghost {
   trackId: string;
 }
 
-const TRACK_ICON: Record<Track["kind"], IconName> = { video: "film", audio: "music", text: "text" };
+const TRACK_ICON: Record<Track["kind"], IconName> = { video: "film", audio: "music", text: "text", effect: "sparkle" };
 
 export function TimelineEditor({
   project,
@@ -87,6 +97,7 @@ export function TimelineEditor({
   cuttingSilences,
   onDelete,
   onAddText,
+  onDropFx,
 }: TimelineEditorProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -275,6 +286,7 @@ export function TimelineEditor({
   const onMediaDrop = (track: Track) => (e: ReactPointerEvent<HTMLDivElement>) => {
     const mediaId = mediaDrag.current;
     if (mediaId) api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId, trackId: track.id, at: timeAt(e.clientX) });
+    else if (fxDrag.current) onDropFx(fxDrag.current, track.id, timeAt(e.clientX));
   };
 
   const step = RULER_STEPS.find((s) => s * pps >= 70) ?? 3600;
@@ -399,16 +411,17 @@ export function TimelineEditor({
           <div className="tl__ruler-spacer" />
           {project.tracks.map((track) => {
             const clipCount = project.clips.filter((c) => c.trackId === track.id).length;
+            const name = trackLabel(project, track);
             return (
               <div key={track.id} className={`tl__head is-${track.kind}`}>
                 <Icon name={TRACK_ICON[track.kind]} size={13} />
-                <span className="truncate">{track.name}</span>
+                <span className="truncate">{name}</span>
                 {track.kind !== "text" && (
                   <button
                     type="button"
                     className="tl__head-btn"
                     aria-pressed={Boolean(track.muted)}
-                    aria-label={track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`}
+                    aria-label={track.muted ? `Unmute ${name}` : `Mute ${name}`}
                     title={track.muted ? "Track is muted. Click to unmute." : "Mute this track"}
                     onClick={() => api.edit({ type: "setTrackMuted", trackId: track.id, muted: !track.muted })}
                   >
@@ -419,7 +432,7 @@ export function TimelineEditor({
                   type="button"
                   className="tl__head-btn"
                   aria-pressed={Boolean(track.magnetic)}
-                  aria-label={`Magnet for ${track.name}`}
+                  aria-label={`Magnet for ${name}`}
                   title={
                     track.magnetic
                       ? "Magnet on: clips stay back to back and can have transitions. Click to turn off."
@@ -432,11 +445,11 @@ export function TimelineEditor({
                 <button
                   type="button"
                   className="tl__head-btn"
-                  aria-label={`Remove ${track.name}`}
+                  aria-label={`Remove ${name}`}
                   title={
                     clipCount
-                      ? `Remove ${track.name} and its ${clipCount} clip${clipCount === 1 ? "" : "s"} (Ctrl+Z brings it back)`
-                      : `Remove ${track.name}`
+                      ? `Remove ${name} and its ${clipCount} clip${clipCount === 1 ? "" : "s"} (Ctrl+Z brings it back)`
+                      : `Remove ${name}`
                   }
                   onClick={() => api.edit({ type: "removeTrack", trackId: track.id })}
                 >
@@ -485,7 +498,7 @@ export function TimelineEditor({
                   .sort((a, b) => where(a).start - where(b).start)
                   .map((clip) => {
                     const media = project.media.find((m) => m.id === clip.mediaId);
-                    const label = clip.text ?? media?.name ?? "Clip";
+                    const label = isBlock(clip) ? blockLabel(clip) : (clip.text ?? media?.name ?? "Clip");
                     const isSelected = clip.id === selectedId;
                     const isGhost = clip.id === ghost?.clipId;
                     const { start } = where(clip);

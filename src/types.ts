@@ -1,3 +1,4 @@
+import type { LookStep } from "./project/effects";
 export type OutputKind = "video" | "audio";
 export type VideoContainer = "mp4" | "mkv";
 export type AudioContainer = "mp3" | "wav" | "flac";
@@ -133,6 +134,8 @@ export interface RenderClip {
   volume: number;
   mirror: boolean;
   reverse: boolean;
+  /** Pictures: the look's colour steps, in order (effects.ts `LookStep`); empty for none. */
+  look: LookStep[];
   /** Cover the frame instead of fitting inside it. */
   fill: boolean;
   fadeIn: number;

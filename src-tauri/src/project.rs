@@ -102,6 +102,9 @@ struct ClipSpec {
     mirror: bool,
     #[serde(default)]
     reverse: bool,
+    /// Pictures: a colour look's steps, in order (effects.ts `LookStep`): CSS filter names and amounts.
+    #[serde(default)]
+    look: Vec<(String, f64)>,
     /// Cover size × the frame (what spills over is cut off by the frame) instead of fitting inside.
     #[serde(default)]
     fill: bool,
@@ -204,6 +207,9 @@ impl ClipSpec {
         }
         if self.speed != 1.0 {
             chain.push_str(&format!(",setpts=PTS/{:.4}", self.speed));
+        }
+        for (op, amount) in &self.look {
+            chain.push_str(&look_filter(op, *amount).unwrap_or_default());
         }
         chain
     }
@@ -329,6 +335,8 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             || !(0.01..=1.0).contains(&clip.size)
             || !(0.0..=1.0).contains(&clip.x)
             || !(0.0..=1.0).contains(&clip.y)
+            || clip.look.len() > MAX_LOOK_STEPS
+            || !clip.look.iter().all(|(op, amount)| look_filter(op, *amount).is_some())
         {
             return Err("A clip on the timeline has an invalid setting.".into());
         }
@@ -571,4 +579,86 @@ fn font_path(text: &str, font: &str) -> String {
         .find(|p| p.exists())
         .unwrap_or_else(|| fonts.join("arial.ttf"));
     path.to_string_lossy().replace('\\', "/").replace(':', "\\:")
+}
+
+/// More than any look in effects.ts has.
+const MAX_LOOK_STEPS: usize = 8;
+
+/// One colour step of a look as FFmpeg draws it, with the same maths as the CSS filter function
+/// the preview uses (Filter Effects spec matrices, on the picture's RGB values); starts with a comma.
+/// None for a name or amount the catalog never sends.
+fn look_filter(op: &str, amount: f64) -> Option<String> {
+    let mixer = |m: [f64; 9]| {
+        let names = ["rr", "rg", "rb", "gr", "gg", "gb", "br", "bg", "bb"];
+        let options: Vec<String> = names.iter().zip(m).map(|(name, v)| format!("{name}={v:.5}")).collect();
+        format!(",colorchannelmixer={}", options.join(":"))
+    };
+    let within = |lo: f64, hi: f64| amount.is_finite() && (lo..=hi).contains(&amount);
+    match op {
+        "grayscale" if within(0.0, 1.0) => {
+            let k = 1.0 - amount;
+            Some(mixer([
+                0.2126 + 0.7874 * k, 0.7152 - 0.7152 * k, 0.0722 - 0.0722 * k,
+                0.2126 - 0.2126 * k, 0.7152 + 0.2848 * k, 0.0722 - 0.0722 * k,
+                0.2126 - 0.2126 * k, 0.7152 - 0.7152 * k, 0.0722 + 0.9278 * k,
+            ]))
+        }
+        "sepia" if within(0.0, 1.0) => {
+            let k = 1.0 - amount;
+            Some(mixer([
+                0.393 + 0.607 * k, 0.769 - 0.769 * k, 0.189 - 0.189 * k,
+                0.349 - 0.349 * k, 0.686 + 0.314 * k, 0.168 - 0.168 * k,
+                0.272 - 0.272 * k, 0.534 - 0.534 * k, 0.131 + 0.869 * k,
+            ]))
+        }
+        // Up to 2: colorchannelmixer takes factors from -2 to 2.
+        "saturate" if within(0.0, 2.0) => {
+            let s = amount;
+            Some(mixer([
+                0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s,
+                0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s,
+                0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s,
+            ]))
+        }
+        "hue-rotate" if within(-180.0, 180.0) => {
+            let (sin, cos) = amount.to_radians().sin_cos();
+            Some(mixer([
+                0.213 + cos * 0.787 - sin * 0.213, 0.715 - cos * 0.715 - sin * 0.715, 0.072 - cos * 0.072 + sin * 0.928,
+                0.213 - cos * 0.213 + sin * 0.143, 0.715 + cos * 0.285 + sin * 0.140, 0.072 - cos * 0.072 - sin * 0.283,
+                0.213 - cos * 0.213 - sin * 0.787, 0.715 - cos * 0.715 + sin * 0.715, 0.072 + cos * 0.928 + sin * 0.072,
+            ]))
+        }
+        "brightness" if within(0.0, 2.0) => Some(mixer([amount, 0.0, 0.0, 0.0, amount, 0.0, 0.0, 0.0, amount])),
+        // lutrgb keeps each result within 0..maxval, as the CSS functions do.
+        "contrast" if within(0.0, 3.0) => {
+            let channel = format!("'(val-maxval/2)*{amount:.4}+maxval/2'");
+            Some(format!(",lutrgb=r={channel}:g={channel}:b={channel}"))
+        }
+        "invert" if within(0.0, 1.0) => {
+            let channel = format!("'val*{:.4}+maxval*{amount:.4}'", 1.0 - 2.0 * amount);
+            Some(format!(",lutrgb=r={channel}:g={channel}:b={channel}"))
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::look_filter;
+
+    #[test]
+    fn draws_each_look_step_and_refuses_anything_else() {
+        // No change at all for "none" amounts: the identity matrix.
+        assert_eq!(look_filter("grayscale", 0.0).unwrap(), ",colorchannelmixer=rr=1.00000:rg=0.00000:rb=0.00000:gr=0.00000:gg=1.00000:gb=0.00000:br=0.00000:bg=0.00000:bb=1.00000");
+        assert!(look_filter("saturate", 1.0).unwrap().contains("rr=1.00000:rg=0.00000"));
+        assert!(look_filter("hue-rotate", 0.0).unwrap().contains("rr=1.00000:rg=0.00000"));
+        assert!(look_filter("grayscale", 1.0).unwrap().contains("rr=0.21260:rg=0.71520:rb=0.07220"));
+        assert_eq!(look_filter("contrast", 1.5).unwrap(), ",lutrgb=r='(val-maxval/2)*1.5000+maxval/2':g='(val-maxval/2)*1.5000+maxval/2':b='(val-maxval/2)*1.5000+maxval/2'");
+        assert!(look_filter("invert", 1.0).unwrap().contains("r='val*-1.0000+maxval*1.0000'"));
+        // Only the catalog's names and amounts reach FFmpeg.
+        assert!(look_filter("saturate", 2.5).is_none());
+        assert!(look_filter("blur", 1.0).is_none());
+        assert!(look_filter("brightness", f64::NAN).is_none());
+        assert!(look_filter("grayscale';drawtext", 1.0).is_none());
+    }
 }

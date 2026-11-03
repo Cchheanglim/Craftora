@@ -14,6 +14,7 @@ import {
   clipEnd,
   clipLength,
   isStill,
+  isBlock,
   captionLines,
   unmarked,
   transitionLength,
@@ -28,7 +29,7 @@ import {
 } from "./model";
 
 export type ClipPatch = Partial<
-  Pick<Clip, "volume" | "mirror" | "reverse" | "size" | "fill" | "x" | "y" | "text" | "color" | "font" | "edge" | "fadeIn" | "fadeOut" | "crop">
+  Pick<Clip, "volume" | "mirror" | "reverse" | "look" | "size" | "fill" | "x" | "y" | "text" | "color" | "font" | "edge" | "fadeIn" | "fadeOut" | "crop">
 >;
 
 export type EditAction =
@@ -41,6 +42,8 @@ export type EditAction =
    */
   | { type: "addClip"; clipId: string; mediaId: string; trackId?: string; at?: number }
   | { type: "addText"; clipId: string; at: number; text?: string }
+  /** A filter (`look`) or effect block on an effects track (`trackId`, or one free at `at`). */
+  | { type: "addBlock"; clipId: string; at: number; length: number; trackId?: string; look?: Clip["look"]; effect?: Clip["effect"] }
   /** The media's captions as text clips on a new "Captions" track, lined up with each of its clips. */
   | { type: "addCaptions"; mediaId: string; trackId: string }
   /** Moves or resizes every caption at once: the ones shown from the media and every clip on a "Captions" track. */
@@ -80,7 +83,7 @@ const round = (t: number) => Math.round(t * 1000) / 1000;
 /** Rounded down, so something placed at the playhead is already showing there. */
 const floorMs = (t: number) => Math.floor(t * 1000) / 1000;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-const LABELS: Record<TrackKind, string> = { video: "Video", audio: "Audio", text: "Text" };
+const LABELS: Record<TrackKind, string> = { video: "Video", audio: "Audio", text: "Text", effect: "Effects" };
 
 function newClip(fields: Pick<Clip, "id" | "trackId" | "start" | "in" | "out"> & Partial<Clip>): Clip {
   return {
@@ -132,9 +135,9 @@ export function packedTrack(p: Project, trackId: string, except?: string): { cli
  * its sound, on an audio track; a sound file only on audio tracks; a picture only on video tracks.
  */
 export function fitsTrack(p: Project, clip: Clip, track: Track): boolean {
-  if (!clip.mediaId) return track.kind === "text";
+  if (!clip.mediaId) return track.kind === (isBlock(clip) ? "effect" : "text");
   const media = p.media.find((m) => m.id === clip.mediaId);
-  if (!media || track.kind === "text") return false;
+  if (!media || track.kind === "text" || track.kind === "effect") return false;
   return track.kind === "video" ? media.hasVideo : !media.source.image;
 }
 
@@ -173,7 +176,7 @@ function withTrack(p: Project, kind: TrackKind, id = `${kind}-${crypto.randomUUI
   const track: Track = { id, kind, name: `${LABELS[kind]} ${n}` };
   const tracks = [...p.tracks];
   if (kind === "audio") tracks.push(track);
-  else if (kind === "text") tracks.unshift(track);
+  else if (kind === "text" || kind === "effect") tracks.unshift(track);
   else {
     // Above the other video tracks; with none, above the audio tracks; with neither, last.
     const above = tracks.findIndex((t) => t.kind === "video");
@@ -221,6 +224,31 @@ function settle(p: Project): Project {
     }
   }
   return packMagnetic({ ...p, clips });
+}
+
+/**
+ * The clip on the same track that carries on `clip`'s media right at its `edge` at another speed: a
+ * piece a time effect cut out, or the rest of the clip next to one. Their edges move together.
+ */
+function continuation(p: Project, clip: Clip, edge: "start" | "end"): Clip | undefined {
+  if (!clip.mediaId || clip.reverse) return undefined;
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+  return p.clips.find(
+    (c) =>
+      c.trackId === clip.trackId &&
+      c.mediaId === clip.mediaId &&
+      !c.reverse &&
+      c.speed !== clip.speed &&
+      (edge === "end" ? near(c.start, clipEnd(clip)) && near(c.in, clip.out) : near(clipEnd(c), clip.start) && near(c.out, clip.in)),
+  );
+}
+
+/** Moves the cut between two pieces of one media (`left` then `right`) to timeline time `time`; each keeps its other edge in the media. */
+function rollCut(p: Project, left: Clip, right: Clip, time: number): Project {
+  const cut = round(clamp(left.in + (time - left.start) * left.speed, left.in + MIN_CLIP * left.speed, right.out - MIN_CLIP * right.speed));
+  const l = fitFades({ ...left, out: cut });
+  const r = fitFades({ ...right, in: cut, start: round(clipEnd(l)) });
+  return { ...p, clips: p.clips.map((c) => (c.id === l.id ? l : c.id === r.id ? r : c)) };
 }
 
 function trim(clip: Clip, edge: "start" | "end", time: number, sourceLength: number | null): Clip {
@@ -282,6 +310,13 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const length = media.source.image ? DEFAULT_IMAGE_LENGTH : media.source.duration;
       const clip = newClip({ id: action.clipId, trackId: track?.id ?? "", mediaId: media.id, start: 0, in: 0, out: length });
       return place(p, track, kind, clip, action.at);
+    }
+
+    case "addBlock": {
+      if (!action.look === !action.effect) return p;
+      const clip = newClip({ id: action.clipId, trackId: "", start: 0, in: 0, out: round(Math.max(MIN_CLIP, action.length)), look: action.look, effect: action.effect });
+      const track = p.tracks.find((t) => t.kind === "effect" && (action.trackId ? t.id === action.trackId : true));
+      return place(p, track, "effect", clip, action.at);
     }
 
     case "addText": {
@@ -356,9 +391,19 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const clip = p.clips.find((c) => c.id === action.clipId);
       if (!clip) return p;
       const media = p.media.find((m) => m.id === clip.mediaId);
+      // Next to a piece a time effect cut out, the edge moves the cut (the piece takes in more or
+      // less of the clip) instead of leaving a gap or showing a part twice.
+      const after = action.edge === "end" ? continuation(p, clip, "end") : undefined;
+      const before = action.edge === "start" ? continuation(p, clip, "start") : undefined;
       // Text and images have no media length to respect: any length goes.
-      const trimmed = fitFades(trim(clip, action.edge, action.time, isStill(p, clip) ? null : (media?.source.duration ?? null)));
-      const next = { ...p, clips: p.clips.map((c) => (c.id === clip.id ? trimmed : c)) };
+      const next = after
+        ? rollCut(p, clip, after, action.time)
+        : before
+          ? rollCut(p, before, clip, action.time)
+          : {
+              ...p,
+              clips: p.clips.map((c) => (c.id === clip.id ? fitFades(trim(clip, action.edge, action.time, isStill(p, clip) ? null : (media?.source.duration ?? null))) : c)),
+            };
       return isMagnetic(p, clip.trackId) ? packMagnetic(next) : next;
     }
 
@@ -518,7 +563,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
     }
 
     case "setTrackMuted":
-      if (!p.tracks.some((t) => t.id === action.trackId && t.kind !== "text")) return p;
+      if (!p.tracks.some((t) => t.id === action.trackId && t.kind !== "text" && t.kind !== "effect")) return p;
       return { ...p, tracks: p.tracks.map((t) => (t.id === action.trackId ? { ...t, muted: action.muted || undefined } : t)) };
 
     case "layoutCaptions": {

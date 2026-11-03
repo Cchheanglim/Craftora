@@ -240,6 +240,48 @@ const paths = {
       <path d="M3 3l18 18" />
     </>
   ),
+  sparkle: <path d="M12 3l1.9 5.6L19.5 10.5 13.9 12.4 12 18l-1.9-5.6L4.5 10.5l5.6-1.9Z" />,
+  blend: (
+    <>
+      <circle cx="9" cy="9" r="6" />
+      <circle cx="15" cy="15" r="6" />
+    </>
+  ),
+  transition: (
+    <>
+      <rect x="3" y="5" width="7" height="14" rx="1" />
+      <rect x="14" y="5" width="7" height="14" rx="1" />
+      <path d="m10 12 4 0M12 10l2 2-2 2" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </>
+  ),
+  unlock: (
+    <>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 7.6-1.7" />
+    </>
+  ),
+  more: (
+    <>
+      <circle cx="5" cy="12" r="1" fill="currentColor" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" />
+      <circle cx="19" cy="12" r="1" fill="currentColor" />
+    </>
+  ),
+  clipboard: (
+    <>
+      <rect x="8" y="2" width="8" height="4" rx="1" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    </>
+  ),
+  snowflake: <path d="M12 2v20M4.9 7l14.2 10M4.9 17 19.1 7M9 4l3 2 3-2M9 20l3-2 3 2" />,
+  crop: <path d="M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2" />,
+  flip: <path d="M12 3v18M8 7l-5 5 5 5V7ZM16 7l5 5-5 5V7Z" />,
 } as const;
 
 export type IconName = keyof typeof paths;

@@ -10,6 +10,7 @@ import {
   clipEnd,
   projectDuration,
   silencesFromPeaks,
+  trackLabel,
   type Position,
   type Project,
 } from "../project/model";
@@ -88,7 +89,7 @@ export function describe(p: Project, playhead: number, ids: ShortIds): string {
     // Listed top to bottom: higher video tracks are drawn over lower ones.
     tracks: p.tracks.map((t) => ({
       id: ids.short(t.id, "t"),
-      name: t.name,
+      name: trackLabel(p, t),
       kind: t.kind,
       ...(t.magnetic ? { magnetic: true } : {}),
       ...(t.muted ? { muted: true } : {}),

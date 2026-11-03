@@ -5,6 +5,7 @@
  */
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
+import { lookSteps } from "./effects";
 import { clipLength, isCropped, projectDuration, trackOrder, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
@@ -61,6 +62,7 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
   const untouched =
     clip.volume === 1 &&
     !clip.mirror &&
+    !clip.look &&
     !clip.reverse &&
     clip.speed === 1 &&
     !clip.fadeIn &&
@@ -163,6 +165,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       volume: track?.muted ? 0 : c.volume,
       mirror: c.mirror,
       reverse: c.reverse,
+      look: lookSteps(c.look),
       fadeIn: c.fadeIn,
       fadeOut: c.fadeOut,
       crop: [c.crop.left, c.crop.top, c.crop.right, c.crop.bottom],
@@ -217,6 +220,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     .map((m) => `yt-dlp -f "${m.format}" --download-sections "*…" --force-keyframes-at-cuts "${m.src}"`);
   const graph = [
     project.clips.some((c) => c.mirror) && "hflip",
+    project.clips.some((c) => c.look) && "colour looks",
     project.clips.some((c) => c.reverse) && "reverse",
     project.clips.some((c) => isCropped(c.crop)) && "crop",
     project.clips.some((c) => c.speed !== 1) && "setpts, atempo",

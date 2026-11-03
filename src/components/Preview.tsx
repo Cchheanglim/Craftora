@@ -5,6 +5,7 @@ import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
+import { lookFilter } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
 import { SyncedMedia } from "./SyncedMedia";
@@ -731,6 +732,7 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, poster, o
     height: `${100 / keptH}%`,
     left: `${(-left / keptW) * 100}%`,
     top: `${(-top / keptH) * 100}%`,
+    filter: lookFilter(clip.look),
   };
 
   return (
