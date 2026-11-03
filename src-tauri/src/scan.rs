@@ -104,7 +104,10 @@ mod tests {
         let path = std::env::temp_dir().join(format!("craftora-scan-test-{}.mp4", std::process::id()));
         std::fs::write(&path, b"not a virus").unwrap();
         let scanned = antivirus_scan(&path);
+        // Windows' mark that the file came from the internet (zone 3) shows the scan really ran.
+        let mark = std::fs::read_to_string(format!("{}:Zone.Identifier", path.display())).unwrap_or_default();
         let _ = std::fs::remove_file(&path);
         assert_eq!(scanned, Ok(()));
+        assert!(mark.contains("ZoneId=3"), "{mark}");
     }
 }
