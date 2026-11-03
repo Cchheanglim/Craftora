@@ -17,6 +17,11 @@ pub struct Chapter {
 }
 
 #[derive(Deserialize)]
+struct RawThumbnail {
+    url: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct RawChapter {
     title: Option<String>,
     #[serde(alias = "start_time")]
@@ -33,6 +38,9 @@ struct Info {
     duration: Option<f64>,
     is_live: Option<bool>,
     thumbnail: Option<String>,
+    /// Every picture yt-dlp knows for the video, worst first (`thumbnail` is the last).
+    #[serde(default)]
+    thumbnails: Vec<RawThumbnail>,
     #[serde(default)]
     chapters: Option<Vec<RawChapter>>,
     #[serde(default)]
@@ -131,6 +139,9 @@ pub struct MediaSource {
     /// Links: the site's picture for the video; empty when there is none.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub(crate) thumbnail: String,
+    /// Links: the site's other pictures for the video, best first, tried when `thumbnail` won't load.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) thumbnails: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) chapters: Vec<Chapter>,
     /// Links: a light stream of the sound to draw the wave from (`link_peaks`); empty when none.
@@ -387,22 +398,51 @@ fn wave_source(formats: &[Format], duration: f64) -> String {
 
 /// Pictures bigger than this aren't thumbnails.
 const MAX_THUMBNAIL_BYTES: u64 = 8 * 1024 * 1024;
+/// How many of a video's pictures are tried, best first.
+const MAX_PICTURES: usize = 8;
+
+/// The site's pictures for the video after `thumbnail` (yt-dlp's best), best first. Its best one
+/// isn't there for every video on some sites (YouTube's largest), so the next ones are kept to try.
+fn other_pictures(info: &Info) -> Vec<String> {
+    let mut seen: Vec<&str> = info.thumbnail.as_deref().into_iter().collect();
+    let mut others = Vec::new();
+    for url in info.thumbnails.iter().rev().filter_map(|t| t.url.as_deref()) {
+        if others.len() + 1 >= MAX_PICTURES {
+            break;
+        }
+        if !seen.contains(&url) {
+            seen.push(url);
+            others.push(url.to_string());
+        }
+    }
+    others
+}
 
 /// A video's picture, fetched once with the page it belongs to as Referer: some sites refuse
 /// their pictures to other pages ("hotlink protection"). The UI keeps a small copy, so the site
-/// isn't asked again each time the picture shows.
+/// isn't asked again each time the picture shows. `urls`: the video's pictures, best first; one
+/// that isn't there moves on to the next.
 #[tauri::command]
-pub async fn fetch_thumbnail(url: String, link: String) -> Result<tauri::ipc::Response, String> {
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err("Not a web picture.".into());
-    }
+pub async fn fetch_thumbnail(urls: Vec<String>, link: String) -> Result<tauri::ipc::Response, String> {
     let (page, found_on) = crate::signin::split_referer(&link);
-    let response = crate::media_cache::client()
-        .get(&url)
-        .header(reqwest::header::REFERER, found_on.unwrap_or(page))
-        .send()
-        .await
-        .map_err(|e| format!("Couldn't load the picture: {e}"))?;
+    let mut problem = "No picture to load.".to_string();
+    for url in urls.iter().filter(|u| u.starts_with("https://") || u.starts_with("http://")).take(MAX_PICTURES) {
+        match fetch_picture(url, found_on.unwrap_or(page)).await {
+            Ok(bytes) => return Ok(tauri::ipc::Response::new(bytes)),
+            Err(e) => problem = e,
+        }
+    }
+    crate::diag::note(format!("picture of {link}: {problem}"));
+    Err(problem)
+}
+
+async fn fetch_picture(url: &str, referer: &str) -> Result<Vec<u8>, String> {
+    let send = || crate::media_cache::client().get(url).header(reqwest::header::REFERER, referer).send();
+    // A moment's network trouble (a dropped connection) gets one more try; an answer like 404 doesn't.
+    let response = match send().await {
+        Ok(response) => response,
+        Err(_) => send().await.map_err(|e| format!("Couldn't load the picture: {e}"))?,
+    };
     if !response.status().is_success() {
         return Err(format!("The picture's server answered {}.", response.status()));
     }
@@ -413,7 +453,7 @@ pub async fn fetch_thumbnail(url: String, link: String) -> Result<tauri::ipc::Re
     if bytes.len() as u64 > MAX_THUMBNAIL_BYTES {
         return Err("The picture is too big.".into());
     }
-    Ok(tauri::ipc::Response::new(bytes.to_vec()))
+    Ok(bytes.to_vec())
 }
 
 /// What yt-dlp says a link contains. A site whose bot check turns yt-dlp away is tried once more
@@ -476,6 +516,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
             preview_hls: false,
             preview_proxy: "",
             image: false,
+            thumbnails: other_pictures(&info),
             thumbnail: info.thumbnail.unwrap_or_default(),
             chapters: Vec::new(),
             peaks_url: String::new(),
@@ -579,6 +620,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
         preview_hls,
         preview_proxy: "",
         image: false,
+        thumbnails: other_pictures(&info),
         thumbnail: info.thumbnail.unwrap_or_default(),
         chapters: info
             .chapters
