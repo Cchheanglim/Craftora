@@ -19,6 +19,21 @@
 }
 
 /* The output frame's own shape, centred: clips and text land where they will in the export. */
+/* Every picture layer, so filter and effect blocks change them together (not the text over them). */
+.preview__pictures,
+.preview__fx-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.preview__pictures {
+  background: #000;
+}
+
+.preview__fx-layer {
+  pointer-events: none;
+}
+
 .preview__stage {
   position: absolute;
   inset: 0;

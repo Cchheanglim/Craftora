@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
+import { isBlock, clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
 import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
-import { lookFilter } from "../project/effects";
+import { blocksStyle, lookFilter } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
 import { SyncedMedia } from "./SyncedMedia";
@@ -201,7 +201,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     return { picture: fade * t.picture, sound: fade * t.sound };
   };
   const sounds = project.clips.filter((c) => c.mediaId && trackKind(c) === "audio");
-  const texts = project.clips.filter((c) => !c.mediaId).sort(byLayer);
+  const texts = project.clips.filter((c) => !c.mediaId && !isBlock(c)).sort(byLayer);
+  // Filter and effect blocks showing now change the pictures (not text), lowest track first.
+  const blocks = blocksStyle(project.clips.filter((c) => trackKind(c) === "effect" && active(c)).sort(byLayer), time, stageRef.current?.clientWidth ?? frame.width);
   const captionTracks = new Set(project.tracks.filter((t) => t.name === "Captions").map((t) => t.id));
   const hasCaptions = project.media.some((m) => m.captions) || captionTracks.size > 0;
   const isCaption = (c: Clip) => c.trackId.startsWith(SHOWN_CAPTIONS) || captionTracks.has(c.trackId);
@@ -387,6 +389,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               </span>
             </span>
           )}
+          <div className="preview__pictures" style={{ filter: blocks.filter, transform: blocks.mirror ? "scaleX(-1)" : undefined }}>
           {pictures.map((clip) => {
             const media = mediaOf(clip);
             const canPlay = Boolean(media?.source.previewUrl && !failed.has(media.source.previewUrl));
@@ -463,6 +466,10 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               </PictureLayer>
             );
           })}
+          {blocks.layers.map((layer, i) => (
+            <span key={i} className="preview__fx-layer" style={{ background: layer.color, opacity: layer.opacity }} aria-hidden="true" />
+          ))}
+          </div>
           {sounds.map((clip) => {
             const media = mediaOf(clip);
             const src = media?.source.previewAudioUrl || media?.source.previewUrl;
