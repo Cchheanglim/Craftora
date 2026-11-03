@@ -12,6 +12,7 @@ mod notify;
 mod page_fetch;
 mod privacy;
 mod project;
+mod scan;
 mod signin;
 mod speech;
 mod store;

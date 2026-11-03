@@ -506,6 +506,11 @@ pub async fn download_media(app: AppHandle, spec: MediaDownload) -> Result<(), S
         {
             downloaded = download(&task_app, &spec.id, &request, &work, "download").await;
         }
+        if let Ok(file) = &downloaded
+            && let Err(e) = crate::scan::check_saved(&task_app, file).await
+        {
+            downloaded = Err(e);
+        }
         if let Err(e) = &downloaded {
             crate::diag::note(format!("download {}: {e}", spec.url));
         }
@@ -574,6 +579,7 @@ async fn run_simple_in(app: &AppHandle, spec: &JobSpec, dir: &Path, work: &Path)
         },
     };
     let downloaded = download(app, &spec.id, &request, work, "download").await?;
+    crate::scan::check_saved(app, &downloaded).await?;
     // yt-dlp picks the final extension (e.g. after merging or converting).
     let downloaded_ext = downloaded.extension().map(|e| e.to_string_lossy().into_owned()).unwrap_or_else(|| ext.to_string());
     deliver(&downloaded, dir, &stem, &downloaded_ext)
