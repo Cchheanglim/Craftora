@@ -55,7 +55,11 @@ export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: Download
   const hiddenFiles = folder?.files.filter((f) => hidden.isHidden(f.path)) ?? [];
   // The folder is the record of finished downloads (it outlives the queue): read it again whenever one finishes.
   useEffect(() => {
-    listDownloads().then(setFolder, (err) => setProblem(errorText(err)));
+    const read = () => void listDownloads().then(setFolder, (err) => setProblem(errorText(err)));
+    read();
+    // Back from File Explorer, where a download may have been deleted.
+    window.addEventListener("focus", read);
+    return () => window.removeEventListener("focus", read);
   }, [finished, folderPath]);
 
   const table = (list: DownloadedFile[]) => (

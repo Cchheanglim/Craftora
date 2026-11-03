@@ -206,6 +206,20 @@
   gap: 2px;
 }
 
+/* A media item's picture: click to change it (Sidebar `picture`). */
+.side__picture {
+  flex-shrink: 0;
+  display: flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.side__picture:hover .thumb {
+  outline: 1px solid var(--line-hover);
+}
+
 .side__file {
   display: flex;
   align-items: center;

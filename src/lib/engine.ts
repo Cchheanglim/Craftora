@@ -358,6 +358,12 @@ export async function pickMediaFiles(): Promise<string[]> {
   return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
 }
 
+/** Asks for a picture file (a video's new list picture); null when the user cancels. */
+export async function pickPicture(): Promise<string | null> {
+  const picked = await open({ multiple: false, directory: false, title: "Choose a picture", filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }] });
+  return typeof picked === "string" ? picked : null;
+}
+
 export async function pickMediaFile(): Promise<string | null> {
   const picked = await open({
     multiple: false,
@@ -458,6 +464,8 @@ export const setProxy = (proxy: string | null) => invoke<ProxyState>("set_proxy"
 export const checkAddress = () => invoke<string>("check_address");
 /** Moves an exported file to the Recycle Bin. */
 export const deleteFile = (path: string) => invoke<void>("delete_file", { path });
+/** Of `paths`, the files deleted outside Craftora (not ones on an unplugged drive). */
+export const deletedFiles = (paths: string[]) => invoke<string[]>("deleted_files", { paths });
 export const localThumbnail = (path: string, image = false) => invoke<string>("local_thumbnail", { path, image });
 
 const fileThumbnails = new Map<string, Promise<string | undefined>>();
