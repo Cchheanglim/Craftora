@@ -28,6 +28,41 @@
   padding: 14px var(--space-4) 12px;
 }
 
+/* Between the preview and the timeline, in the gap between them: drag to share the height. */
+.app__divider {
+  flex-shrink: 0;
+  height: 12px;
+  margin: -12px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.app__divider::before {
+  content: "";
+  width: 36px;
+  height: 3px;
+  background: var(--line-strong);
+}
+
+.app__divider:hover::before,
+.app__divider:focus-visible::before {
+  background: var(--text-3);
+}
+
+/* A height the user dragged to; a smaller window still leaves the preview its share. */
+.app__editor[data-sized] .tl {
+  height: min(var(--tl-h), 75%);
+}
+
+.app__editor[data-sized] .tl__body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
 /* The right panel: clip and export settings, or the assistant. */
 .app__panel {
   grid-area: panel;

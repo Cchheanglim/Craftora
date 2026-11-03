@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { ExportSettings, Job, MediaSource, OutputKind } from "./types";
 import { DEMO_JOBS, DEMO_SOURCES } from "./data/demo";
 import {
@@ -93,6 +93,7 @@ import {
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { Home, type LinkSettings } from "./components/Home";
+import { TimelineDivider } from "./components/TimelineDivider";
 import { Preview } from "./components/Preview";
 import { TimelineEditor } from "./components/TimelineEditor";
 import { CaptionStyle, Inspector } from "./components/Inspector";
@@ -186,6 +187,14 @@ function remembered(key: string, fallback: boolean): boolean {
     return fallback;
   }
 }
+/** The timeline height (px) the user dragged it to, if they did; storage may be unavailable. */
+function rememberedHeight(): number | null {
+  try {
+    return Number(localStorage.getItem("craftora.timelineHeight")) || null;
+  } catch {
+    return null;
+  }
+}
 function remember(key: string, value: boolean) {
   try {
     localStorage.setItem(key, value ? "1" : "0");
@@ -265,6 +274,11 @@ export default function App() {
   // Settings page: what new projects export as, and how many jobs run at once.
   const [defaultOutput, setDefaultOutput] = useState<OutputKind>(() => (remembered("craftora.exportSound", false) ? "audio" : "video"));
   const [maxRunning, setMaxRunning] = useState(() => rememberedCount("craftora.maxRunning", MAX_RUNNING));
+  const [timelineHeight, setTimelineHeight] = useState(rememberedHeight);
+  const resizeTimeline = (height: number) => {
+    setTimelineHeight(height);
+    rememberText("craftora.timelineHeight", String(height));
+  };
   // Settings → Theme; main.tsx already put the saved one on the page.
   const [theme, setTheme] = useState(savedTheme);
   const chooseTheme = (next: Theme) => {
@@ -1413,7 +1427,11 @@ export default function App() {
           />
         )}
         {view === "editor" && (
-          <div className="app__editor">
+          <div
+            className="app__editor"
+            data-sized={timelineHeight ? "" : undefined}
+            style={timelineHeight ? ({ "--tl-h": `${timelineHeight}px` } as CSSProperties) : undefined}
+          >
             <Preview
               project={project}
               api={api}
@@ -1441,6 +1459,7 @@ export default function App() {
                   : undefined
               }
             />
+            <TimelineDivider height={timelineHeight} onResize={resizeTimeline} />
             <TimelineEditor
               project={project}
               api={api}
