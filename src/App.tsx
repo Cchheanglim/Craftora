@@ -90,7 +90,6 @@ import {
   projectName,
   silencesFromPeaks,
   upgradeProject,
-  type Clip,
   type MediaItem,
   type Project,
   withImported,
@@ -99,7 +98,8 @@ import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { Home, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
-import { effectEdits, type EffectChange } from "./project/effects";
+import { dropEdits, type FxItem } from "./project/effects";
+import { FxPanel, type FxTab } from "./components/FxPanel";
 import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
 import { TimelineEditor } from "./components/TimelineEditor";
@@ -314,7 +314,7 @@ export default function App() {
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const [cuttingSilences, setCuttingSilences] = useState(false);
-  const [rightTab, setRightTab] = useState<"edit" | "transcript" | "assistant">("edit");
+  const [rightTab, setRightTab] = useState<"edit" | "transcript" | "assistant" | FxTab>("edit");
   /** How much of each link preview is cached on disk (by cache id), 0–100. */
   const [cached, setCached] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -1132,14 +1132,19 @@ export default function App() {
     if (clip) api.edit({ type: "splitClip", clipId: clip.id, newClipId: crypto.randomUUID(), at: playback.time });
   };
   /**
-   * Puts a catalog effect on a clip, or only on its part from `part[0]` to `part[1]`: the clip is
-   * cut there first and the effect goes on the middle piece, which is then selected. One undo step.
+   * A filter, effect or transition from the right panel, dropped on track `trackId` at `time` (or
+   * clicked: at the playhead, on the selected clip's track). One undo step.
    */
-  const addEffect = (clip: Clip, change: EffectChange, part?: [number, number]) => {
-    const { edits, target } = effectEdits(clip, change, part, [crypto.randomUUID(), crypto.randomUUID()]);
+  const applyFx = (item: FxItem, trackId: string | undefined, time: number) => {
+    const done = dropEdits(project, item, trackId, time, [crypto.randomUUID(), crypto.randomUUID()]);
+    if (!done) {
+      setError(item.kind === "transition" ? "Drop a transition on the join between two video clips." : "Drop it on a video clip, where that part should start.");
+      return;
+    }
+    setError(null);
     api.checkpoint();
-    for (const edit of edits) api.editLive(edit);
-    setSelectedId(target);
+    for (const edit of done.edits) api.editLive(edit);
+    if (done.select) setSelectedId(done.select);
   };
   const duplicate = () => {
     if (!selectedId) return;
@@ -1533,6 +1538,7 @@ export default function App() {
               cuttingSilences={cuttingSilences}
               onDelete={remove}
               onAddText={addText}
+              onDropFx={applyFx}
             />
           </div>
         )}
@@ -1552,7 +1558,23 @@ export default function App() {
               Assistant
             </button>
           </div>
-          {rightTab === "transcript" ? (
+          <div className="segmented app__tabs is-second" role="group" aria-label="Filters, effects and transitions">
+            {(["filters", "effects", "transitions"] as const).map((tab) => (
+              <button key={tab} type="button" aria-pressed={rightTab === tab} onClick={() => setRightTab(tab)}>
+                {tab === "filters" ? "Filters" : tab === "effects" ? "Effects" : "Transitions"}
+              </button>
+            ))}
+          </div>
+          {rightTab === "filters" || rightTab === "effects" || rightTab === "transitions" ? (
+            <FxPanel
+              tab={rightTab}
+              onPick={(item) => {
+                // On the selected clip's track (if it has pictures or sound), at the playhead.
+                const kind = selectedTrack?.kind;
+                applyFx(item, kind === "video" || kind === "audio" || kind === "effect" ? selectedTrack!.id : undefined, playback.time);
+              }}
+            />
+          ) : rightTab === "transcript" ? (
             <Transcript
               project={project}
               api={api}
@@ -1601,8 +1623,6 @@ export default function App() {
                   media={project.media.find((m) => m.id === selected.mediaId)}
                   onRelink={(item) => void relink(item)}
                   trackName={trackLabel(project, selectedTrack)}
-                  playhead={playback.time}
-                  onAddEffect={(change, part) => addEffect(selected, change, part)}
                   onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
                   onDuration={
                     !selected.mediaId || project.media.find((m) => m.id === selected.mediaId)?.source.image
