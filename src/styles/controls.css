@@ -16,6 +16,11 @@
     border-color var(--dur-fast) linear, transform 0.35s var(--spring);
 }
 
+/* Icons keep their size when a button is tight (the label gives way, not the icon). */
+.btn svg {
+  flex-shrink: 0;
+}
+
 /* A soft press, springing back on release. */
 .btn:active:not(:disabled) {
   transform: scale(0.96);
@@ -84,6 +89,11 @@
 
 .field::placeholder {
   color: var(--text-3);
+}
+
+/* Links, file names and keys are typed in the code font; the hint reads like the rest of the app. */
+.field.mono::placeholder {
+  font-family: var(--font-ui);
 }
 
 .field:hover {

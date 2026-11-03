@@ -183,3 +183,8 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
 }
+
+/* Three to a row: room for "Duplicate" and its icon. */
+.insp__actions .btn {
+  padding: 0 6px;
+}
