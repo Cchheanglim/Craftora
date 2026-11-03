@@ -915,7 +915,15 @@ function ClipMenu({
   onClose: () => void;
 }) {
   const [editOpen, setEditOpen] = useState(false);
-  const item = (command: ClipCommand, label: string, icon: IconName, enabled: boolean, keys?: string, checked?: boolean) => (
+  // Closing waits a moment, so the pointer can cut across the rows below on its way into the list.
+  const closing = useRef(0);
+  const holdEdit = (open: boolean) => {
+    window.clearTimeout(closing.current);
+    if (open) setEditOpen(true);
+    else closing.current = window.setTimeout(() => setEditOpen(false), 350);
+  };
+  useEffect(() => () => window.clearTimeout(closing.current), []);
+  const item =(command: ClipCommand, label: string, icon: IconName, enabled: boolean, keys?: string, checked?: boolean) => (
     <button
       key={command}
       type="button"
@@ -961,7 +969,7 @@ function ClipMenu({
         {item("paste", "Paste", "clipboard", canPaste, "Ctrl V")}
         {item("delete", "Delete", "trash", !locked, "Del")}
         <hr />
-        <div className="tl__submenu" onMouseEnter={() => setEditOpen(true)} onMouseLeave={() => setEditOpen(false)}>
+        <div className="tl__submenu" onMouseEnter={() => holdEdit(true)} onMouseLeave={() => holdEdit(false)}>
           <button
             type="button"
             role="menuitem"
