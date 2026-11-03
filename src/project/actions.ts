@@ -310,8 +310,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
     case "addClip": {
       const media = p.media.find((m) => m.id === action.mediaId);
       if (!media) return p;
-      const requested = action.trackId ? p.tracks.find((t) => t.id === action.trackId) : undefined;
-      if (requested?.kind === "text") return p;
+      // Dropped on a text or effects track: it goes on a track that can take it instead of nowhere.
+      const requested = p.tracks.find((t) => t.id === action.trackId && t.kind !== "text" && t.kind !== "effect");
       // A file without picture always lands on a sound track.
       const kind: TrackKind = !media.hasVideo || requested?.kind === "audio" ? "audio" : "video";
       const track = requested?.kind === kind ? requested : kind === "video" ? baseVideoTrack(p) : p.tracks.find((t) => t.kind === "audio");

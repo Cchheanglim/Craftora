@@ -244,6 +244,11 @@
   color: var(--text);
 }
 
+/* An empty slot (a button that doesn't apply to this kind of track). */
+span.tl__head-btn {
+  pointer-events: none;
+}
+
 .tl__head .tl__head-btn svg {
   color: inherit;
 }

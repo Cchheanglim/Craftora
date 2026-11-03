@@ -515,7 +515,10 @@ export function TimelineEditor({
                 >
                   <Icon name={track.locked ? "lock" : "unlock"} size={12} />
                 </button>
-                {track.kind !== "audio" && (
+                {/* Every row keeps the same columns: an empty slot where a button doesn't apply. */}
+                {track.kind === "audio" ? (
+                  <span className="tl__head-btn" aria-hidden="true" />
+                ) : (
                   <button
                     type="button"
                     className="tl__head-btn"
@@ -527,7 +530,9 @@ export function TimelineEditor({
                     <Icon name={track.hidden ? "eyeOff" : "eye"} size={12} />
                   </button>
                 )}
-                {hasSound && (
+                {!hasSound ? (
+                  <span className="tl__head-btn" aria-hidden="true" />
+                ) : (
                   <button
                     type="button"
                     className="tl__head-btn"
