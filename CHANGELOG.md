@@ -2,7 +2,28 @@
 
 ## Next version
 
+**New**
+
+- **Filters, Effects and Transitions** tabs on the right, each tile showing Craftora's cat doing
+  it. Drag one onto the timeline (or click it to put it at the playhead):
+  - **Filters** (14 colour looks) and **effects** (fade in, fade out, flash, blur, mirror) become
+    blocks on an effects track: stretch one over the part you want; it changes every picture
+    under it, not text. The export draws exactly what the preview shows.
+  - **Slow motion, Speed up, Reverse**: drop one on a clip and that part of it changes; drag the
+    edges of that part to take in more or less of the clip.
+  - **Transitions**: drop one on the join between two clips.
+- **Right-click a clip**: Copy, Cut, Paste, Delete, Edit (Freeze frame, Reverse, Mirror, Rotate,
+  Crop), Export this clip, Replace clip, Open file location. Ctrl+C, Ctrl+X and Ctrl+V work too.
+- **Rotate** a picture a quarter turn at a time (also in Edit & export).
+- **Cover** on the main track: the project's picture, from the frame at the playhead or a
+  picture on your PC. Exported videos have it built in as their cover.
+- **Tracks** have lock, hide and mute buttons and a ⋯ menu (track height, waveform size,
+  magnet, remove). Video clips show frames along them, with their name, length and sound wave.
+
 **Changed**
+
+- **Text is always drawn over pictures in exports**, as the preview shows it, whatever track
+  it's on.
 
 - **Settings → Links** lists each website with when it was last used (opened in Craftora's
   window, or fetched from with its login). The box for typing a website to open is gone; when a
