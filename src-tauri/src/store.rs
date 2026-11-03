@@ -168,10 +168,10 @@ pub(crate) fn change_sites_used(app: &AppHandle, change: impl FnOnce(&mut SitesU
     let before = sites_used(app);
     let mut used = before.clone();
     change(&mut used);
-    if used != before {
-        if let (Ok(dir), Ok(text)) = (data_dir(app), serde_json::to_string(&used)) {
-            let _ = write_json(&dir.join("sites-used.json"), &text);
-        }
+    if used != before
+        && let (Ok(dir), Ok(text)) = (data_dir(app), serde_json::to_string(&used))
+    {
+        let _ = write_json(&dir.join("sites-used.json"), &text);
     }
 }
 

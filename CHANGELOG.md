@@ -2,6 +2,12 @@
 
 ## Next version
 
+**Changed**
+
+- **Settings → Links** lists each website with when it was last used (opened in Craftora's
+  window, or fetched from with its login). The box for typing a website to open is gone; when a
+  link needs a login, Fetch still offers to open its page. **Sign out of all** stays.
+
 **Fixed**
 
 - **Broken pictures on the timeline** for some files from your PC (ones whose sound the preview
