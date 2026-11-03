@@ -138,7 +138,7 @@ export function TimelineEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.media]);
   /** The track whose … menu is open, and where to draw it. */
-  const [menu, setMenu] = useState<{ trackId: string; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ trackId: string; x: number; y: number; up: boolean } | null>(null);
 
   // Track the visible width for "fit" and the content width.
   useEffect(() => {
@@ -497,14 +497,16 @@ export function TimelineEditor({
                     title="Track height, waveform size and more"
                     onClick={(e) => {
                       const r = e.currentTarget.getBoundingClientRect();
-                      setMenu(menuOpen ? null : { trackId: track.id, x: r.left, y: r.bottom + 4 });
+                      // Upwards when there's no room under the button.
+                      const up = r.bottom + 260 > window.innerHeight;
+                      setMenu(menuOpen ? null : { trackId: track.id, x: r.left, y: up ? window.innerHeight - r.top + 4 : r.bottom + 4, up });
                     }}
                   >
                     <Icon name="more" size={12} />
                   </button>
                   {menuOpen && (
                     // Fixed, so the timeline's scrolling box doesn't cut it off.
-                    <div className="tl__menu tl__track-menu" role="menu" style={{ position: "fixed", left: menu.x, top: menu.y }}>
+                    <div className="tl__menu tl__track-menu" role="menu" style={{ position: "fixed", left: menu.x, ...(menu.up ? { top: "auto", bottom: menu.y } : { top: menu.y }) }}>
                       <p className="tl__menu-label">Track height</p>
                       <div className="tl__sizes" role="group" aria-label="Track height">
                         {SIZES.map(({ size, label }) => (
