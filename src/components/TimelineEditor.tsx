@@ -123,6 +123,7 @@ export function TimelineEditor({
   canPaste,
   onCover,
 }: TimelineEditorProps) {
+  const sectionRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const laneRefs = useRef(new Map<string, HTMLDivElement>());
@@ -155,6 +156,31 @@ export function TimelineEditor({
   const mainTrack = [...project.tracks].reverse().find((t) => t.kind === "video");
   /** The track whose … menu is open, and where to draw it. */
   const [menu, setMenu] = useState<{ trackId: string; x: number; y: number; up: boolean } | null>(null);
+  // The menus sit at a fixed place on screen: they close when the timeline moves under them
+  // (resized with the bar above it, scrolled) or the window changes size.
+  const menuOpen = Boolean(menu || coverMenu || clipMenu);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = () => {
+      setMenu(null);
+      setCoverMenu(null);
+      setClipMenu(null);
+    };
+    const size = sectionRef.current?.getBoundingClientRect();
+    const observer = new ResizeObserver(() => {
+      const now = sectionRef.current?.getBoundingClientRect();
+      // It reports once when it starts watching: only a real change closes them.
+      if (now && size && (now.top !== size.top || now.height !== size.height)) close();
+    });
+    if (sectionRef.current) observer.observe(sectionRef.current);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [menuOpen]);
 
   // Track the visible width for "fit" and the content width.
   useEffect(() => {
@@ -371,7 +397,7 @@ export function TimelineEditor({
   };
 
   return (
-    <section className={scrubbing ? "tl is-scrubbing" : "tl"} aria-label="Timeline">
+    <section ref={sectionRef} className={scrubbing ? "tl is-scrubbing" : "tl"} aria-label="Timeline">
       <div className="tl__toolbar" role="toolbar" aria-label="Timeline tools">
         <button type="button" className="btn btn--icon" aria-label="Undo" title="Undo (Ctrl+Z)" onClick={api.undo} disabled={!api.canUndo}>
           <Icon name="undo" />
@@ -652,7 +678,7 @@ export function TimelineEditor({
                     const isGhost = clip.id === ghost?.clipId;
                     const { start } = where(clip);
                     const length = clipLength(clip);
-                    // Pictures on a video track show their frames along the clip, like CapCut.
+                    // Pictures on a video track show their frames along the clip.
                     const picture = media && track.kind === "video" ? (media.source.image ? media.source.previewUrl : media.source.thumbnail) : undefined;
                     const strip = media && track.kind === "video" ? (strips[media.source.previewUrl] ?? (picture ? { url: picture, frames: 1 } : undefined)) : undefined;
                     const classes = [
@@ -832,7 +858,7 @@ const ClipWave = memo(function ClipWave({ clip, media, bars, muted, height }: { 
 });
 
 /**
- * A video clip's frames along it, CapCut-style: as many as fit at their own shape, each the frame
+ * A video clip's frames along it: as many as fit at their own shape, each the frame
  * of the moment it sits over (so trimmed, slowed or reversed clips show the right ones). The strip
  * is set once, as a CSS variable, not copied into every frame. `duration` 0: a still picture.
  */
@@ -854,7 +880,7 @@ const ClipFrames = memo(function ClipFrames({ clip, strip, pps, cellHeight, dura
 });
 
 /**
- * A clip's right-click menu (like CapCut's): copy, cut, paste, delete, Edit ▸ (freeze, reverse,
+ * A clip's right-click menu: copy, cut, paste, delete, Edit ▸ (freeze, reverse,
  * mirror, rotate, crop), export it, replace it, open its file. Escape or a click anywhere else closes it.
  */
 function ClipMenu({

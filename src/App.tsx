@@ -272,7 +272,7 @@ async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource>
   }
 }
 
-/** How long Freeze frame holds the picture, in seconds (like CapCut's). */
+/** How long Freeze frame holds the picture, in seconds. */
 const FREEZE_LENGTH = 3;
 
 /** Finished exports as kept in the history: without what only a running job needs. */
@@ -1393,7 +1393,7 @@ export default function App() {
     actions[command]();
   };
 
-  // Keyboard shortcuts, CapCut-style.
+  // Keyboard shortcuts.
   const keys = useRef<(e: KeyboardEvent) => void>(() => {});
   keys.current = (e: KeyboardEvent) => {
     const ctrl = e.ctrlKey || e.metaKey;

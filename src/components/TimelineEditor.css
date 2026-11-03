@@ -75,7 +75,7 @@
   color: var(--text-3);
 }
 
-/* Cover, on the main track (like CapCut's): its picture, or an icon. */
+/* Cover, on the main track: its picture, or an icon. */
 .tl__cover {
   flex-shrink: 0;
   display: flex;
@@ -106,7 +106,7 @@
   object-fit: cover;
 }
 
-/* Pushes the buttons to the right, like CapCut's header. */
+/* Pushes the buttons to the right. */
 .tl__head-gap {
   flex: 1;
 }

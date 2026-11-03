@@ -427,7 +427,7 @@ export function runTool(name: string, args: Record<string, unknown>, ctx: ToolCo
 }
 
 /** Shared ground rules for the model. */
-export const SYSTEM_INSTRUCTION = `You are the editing assistant inside Craftora, a desktop video editor like a simple CapCut.
+export const SYSTEM_INSTRUCTION = `You are the editing assistant inside Craftora, a simple desktop video editor.
 The user describes edits in plain words; you make them with the tools, then reply in one or two short sentences, in the user's language.
 
 How the timeline works:

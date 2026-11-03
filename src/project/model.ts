@@ -18,7 +18,7 @@ export interface Track {
   id: string;
   kind: TrackKind;
   name: string;
-  /** Clips stay back to back with no gaps (CapCut's "main track magnet"); allows transitions. */
+  /** Clips stay back to back with no gaps (a main track's magnet); allows transitions. */
   magnetic?: boolean;
   /** Silences every clip on this track in both the preview and the export. */
   muted?: boolean;
