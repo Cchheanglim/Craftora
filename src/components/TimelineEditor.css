@@ -86,6 +86,56 @@
   position: relative;
 }
 
+/* A clip's right-click menu (ClipMenu): over everything; a click anywhere else closes it. */
+.tl__menu-catcher {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.tl__clip-menu {
+  z-index: 41;
+  min-width: 220px;
+}
+
+.tl__clip-menu hr {
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.tl__menu-text {
+  flex: 1;
+}
+
+.tl__menu kbd {
+  font-family: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.tl__menu button:disabled {
+  color: var(--text-3);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.tl__menu button:disabled:hover {
+  background: transparent;
+}
+
+.tl__submenu {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.tl__submenu-list {
+  top: -4px;
+  left: 100%;
+  margin-left: 4px;
+}
+
 /* The … menu: track height, waveform size, magnet, remove. */
 .tl__track-menu {
   min-width: 190px;

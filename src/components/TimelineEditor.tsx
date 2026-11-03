@@ -67,7 +67,14 @@ interface TimelineEditorProps {
   onAddText: () => void;
   /** A filter, effect or transition dropped on track `trackId` at `time`. */
   onDropFx: (item: FxItem, trackId: string, time: number) => void;
+  /** A pick from a clip's right-click menu; `time`: the playhead if it's on the clip, else where it was clicked. */
+  onClipCommand: (command: ClipCommand, clip: Clip, time: number) => void;
+  /** Something has been copied, so Paste can put it at the playhead. */
+  canPaste: boolean;
 }
+
+/** What a clip's right-click menu can do (App `clipCommand` does it). */
+export type ClipCommand = "copy" | "cut" | "paste" | "delete" | "freeze" | "reverse" | "mirror" | "rotate" | "crop" | "export" | "replace" | "reveal";
 
 type DragMode = "move" | "start" | "end";
 
@@ -110,6 +117,8 @@ export function TimelineEditor({
   onDelete,
   onAddText,
   onDropFx,
+  onClipCommand,
+  canPaste,
 }: TimelineEditorProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -137,6 +146,8 @@ export function TimelineEditor({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.media]);
+  /** The clip whose right-click menu is open, where, and at what time it acts. */
+  const [clipMenu, setClipMenu] = useState<{ clipId: string; x: number; y: number; time: number } | null>(null);
   /** The track whose … menu is open, and where to draw it. */
   const [menu, setMenu] = useState<{ trackId: string; x: number; y: number; up: boolean } | null>(null);
 
@@ -640,6 +651,15 @@ export function TimelineEditor({
                         className={classes.join(" ")}
                         style={{ left: start * pps, width: Math.max(4, length * pps) }}
                         onPointerDown={beginDrag(clip, "move")}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          onSelect(clip.id);
+                          const onClip = playback.time >= clip.start && playback.time < clipEnd(clip);
+                          // Kept on screen: about 230 × 400 px.
+                          const x = Math.min(e.clientX, window.innerWidth - 236);
+                          const y = Math.min(e.clientY, window.innerHeight - 404);
+                          setClipMenu({ clipId: clip.id, x, y, time: onClip ? playback.time : timeAt(e.clientX) });
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
@@ -697,6 +717,30 @@ export function TimelineEditor({
               </div>
             ))}
 
+            {clipMenu && (() => {
+              const clip = project.clips.find((c) => c.id === clipMenu.clipId);
+              if (!clip) return null;
+              const track = project.tracks.find((t) => t.id === clip.trackId);
+              const media = project.media.find((m) => m.id === clip.mediaId);
+              return (
+                <ClipMenu
+                  x={clipMenu.x}
+                  y={clipMenu.y}
+                  clip={clip}
+                  picture={track?.kind === "video" && Boolean(media)}
+                  video={Boolean(media && !media.source.image)}
+                  local={Boolean(media?.source.local)}
+                  locked={Boolean(track?.locked)}
+                  canPaste={canPaste}
+                  onPick={(command) => {
+                    setClipMenu(null);
+                    onClipCommand(command, clip, clipMenu.time);
+                  }}
+                  onClose={() => setClipMenu(null)}
+                />
+              );
+            })()}
+
             <div
               className="tl__playhead"
               style={{ left: playback.time * pps }}
@@ -749,3 +793,123 @@ const ClipFrames = memo(function ClipFrames({ clip, strip, pps, cellHeight, dura
     </span>
   );
 });
+
+/**
+ * A clip's right-click menu (like CapCut's): copy, cut, paste, delete, Edit ▸ (freeze, reverse,
+ * mirror, rotate, crop), export it, replace it, open its file. Escape or a click anywhere else closes it.
+ */
+function ClipMenu({
+  x,
+  y,
+  clip,
+  picture,
+  video,
+  local,
+  locked,
+  canPaste,
+  onPick,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  clip: Clip;
+  /** A picture on a video track: mirror, rotate and crop apply. */
+  picture: boolean;
+  /** Moving media (not a still picture or text): freeze and reverse apply. */
+  video: boolean;
+  /** A file on this PC: it has a folder to open. */
+  local: boolean;
+  /** On a locked track: only what doesn't change it. */
+  locked: boolean;
+  canPaste: boolean;
+  onPick: (command: ClipCommand) => void;
+  onClose: () => void;
+}) {
+  const [editOpen, setEditOpen] = useState(false);
+  const item = (command: ClipCommand, label: string, icon: IconName, enabled: boolean, keys?: string, checked?: boolean) => (
+    <button
+      key={command}
+      type="button"
+      role={checked === undefined ? "menuitem" : "menuitemcheckbox"}
+      aria-checked={checked}
+      disabled={!enabled}
+      onClick={() => onPick(command)}
+    >
+      <Icon name={icon} size={13} />
+      <span className="tl__menu-text">{label}</span>
+      {keys && <kbd>{keys}</kbd>}
+    </button>
+  );
+  const media = Boolean(clip.mediaId);
+  return (
+    <>
+      <div
+        className="tl__menu-catcher"
+        onPointerDown={onClose}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
+      />
+      <div
+        className="tl__menu tl__clip-menu"
+        role="menu"
+        aria-label="Clip"
+        style={{ position: "fixed", left: x, top: y }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onClose();
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            // Up and down through the menu's buttons.
+            e.preventDefault();
+            const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+            const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
+            buttons[(i + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+          }
+        }}
+      >
+        {item("copy", "Copy", "copy", true, "Ctrl C")}
+        {item("cut", "Cut", "scissors", !locked, "Ctrl X")}
+        {item("paste", "Paste", "clipboard", canPaste, "Ctrl V")}
+        {item("delete", "Delete", "trash", !locked, "Del")}
+        <hr />
+        <div className="tl__submenu" onMouseEnter={() => setEditOpen(true)} onMouseLeave={() => setEditOpen(false)}>
+          <button
+            type="button"
+            role="menuitem"
+            aria-haspopup="menu"
+            aria-expanded={editOpen}
+            disabled={locked || !(video || picture)}
+            onClick={() => setEditOpen((o) => !o)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowRight") setEditOpen(true);
+            }}
+          >
+            <Icon name="sliders" size={13} />
+            <span className="tl__menu-text">Edit</span>
+            <span aria-hidden="true">›</span>
+          </button>
+          {editOpen && (
+            <div
+              className="tl__menu tl__submenu-list"
+              role="menu"
+              aria-label="Edit"
+              onKeyDown={(e) => {
+                if (e.key === "ArrowLeft") setEditOpen(false);
+              }}
+            >
+              {item("freeze", "Freeze frame", "snowflake", video && picture)}
+              {item("reverse", "Reverse", "rotate", video, undefined, clip.reverse)}
+              {item("mirror", "Mirror", "flip", picture, undefined, clip.mirror)}
+              {item("rotate", `Rotate${clip.rotate ? ` · ${clip.rotate}°` : ""}`, "rotate", picture)}
+              {item("crop", "Crop…", "crop", picture)}
+            </div>
+          )}
+        </div>
+        <hr />
+        {item("export", "Export this clip", "upload", media)}
+        {item("replace", "Replace clip…", "image", media && !locked)}
+        {item("reveal", "Open file location", "folder", local)}
+      </div>
+    </>
+  );
+}
