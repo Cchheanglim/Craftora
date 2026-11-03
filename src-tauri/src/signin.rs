@@ -296,7 +296,7 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
     }
     let fetch = MenuItem::with_id(&app, FETCH_ITEM, "Fetch this video", true, None::<&str>).map_err(|e| e.to_string())?;
     let menu = Menu::with_items(&app, &[&fetch]).map_err(|e| e.to_string())?;
-    WebviewWindowBuilder::new(&app, WINDOW, WebviewUrl::External(url))
+    let window = WebviewWindowBuilder::new(&app, WINDOW, WebviewUrl::External(url))
         .title("Craftora · log in if needed, play the video, then click Fetch this video")
         .inner_size(900.0, 760.0)
         .initialization_script_for_all_frames(WATCH_MEDIA)
@@ -339,7 +339,36 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
         })
         .build()
         .map_err(|e| format!("Couldn't open the sign-in window: {e}"))?;
+    block_other_programs(&window);
     Ok(())
+}
+
+/// No page in the sign-in window can start another program on the PC (zoommtg:, ms-msdt:, an
+/// app store link…), not even from an ad's frame, which `on_navigation` never sees. WebView2 would
+/// otherwise ask "Open …?", and one click on it starts the program.
+fn block_other_programs(window: &tauri::WebviewWindow) {
+    #[cfg(windows)]
+    let _ = window.with_webview(|webview| {
+        use webview2_com::LaunchingExternalUriSchemeEventHandler;
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_18;
+        use windows_core::Interface;
+        let refuse = LaunchingExternalUriSchemeEventHandler::create(Box::new(|_, args| match args {
+            // SAFETY: WebView2 hands the event's own arguments to its handler.
+            Some(args) => unsafe { args.SetCancel(true) },
+            None => Ok(()),
+        }));
+        let mut token = 0;
+        // SAFETY: `with_webview` runs on the window's own thread.
+        let _ = unsafe {
+            webview
+                .controller()
+                .CoreWebView2()
+                .and_then(|core| core.cast::<ICoreWebView2_18>())
+                .and_then(|core| core.add_LaunchingExternalUriScheme(&refuse, &mut token))
+        };
+    });
+    #[cfg(not(windows))]
+    let _ = window;
 }
 
 /// Pop-ups the sign-in window lets open: logging in with another account. Any other pop-up is an

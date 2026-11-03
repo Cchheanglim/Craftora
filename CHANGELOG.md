@@ -7,8 +7,14 @@
 - **Settings → Links** lists each website with when it was last used (opened in Craftora's
   window, or fetched from with its login). The box for typing a website to open is gone; when a
   link needs a login, Fetch still offers to open its page. **Sign out of all** stays.
+- **Exporting an edited video that uses links** first downloads each link whole (a Download for
+  editing in the Queue; the export says "Waiting for its video to download"), then exports from
+  the file. After it, the editor plays the downloaded file instead of streaming the link.
 
 **Fixed**
+
+- **Pausing an export from a link started its download over**: the link's download is now a
+  Download for editing, which goes on from where it was.
 
 - **Broken pictures on the timeline** for some files from your PC (ones whose sound the preview
   can't play as is, such as AC3): the clip's picture turned into a broken image once Craftora's
