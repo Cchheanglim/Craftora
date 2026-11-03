@@ -35,6 +35,8 @@ import {
   saveSrt,
   pickMediaFiles,
   pickMediaFile,
+  pickPicture,
+  fileThumbnail,
   openSignIn,
   onFetchPage,
   type FoundPage,
@@ -748,6 +750,23 @@ export default function App() {
     }
   };
 
+  /** A picture picked on this PC becomes a media item's list picture (and its History row's). */
+  const changePicture = async (mediaId: string) => {
+    const path = await pickPicture().catch(() => null);
+    if (!path) return;
+    const thumbnail = await fileThumbnail(path, true);
+    if (!thumbnail) return setError("Couldn't read that picture. Try a PNG or JPEG file.");
+    const item = projectRef.current.media.find((m) => m.id === mediaId);
+    if (!item) return;
+    api.refreshMedia(mediaId, { source: { ...item.source, thumbnail, thumbnails: undefined } });
+    if (!item.source.local)
+      setFetchHistory((list) => {
+        const next = list.map((e) => (e.url === item.source.url ? { ...e, thumbnail } : e));
+        saveFetchHistory(next);
+        return next;
+      });
+  };
+
   /** Queues a whole link to download, so it edits like a file on this PC. Returns the queue job's id. */
   const downloadForEditing = (item: MediaItem) => {
     if (!inDesktopApp || item.source.local) return;
@@ -848,7 +867,9 @@ export default function App() {
           // Keep the link's length so clip times stay exactly where they were (a recording, or a
           // link whose length wasn't known, takes the file's).
           const duration = item.source.live || !item.source.duration ? local.duration : item.source.duration;
-          api.refreshMedia(mediaId, { source: { ...local, duration }, missing: false, ...(rename ? { name: rename } : {}) });
+          // The picture kept for the link (or picked by the user) stays.
+          const thumbnail = item.source.thumbnail?.startsWith("data:") ? item.source.thumbnail : local.thumbnail;
+          api.refreshMedia(mediaId, { source: { ...local, duration, thumbnail }, missing: false, ...(rename ? { name: rename } : {}) });
           prepare(mediaId, local);
         })
         .catch((err) => setError(`The download finished but couldn't be opened: ${errorText(err)}`));
@@ -1357,6 +1378,7 @@ export default function App() {
         onImport={inDesktopApp ? () => void importFiles() : undefined}
         onAddMedia={addMedia}
         onRemoveMedia={(mediaId) => api.edit({ type: "removeMedia", mediaId })}
+        onChangePicture={inDesktopApp ? (mediaId) => void changePicture(mediaId) : undefined}
         usedMedia={usedMedia}
         activity={[
           // Downloads, exports and recordings running now, then captions being made.

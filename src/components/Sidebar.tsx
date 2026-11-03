@@ -43,6 +43,8 @@ interface SidebarProps {
   onImport?: () => void;
   onAddMedia: (mediaId: string) => void;
   onRemoveMedia: (mediaId: string) => void;
+  /** Replaces a media item's list picture with one picked on this PC; absent in the browser preview. */
+  onChangePicture?: (mediaId: string) => void;
   /** Media used on the timeline can't be removed without removing its clips. */
   usedMedia: Set<string>;
   /** What's running now (shown only while something is). */
@@ -65,9 +67,27 @@ export function Sidebar({
   onImport,
   onAddMedia,
   onRemoveMedia,
+  onChangePicture,
   usedMedia,
   activity,
 }: SidebarProps) {
+  /** A media item's list picture; clicking it picks another, where pictures can be changed. */
+  const picture = (item: MediaItem) => {
+    const thumb = (
+      <Thumb
+        src={item.source.thumbnail || (item.source.image ? item.source.previewUrl : undefined)}
+        icon={item.source.image ? "image" : item.hasVideo ? "film" : "music"}
+        // Streams (HLS) need hls.js, and live ones keep growing: those don't play here.
+        play={item.hasVideo && !item.source.image && !item.source.previewHls && !item.source.live && item.source.previewUrl ? () => Promise.resolve(item.source.hoverUrl || item.source.previewUrl) : undefined}
+      />
+    );
+    if (!onChangePicture) return thumb;
+    return (
+      <button type="button" className="side__picture" aria-label={`Change the picture of ${item.name}`} title="Click to change the picture" onClick={() => onChangePicture(item.id)}>
+        {thumb}
+      </button>
+    );
+  };
   const groups = [
     {
       label: "Make",
@@ -161,18 +181,14 @@ export function Sidebar({
                   key={item.id}
                   className="side__file"
                   onPointerDown={(e) => {
-                    if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
+                    // The picture is a button too, but dragging from it still drags the media.
+                    if (e.button !== 0 || (e.target as HTMLElement).closest("button:not(.side__picture)")) return;
                     e.preventDefault(); // no text selection while dragging
                     beginMediaDrag(item.id, e);
                   }}
                   title="Drag onto the timeline, or press + to add at the end"
                 >
-                  <Thumb
-                    src={item.source.thumbnail || (item.source.image ? item.source.previewUrl : undefined)}
-                    icon={item.source.image ? "image" : item.hasVideo ? "film" : "music"}
-                    // Streams (HLS) need hls.js, and live ones keep growing: those don't play here.
-                    play={item.hasVideo && !item.source.image && !item.source.previewHls && !item.source.live && item.source.previewUrl ? () => Promise.resolve(item.source.hoverUrl || item.source.previewUrl) : undefined}
-                  />
+                  {picture(item)}
                   <span className="side__file-text">
                     <span className="truncate">{item.name}</span>
                     <span className="side__file-meta">

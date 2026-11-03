@@ -358,6 +358,12 @@ export async function pickMediaFiles(): Promise<string[]> {
   return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
 }
 
+/** Asks for a picture file (a video's new list picture); null when the user cancels. */
+export async function pickPicture(): Promise<string | null> {
+  const picked = await open({ multiple: false, directory: false, title: "Choose a picture", filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }] });
+  return typeof picked === "string" ? picked : null;
+}
+
 export async function pickMediaFile(): Promise<string | null> {
   const picked = await open({
     multiple: false,

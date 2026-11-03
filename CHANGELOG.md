@@ -16,6 +16,9 @@
   Add to project.
 - **Settings no longer has "New projects export as"**: every project starts as Video (MP4); pick
   Audio only in Export when you want sound.
+- **A video's picture can be changed**: click its picture under In this project (left) and pick
+  an image on your PC. It shows there, on the project and in History, and stays after the video
+  is downloaded for editing (which used to swap in a frame of the video).
 - **Downloads can be deleted** from the Downloads page (the file goes to the Recycle Bin), not
   only hidden.
 - **Craftora opens maximized.** Restore still gives the usual window.
