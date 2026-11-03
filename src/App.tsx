@@ -1212,7 +1212,7 @@ export default function App() {
   const usedMedia = new Set(project.clips.map((c) => c.mediaId).filter((id): id is string => Boolean(id)));
   const selectedTrack = selected ? project.tracks.find((t) => t.id === selected.trackId) : undefined;
 
-  /** Signing in to websites, checking links and updating yt-dlp (Settings); absent in the browser preview. */
+  /** Signing out of websites, checking links and updating yt-dlp (Settings); absent in the browser preview. */
   const linkSettings: LinkSettings | undefined = inDesktopApp
     ? {
         onSignOut: () =>
