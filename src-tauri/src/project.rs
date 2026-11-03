@@ -63,6 +63,8 @@ enum Role {
     Video,
     Audio,
     Text,
+    /// A filter or effect block (effects.ts): changes the pictures under it while it lasts.
+    Effect,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Default)]
@@ -102,9 +104,12 @@ struct ClipSpec {
     mirror: bool,
     #[serde(default)]
     reverse: bool,
-    /// Pictures: a colour look's steps, in order (effects.ts `LookStep`): CSS filter names and amounts.
+    /// Filter blocks: the colour steps, in order (effects.ts `LookStep`): CSS filter names and amounts.
     #[serde(default)]
     look: Vec<(String, f64)>,
+    /// Effect blocks: effects.ts `PICTURE_EFFECTS` id.
+    #[serde(default)]
+    effect: String,
     /// Cover size × the frame (what spills over is cut off by the frame) instead of fitting inside.
     #[serde(default)]
     fill: bool,
@@ -207,9 +212,6 @@ impl ClipSpec {
         }
         if self.speed != 1.0 {
             chain.push_str(&format!(",setpts=PTS/{:.4}", self.speed));
-        }
-        for (op, amount) in &self.look {
-            chain.push_str(&look_filter(op, *amount).unwrap_or_default());
         }
         chain
     }
@@ -350,6 +352,12 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
                     return Err("A text clip has an invalid color.".into());
                 }
             }
+            // A filter (colour steps, checked above) or one known effect, never both.
+            Role::Effect => {
+                if clip.look.is_empty() == clip.effect.is_empty() || (!clip.effect.is_empty() && effect_filter(&clip.effect, clip.start, clip.length(), 1920).is_none()) {
+                    return Err("An effect on the timeline isn't one Craftora knows.".into());
+                }
+            }
             _ => {
                 let known = clip.media_id.as_ref().is_some_and(|id| spec.media.iter().any(|m| &m.id == id));
                 if !known {
@@ -429,7 +437,8 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         graph.push(format!("color=black:s={w}x{h}:r={fps}:d={},format=yuv420p[base]", secs(total)));
         let mut picture = String::from("base");
         let mut layered: Vec<(usize, &ClipSpec)> = spec.clips.iter().enumerate().filter(|(_, c)| c.role != Role::Audio).collect();
-        layered.sort_by_key(|(_, c)| c.layer);
+        // Pictures first, then the filter and effect blocks over them, then text on top (as the preview shows them).
+        layered.sort_by_key(|(_, c)| (matches!(c.role, Role::Effect) as u8 + 2 * matches!(c.role, Role::Text) as u8, c.layer));
         for (i, clip) in layered {
             let (start, end) = (secs(clip.start), secs(clip.end()));
             match clip.role {
@@ -472,6 +481,20 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                         y = clip.y,
                         alpha = clip.text_alpha()
                     ));
+                    picture = format!("p{i}");
+                }
+                Role::Effect => {
+                    // For the block's time only.
+                    let on = format!("enable='between(t,{},{})'", secs(clip.start), secs(clip.end()));
+                    let filters: Vec<String> = if clip.effect.is_empty() {
+                        clip.look.iter().filter_map(|(op, amount)| look_filter(op, *amount)).map(|f| format!("{}:{on}", f.trim_start_matches(','))).collect()
+                    } else {
+                        effect_filter(&clip.effect, clip.start, clip.length(), w).map(|f| format!("{f}:{on}")).into_iter().collect()
+                    };
+                    if filters.is_empty() {
+                        continue;
+                    }
+                    graph.push(format!("[{picture}]{}[p{i}]", filters.join(",")));
                     picture = format!("p{i}");
                 }
                 Role::Audio => {}
@@ -584,6 +607,24 @@ fn font_path(text: &str, font: &str) -> String {
 /// More than any look in effects.ts has.
 const MAX_LOOK_STEPS: usize = 8;
 
+/// Blur's strength: its standard deviation as a share of the frame width (effects.ts `BLUR_SHARE`).
+const BLUR_SHARE: f64 = 0.006;
+
+/// An effect block from `start` for `length` seconds, as the preview draws it (effects.ts
+/// `blocksStyle`); without its time range (the caller adds it). None for an effect the catalog
+/// doesn't have.
+fn effect_filter(effect: &str, start: f64, length: f64, width: u32) -> Option<String> {
+    let (st, d) = (secs(start), secs(length));
+    Some(match effect {
+        "fade-in" => format!("fade=t=in:st={st}:d={d}:color=black"),
+        "fade-out" => format!("fade=t=out:st={st}:d={d}:color=black"),
+        "flash" => format!("fade=t=in:st={st}:d={d}:color=white"),
+        "blur" => format!("gblur=sigma={:.2}", BLUR_SHARE * f64::from(width)),
+        "mirror" => "hflip".into(),
+        _ => return None,
+    })
+}
+
 /// One colour step of a look as FFmpeg draws it, with the same maths as the CSS filter function
 /// the preview uses (Filter Effects spec matrices, on the picture's RGB values); starts with a comma.
 /// None for a name or amount the catalog never sends.
@@ -644,7 +685,16 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::look_filter;
+    use super::{effect_filter, look_filter};
+
+    #[test]
+    fn draws_each_effect_block() {
+        assert_eq!(effect_filter("fade-in", 2.0, 3.0, 1920).unwrap(), "fade=t=in:st=2.000:d=3.000:color=black");
+        assert_eq!(effect_filter("flash", 0.0, 1.0, 1920).unwrap(), "fade=t=in:st=0.000:d=1.000:color=white");
+        assert_eq!(effect_filter("blur", 0.0, 1.0, 1000).unwrap(), "gblur=sigma=6.00");
+        assert_eq!(effect_filter("mirror", 0.0, 1.0, 1920).unwrap(), "hflip");
+        assert!(effect_filter("explode", 0.0, 1.0, 1920).is_none());
+    }
 
     #[test]
     fn draws_each_look_step_and_refuses_anything_else() {

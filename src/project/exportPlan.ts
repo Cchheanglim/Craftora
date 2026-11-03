@@ -6,7 +6,7 @@
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
 import { lookSteps } from "./effects";
-import { clipLength, isCropped, projectDuration, trackOrder, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
+import { isBlock, clipLength, isCropped, projectDuration, trackOrder, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
   { id: "1080p", label: "16:9 · 1920 × 1080", width: 1920, height: 1080 },
@@ -62,7 +62,6 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
   const untouched =
     clip.volume === 1 &&
     !clip.mirror &&
-    !clip.look &&
     !clip.reverse &&
     clip.speed === 1 &&
     !clip.fadeIn &&
@@ -152,7 +151,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     const order = track?.magnetic ? trackOrder(project, track.id) : [];
     const i = order.findIndex((o) => o.id === c.id);
     const next = i >= 0 ? order[i + 1] : undefined;
-    const role: RenderClip["role"] = !c.mediaId ? "text" : track?.kind === "audio" ? "audio" : "video";
+    const role: RenderClip["role"] = isBlock(c) ? "effect" : !c.mediaId ? "text" : track?.kind === "audio" ? "audio" : "video";
     return {
       role,
       // Lower tracks first; on a track, later clips over earlier ones (for transitions).
@@ -166,6 +165,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       mirror: c.mirror,
       reverse: c.reverse,
       look: lookSteps(c.look),
+      effect: c.effect ?? "",
       fadeIn: c.fadeIn,
       fadeOut: c.fadeOut,
       crop: [c.crop.left, c.crop.top, c.crop.right, c.crop.bottom],
@@ -203,7 +203,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
 
   const counts = {
     clips: project.clips.filter((c) => c.mediaId).length,
-    texts: project.clips.filter((c) => !c.mediaId).length,
+    texts: project.clips.filter((c) => !c.mediaId && !isBlock(c)).length,
   };
   const summary = [
     formatClock(duration),
@@ -220,7 +220,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     .map((m) => `yt-dlp -f "${m.format}" --download-sections "*…" --force-keyframes-at-cuts "${m.src}"`);
   const graph = [
     project.clips.some((c) => c.mirror) && "hflip",
-    project.clips.some((c) => c.look) && "colour looks",
+    project.clips.some(isBlock) && "filters and effects",
     project.clips.some((c) => c.reverse) && "reverse",
     project.clips.some((c) => isCropped(c.crop)) && "crop",
     project.clips.some((c) => c.speed !== 1) && "setpts, atempo",

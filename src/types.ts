@@ -123,7 +123,8 @@ export interface RenderSpec {
 export type TransitionKind = "crossfade" | "dip";
 
 export interface RenderClip {
-  role: "video" | "audio" | "text";
+  /** "effect": a filter or effect block, which changes the pictures under it while it lasts. */
+  role: "video" | "audio" | "text" | "effect";
   /** Drawing order for pictures and text: higher is on top. */
   layer: number;
   mediaId?: string;
@@ -134,8 +135,10 @@ export interface RenderClip {
   volume: number;
   mirror: boolean;
   reverse: boolean;
-  /** Pictures: the look's colour steps, in order (effects.ts `LookStep`); empty for none. */
+  /** Filter blocks: the colour steps, in order (effects.ts `LookStep`); empty otherwise. */
   look: LookStep[];
+  /** Effect blocks: effects.ts `PICTURE_EFFECTS` id; empty otherwise. */
+  effect: string;
   /** Cover the frame instead of fitting inside it. */
   fill: boolean;
   fadeIn: number;
