@@ -252,7 +252,7 @@ async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource>
 }
 
 /** Finished exports as kept in the history: without what only a running job needs. */
-const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined });
+const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined, after: undefined });
 
 export default function App() {
   const [view, setView] = useState<View>(inDesktopApp ? "home" : "editor");
