@@ -310,6 +310,13 @@ pub async fn delete_file(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Of `paths`, the files deleted outside Craftora (in File Explorer): gone from a folder that is
+/// still there. A file on an unplugged drive (its folder is gone too) doesn't count as deleted.
+#[tauri::command]
+pub fn deleted_files(paths: Vec<String>) -> Vec<String> {
+    paths.into_iter().filter(|p| !Path::new(p).exists() && Path::new(p).parent().is_some_and(Path::is_dir)).collect()
+}
+
 /// Saves a PNG snapshot of the preview into the export folder and opens it for the editor.
 #[tauri::command]
 pub fn save_snapshot(
@@ -332,4 +339,23 @@ pub fn save_snapshot(
     crate::local::allow_preview(&app, &normalized)?;
     opened.allow(normalized.clone());
     Ok(normalized.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::deleted_files;
+
+    #[test]
+    fn counts_only_files_gone_from_a_folder_still_there() {
+        let dir = std::env::temp_dir().join(format!("craftora-deleted-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let kept = dir.join("kept.mp4");
+        std::fs::write(&kept, b"x").unwrap();
+        let gone = dir.join("gone.mp4");
+        let unplugged = dir.join("no-such-drive").join("clip.mp4");
+        let paths = [&kept, &gone, &unplugged].map(|p| p.to_string_lossy().into_owned());
+        let deleted = deleted_files(paths.to_vec());
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(deleted, [paths[1].clone()]);
+    }
 }

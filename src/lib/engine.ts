@@ -458,6 +458,8 @@ export const setProxy = (proxy: string | null) => invoke<ProxyState>("set_proxy"
 export const checkAddress = () => invoke<string>("check_address");
 /** Moves an exported file to the Recycle Bin. */
 export const deleteFile = (path: string) => invoke<void>("delete_file", { path });
+/** Of `paths`, the files deleted outside Craftora (not ones on an unplugged drive). */
+export const deletedFiles = (paths: string[]) => invoke<string[]>("deleted_files", { paths });
 export const localThumbnail = (path: string, image = false) => invoke<string>("local_thumbnail", { path, image });
 
 const fileThumbnails = new Map<string, Promise<string | undefined>>();

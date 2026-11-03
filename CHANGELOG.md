@@ -37,6 +37,9 @@
   more after a dropped connection.
 - **Fetching sometimes failed on a website that usually works**: a moment's network trouble (a
   timeout, a dropped connection, the site's server failing for a moment) now gets one more try.
+- **An export deleted in File Explorer stayed in Exports and on Home**: Craftora now drops it
+  when it starts or when you switch back to it (not for an unplugged drive: those stay listed).
+  The Downloads page reads its folder again then too.
 - **Pausing an export from a link started its download over**: the link's download is now a
   Download for editing, which goes on from where it was.
 - **Hovering a project or a History row whose video is a link** didn't play it (only files on

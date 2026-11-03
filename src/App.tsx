@@ -25,6 +25,7 @@ import {
   openLocal,
   renameDownload,
   deleteFile,
+  deletedFiles,
   probeLocal,
   recordLive,
   recordingUrl,
@@ -408,6 +409,30 @@ export default function App() {
     setHistory(next);
     void saveHistory(next).catch(() => {});
   }, [queue.jobs, history]);
+
+  // Exports deleted outside Craftora (in File Explorer) leave Exports and Home when Craftora starts
+  // or comes back into view.
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  const historyLoaded = history !== null;
+  useEffect(() => {
+    if (!inDesktopApp || !historyLoaded) return;
+    const forgetDeleted = () =>
+      void deletedFiles((historyRef.current ?? []).flatMap((j) => (j.outputPath ? [j.outputPath] : [])))
+        .then((gone) => {
+          if (gone.length === 0) return;
+          setHistory((list) => {
+            if (!list) return list;
+            const next = list.filter((j) => !j.outputPath || !gone.includes(j.outputPath));
+            void saveHistory(next).catch(() => {});
+            return next;
+          });
+        })
+        .catch(() => {});
+    forgetDeleted();
+    window.addEventListener("focus", forgetDeleted);
+    return () => window.removeEventListener("focus", forgetDeleted);
+  }, [historyLoaded]);
 
   /** Hides a finished export from Exports and Home, or shows it again; the file isn't touched. */
   const setExportHidden = (id: string, hidden: boolean) => {

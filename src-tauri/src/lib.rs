@@ -140,6 +140,7 @@ pub fn run() {
             store::set_downloads_dir,
             store::open_file,
             store::delete_file,
+            store::deleted_files,
             store::get_proxy,
             store::set_proxy,
             store::get_ad_block,
