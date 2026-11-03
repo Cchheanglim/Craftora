@@ -20,6 +20,8 @@
 
 - **Pausing an export from a link started its download over**: the link's download is now a
   Download for editing, which goes on from where it was.
+- **Hovering a project or a History row whose video is a link** didn't play it (only files on
+  this PC did): it now plays the link's light 480p stream, after a few seconds the first time.
 
 - **Broken pictures on the timeline** for some files from your PC (ones whose sound the preview
   can't play as is, such as AC3): the clip's picture turned into a broken image once Craftora's

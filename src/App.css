@@ -64,6 +64,12 @@
   max-height: none;
 }
 
+/* The tracks keep their full height and the body scrolls them, as below its usual 232px limit;
+   stretched to a fixed height instead, they were cut off with the scrollbar across them. */
+.app__editor[data-sized] .tl__body > * {
+  min-height: max-content;
+}
+
 /* The right panel: clip and export settings, or the assistant. */
 .app__panel {
   grid-area: panel;
