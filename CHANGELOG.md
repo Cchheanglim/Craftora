@@ -10,6 +10,11 @@
 - **Exporting an edited video that uses links** first downloads each link whole (a Download for
   editing in the Queue; the export says "Waiting for its video to download"), then exports from
   the file. After it, the editor plays the downloaded file instead of streaming the link.
+- **The preview can be made bigger or smaller**: drag the bar between the preview and the
+  timeline (or focus it and press ↑/↓). Craftora remembers the size.
+- **Websites in the sign-in window can't start other programs on your PC** (meeting apps, app
+  store links, Windows tools…), not even from an ad inside the page; before, Windows asked
+  "Open …?" and one click started it.
 
 **Fixed**
 

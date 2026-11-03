@@ -2,7 +2,7 @@ import type { Job } from "../types";
 import { loadProject, type ProjectEntry } from "../lib/storage";
 import { formatClock, formatWhen } from "../lib/timecode";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { errorText, inDesktopApp, playableFile, revealFile } from "../lib/engine";
+import { errorText, hoverVideo, inDesktopApp, playableFile, revealFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { storeEdition, type Updates } from "../lib/updates";
 import { checkSite, signedInSites, signOutOf, type SignedInSite, type SiteChecks, type SiteReport } from "../lib/engine";
@@ -380,14 +380,16 @@ function ReportDetails({ report }: { report: SiteReport }) {
   );
 }
 
-/** A saved project's first video on this PC, from where its clip starts, to play while its row is hovered. */
+/** A saved project's first video (a file on this PC or a link), from where its clip starts, to play while its row is hovered. */
 async function projectVideo(id: string): Promise<string | undefined> {
   const { project } = await loadProject(id);
   const onVideoTrack = (trackId: string) => project.tracks.find((t) => t.id === trackId)?.kind === "video";
   for (const clip of [...project.clips].sort((a, b) => a.start - b.start)) {
     const media = project.media.find((m) => m.id === clip.mediaId);
-    if (media?.source.local && !media.source.image && media.hasVideo && onVideoTrack(clip.trackId))
-      return `${await playableFile(media.source.url)}#t=${clip.in}`;
+    if (media && !media.source.image && media.hasVideo && onVideoTrack(clip.trackId)) {
+      const video = media.source.local ? await playableFile(media.source.url) : await hoverVideo(media.source.url);
+      return video && `${video}#t=${clip.in}`;
+    }
   }
   return undefined;
 }
