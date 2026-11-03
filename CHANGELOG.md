@@ -10,6 +10,12 @@
 - **Exporting an edited video that uses links** first downloads each link whole (a Download for
   editing in the Queue; the export says "Waiting for its video to download"), then exports from
   the file. After it, the editor plays the downloaded file instead of streaming the link.
+- **Fetch shows what a link holds before adding it**: its picture, title, website, who posted it,
+  length, what's in it, qualities, size, captions and what happens when it's added, with a
+  website check (VirusTotal key) and Cancel. Nothing is added or downloaded until you click
+  Add to project.
+- **Settings no longer has "New projects export as"**: every project starts as Video (MP4); pick
+  Audio only in Export when you want sound.
 - **Downloads can be deleted** from the Downloads page (the file goes to the Recycle Bin), not
   only hidden.
 - **Craftora opens maximized.** Restore still gives the usual window.

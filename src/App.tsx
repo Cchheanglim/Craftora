@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { ExportSettings, Job, MediaSource, OutputKind } from "./types";
+import type { ExportSettings, Job, MediaSource } from "./types";
 import { DEMO_JOBS, DEMO_SOURCES } from "./data/demo";
 import {
   engineStatus,
@@ -272,8 +272,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Settings page: what new projects export as, and how many jobs run at once.
-  const [defaultOutput, setDefaultOutput] = useState<OutputKind>(() => (remembered("craftora.exportSound", false) ? "audio" : "video"));
+  // Settings page: how many jobs run at once.
   const [maxRunning, setMaxRunning] = useState(() => rememberedCount("craftora.maxRunning", MAX_RUNNING));
   const [timelineHeight, setTimelineHeight] = useState(rememberedHeight);
   const resizeTimeline = (height: number) => {
@@ -288,7 +287,7 @@ export default function App() {
     saveTheme(next);
   };
   useGlideScroll();
-  const [settings, setSettings] = useState<ExportSettings>(() => ({ ...DEFAULT_SETTINGS, output: defaultOutput }));
+  const [settings, setSettings] = useState<ExportSettings>(DEFAULT_SETTINGS);
   const [freshId, setFreshId] = useState<string | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -1259,11 +1258,6 @@ export default function App() {
         ytDlpMessage: ytDlpUpdate.message,
       }
     : undefined;
-  const chooseDefaultOutput = (output: OutputKind) => {
-    setDefaultOutput(output);
-    remember("craftora.exportSound", output === "audio");
-    setSettings((current) => ({ ...current, output }));
-  };
   const chooseMaxRunning = (count: number) => {
     setMaxRunning(count);
     rememberText("craftora.maxRunning", String(count));
@@ -1413,8 +1407,6 @@ export default function App() {
             onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
             downloadsDir={downloadsDir}
             onChooseDownloadsDir={inDesktopApp ? () => void chooseDownloadsDir() : undefined}
-            defaultOutput={defaultOutput}
-            onDefaultOutput={chooseDefaultOutput}
             theme={theme}
             onTheme={chooseTheme}
             maxRunning={maxRunning}

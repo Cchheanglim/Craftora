@@ -1,6 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { relaunch } from "@tauri-apps/plugin-process";
-import type { OutputKind } from "../types";
 import { checkAddress, errorText, getAdBlock, getProxy, inDesktopApp, setAdBlock, setProxy, type ProxyState } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Links, UpdateControls, type LinkSettings } from "./Home";
@@ -25,8 +24,6 @@ interface SettingsProps {
   /** Picks the downloads folder; absent in the browser preview. */
   onChooseDownloadsDir?: () => void;
   /** What a new project exports as. */
-  defaultOutput: OutputKind;
-  onDefaultOutput: (output: OutputKind) => void;
   /** How many downloads and exports run at the same time. */
   maxRunning: number;
   onMaxRunning: (count: number) => void;
@@ -35,12 +32,12 @@ interface SettingsProps {
   updates: Updates;
 }
 
-export function Settings({ theme, onTheme, outputDir, onChooseOutputDir, downloadsDir, onChooseDownloadsDir, defaultOutput, onDefaultOutput, maxRunning, onMaxRunning, links, updates }: SettingsProps) {
+export function Settings({ theme, onTheme, outputDir, onChooseOutputDir, downloadsDir, onChooseDownloadsDir, maxRunning, onMaxRunning, links, updates }: SettingsProps) {
   return (
     <section className="library" aria-labelledby="settings-title">
       <header className="library__head">
         <h1 id="settings-title">Settings</h1>
-        <p>How Craftora looks, where files go, what new projects export, and how links are fetched.</p>
+        <p>How Craftora looks, where files go, and how links are fetched.</p>
       </header>
 
       <div className="library__group">
@@ -79,18 +76,6 @@ export function Settings({ theme, onTheme, outputDir, onChooseOutputDir, downloa
               Change
             </button>
           )}
-        </div>
-      </div>
-
-      <div className="library__group">
-        <h2 className="section-label">New projects export as</h2>
-        <div className="segmented library__choice" role="group" aria-label="New projects export as">
-          <button type="button" aria-pressed={defaultOutput === "video"} onClick={() => onDefaultOutput("video")}>
-            Video (MP4)
-          </button>
-          <button type="button" aria-pressed={defaultOutput === "audio"} onClick={() => onDefaultOutput("audio")}>
-            Sound only (MP3)
-          </button>
         </div>
       </div>
 
