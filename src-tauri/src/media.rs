@@ -460,6 +460,7 @@ async fn fetch_picture(url: &str, referer: &str) -> Result<Vec<u8>, String> {
 /// with yt-dlp posing as a browser (and remembered, so downloads from it do the same).
 async fn read_link(app: &AppHandle, url: &str) -> Result<Info, String> {
     let mut retried = false;
+    let mut hiccup = false;
     loop {
         let mut args: Vec<String> = ["--dump-single-json", "--no-playlist", "--no-warnings", "--encoding", "utf-8"].map(String::from).to_vec();
         let (link, _cookie_file) = crate::signin::link_args(app, url).await;
@@ -474,12 +475,29 @@ async fn read_link(app: &AppHandle, url: &str) -> Result<Info, String> {
         }
         let error = last_error(&String::from_utf8_lossy(&output.stderr)).unwrap_or_else(|| "yt-dlp couldn't read this link.".into());
         crate::diag::note(format!("yt-dlp read {url}{}: {error}", if retried { " (as a browser)" } else { "" }));
+        // The same site works one moment and not the next: a moment's network trouble gets one more try.
+        if !hiccup && is_network_hiccup(&error) {
+            hiccup = true;
+            crate::diag::note("network trouble: trying once more");
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            continue;
+        }
         if retried || !is_bot_check(&error) || !crate::signin::note_bot_check(url) {
             return Err(error);
         }
         crate::diag::note("bot check: trying again as a browser");
         retried = true;
     }
+}
+
+/// yt-dlp's words for trouble on the way to the site rather than with the link: a timeout, a
+/// dropped connection, a server that failed for a moment. (Not 429 "too many requests": trying
+/// again at once doesn't help there.)
+fn is_network_hiccup(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    ["timed out", "connection reset", "connection aborted", "remote end closed", "temporary failure in name resolution", "getaddrinfo failed", "incompleteread", "unexpected_eof", "http error 500", "http error 502", "http error 503", "http error 504"]
+        .iter()
+        .any(|words| error.contains(words))
 }
 
 /// yt-dlp's words for "a bot check turned me away", such as "Got HTTP Error 403 caused by
@@ -674,7 +692,7 @@ fn pick_live(formats: &[Format]) -> Option<Vec<(String, BTreeMap<String, String>
 
 #[cfg(test)]
 mod tests {
-    use super::{first_served, is_bot_check, other_pictures, parse_mpd_duration, preview_choices, Format, Info, MAX_PICTURES};
+    use super::{first_served, is_bot_check, is_network_hiccup, other_pictures, parse_mpd_duration, preview_choices, Format, Info, MAX_PICTURES};
 
     #[test]
     fn keeps_the_other_pictures_best_first() {
@@ -695,6 +713,16 @@ mod tests {
     fn knows_a_bot_check_answer() {
         assert!(is_bot_check(r#"[generic] Got HTTP Error 403 caused by Cloudflare anti-bot challenge; try again with --extractor-args "generic:impersonate""#));
         assert!(!is_bot_check("[generic] Unsupported URL: https://shop.example/"));
+    }
+
+    #[test]
+    fn tries_again_only_after_network_trouble() {
+        assert!(is_network_hiccup("[youtube] abc: Unable to download API page: <urlopen error [WinError 10054] Connection reset by peer>"));
+        assert!(is_network_hiccup("[generic] Unable to download webpage: The read operation timed out"));
+        assert!(is_network_hiccup("[vimeo] 123: Unable to download JSON metadata: HTTP Error 503: Service Unavailable"));
+        assert!(!is_network_hiccup("[youtube] abc: Video unavailable. This video is private"));
+        assert!(!is_network_hiccup("HTTP Error 429: Too Many Requests"));
+        assert!(!is_network_hiccup("[generic] Unsupported URL: https://shop.example/"));
     }
 
     #[test]
