@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use tauri::webview::Cookie;
 use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuItem};
-use tauri::webview::NewWindowResponse;
+use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{AppHandle, Emitter, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 
 pub(crate) const WINDOW: &str = "sign-in";
@@ -154,6 +154,7 @@ struct FoundPage {
 /// yt-dlp arguments that reach a link: the user's logins, the page it was found on (when it was
 /// found in the sign-in window), then the link itself. Keep the file until yt-dlp ends.
 pub(crate) async fn link_args(app: &AppHandle, link: &str) -> (Vec<String>, Option<TempCookies>) {
+    note_used(app, link, false);
     let (mut args, file) = cookie_args(app).await;
     let (url, referer) = split_referer(link);
     if let Some(page) = referer {
@@ -185,6 +186,20 @@ pub(crate) fn remember_page(page: &str) {
 
 pub(crate) fn last_page() -> Option<String> {
     Some(LAST_PAGE.lock().unwrap().clone()).filter(|p| !p.is_empty())
+}
+
+/// Notes that `link`'s website was used now: a page opened in the sign-in window (`visit`), or a
+/// fetch, which only updates websites already visited there, so no list of every fetched site builds up.
+fn note_used(app: &AppHandle, link: &str, visit: bool) {
+    let Some(site) = host_of(link).filter(|host| !is_local(host)).map(|host| site_of(&host)) else {
+        return;
+    };
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+    crate::store::change_sites_used(app, |used| {
+        if visit || used.contains_key(&site) {
+            used.insert(site, now);
+        }
+    });
 }
 
 fn host_of(link: &str) -> Option<String> {
@@ -292,6 +307,11 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
         .on_navigation(|url| matches!(url.scheme(), "http" | "https" | "about" | "data" | "blob"))
         .on_new_window(|url, _| if is_sign_in_popup(&url) { NewWindowResponse::Allow } else { NewWindowResponse::Deny })
         .on_download(|_, _| false)
+        .on_page_load(|window, page| {
+            if page.event() == PageLoadEvent::Finished {
+                note_used(window.app_handle(), page.url().as_str(), true);
+            }
+        })
         .menu(menu)
         .on_menu_event(|window, event| {
             if event.id() != FETCH_ITEM {
@@ -378,13 +398,21 @@ fn site_of(domain: &str) -> String {
     }
 }
 
+#[derive(Serialize)]
+pub struct SignedInSite {
+    site: String,
+    /// When it was last used (ms since 1970); none if not since Craftora started noting it.
+    used: Option<i64>,
+}
+
 /// Websites Craftora keeps a login (cookies) for, from its sign-in window, sorted.
 #[tauri::command]
-pub async fn signed_in_sites(app: AppHandle) -> Result<Vec<String>, String> {
+pub async fn signed_in_sites(app: AppHandle) -> Result<Vec<SignedInSite>, String> {
     let mut sites: Vec<String> = web_cookies(&app).await.iter().filter_map(|c| c.domain().map(site_of)).collect();
     sites.sort();
     sites.dedup();
-    Ok(sites)
+    let used = crate::store::sites_used(&app);
+    Ok(sites.into_iter().map(|site| SignedInSite { used: used.get(&site).copied(), site }).collect())
 }
 
 /// Websites that share one login: Google signs YouTube back in from its google.com cookies.
@@ -399,13 +427,21 @@ fn same_login(site: &str) -> Vec<&str> {
 /// Forgets the login for one website (as `signed_in_sites` names it), and for those sharing it.
 #[tauri::command]
 pub async fn sign_out_of(app: AppHandle, site: String) -> Result<(), String> {
-    forget_cookies(&app, Some(&site)).await
+    forget_cookies(&app, Some(&site)).await?;
+    crate::store::change_sites_used(&app, |used| {
+        for s in same_login(&site) {
+            used.remove(s);
+        }
+    });
+    Ok(())
 }
 
 /// Forgets every website login made in Craftora's sign-in window.
 #[tauri::command]
 pub async fn sign_out_everywhere(app: AppHandle) -> Result<(), String> {
-    forget_cookies(&app, None).await
+    forget_cookies(&app, None).await?;
+    crate::store::change_sites_used(&app, |used| used.clear());
+    Ok(())
 }
 
 /// Deletes the sign-in window's cookies for `site`, or for every website.

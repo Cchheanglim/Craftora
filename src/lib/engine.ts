@@ -54,8 +54,12 @@ export const updateYtDlp = () => invoke<string>("update_yt_dlp");
 /** Opens a website or a video's page in a Craftora window, to log in and pick a video there. */
 export const openSignIn = (site: string) => invoke<void>("open_sign_in", { site });
 export const signOutEverywhere = () => invoke<void>("sign_out_everywhere");
-/** Websites Craftora keeps a login for, such as "youtube.com". */
-export const signedInSites = () => invoke<string[]>("signed_in_sites");
+/** A website Craftora keeps a login for, such as "youtube.com", and when it was last used (ms), if known. */
+export interface SignedInSite {
+  site: string;
+  used: number | null;
+}
+export const signedInSites = () => invoke<SignedInSite[]>("signed_in_sites");
 export const signOutOf = (site: string) => invoke<void>("sign_out_of", { site });
 /** A short message shown on top of the page in the sign-in window. */
 export const tellSignIn = (message: string) => invoke<void>("tell_sign_in", { message });

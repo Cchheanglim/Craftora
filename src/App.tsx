@@ -1215,10 +1215,6 @@ export default function App() {
   /** Signing in to websites, checking links and updating yt-dlp (Settings); absent in the browser preview. */
   const linkSettings: LinkSettings | undefined = inDesktopApp
     ? {
-        onSignIn: (site) => {
-          setSignInMessage(null);
-          openSignIn(site).catch((err) => setSignInMessage(errorText(err)));
-        },
         onSignOut: () =>
           void signOutEverywhere()
             .then(() => setSignInMessage("Signed out of all websites."))

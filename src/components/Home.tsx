@@ -1,11 +1,11 @@
 import type { Job } from "../types";
 import { loadProject, type ProjectEntry } from "../lib/storage";
-import { formatClock } from "../lib/timecode";
+import { formatClock, formatWhen } from "../lib/timecode";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { errorText, inDesktopApp, playableFile, revealFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { storeEdition, type Updates } from "../lib/updates";
-import { checkSite, signedInSites, signOutOf, type SiteChecks, type SiteReport } from "../lib/engine";
+import { checkSite, signedInSites, signOutOf, type SignedInSite, type SiteChecks, type SiteReport } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
 import { useEffect, useState, type FormEvent } from "react";
@@ -38,7 +38,6 @@ interface HomeProps {
 const HOME_PROJECTS = 3;
 
 export interface LinkSettings {
-  onSignIn: (site: string) => void;
   onSignOut: () => void;
   /** The answer to the last sign-in or sign-out. */
   signInMessage: string | null;
@@ -393,14 +392,13 @@ async function projectVideo(id: string): Promise<string | undefined> {
   return undefined;
 }
 
-/** Signing in to websites for links that need a login, checking links, and keeping yt-dlp current. */
+/** Websites logged in to for links that need a login, checking links, and keeping yt-dlp current. */
 export function Links({ links }: { links: LinkSettings }) {
-  const [site, setSite] = useState("");
   const [toCheck, setToCheck] = useState("");
   const [checking, setChecking] = useState(false);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const { ask, dialog } = useConfirm();
-  const [sites, setSites] = useState<string[]>([]);
+  const [sites, setSites] = useState<SignedInSite[]>([]);
   // Websites picked to be left out of the list (only hidden here, the cookies stay); remembered on this PC.
   const [hiddenSites, setHiddenSites] = useState<string[]>(() => {
     try {
@@ -419,7 +417,7 @@ export function Links({ links }: { links: LinkSettings }) {
       /* not essential */
     }
   };
-  const hiddenCount = sites.filter((s) => hiddenSites.includes(s)).length;
+  const hiddenCount = sites.filter((s) => hiddenSites.includes(s.site)).length;
   useEffect(() => {
     if (!inDesktopApp) return;
     const refresh = () => void signedInSites().then(setSites).catch(() => {});
@@ -437,7 +435,7 @@ export function Links({ links }: { links: LinkSettings }) {
     });
     if (!ok) return;
     await signOutOf(site).catch(() => {});
-    setSites(await signedInSites().catch(() => sites.filter((s) => s !== site)));
+    setSites(await signedInSites().catch(() => sites.filter((s) => s.site !== site)));
   };
   const checkLink = async (e: FormEvent) => {
     e.preventDefault();
@@ -494,53 +492,36 @@ export function Links({ links }: { links: LinkSettings }) {
       setSites([]);
     }
   };
-  const signIn = (e: FormEvent) => {
-    e.preventDefault();
-    if (site.trim()) links.onSignIn(site.trim());
-  };
   return (
     <>
       {dialog}
       <h2 className="section-label home__gap">Links</h2>
       <div className="home__about">
-        <form className="home__about-row" onSubmit={signIn}>
-          <label htmlFor="sign-in-site" className="sr-only">
-            Website to sign in to
-          </label>
-          <input
-            id="sign-in-site"
-            className="field home__site"
-            value={site}
-            onChange={(e) => setSite(e.target.value)}
-            placeholder="youtube.com"
-            spellCheck={false}
-          />
-          <button type="submit" className="btn btn--secondary" disabled={!site.trim()}>
-            Open
-          </button>
-          <button type="button" className="btn btn--ghost" onClick={() => void signOut()}>
-            Sign out of all
-          </button>
-        </form>
-        <p className="home__muted">
-          For restricted site, private or members-only videos. A window opens: log in, go to the video, then click Fetch this video at the top of the window. Your browser can stay open, and the login is remembered.
-        </p>
-        {links.signInMessage && <p className="home__muted">{links.signInMessage}</p>}
-        {sites.length > 0 && (
-          <>
-          <div className="home__sites-head">
-            <p className="home__muted">Websites that saved cookies in Craftora's window (from a visit or a login):</p>
+        <div className="home__sites-head">
+          <p className="home__muted">
+            {sites.length > 0
+              ? "Websites that saved cookies in Craftora's window (from a visit or a login):"
+              : "No website has saved cookies in Craftora's window yet. When a link needs a login, Fetch offers to open its page so you can log in."}
+          </p>
+          <div className="home__about-row">
             {hiddenCount > 0 && (
               <button type="button" className="btn btn--ghost" aria-expanded={showHidden} onClick={() => setShowHidden(!showHidden)}>
                 {showHidden ? "Hide hidden" : `Show hidden (${hiddenCount})`}
               </button>
             )}
+            <button type="button" className="btn btn--ghost" onClick={() => void signOut()}>
+              Sign out of all
+            </button>
           </div>
+        </div>
+        {links.signInMessage && <p className="home__muted">{links.signInMessage}</p>}
+        {sites.length > 0 && (
           <ul className="home__sites" aria-label="Websites with saved cookies">
-            {sites.filter((site) => showHidden || !hiddenSites.includes(site)).map((site) => (
+            {sites.filter(({ site }) => showHidden || !hiddenSites.includes(site)).map(({ site, used }) => (
               <li key={site}>
                 <Icon name="check" size={13} />
                 <span className="mono truncate">{site}</span>
+                {used !== null && <span className="home__site-used">used {formatWhen(used)}</span>}
                 <button type="button" className="btn btn--ghost" onClick={() => toggleHidden(site)}>
                   {hiddenSites.includes(site) ? "Unhide" : "Hide"}
                 </button>
@@ -550,7 +531,6 @@ export function Links({ links }: { links: LinkSettings }) {
               </li>
             ))}
           </ul>
-          </>
         )}
         {links.siteChecks.available && (
           <>
