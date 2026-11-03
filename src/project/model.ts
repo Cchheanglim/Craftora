@@ -182,6 +182,8 @@ export interface Project {
   clips: Clip[];
   /** Where every caption sits on the picture and how big it is; `CAPTIONS` when absent. */
   captionLayout?: CaptionLayout;
+  /** Cover (on the main track): the project's picture (a JPEG data URL), also built into exported videos. */
+  cover?: string;
 }
 
 /** `x`/`y` as for text clips; `size`: letter height as a fraction of the frame. The look is as for text clips. */

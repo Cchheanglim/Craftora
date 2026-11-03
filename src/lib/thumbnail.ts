@@ -158,3 +158,20 @@ export function captureFrame(previewUrl: string, time: number): Promise<Uint8Arr
     video.src = previewUrl;
   });
 }
+
+/** The frame at `time` (media seconds) as a cover: a JPEG data URL up to 1280 wide; undefined when it can't be read. */
+export async function coverFrame(previewUrl: string, time: number): Promise<string | undefined> {
+  const bytes = await captureFrame(previewUrl, time);
+  if (!bytes) return undefined;
+  try {
+    const bitmap = await createImageBitmap(new Blob([bytes as BlobPart], { type: "image/png" }));
+    const scale = Math.min(1, 1280 / bitmap.width);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  } catch {
+    return undefined;
+  }
+}

@@ -39,6 +39,9 @@ pub struct RenderSpec {
     file_name: String,
     #[serde(default)]
     quality: Quality,
+    /// Video files: the cover picture (a JPEG data URL from the editor's Cover), built in as the file's cover.
+    #[serde(default)]
+    cover: String,
 }
 
 #[derive(Deserialize)]
@@ -540,6 +543,14 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         return Err("There's no sound on the timeline to save.".into());
     }
 
+    // The cover: a picture stream marked as the file's cover, which players and File Explorer show.
+    let cover = if is_video && matches!(spec.container, Container::Mp4 | Container::Mkv) { cover_file(&spec.cover, work)? } else { None };
+    let cover_input = cover.map(|path| {
+        let index = inputs.iter().filter(|a| *a == "-i").count();
+        inputs.extend(["-i".into(), path.to_string_lossy().into_owned()]);
+        index
+    });
+
     // 4. Encode, on the graphics card when asked and possible; if that fails, on the processor.
     let encoder = if is_video { encoders::for_render(app, spec.quality).await } else { Encoder::Software };
     // From a file: hundreds of text clips (captions) would pass Windows' 32,767-character command limit.
@@ -553,6 +564,9 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
             args.extend(["-map".into(), "[outv]".into()]);
             args.extend(encoder.args(spec.quality));
             args.extend(["-r".into(), fps.to_string()]);
+            if let Some(index) = cover_input {
+                args.extend(["-map".into(), format!("{index}:v"), "-c:v:1".into(), "copy".into(), "-disposition:v:1".into(), "attached_pic".into()]);
+            }
         }
         match &sound {
             Some(label) => {
@@ -613,6 +627,24 @@ fn font_path(text: &str, font: &str) -> String {
         .find(|p| p.exists())
         .unwrap_or_else(|| fonts.join("arial.ttf"));
     path.to_string_lossy().replace('\\', "/").replace(':', "\\:")
+}
+
+/// Writes the editor's cover (a JPEG data URL) into the working folder; None without one.
+fn cover_file(data_url: &str, work: &Path) -> Result<Option<PathBuf>, String> {
+    if data_url.is_empty() {
+        return Ok(None);
+    }
+    let bytes = cover_bytes(data_url).ok_or("The cover picture can't be read. Pick it again.")?;
+    let path = work.join("cover.jpg");
+    std::fs::write(&path, bytes).map_err(|e| format!("Couldn't prepare the cover: {e}"))?;
+    Ok(Some(path))
+}
+
+/// A JPEG data URL's picture, if it really is a JPEG and not too big for a cover.
+fn cover_bytes(data_url: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data_url.strip_prefix("data:image/jpeg;base64,")?).ok()?;
+    (bytes.starts_with(&[0xFF, 0xD8, 0xFF]) && bytes.len() <= 8_000_000).then_some(bytes)
 }
 
 /// More than any look in effects.ts has.
@@ -696,7 +728,15 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{effect_filter, look_filter, ClipSpec};
+    use super::{cover_bytes, effect_filter, look_filter, ClipSpec};
+
+    #[test]
+    fn takes_only_a_jpeg_as_the_cover() {
+        assert_eq!(cover_bytes("data:image/jpeg;base64,/9j/4AAQ").unwrap()[..3], [0xFF, 0xD8, 0xFF]);
+        assert!(cover_bytes("data:image/png;base64,iVBORw0KGgo=").is_none());
+        assert!(cover_bytes("data:image/jpeg;base64,aGVsbG8=").is_none());
+        assert!(cover_bytes("not a picture").is_none());
+    }
 
     #[test]
     fn turns_a_picture_after_its_crop() {

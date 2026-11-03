@@ -42,6 +42,8 @@ export type EditAction =
    */
   | { type: "addClip"; clipId: string; mediaId: string; trackId?: string; at?: number }
   | { type: "addText"; clipId: string; at: number; text?: string }
+  /** The project's cover picture (a JPEG data URL), or none. */
+  | { type: "setCover"; cover: string | null }
   /** A copied clip, pasted at `at` on its own track (or a free one of its kind there). */
   | { type: "pasteClip"; clip: Clip; newClipId: string; at: number }
   /** Another file in a clip's place, from that file's start, as long as the clip was (or the file is). */
@@ -317,6 +319,9 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const clip = newClip({ id: action.clipId, trackId: track?.id ?? "", mediaId: media.id, start: 0, in: 0, out: length });
       return place(p, track, kind, clip, action.at);
     }
+
+    case "setCover":
+      return { ...p, cover: action.cover ?? undefined };
 
     case "pasteClip": {
       // Its media must still be in this project.

@@ -75,11 +75,40 @@
   color: var(--text-3);
 }
 
-/* What kind of track it is; the buttons sit to its right, like CapCut's. */
-.tl__head-kind {
-  flex: 1;
+/* Cover, on the main track (like CapCut's): its picture, or an icon. */
+.tl__cover {
+  flex-shrink: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 40px;
+  height: calc(100% - 6px);
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-2);
+  font-size: 9.5px;
+  overflow: hidden;
+}
+
+.tl__cover:hover {
+  border-color: var(--line-hover);
+  color: var(--text);
+}
+
+.tl__cover img {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  object-fit: cover;
+}
+
+/* Pushes the buttons to the right, like CapCut's header. */
+.tl__head-gap {
+  flex: 1;
 }
 
 .tl__head-more {
@@ -130,7 +159,8 @@
   flex-direction: column;
 }
 
-.tl__submenu-list {
+/* Beside the Edit item (more specific than .tl__menu, which opens downwards). */
+.tl__menu.tl__submenu-list {
   top: -4px;
   left: 100%;
   margin-left: 4px;

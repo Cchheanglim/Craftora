@@ -54,7 +54,8 @@ const compact = (seconds: number) => formatTimecode(seconds).slice(0, 8).replace
 
 /** One full-size video clip with nothing changed: eligible for the fast, lossless path. */
 function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | null {
-  if (project.clips.length !== 1) return null;
+  // A cover is built in while rendering.
+  if (project.clips.length !== 1 || project.cover) return null;
   const [clip] = project.clips;
   const media = project.media.find((m) => m.id === clip.mediaId);
   const track = project.tracks.find((t) => t.id === clip.trackId);
@@ -242,7 +243,18 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
 
   return {
     kind: "render",
-    spec: { media, clips, width: frame.width, height: frame.height, fps: FPS, output: settings.output, container, fileName, quality: settings.quality },
+    spec: {
+      media,
+      clips,
+      width: frame.width,
+      height: frame.height,
+      fps: FPS,
+      output: settings.output,
+      container,
+      fileName,
+      quality: settings.quality,
+      cover: isVideo ? project.cover : undefined,
+    },
     sizeMb,
     fileName,
     title,

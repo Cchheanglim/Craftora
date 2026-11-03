@@ -641,6 +641,7 @@ dependencies = [
 name = "craftora"
 version = "0.5.1"
 dependencies = [
+ "base64 0.22.1",
  "keyring",
  "reqwest 0.12.28",
  "serde",

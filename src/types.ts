@@ -109,6 +109,8 @@ export interface JobSpec {
 /** A whole timeline (mirrors `RenderSpec` in src-tauri/src/project.rs). */
 export interface RenderSpec {
   id: string;
+  /** Video files: the cover picture (a JPEG data URL), built in as the file's cover. */
+  cover?: string;
   media: { id: string; local: boolean; image: boolean; src: string; format: string }[];
   clips: RenderClip[];
   width: number;

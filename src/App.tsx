@@ -67,7 +67,7 @@ import {
   LIBRARY_LIMIT,
   type LibraryEntry,
 } from "./lib/storage";
-import { captureFrame, captureThumbnail } from "./lib/thumbnail";
+import { captureFrame, captureThumbnail, coverFrame } from "./lib/thumbnail";
 import { MAX_RUNNING, useQueue } from "./state/useQueue";
 import { storeEdition, useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
@@ -224,6 +224,7 @@ const isTyping = (el: EventTarget | null) =>
  * website's picture. Not a file's preview address: it stops working once Craftora restarts.
  */
 const coverOf = (project: Project) =>
+  project.cover ??
   project.media.map((m) => m.source.thumbnail).find((t) => t?.startsWith("data:") || (t?.startsWith("http") && !t.includes("asset.localhost")));
 
 /** Why "Fetch this video" found nothing, from how the page was seen playing. */
@@ -1336,6 +1337,29 @@ export default function App() {
       setError(errorText(err));
     }
   };
+  /** Cover (the main track): from the picture showing at the playhead, a picture from this PC, or none. */
+  const chooseCover = async (choice: "frame" | "picture" | "remove") => {
+    setError(null);
+    if (choice === "remove") return api.edit({ type: "setCover", cover: null });
+    let cover: string | undefined;
+    if (choice === "picture") {
+      const path = await pickPicture().catch(() => null);
+      if (!path) return;
+      cover = await fileThumbnail(path, true);
+    } else {
+      // The top picture showing at the playhead.
+      const t = playback.time;
+      const order = [...project.tracks].filter((tr) => tr.kind === "video" && !tr.hidden).map((tr) => tr.id);
+      const showing = project.clips
+        .filter((c) => order.includes(c.trackId) && t >= c.start && t < clipEnd(c))
+        .sort((a, b) => order.indexOf(a.trackId) - order.indexOf(b.trackId))[0];
+      const media = project.media.find((m) => m.id === showing?.mediaId);
+      if (!showing || !media) return setError("Move the playhead to a picture first, then use its frame as the cover.");
+      cover = media.source.image ? await fileThumbnail(media.source.url, true) : await coverFrame(media.source.previewUrl, mediaTimeAt(showing, t));
+    }
+    if (!cover) return setError("Couldn't read that picture for the cover.");
+    api.edit({ type: "setCover", cover });
+  };
   const clipCommand = (command: ClipCommand, clip: Clip, time: number) => {
     const media = project.media.find((m) => m.id === clip.mediaId);
     const patch = (p: Partial<Clip>) => api.edit({ type: "updateClip", clipId: clip.id, patch: p });
@@ -1658,6 +1682,7 @@ export default function App() {
               onDropFx={applyFx}
               onClipCommand={clipCommand}
               canPaste={canPaste}
+              onCover={(choice) => void chooseCover(choice)}
             />
           </div>
         )}

@@ -71,6 +71,8 @@ interface TimelineEditorProps {
   onClipCommand: (command: ClipCommand, clip: Clip, time: number) => void;
   /** Something has been copied, so Paste can put it at the playhead. */
   canPaste: boolean;
+  /** Cover on the main track: from the frame at the playhead, a picture, or none. */
+  onCover: (choice: "frame" | "picture" | "remove") => void;
 }
 
 /** What a clip's right-click menu can do (App `clipCommand` does it). */
@@ -119,6 +121,7 @@ export function TimelineEditor({
   onDropFx,
   onClipCommand,
   canPaste,
+  onCover,
 }: TimelineEditorProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -148,6 +151,8 @@ export function TimelineEditor({
   }, [project.media]);
   /** The clip whose right-click menu is open, where, and at what time it acts. */
   const [clipMenu, setClipMenu] = useState<{ clipId: string; x: number; y: number; time: number } | null>(null);
+  const [coverMenu, setCoverMenu] = useState<{ x: number; y: number } | null>(null);
+  const mainTrack = [...project.tracks].reverse().find((t) => t.kind === "video");
   /** The track whose … menu is open, and where to draw it. */
   const [menu, setMenu] = useState<{ trackId: string; x: number; y: number; up: boolean } | null>(null);
 
@@ -453,9 +458,26 @@ export function TimelineEditor({
             const menuOpen = menu?.trackId === track.id;
             return (
               <div key={track.id} className={`tl__head is-${track.kind}`} style={rowStyle(track)} role="group" aria-label={name}>
-                <span className="tl__head-kind" title={name}>
-                  <Icon name={TRACK_ICON[track.kind]} size={13} />
-                </span>
+                {track.id === mainTrack?.id ? (
+                  <button
+                    type="button"
+                    className="tl__cover"
+                    aria-label="Cover"
+                    aria-haspopup="menu"
+                    aria-expanded={Boolean(coverMenu)}
+                    title="The project's cover: shown for it in Craftora and built into exported videos"
+                    onClick={(e) => {
+                      const r = e.currentTarget.getBoundingClientRect();
+                      setCoverMenu(coverMenu ? null : { x: r.left, y: r.bottom + 4 });
+                    }}
+                  >
+                    {project.cover ? <img src={project.cover} alt="" /> : <Icon name="image" size={13} />}
+                    <span>Cover</span>
+                  </button>
+                ) : (
+                  <span className="tl__head-gap" aria-hidden="true" />
+                )}
+                {track.id === mainTrack?.id && <span className="tl__head-gap" aria-hidden="true" />}
                 <button
                   type="button"
                   className="tl__head-btn"
@@ -717,6 +739,43 @@ export function TimelineEditor({
               </div>
             ))}
 
+            {coverMenu && (
+              <>
+                <div className="tl__menu-catcher" onPointerDown={() => setCoverMenu(null)} />
+                <div
+                  className="tl__menu tl__clip-menu"
+                  role="menu"
+                  aria-label="Cover"
+                  style={{ position: "fixed", left: coverMenu.x, top: Math.min(coverMenu.y, window.innerHeight - 140) }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setCoverMenu(null);
+                  }}
+                >
+                  {(
+                    [
+                      ["frame", "Use the frame at the playhead", "camera"],
+                      ["picture", "Pick a picture…", "image"],
+                      ["remove", "No cover", "x"],
+                    ] as const
+                  ).map(([choice, label, icon], i) => (
+                    <button
+                      key={choice}
+                      type="button"
+                      role="menuitem"
+                      autoFocus={i === 0}
+                      disabled={choice === "remove" && !project.cover}
+                      onClick={() => {
+                        setCoverMenu(null);
+                        onCover(choice);
+                      }}
+                    >
+                      <Icon name={icon} size={13} />
+                      <span className="tl__menu-text">{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
             {clipMenu && (() => {
               const clip = project.clips.find((c) => c.id === clipMenu.clipId);
               if (!clip) return null;
