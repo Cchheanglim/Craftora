@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mediaTimeAt, trackLabel, trackOrder, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackKind, type TrackSize } from "../project/model";
+import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mediaTimeAt, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackKind, type TrackSize } from "../project/model";
 import { blockLabel, type FxItem } from "../project/effects";
 import { fitsTrack, packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
@@ -515,35 +515,36 @@ export function TimelineEditor({
                 >
                   <Icon name={track.locked ? "lock" : "unlock"} size={12} />
                 </button>
-                {/* Every row keeps the same columns: an empty slot where a button doesn't apply. */}
-                {track.kind === "audio" ? (
-                  <span className="tl__head-btn" aria-hidden="true" />
-                ) : (
-                  <button
-                    type="button"
-                    className="tl__head-btn"
-                    aria-pressed={Boolean(track.hidden)}
-                    aria-label={track.hidden ? `Show ${name}` : `Hide ${name}`}
-                    title={track.hidden ? "Hidden from the preview and the export. Click to show." : track.kind === "video" ? "Hide its pictures (the sound still plays)" : "Hide this track"}
-                    onClick={() => api.edit({ type: "updateTrack", trackId: track.id, patch: { hidden: !track.hidden || undefined } })}
-                  >
-                    <Icon name={track.hidden ? "eyeOff" : "eye"} size={12} />
-                  </button>
-                )}
-                {!hasSound ? (
-                  <span className="tl__head-btn" aria-hidden="true" />
-                ) : (
-                  <button
-                    type="button"
-                    className="tl__head-btn"
-                    aria-pressed={Boolean(track.muted)}
-                    aria-label={track.muted ? `Unmute ${name}` : `Mute ${name}`}
-                    title={track.muted ? "Track is muted. Click to unmute." : "Mute this track"}
-                    onClick={() => api.edit({ type: "setTrackMuted", trackId: track.id, muted: !track.muted })}
-                  >
-                    <Icon name={track.muted ? "volumeOff" : "volume"} size={12} />
-                  </button>
-                )}
+                {/* Every track has the same three buttons. */}
+                <button
+                  type="button"
+                  className="tl__head-btn"
+                  aria-pressed={Boolean(track.hidden)}
+                  aria-label={track.hidden ? `Show ${name}` : `Hide ${name}`}
+                  title={
+                    track.hidden
+                      ? "Hidden from the preview and the export. Click to show."
+                      : track.kind === "video"
+                        ? "Hide its pictures (the sound still plays)"
+                        : track.kind === "audio"
+                          ? "Turn this track off: left out of the preview and the export"
+                          : "Hide this track"
+                  }
+                  onClick={() => api.edit({ type: "updateTrack", trackId: track.id, patch: { hidden: !track.hidden || undefined } })}
+                >
+                  <Icon name={track.hidden ? "eyeOff" : "eye"} size={12} />
+                </button>
+                <button
+                  type="button"
+                  className="tl__head-btn"
+                  aria-pressed={Boolean(track.muted)}
+                  aria-label={track.muted ? `Unmute ${name}` : `Mute ${name}`}
+                  title={!hasSound ? `${track.kind === "text" ? "Text" : "Effects"} have no sound` : track.muted ? "Track is muted. Click to unmute." : "Mute this track"}
+                  disabled={!hasSound}
+                  onClick={() => api.edit({ type: "setTrackMuted", trackId: track.id, muted: !track.muted })}
+                >
+                  <Icon name={track.muted ? "volumeOff" : "volume"} size={12} />
+                </button>
                 <div
                   className="tl__head-more"
                   onBlur={(e) => {
@@ -737,7 +738,7 @@ export function TimelineEditor({
                           />
                         )}
                         {media?.hasAudio && !media.source.image && (
-                          <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={Boolean(track.muted)} height={track.wave && WAVE_HEIGHT[track.wave]} />
+                          <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={trackSilent(track)} height={track.wave && WAVE_HEIGHT[track.wave]} />
                         )}
                         {media?.source.chapters
                           ?.filter((ch) => ch.start > clip.in + 0.2 && ch.start < clip.out - 0.2)

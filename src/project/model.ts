@@ -24,7 +24,7 @@ export interface Track {
   muted?: boolean;
   /** Its clips can't be picked, moved or trimmed, and nothing can be dropped on it. */
   locked?: boolean;
-  /** Its pictures, text or effects don't show in the preview or the export (sound still plays). */
+  /** Its pictures, text or effects don't show in the preview or the export (sound still plays); an audio track is off. */
   hidden?: boolean;
   /** Row height on the timeline; the kind's usual height when absent. */
   height?: TrackSize;
@@ -206,6 +206,8 @@ export function trackLabel(project: Project, track: Track): string {
   if (track.name === "Captions") return track.name;
   return `Track ${project.tracks.filter((t) => t.name !== "Captions").findIndex((t) => t.id === track.id) + 1}`;
 }
+/** No sound from this track: muted, or an audio track that's hidden (turned off). */
+export const trackSilent = (t?: Track) => Boolean(t?.muted || (t?.kind === "audio" && t.hidden));
 export const DEFAULT_TEXT_LENGTH = 3;
 /** How long an image is shown when first added. */
 export const DEFAULT_IMAGE_LENGTH = 5;

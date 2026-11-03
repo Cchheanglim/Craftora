@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { isBlock, clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
+import { isBlock, clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
 import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -180,7 +180,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
 
   const trackIndex = new Map(project.tracks.map((t, i) => [t.id, i]));
   const trackKind = (c: Clip) => project.tracks.find((t) => t.id === c.trackId)?.kind;
-  const trackMuted = (c: Clip) => Boolean(project.tracks.find((t) => t.id === c.trackId)?.muted);
+  const trackMuted = (c: Clip) => trackSilent(project.tracks.find((t) => t.id === c.trackId));
   const trackHidden = (c: Clip) => Boolean(project.tracks.find((t) => t.id === c.trackId)?.hidden);
   const mediaOf = (c: Clip) => project.media.find((m) => m.id === c.mediaId);
   const active = (c: Clip) => time >= c.start && time < clipEnd(c);
@@ -236,7 +236,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const audible = project.clips.filter((c) => {
       const t = project.tracks.find((tr) => tr.id === c.trackId);
       const m = project.media.find((x) => x.id === c.mediaId);
-      return c.mediaId && t && t.kind !== "text" && !t.muted && c.volume > 0 && m?.hasAudio && !m.source.image;
+      return c.mediaId && t && t.kind !== "text" && !trackSilent(t) && c.volume > 0 && m?.hasAudio && !m.source.image;
     });
     const mediaPeaks = new Map(project.media.map((m) => [m.id, peaksFor(m)]));
     return Array.from({ length: WAVE_BARS }, (_, i) => {

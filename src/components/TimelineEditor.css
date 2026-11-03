@@ -244,9 +244,15 @@
   color: var(--text);
 }
 
-/* An empty slot (a button that doesn't apply to this kind of track). */
-span.tl__head-btn {
-  pointer-events: none;
+/* Mute on a track without sound (text, effects). */
+.tl__head .tl__head-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.tl__head .tl__head-btn:disabled:hover {
+  background: transparent;
+  color: var(--text-3);
 }
 
 .tl__head .tl__head-btn svg {

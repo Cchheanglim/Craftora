@@ -6,7 +6,7 @@
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
 import { lookSteps } from "./effects";
-import { isBlock, clipLength, isCropped, projectDuration, trackOrder, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
+import { isBlock, clipLength, isCropped, projectDuration, trackOrder, trackSilent, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
   { id: "1080p", label: "16:9 · 1920 × 1080", width: 1920, height: 1080 },
@@ -164,7 +164,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       in: c.in,
       out: c.out,
       speed: c.mediaId ? c.speed : 1,
-      volume: track?.muted ? 0 : c.volume,
+      volume: trackSilent(track) ? 0 : c.volume,
       mirror: c.mirror,
       reverse: c.reverse,
       rotate: c.rotate ?? 0,
