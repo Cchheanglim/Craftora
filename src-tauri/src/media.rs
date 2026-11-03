@@ -672,7 +672,17 @@ fn pick_live(formats: &[Format]) -> Option<Vec<(String, BTreeMap<String, String>
 
 #[cfg(test)]
 mod tests {
-    use super::{first_served, is_bot_check, parse_mpd_duration, preview_choices, Format, Info};
+    use super::{first_served, is_bot_check, other_pictures, parse_mpd_duration, preview_choices, Format, Info, MAX_PICTURES};
+
+    #[test]
+    fn keeps_the_other_pictures_best_first() {
+        let info: Info = serde_json::from_str(r#"{"thumbnail":"c","thumbnails":[{"url":"a"},{"url":"b"},{"url":"c"},{"url":"b"},{}]}"#).unwrap();
+        assert_eq!(other_pictures(&info), ["b", "a"]);
+        let many: Vec<String> = (0..20).map(|n| format!(r#"{{"url":"p{n}"}}"#)).collect();
+        let info: Info = serde_json::from_str(&format!(r#"{{"thumbnail":"p19","thumbnails":[{}]}}"#, many.join(","))).unwrap();
+        assert_eq!(other_pictures(&info).len(), MAX_PICTURES - 1);
+        assert_eq!(other_pictures(&info)[0], "p18");
+    }
 
     /// The preview file picked first, and whether it has sound.
     fn preview(formats: &[Format], max_height: Option<u32>) -> (String, bool) {
