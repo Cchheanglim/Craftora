@@ -10,6 +10,9 @@
 - **Exporting an edited video that uses links** first downloads each link whole (a Download for
   editing in the Queue; the export says "Waiting for its video to download"), then exports from
   the file. After it, the editor plays the downloaded file instead of streaming the link.
+- **Downloads can be deleted** from the Downloads page (the file goes to the Recycle Bin), not
+  only hidden.
+- **Craftora opens maximized.** Restore still gives the usual window.
 - **The preview can be made bigger or smaller**: drag the bar between the preview and the
   timeline (or focus it and press ↑/↓). Craftora remembers the size.
 - **Every download is checked before Craftora keeps it** (Download for editing, and exports cut
