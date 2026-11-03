@@ -709,7 +709,7 @@ export default function App() {
     }
   };
 
-  /** Queues a whole link to download, so it edits like a file on this PC. */
+  /** Queues a whole link to download, so it edits like a file on this PC. Returns the queue job's id. */
   const downloadForEditing = (item: MediaItem) => {
     if (!inDesktopApp || item.source.local) return;
     // Meanwhile, fill the preview's cache from the start, so scrubbing what's done is instant. Not
@@ -717,8 +717,9 @@ export default function App() {
     if (!item.source.downloadFirst) for (const id of item.source.previewCacheIds ?? []) void prefetchPreview(id).catch(() => {});
     const format = item.hasVideo ? item.videoFormat : item.audioFormat;
     const stream = item.source.streams.find((s) => s.id === format);
+    const id = crypto.randomUUID();
     queue.add({
-      id: crypto.randomUUID(),
+      id,
       title: item.name,
       summary: `Download for editing · ${formatClock(item.source.duration)} · ${stream?.label ?? "best quality"}`,
       kind: item.hasVideo ? "video" : "audio",
@@ -731,6 +732,7 @@ export default function App() {
       thumbnail: item.source.thumbnail,
       prefetch: { mediaId: item.id, url: item.source.url, format, title: item.name, audioOnly: !item.hasVideo },
     });
+    return id;
   };
 
   /** A live link is recorded while it plays, so it can be edited before the stream ends. */
@@ -801,6 +803,7 @@ export default function App() {
         .then(async (path) => {
           if (path !== job.outputPath) queue.edit(job.id, { outputPath: path });
           const local = await openLocal(path);
+          if (job.prefetch) queue.downloaded(job.id, mediaId, path);
           const item = projectRef.current.media.find((m) => m.id === mediaId);
           if (!item) return;
           // Keep the link's length so clip times stay exactly where they were (a recording, or a
@@ -811,7 +814,7 @@ export default function App() {
         })
         .catch((err) => setError(`The download finished but couldn't be opened: ${errorText(err)}`));
     }
-  }, [queue.jobs, queue.edit, api, prepare]);
+  }, [queue.jobs, queue.edit, queue.downloaded, api, prepare]);
 
   /** `found`: what "Fetch this video" saw the page play, tried when yt-dlp doesn't know the page. */
   const fetchSource = async (link: string, found?: FoundPage) => {
@@ -1143,6 +1146,10 @@ export default function App() {
   const addToQueue = useCallback(() => {
     if (plan.kind === "empty") return;
     const id = crypto.randomUUID();
+    // An edited video renders links from whole downloads, which go on where they were after a pause,
+    // and then the editor plays the files instead of streaming the links.
+    const links = plan.kind === "render" ? project.media.filter((m) => !m.source.local && !m.source.live && plan.spec.media.some((s) => s.id === m.id)) : [];
+    const after = links.flatMap((m) => queue.jobs.find((j) => j.prefetch?.mediaId === m.id && j.status !== "failed")?.id ?? downloadForEditing(m) ?? []);
     const job: Job = {
       id,
       title: plan.title,
@@ -1156,6 +1163,7 @@ export default function App() {
       command: plan.command,
       spec: inDesktopApp && plan.kind === "simple" ? { ...plan.spec, id } : undefined,
       render: inDesktopApp && plan.kind === "render" ? { ...plan.spec, id } : undefined,
+      after: after.length ? after : undefined,
       thumbnail: coverOf(project),
     };
     queue.add(job);

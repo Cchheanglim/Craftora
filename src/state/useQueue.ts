@@ -14,6 +14,7 @@ type Action =
   | { type: "retry"; id: string }
   | { type: "remove"; id: string }
   | { type: "edit"; id: string; patch: Pick<Job, "rename" | "outputPath"> }
+  | { type: "downloaded"; id: string; mediaId: string; path: string }
   | { type: "pause"; id: string }
   | { type: "resume"; id: string }
   | { type: "pauseAll" }
@@ -25,7 +26,7 @@ const isRunning = (j: Job) => j.status === "downloading" || j.status === "encodi
 const update = (jobs: Job[], id: string, patch: Partial<Job>) =>
   jobs.map((j) => (j.id === id ? { ...j, ...patch } : j));
 
-function reducer(jobs: Job[], action: Action): Job[] {
+export function reducer(jobs: Job[], action: Action): Job[] {
   switch (action.type) {
     case "add":
       return [action.job, ...jobs];
@@ -41,6 +42,17 @@ function reducer(jobs: Job[], action: Action): Job[] {
       return jobs.filter((j) => j.id !== action.id);
     case "edit":
       return update(jobs, action.id, action.patch);
+    case "downloaded":
+      // Exports waiting for this download render its file instead of the link.
+      return jobs.map((j) =>
+        j.render && j.after?.includes(action.id)
+          ? {
+              ...j,
+              after: j.after.filter((id) => id !== action.id),
+              render: { ...j.render, media: j.render.media.map((m) => (m.id === action.mediaId ? { ...m, src: action.path, local: true } : m)) },
+            }
+          : j,
+      );
     case "pause":
       return jobs.map((j) => (j.id === action.id && isRunning(j) ? { ...j, status: "paused" } : j));
     case "resume":
@@ -146,6 +158,12 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
     for (const job of [...jobs].reverse()) {
       if (free <= 0) break;
       if (job.status !== "waiting" || !(job.spec || job.render || job.prefetch)) continue;
+      if (job.after?.length) {
+        // A download it waits for was cancelled or failed.
+        if (job.after.some((id) => !jobs.some((j) => j.id === id && j.status !== "failed")))
+          dispatch({ type: "failed", id: job.id, message: "The video it needs didn't download. Download it again, then add the export to the queue again." });
+        continue;
+      }
       free--;
       dispatch({ type: "started", id: job.id });
       const run = job.prefetch ? downloadMedia({ id: job.id, ...job.prefetch }) : job.render ? startRender(job.render) : startJob(job.spec!);
@@ -194,6 +212,8 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
     remove: useCallback((id: string) => dispatch({ type: "remove", id }), []),
     /** A download's chosen name, or where its file is now. */
     edit: useCallback((id: string, patch: Pick<Job, "rename" | "outputPath">) => dispatch({ type: "edit", id, patch }), []),
+    /** A download for editing finished as `path`: exports waiting for it can start. */
+    downloaded: useCallback((id: string, mediaId: string, path: string) => dispatch({ type: "downloaded", id, mediaId, path }), []),
     pause,
     resume: useCallback((id: string) => dispatch({ type: "resume", id }), []),
     pauseAll,
