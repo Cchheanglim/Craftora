@@ -747,7 +747,8 @@ export function TimelineEditor({
                             return <span key={ch.start} className="tl__chapter" style={{ left: `${frac * 100}%` }} title={ch.title} />;
                           })}
                         <span className="tl__trim is-start" title="Drag to trim start" onPointerDown={beginDrag(clip, "start")} aria-hidden="true" />
-                        {!strip && (media?.source.thumbnail || (media?.source.image && media.source.previewUrl)) && (
+                        {/* "#t=" marks a video's address (shown as a frame elsewhere), which an <img> can't draw. */}
+                        {!strip && (media?.source.thumbnail || (media?.source.image && media.source.previewUrl)) && !media.source.thumbnail.includes("#t=") && (
                           <img
                             className="tl__thumb"
                             src={media.source.thumbnail || media.source.previewUrl}

@@ -70,6 +70,8 @@ export function Thumb({ src, icon, play }: { src?: string; icon: IconName; play?
             playsInline
             preload="metadata"
             onLoadedMetadata={(e) => {
+              // A sound file (older projects saved one as a video's picture): its icon, not a black box.
+              if (!e.currentTarget.videoWidth) return setFailed(true);
               e.currentTarget.currentTime = Math.min(0.5, (e.currentTarget.duration || 0) / 2);
             }}
             onError={() => setFailed(true)}
