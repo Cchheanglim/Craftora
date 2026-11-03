@@ -103,7 +103,13 @@ function drawStrip(previewUrl: string, duration: number): Promise<Strip | undefi
       const scale = Math.max(FRAME_W / video.videoWidth, FRAME_H / video.videoHeight);
       const [w, h] = [video.videoWidth * scale, video.videoHeight * scale];
       try {
+        // Only inside its own cell, so a wide picture doesn't spill onto its neighbours.
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(drawn * FRAME_W, 0, FRAME_W, FRAME_H);
+        ctx.clip();
         ctx.drawImage(video, drawn * FRAME_W + (FRAME_W - w) / 2, (FRAME_H - h) / 2, w, h);
+        ctx.restore();
       } catch {
         return finish();
       }
