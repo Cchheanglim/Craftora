@@ -318,6 +318,52 @@
 }
 
 /* The audio wave along the bottom of video and audio clips. */
+/* A video clip's frames (ClipFrames), under its name and sound wave. */
+.tl__frames {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tl__frames > span {
+  flex: none;
+  height: 100%;
+  background-image: var(--strip);
+  background-repeat: no-repeat;
+}
+
+/* Over frames: the name and length in a small dark tag at the top, the wave on a dark band at the bottom. */
+.tl__clip.has-frames {
+  align-items: flex-start;
+}
+
+.tl__clip.has-frames .tl__label {
+  flex: none;
+  max-width: calc(100% - 4px);
+  margin: 2px;
+  padding: 0 5px;
+  border-radius: 2px;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
+.tl__clip.has-frames .tl__wave {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0 4px;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.tl__length {
+  margin-left: 6px;
+  opacity: 0.75;
+}
+
 .tl__wave {
   position: absolute;
   left: 4px;

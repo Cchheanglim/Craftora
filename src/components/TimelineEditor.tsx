@@ -1,10 +1,11 @@
-import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, trackLabel, trackOrder, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackKind, type TrackSize } from "../project/model";
+import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mediaTimeAt, trackLabel, trackOrder, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackKind, type TrackSize } from "../project/model";
 import { blockLabel, type FxItem } from "../project/effects";
 import { fitsTrack, packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatClock } from "../lib/timecode";
+import { filmstrip, type Strip } from "../lib/thumbnail";
 import { Icon, type IconName } from "./Icon";
 import "./TimelineEditor.css";
 
@@ -126,6 +127,16 @@ export function TimelineEditor({
   const [fitted, setFitted] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  // Each video's filmstrip, made in the background (by preview address); until then its clips show its picture.
+  const [strips, setStrips] = useState<Record<string, Strip>>({});
+  useEffect(() => {
+    for (const m of project.media) {
+      const s = m.source;
+      if (!m.hasVideo || s.image || s.live || s.previewHls || s.previewProxy || !s.previewUrl || strips[s.previewUrl]) continue;
+      void filmstrip(s.previewUrl, s.duration).then((strip) => strip && setStrips((all) => ({ ...all, [s.previewUrl]: strip })));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.media]);
   /** The track whose … menu is open, and where to draw it. */
   const [menu, setMenu] = useState<{ trackId: string; x: number; y: number } | null>(null);
 
@@ -606,12 +617,16 @@ export function TimelineEditor({
                     const isGhost = clip.id === ghost?.clipId;
                     const { start } = where(clip);
                     const length = clipLength(clip);
+                    // Pictures on a video track show their frames along the clip, like CapCut.
+                    const picture = media && track.kind === "video" ? (media.source.image ? media.source.previewUrl : media.source.thumbnail) : undefined;
+                    const strip = media && track.kind === "video" ? (strips[media.source.previewUrl] ?? (picture ? { url: picture, frames: 1 } : undefined)) : undefined;
                     const classes = [
                       "tl__clip",
                       `is-${track.kind}`,
                       isSelected && "is-selected",
                       isGhost && "is-dragging",
                       media?.missing && "is-missing",
+                      strip && "has-frames",
                     ].filter(Boolean);
                     return (
                       <div
@@ -630,6 +645,9 @@ export function TimelineEditor({
                           }
                         }}
                       >
+                        {strip && media && (
+                          <ClipFrames clip={clip} strip={strip} pps={pps} cellHeight={ROW_PX[track.height ?? "m"] - 10} duration={media.source.image ? 0 : media.source.duration} />
+                        )}
                         {clip.fadeIn > 0 && <span className="tl__fade is-in" style={{ width: clip.fadeIn * pps }} aria-hidden="true" />}
                         {clip.fadeOut > 0 && <span className="tl__fade is-out" style={{ width: clip.fadeOut * pps }} aria-hidden="true" />}
                         {overlap(clip) > 0 && (
@@ -650,7 +668,7 @@ export function TimelineEditor({
                             return <span key={ch.start} className="tl__chapter" style={{ left: `${frac * 100}%` }} title={ch.title} />;
                           })}
                         <span className="tl__trim is-start" title="Drag to trim start" onPointerDown={beginDrag(clip, "start")} aria-hidden="true" />
-                        {(media?.source.thumbnail || (media?.source.image && media.source.previewUrl)) && (
+                        {!strip && (media?.source.thumbnail || (media?.source.image && media.source.previewUrl)) && (
                           <img
                             className="tl__thumb"
                             src={media.source.thumbnail || media.source.previewUrl}
@@ -662,6 +680,7 @@ export function TimelineEditor({
                         <span className="tl__label truncate">
                           {media?.missing && "Missing · "}
                           {label}
+                          {media && <span className="tl__length mono">{formatClock(length)}</span>}
                         </span>
                         {(clip.speed !== 1 || clip.reverse) && (
                           <span className="tl__tag mono" aria-hidden="true">
@@ -702,6 +721,28 @@ const ClipWave = memo(function ClipWave({ clip, media, bars, muted, height }: { 
     <span className="tl__wave" style={height ? { height } : undefined} aria-hidden="true">
       {clipPeaks(clip, media, bars, muted).map((h, i) => (
         <span key={i} style={{ height: `${h}%` }} />
+      ))}
+    </span>
+  );
+});
+
+/**
+ * A video clip's frames along it, CapCut-style: as many as fit at their own shape, each the frame
+ * of the moment it sits over (so trimmed, slowed or reversed clips show the right ones). The strip
+ * is set once, as a CSS variable, not copied into every frame. `duration` 0: a still picture.
+ */
+const ClipFrames = memo(function ClipFrames({ clip, strip, pps, cellHeight, duration }: { clip: Clip; strip: Strip; pps: number; cellHeight: number; duration: number }) {
+  const cell = (Math.max(12, cellHeight) * 16) / 9;
+  const count = Math.min(200, Math.max(1, Math.ceil((clipLength(clip) * pps) / cell)));
+  const frameAt = (j: number) => {
+    if (strip.frames === 1 || duration <= 0) return 0;
+    const t = Math.min(clip.start + ((j + 0.5) * cell) / pps, clipEnd(clip));
+    return Math.min(strip.frames - 1, Math.max(0, Math.floor((mediaTimeAt(clip, t) / duration) * strip.frames)));
+  };
+  return (
+    <span className="tl__frames" style={{ "--strip": `url("${strip.url}")` } as CSSProperties} aria-hidden="true">
+      {Array.from({ length: count }, (_, j) => (
+        <span key={j} style={{ width: cell, backgroundSize: `${strip.frames * cell}px 100%`, backgroundPosition: `${-frameAt(j) * cell}px 0` }} />
       ))}
     </span>
   );
