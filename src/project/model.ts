@@ -135,6 +135,8 @@ export interface Clip {
   volume: number;
   mirror: boolean;
   reverse: boolean;
+  /** Pictures: turned clockwise by this many degrees (90, 180 or 270); upright when absent. */
+  rotate?: number;
   /** A filter block (on an effects track): its colour look, effects.ts `LOOKS`. */
   look?: LookId;
   /** An effect block (on an effects track): effects.ts `PICTURE_EFFECTS`. */

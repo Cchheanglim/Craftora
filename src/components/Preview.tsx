@@ -722,7 +722,21 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, poster, o
   const { left, top, right, bottom } = clip.crop;
   const keptW = 1 - left - right;
   const keptH = 1 - top - bottom;
-  const aspect = (videoAspect * keptW) / keptH;
+  const upright = (videoAspect * keptW) / keptH;
+  // A quarter turn swaps the picture's shape; the crop window turns inside the box (the export: crop, then transpose).
+  const turn = clip.rotate ?? 0;
+  const sideways = turn === 90 || turn === 270;
+  const aspect = sideways ? 1 / upright : upright;
+  const turned: CSSProperties | undefined = turn
+    ? {
+        inset: "auto",
+        left: "50%",
+        top: "50%",
+        width: sideways ? `${100 / aspect}%` : "100%",
+        height: sideways ? `${100 * aspect}%` : "100%",
+        transform: `translate(-50%, -50%) rotate(${turn}deg)`,
+      }
+    : undefined;
 
   // Size 1 fits the frame keeping the shape (FFmpeg: force_original_aspect_ratio=decrease), or
   // with `fill` covers it, the frame cutting off what spills over (=increase).
@@ -749,7 +763,7 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, poster, o
       onPointerDown={onPointerDown}
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
     >
-      <div className="preview__crop">
+      <div className="preview__crop" style={turned}>
         {!ready && poster && (
           <img
             src={poster}

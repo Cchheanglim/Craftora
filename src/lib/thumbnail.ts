@@ -127,3 +127,34 @@ function drawStrip(previewUrl: string, duration: number): Promise<Strip | undefi
     video.src = previewUrl;
   });
 }
+
+/** The frame of a video at `time` (media seconds), full size, as PNG bytes; undefined when it can't be read. */
+export function captureFrame(previewUrl: string, time: number): Promise<Uint8Array | undefined> {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    const done = (bytes?: Uint8Array) => {
+      window.clearTimeout(timer);
+      video.removeAttribute("src");
+      video.load();
+      resolve(bytes);
+    };
+    const timer = window.setTimeout(() => done(), 20_000);
+    video.crossOrigin = "anonymous";
+    video.muted = true;
+    video.preload = "auto";
+    video.onloadedmetadata = () => (video.currentTime = Math.min(Math.max(0, time), Math.max(0, video.duration - 0.05)));
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext("2d")!.drawImage(video, 0, 0);
+        canvas.toBlob((blob) => (blob ? void blob.arrayBuffer().then((b) => done(new Uint8Array(b))) : done()), "image/png");
+      } catch {
+        done();
+      }
+    };
+    video.onerror = () => done();
+    video.src = previewUrl;
+  });
+}

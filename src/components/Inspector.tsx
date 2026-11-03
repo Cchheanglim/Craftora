@@ -235,6 +235,10 @@ export function Inspector({
             <input type="checkbox" checked={clip.mirror} onChange={(e) => onChange({ mirror: e.target.checked })} />
             <span>Mirror</span>
           </label>
+          <button type="button" className="btn btn--ghost insp__rotate" title="Turn it a quarter clockwise" onClick={() => onChange({ rotate: ((clip.rotate ?? 0) + 90) % 360 || undefined })}>
+            <Icon name="rotate" size={14} />
+            Rotate{clip.rotate ? ` · ${clip.rotate}°` : ""}
+          </button>
           <label className="option" title="Cover the whole frame, cutting off the edges, instead of showing black bars">
             <input type="checkbox" checked={Boolean(clip.fill)} onChange={(e) => onChange({ fill: e.target.checked })} />
             <span>Fill the frame</span>

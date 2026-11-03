@@ -29,7 +29,7 @@ import {
 } from "./model";
 
 export type ClipPatch = Partial<
-  Pick<Clip, "volume" | "mirror" | "reverse" | "look" | "size" | "fill" | "x" | "y" | "text" | "color" | "font" | "edge" | "fadeIn" | "fadeOut" | "crop">
+  Pick<Clip, "volume" | "mirror" | "reverse" | "rotate" | "look" | "size" | "fill" | "x" | "y" | "text" | "color" | "font" | "edge" | "fadeIn" | "fadeOut" | "crop">
 >;
 
 export type EditAction =
@@ -42,6 +42,10 @@ export type EditAction =
    */
   | { type: "addClip"; clipId: string; mediaId: string; trackId?: string; at?: number }
   | { type: "addText"; clipId: string; at: number; text?: string }
+  /** A copied clip, pasted at `at` on its own track (or a free one of its kind there). */
+  | { type: "pasteClip"; clip: Clip; newClipId: string; at: number }
+  /** Another file in a clip's place, from that file's start, as long as the clip was (or the file is). */
+  | { type: "replaceClipMedia"; clipId: string; mediaId: string }
   /** A filter (`look`) or effect block on an effects track (`trackId`, or one free at `at`). */
   | { type: "addBlock"; clipId: string; at: number; length: number; trackId?: string; look?: Clip["look"]; effect?: Clip["effect"] }
   /** The media's captions as text clips on a new "Captions" track, lined up with each of its clips. */
@@ -312,6 +316,31 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const length = media.source.image ? DEFAULT_IMAGE_LENGTH : media.source.duration;
       const clip = newClip({ id: action.clipId, trackId: track?.id ?? "", mediaId: media.id, start: 0, in: 0, out: length });
       return place(p, track, kind, clip, action.at);
+    }
+
+    case "pasteClip": {
+      // Its media must still be in this project.
+      if (action.clip.mediaId && !p.media.some((m) => m.id === action.clip.mediaId)) return p;
+      const copy: Clip = { ...action.clip, id: action.newClipId, transition: undefined };
+      const own = p.tracks.find((t) => t.id === action.clip.trackId && !t.locked && fitsTrack(p, copy, t));
+      const media = p.media.find((m) => m.id === copy.mediaId);
+      const kind: TrackKind = own?.kind ?? (isBlock(copy) ? "effect" : !copy.mediaId ? "text" : media?.hasVideo ? "video" : "audio");
+      return place(p, own, kind, copy, action.at);
+    }
+
+    case "replaceClipMedia": {
+      const clip = p.clips.find((c) => c.id === action.clipId);
+      const media = p.media.find((m) => m.id === action.mediaId);
+      const track = clip && p.tracks.find((t) => t.id === clip.trackId);
+      if (!clip?.mediaId || !media || !track) return p;
+      // The same stretch of the new file: as much media as the clip used (a still used its length).
+      const used = isStill(p, clip) ? clipLength(clip) : clip.out - clip.in;
+      const replaced: Clip = media.source.image
+        ? { ...clip, mediaId: media.id, in: 0, out: round(clipLength(clip)), speed: 1, reverse: false }
+        : { ...clip, mediaId: media.id, in: 0, out: round(Math.min(media.source.duration, used)) };
+      if (!fitsTrack(p, replaced, track)) return p;
+      const next = { ...p, clips: p.clips.map((c) => (c.id === clip.id ? fitFades(replaced) : c)) };
+      return isMagnetic(p, clip.trackId) ? packMagnetic(next) : next;
     }
 
     case "addBlock": {

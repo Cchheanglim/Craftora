@@ -104,6 +104,9 @@ struct ClipSpec {
     mirror: bool,
     #[serde(default)]
     reverse: bool,
+    /// Pictures: degrees turned clockwise (0, 90, 180 or 270), after the crop.
+    #[serde(default)]
+    rotate: u16,
     /// Filter blocks: the colour steps, in order (effects.ts `LookStep`): CSS filter names and amounts.
     #[serde(default)]
     look: Vec<(String, f64)>,
@@ -210,6 +213,13 @@ impl ClipSpec {
         if l > 0.0 || t > 0.0 || r > 0.0 || b > 0.0 {
             chain.push_str(&format!(",crop=w=iw*{:.4}:h=ih*{:.4}:x=iw*{l:.4}:y=ih*{t:.4}", 1.0 - l - r, 1.0 - t - b));
         }
+        // Turned after the crop (the crop is set on the upright picture), as the preview does.
+        chain.push_str(match self.rotate {
+            90 => ",transpose=clock",
+            180 => ",hflip,vflip",
+            270 => ",transpose=cclock",
+            _ => "",
+        });
         if self.speed != 1.0 {
             chain.push_str(&format!(",setpts=PTS/{:.4}", self.speed));
         }
@@ -337,6 +347,7 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             || !(0.01..=1.0).contains(&clip.size)
             || !(0.0..=1.0).contains(&clip.x)
             || !(0.0..=1.0).contains(&clip.y)
+            || ![0, 90, 180, 270].contains(&clip.rotate)
             || clip.look.len() > MAX_LOOK_STEPS
             || !clip.look.iter().all(|(op, amount)| look_filter(op, *amount).is_some())
         {
