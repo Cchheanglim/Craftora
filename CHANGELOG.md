@@ -77,6 +77,11 @@
 
 **Fixed**
 
+- **The + on a join couldn't be clicked right after a split**: the playhead stands exactly there
+  after splitting and took the click. The + is now on top.
+- **A speed effect dropped on a picture did nothing**: it now says to drop it on a video clip.
+- **Light glass: clip names on the timeline were hard to read** (white on pale teal).
+- **Glass themes: the Queue's list was see-through**, with the video showing sharply behind it.
 - **Editing felt slow, worst on fast screens**: during playback the editor stopped and restarted
   two of its listeners on every frame (hundreds of calls a second to the app's back end). It now
   draws about twice as many frames a second.

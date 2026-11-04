@@ -6,7 +6,7 @@
  * - Time effects (slow motion, speed up, reverse) change the clip (or piece) they're dropped on.
  * - Transitions go on the join between two clips.
  */
-import { MIN_CLIP, TRANSITION_KINDS, clipEnd, clipLength, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
+import { MIN_CLIP, TRANSITION_KINDS, clipEnd, clipLength, isStill, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
 import type { ClipPatch, EditAction } from "./actions";
 
 /**
@@ -109,7 +109,8 @@ export function dropEdits(
   if (!track || track.locked) return null;
   const order = mediaOn(track.id);
   if (item.kind === "time") {
-    const clip = clipAt(order);
+    // A still picture has no speed or direction.
+    const clip = clipAt(order.filter((c) => !isStill(p, c)));
     const effect = TIME_EFFECTS.find((e) => e.id === item.id);
     if (!clip || !effect) return null;
     const { edits, target } = effectEdits(clip, effect.change, undefined, newIds);

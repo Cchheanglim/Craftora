@@ -120,6 +120,17 @@
   background-color: var(--bg-canvas);
 }
 
+/* The Queue drop-down sits inside the toolbar, whose own blur stops its blur reaching the page:
+   see-through, the video and tabs showed sharply behind it. */
+:root[data-theme] .queue__panel {
+  background: var(--bg-canvas);
+}
+
+/* On Light glass the clips' teal is pale: their names in the usual dark text, not white. */
+:root[data-theme="light"] .tl__clip.is-media .tl__label {
+  color: var(--text);
+}
+
 /* Closed, the panel also takes the gap before it along. */
 :root[data-theme] .app__panel.is-closed {
   margin-right: calc(-1 * var(--panel-w) - 12px);
