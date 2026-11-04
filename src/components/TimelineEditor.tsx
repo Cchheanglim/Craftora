@@ -1,8 +1,8 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mediaTimeAt, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackKind, type TrackSize } from "../project/model";
+import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, mediaTimeAt, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
 import { blockLabel, type FxItem } from "../project/effects";
-import { fitsTrack, packedTrack, slotOn } from "../project/actions";
+import { packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatClock } from "../lib/timecode";
@@ -74,6 +74,8 @@ interface TimelineEditorProps {
   canPaste: boolean;
   /** Cover on the main track: from the frame at the playhead, a picture, or none. */
   onCover: (choice: "frame" | "picture" | "remove") => void;
+  /** The + on the join before `clip` (where a clip was split or two clips meet). */
+  onJoin: (clip: Clip) => void;
 }
 
 /** What a clip's right-click menu can do (App `clipCommand` does it). */
@@ -92,8 +94,6 @@ interface Ghost {
   start: number;
   trackId: string;
 }
-
-const TRACK_ICON: Record<Track["kind"], IconName> = { video: "film", audio: "music", text: "text", effect: "sparkle" };
 
 /** Track height and waveform size choices (the header's … menu). */
 const SIZES: { size: TrackSize; label: string }[] = [
@@ -123,6 +123,7 @@ export function TimelineEditor({
   onClipCommand,
   canPaste,
   onCover,
+  onJoin,
 }: TimelineEditorProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -140,7 +141,6 @@ export function TimelineEditor({
   const [viewWidth, setViewWidth] = useState(0);
   const [fitted, setFitted] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
   // Each video's filmstrip, made in the background (by preview address); until then its clips show its picture.
   const [strips, setStrips] = useState<Record<string, Strip>>({});
   useEffect(() => {
@@ -154,7 +154,7 @@ export function TimelineEditor({
   /** The clip whose right-click menu is open, where, and at what time it acts. */
   const [clipMenu, setClipMenu] = useState<{ clipId: string; x: number; y: number; time: number } | null>(null);
   const [coverMenu, setCoverMenu] = useState<{ x: number; y: number } | null>(null);
-  const mainTrack = [...project.tracks].reverse().find((t) => t.kind === "video");
+  const main = mainTrack(project);
   /** The track whose … menu is open, and where to draw it. */
   const [menu, setMenu] = useState<{ trackId: string; x: number; y: number; up: boolean } | null>(null);
   // The menus sit at a fixed place on screen: they close when the timeline moves under them
@@ -275,9 +275,9 @@ export function TimelineEditor({
       const snappedStart = snap(start, clip.id);
       const snappedEnd = snap(start + clipLength(clip), clip.id) - clipLength(clip);
       start = Math.abs(snappedStart - start) <= Math.abs(snappedEnd - start) ? snappedStart : snappedEnd;
-      // A video can also go on an audio track (just its sound); otherwise clips keep their kind.
+      // Any track takes any clip, unless it's locked.
       const lane = project.tracks.find((t) => t.id === laneAt(e.clientY));
-      const trackId = lane && !lane.locked && fitsTrack(project, clip, lane) ? lane.id : (ghostRef.current?.trackId ?? clip.trackId);
+      const trackId = lane && !lane.locked ? lane.id : (ghostRef.current?.trackId ?? clip.trackId);
       setGhost({ clipId: clip.id, start: Math.max(0, start), trackId });
     } else {
       const scroller = scrollRef.current;
@@ -392,10 +392,6 @@ export function TimelineEditor({
     const i = order.findIndex((o) => o.id === c.id);
     return i > 0 ? transitionLength(order[i - 1], c) : 0;
   };
-  const addTrack = (kind: TrackKind) => {
-    setAddOpen(false);
-    api.edit({ type: "addTrack", trackId: `${kind}-${crypto.randomUUID().slice(0, 8)}`, kind });
-  };
 
   return (
     <section ref={sectionRef} className={scrubbing ? "tl is-scrubbing" : "tl"} aria-label="Timeline">
@@ -434,34 +430,15 @@ export function TimelineEditor({
           <Icon name="text" size={14} />
           Text
         </button>
-        <div
-          className="tl__add"
-          onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget)) setAddOpen(false);
-          }}
+        <button
+          type="button"
+          className="btn btn--ghost"
+          title="Add a track at the top: it takes videos, pictures, sound, text and effects"
+          onClick={() => api.edit({ type: "addTrack", trackId: `track-${crypto.randomUUID().slice(0, 8)}` })}
         >
-          <button
-            type="button"
-            className="btn btn--ghost"
-            aria-expanded={addOpen}
-            aria-haspopup="menu"
-            title="Add a track"
-            onClick={() => setAddOpen((o) => !o)}
-          >
-            <Icon name="plus" size={14} />
-            Track
-          </button>
-          {addOpen && (
-            <div className="tl__menu" role="menu">
-              {(["video", "audio", "text"] as TrackKind[]).map((kind) => (
-                <button key={kind} type="button" role="menuitem" onClick={() => addTrack(kind)} autoFocus={kind === "video"}>
-                  <Icon name={TRACK_ICON[kind]} size={13} />
-                  {kind === "video" ? "Video track" : kind === "audio" ? "Audio track" : "Text track"}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+          <Icon name="plus" size={14} />
+          Track
+        </button>
         <div className="tl__zoom">
           <button type="button" className="btn btn--icon" aria-label="Zoom out" onClick={() => setPps((p) => Math.max(MIN_PPS, p / 1.5))}>
             <Icon name="minus" size={14} />
@@ -481,11 +458,10 @@ export function TimelineEditor({
           {project.tracks.map((track) => {
             const clipCount = project.clips.filter((c) => c.trackId === track.id).length;
             const name = trackLabel(project, track);
-            const hasSound = track.kind === "video" || track.kind === "audio";
             const menuOpen = menu?.trackId === track.id;
             return (
-              <div key={track.id} className={`tl__head is-${track.kind}`} style={rowStyle(track)} role="group" aria-label={name}>
-                {track.id === mainTrack?.id ? (
+              <div key={track.id} className="tl__head" style={rowStyle(track)} role="group" aria-label={name}>
+                {track.id === main?.id ? (
                   <button
                     type="button"
                     className="tl__cover"
@@ -504,7 +480,7 @@ export function TimelineEditor({
                 ) : (
                   <span className="tl__head-gap" aria-hidden="true" />
                 )}
-                {track.id === mainTrack?.id && <span className="tl__head-gap" aria-hidden="true" />}
+                {track.id === main?.id && <span className="tl__head-gap" aria-hidden="true" />}
                 <button
                   type="button"
                   className="tl__head-btn"
@@ -521,15 +497,7 @@ export function TimelineEditor({
                   className="tl__head-btn"
                   aria-pressed={Boolean(track.hidden)}
                   aria-label={track.hidden ? `Show ${name}` : `Hide ${name}`}
-                  title={
-                    track.hidden
-                      ? "Hidden from the preview and the export. Click to show."
-                      : track.kind === "video"
-                        ? "Hide its pictures (the sound still plays)"
-                        : track.kind === "audio"
-                          ? "Turn this track off: left out of the preview and the export"
-                          : "Hide this track"
-                  }
+                  title={track.hidden ? "Hidden from the preview and the export. Click to show." : "Hide its pictures, text and effects (the sound still plays)"}
                   onClick={() => api.edit({ type: "updateTrack", trackId: track.id, patch: { hidden: !track.hidden || undefined } })}
                 >
                   <Icon name={track.hidden ? "eyeOff" : "eye"} size={12} />
@@ -539,8 +507,7 @@ export function TimelineEditor({
                   className="tl__head-btn"
                   aria-pressed={Boolean(track.muted)}
                   aria-label={track.muted ? `Unmute ${name}` : `Mute ${name}`}
-                  title={!hasSound ? `${track.kind === "text" ? "Text" : "Effects"} have no sound` : track.muted ? "Track is muted. Click to unmute." : "Mute this track"}
-                  disabled={!hasSound}
+                  title={track.muted ? "Track is muted. Click to unmute." : "Mute this track"}
                   onClick={() => api.edit({ type: "setTrackMuted", trackId: track.id, muted: !track.muted })}
                 >
                   <Icon name={track.muted ? "volumeOff" : "volume"} size={12} />
@@ -589,39 +556,33 @@ export function TimelineEditor({
                           </button>
                         ))}
                       </div>
-                      {hasSound && (
-                        <>
-                          <p className="tl__menu-label">Waveform size</p>
-                          <div className="tl__sizes" role="group" aria-label="Waveform size">
-                            {SIZES.map(({ size, label }) => (
-                              <button
-                                key={size}
-                                type="button"
-                                role="menuitemradio"
-                                aria-checked={(track.wave ?? "m") === size}
-                                onClick={() => api.edit({ type: "updateTrack", trackId: track.id, patch: { wave: size === "m" ? undefined : size } })}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                      {track.kind !== "effect" && (
-                        <button
-                          type="button"
-                          role="menuitemcheckbox"
-                          aria-checked={Boolean(track.magnetic)}
-                          title="Clips stay back to back and can have transitions"
-                          onClick={() => {
-                            setMenu(null);
-                            api.edit({ type: "setMagnetic", trackId: track.id, magnetic: !track.magnetic });
-                          }}
-                        >
-                          <Icon name="magnet" size={13} />
-                          {track.magnetic ? "Magnet on" : "Magnet off"}
-                        </button>
-                      )}
+                      <p className="tl__menu-label">Waveform size</p>
+                      <div className="tl__sizes" role="group" aria-label="Waveform size">
+                        {SIZES.map(({ size, label }) => (
+                          <button
+                            key={size}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={(track.wave ?? "m") === size}
+                            onClick={() => api.edit({ type: "updateTrack", trackId: track.id, patch: { wave: size === "m" ? undefined : size } })}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        role="menuitemcheckbox"
+                        aria-checked={Boolean(track.magnetic)}
+                        title="Clips stay back to back and can have transitions"
+                        onClick={() => {
+                          setMenu(null);
+                          api.edit({ type: "setMagnetic", trackId: track.id, magnetic: !track.magnetic });
+                        }}
+                      >
+                        <Icon name="magnet" size={13} />
+                        {track.magnetic ? "Magnet on" : "Magnet off"}
+                      </button>
                       <button
                         type="button"
                         role="menuitem"
