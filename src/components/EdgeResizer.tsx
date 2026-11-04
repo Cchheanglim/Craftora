@@ -3,6 +3,12 @@ import type { KeyboardEvent, PointerEvent } from "react";
 /** How narrow and wide the left sidebar and the right panel can be dragged. */
 export const SIDE_WIDTH = { min: 220, max: 400, usual: 232 };
 export const PANEL_WIDTH = { min: 320, max: 560, usual: 340 };
+/** What the middle (preview, timeline, pages) keeps however wide the two sides are dragged. */
+export const MIDDLE_ROOM = 600;
+
+/** `width` for one side, no wider than leaves the middle its room next to the other side (`other`). */
+export const roomFor = (width: number, other: number, limits: { min: number }) =>
+  Math.max(limits.min, Math.min(width, window.innerWidth - other - MIDDLE_ROOM));
 
 /**
  * The grab strip on the inner edge of the left sidebar (`edge` "right") or the right panel

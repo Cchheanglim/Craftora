@@ -103,7 +103,7 @@ import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { Home, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
-import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH } from "./components/EdgeResizer";
+import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/EdgeResizer";
 import { dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, type FxTab } from "./components/FxPanel";
 import { useFetchReview } from "./components/FetchDetails";
@@ -298,11 +298,13 @@ export default function App() {
   // The left sidebar's and the right panel's widths, dragged by their inner edges.
   const [sideWidth, setSideWidth] = useState(() => Math.min(SIDE_WIDTH.max, Math.max(SIDE_WIDTH.min, rememberedSize("craftora.sideWidth") ?? SIDE_WIDTH.usual)));
   const [panelWidth, setPanelWidth] = useState(() => Math.min(PANEL_WIDTH.max, Math.max(PANEL_WIDTH.min, rememberedSize("craftora.panelWidth") ?? PANEL_WIDTH.usual)));
-  const resizeSide = (width: number) => {
+  const resizeSide = (dragged: number) => {
+    const width = roomFor(dragged, rightOpen && view === "editor" ? panelWidth : 0, SIDE_WIDTH);
     setSideWidth(width);
     rememberText("craftora.sideWidth", String(width));
   };
-  const resizePanel = (width: number) => {
+  const resizePanel = (dragged: number) => {
+    const width = roomFor(dragged, leftOpen ? sideWidth : 56, PANEL_WIDTH);
     setPanelWidth(width);
     rememberText("craftora.panelWidth", String(width));
   };
