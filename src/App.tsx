@@ -1777,7 +1777,7 @@ export default function App() {
           ) : (
             // Edit: the selected clip's settings (and the captions' style).
             <aside className="export" aria-label="Clip settings">
-              <div className="export__body">
+              <div className="export__body is-edit">
               {!selected && selectedId !== SHOWN_CAPTIONS && <p className="export__hint">Click a clip on the timeline to change it here.</p>}
               {(selectedId === SHOWN_CAPTIONS || selectedTrack?.name === "Captions") && (
                 <CaptionStyle

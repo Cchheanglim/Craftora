@@ -256,7 +256,7 @@ export function Inspector({
       {!isText && !isImage && !isBlock && (
         <div className="insp__field">
           <label htmlFor="insp-speed">Speed</label>
-          <select id="insp-speed" className="field mono" value={clip.speed} onChange={(e) => onSpeed(Number(e.target.value))}>
+          <select id="insp-speed" className="field" value={clip.speed} onChange={(e) => onSpeed(Number(e.target.value))}>
             {SPEEDS.map((s) => (
               <option key={s} value={s}>
                 {s}×{s === 1 ? " (normal)" : ""}

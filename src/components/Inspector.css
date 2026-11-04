@@ -3,7 +3,6 @@
   flex-direction: column;
   gap: var(--space-3);
   padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--line);
 }
 
 .insp__head {
@@ -59,6 +58,11 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
+}
+
+/* On its own (Cut silences without Split chapters), it takes the whole row, as wide as the buttons below. */
+.insp__pair > :only-child {
+  grid-column: 1 / -1;
 }
 
 .insp__swatches {
@@ -186,5 +190,22 @@
 
 /* Three to a row: room for "Duplicate" and its icon. */
 .insp__actions .btn {
-  padding: 0 6px;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+/* Rotate sits among the tick boxes (Mirror, Fill the frame, Reverse): boxed the same way. */
+.insp__pair .insp__rotate {
+  justify-content: flex-start;
+  gap: 10px;
+  height: auto;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.insp__pair .insp__rotate:hover {
+  border-color: var(--line-hover);
 }

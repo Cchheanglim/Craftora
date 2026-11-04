@@ -16,6 +16,11 @@
   gap: 14px;
 }
 
+/* The Edit tab: the clip's settings alone, with room under the last buttons. */
+.export__body.is-edit {
+  padding-bottom: var(--space-5);
+}
+
 .export__title {
   font-size: 14px;
   font-weight: 600;
