@@ -55,9 +55,14 @@ export type PictureEffectId = (typeof PICTURE_EFFECTS)[number]["id"];
 /** Blur's strength: its standard deviation as a share of the frame width (CSS blur and FFmpeg gblur both use one). */
 export const BLUR_SHARE = 0.006;
 
+/** A time effect's change: a new speed, other settings, or both. */
+export type TimeChange = { speed?: number; patch?: ClipPatch };
+
 /** Time effects: they change the clip they're dropped on. */
-export const TIME_EFFECTS: { id: string; label: string; change: { patch: ClipPatch } | { speed: number } }[] = [
-  { id: "slow", label: "Slow motion", change: { speed: 0.5 } },
+export const TIME_EFFECTS: { id: string; label: string; change: TimeChange }[] = [
+  { id: "slow", label: "Slow motion", change: { speed: 0.5, patch: { smooth: false } } },
+  // Half speed with in-between frames made by FFmpeg's motion interpolation in the export.
+  { id: "smooth", label: "Smooth slow-mo", change: { speed: 0.5, patch: { smooth: true } } },
   { id: "fast", label: "Speed up", change: { speed: 2 } },
   { id: "reverse", label: "Reverse", change: { patch: { reverse: true } } },
 ];
@@ -129,7 +134,7 @@ export function dropEdits(
  */
 export function effectEdits(
   clip: Clip,
-  change: { patch: ClipPatch } | { speed: number },
+  change: TimeChange,
   part: [number, number] | undefined,
   newIds: [string, string],
 ): { edits: EditAction[]; target: string } {
@@ -144,7 +149,8 @@ export function effectEdits(
       edits.push({ type: "splitClip", clipId: clip.id, newClipId: target, at: from });
     }
   }
-  edits.push("speed" in change ? { type: "setSpeed", clipId: target, speed: change.speed } : { type: "updateClip", clipId: target, patch: change.patch });
+  if (change.speed !== undefined) edits.push({ type: "setSpeed", clipId: target, speed: change.speed });
+  if (change.patch) edits.push({ type: "updateClip", clipId: target, patch: change.patch });
   return { edits, target };
 }
 

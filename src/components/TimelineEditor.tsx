@@ -742,6 +742,7 @@ export function TimelineEditor({
                           <span className="tl__tag mono" aria-hidden="true">
                             {clip.reverse ? "◀ " : ""}
                             {clip.speed !== 1 ? `${clip.speed}×` : ""}
+                            {clip.smooth && clip.speed < 1 ? " smooth" : ""}
                           </span>
                         )}
                         <span className="tl__trim is-end" title="Drag to change duration" onPointerDown={beginDrag(clip, "end")} aria-hidden="true" />

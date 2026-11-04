@@ -64,6 +64,7 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
     clip.volume === 1 &&
     !clip.mirror &&
     !clip.rotate &&
+    !clip.smooth &&
     !clip.reverse &&
     clip.speed === 1 &&
     !clip.fadeIn &&
@@ -168,6 +169,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       mirror: c.mirror,
       reverse: c.reverse,
       rotate: c.rotate ?? 0,
+      smooth: Boolean(c.smooth && c.speed < 1),
       look: lookSteps(c.look),
       effect: c.effect ?? "",
       fadeIn: c.fadeIn,

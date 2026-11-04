@@ -28,7 +28,7 @@ import {
 } from "./model";
 
 export type ClipPatch = Partial<
-  Pick<Clip, "volume" | "mirror" | "reverse" | "rotate" | "look" | "size" | "fill" | "x" | "y" | "text" | "color" | "font" | "edge" | "fadeIn" | "fadeOut" | "crop">
+  Pick<Clip, "volume" | "mirror" | "reverse" | "rotate" | "smooth" | "look" | "size" | "fill" | "x" | "y" | "text" | "color" | "font" | "edge" | "fadeIn" | "fadeOut" | "crop">
 >;
 
 export type EditAction =

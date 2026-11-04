@@ -134,6 +134,8 @@ export interface Clip {
   reverse: boolean;
   /** Pictures: turned clockwise by this many degrees (90, 180 or 270); upright when absent. */
   rotate?: number;
+  /** Slowed down with in-between frames made in the export (Smooth slow-mo), not each frame shown longer. */
+  smooth?: boolean;
   /** A filter block: its colour look, effects.ts `LOOKS`. */
   look?: LookId;
   /** An effect block: effects.ts `PICTURE_EFFECTS`. */

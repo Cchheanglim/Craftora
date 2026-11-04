@@ -43,7 +43,10 @@ export function FxPanel({ tab, onPick }: { tab: FxTab; onPick: (item: FxItem) =>
           <p className="fx-panel__hint">Drag an effect onto a clip to cover all of it, or onto an empty spot and stretch it. It changes every picture under it.</p>
           <div className="fx__grid">{PICTURE_EFFECTS.map((effect) => tile({ kind: "effect", id: effect.id }, effect.label))}</div>
           <h3 className="section-label">Speed and direction</h3>
-          <p className="fx-panel__hint">Drop one on a clip: it plays slower, faster or backwards. Split the clip first to change just a part.</p>
+          <p className="fx-panel__hint">
+            Drop one on a clip: it plays slower, faster or backwards. Split the clip first to change just a part. Smooth slow-mo makes in-between
+            frames in the export, so it takes longer to export.
+          </p>
           <div className="fx__grid">{TIME_EFFECTS.map((effect) => tile({ kind: "time", id: effect.id }, effect.label))}</div>
         </>
       )}

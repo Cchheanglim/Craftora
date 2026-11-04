@@ -190,6 +190,11 @@
 
 /* The same hop, slowly and quickly. */
 .fx-tile.is-slow img {
+  animation: fx-hop 2.8s steps(8) infinite;
+}
+
+/* Smooth slow-mo: the same slow hop, but gliding (plain slow motion steps). */
+.fx-tile.is-smooth img {
   animation: fx-hop 2.8s ease-in-out infinite;
 }
 

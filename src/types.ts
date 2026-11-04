@@ -139,6 +139,8 @@ export interface RenderClip {
   reverse: boolean;
   /** Pictures: degrees turned clockwise (0, 90, 180 or 270). */
   rotate: number;
+  /** Slowed down with in-between frames made (FFmpeg motion interpolation). */
+  smooth: boolean;
   /** Filter blocks: the colour steps, in order (effects.ts `LookStep`); empty otherwise. */
   look: LookStep[];
   /** Effect blocks: effects.ts `PICTURE_EFFECTS` id; empty otherwise. */
