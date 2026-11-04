@@ -7,20 +7,25 @@
 - **Filters, Effects and Transitions** tabs on the right, each tile showing Craftora's cat doing
   it. Drag one onto the timeline (or click it to put it at the playhead):
   - **Filters** (14 colour looks) and **effects** (fade in, fade out, flash, blur, mirror) become
-    blocks on an effects track: stretch one over the part you want; it changes every picture
-    under it, not text. The export draws exactly what the preview shows.
-  - **Slow motion, Speed up, Reverse**: drop one on a clip and that part of it changes; drag the
-    edges of that part to take in more or less of the clip.
-  - **Transitions**: drop one on the join between two clips.
+    blocks on a track above: dropped on a clip (or a piece of a split clip), one covers exactly
+    that clip; dropped on an empty spot, stretch it over the part you want. It changes every
+    picture under it, not text. The export draws exactly what the preview shows.
+  - **Slow motion, Speed up, Reverse**: drop one on a clip (or a piece of a split clip) and it
+    changes.
+  - **Transitions**: click the **+** where two clips meet (after a split, say), then pick one; or
+    drop one on that join. A join with a transition shows a tick.
+  - With a clip selected, clicking a tile puts it on that clip.
 - **Right-click a clip**: Copy, Cut, Paste, Delete, Edit (Freeze frame, Reverse, Mirror, Rotate,
   Crop), Export this clip, Replace clip, Open file location. Ctrl+C, Ctrl+X and Ctrl+V work too.
 - **Rotate** a picture a quarter turn at a time (also in Edit & export).
 - **Cover** on the main track: the project's picture, from the frame at the playhead or a
   picture on your PC. Exported videos have it built in as their cover.
-- **Tracks** all have the same lock, hide and mute buttons, lined up, and a ⋯ menu (track
-  height, waveform size, magnet, remove). Hiding a sound track turns it off (left out of the
-  preview and the export); text and effects have no sound, so their mute is greyed out. Video
-  clips show frames along them, with their name, length and sound wave.
+- **Every track works the same**: any track takes videos, pictures, sound, text and effects, and
+  clips can be dragged onto any track. A new edit starts with one track; **+ Track** adds one at
+  the top. Sound files get their own track under the main one, text goes above it. Every track
+  has the same lock, hide and mute buttons and a ⋯ menu (track height, waveform size, magnet,
+  remove). Hide hides a track's pictures, text and effects (its sound still plays); mute
+  silences it. Video clips show frames along them, with their name, length and sound wave.
 
 **Changed**
 
@@ -57,6 +62,8 @@
 
 **Fixed**
 
+- **Exports with a Mirror effect block failed** ("Invalid argument"): FFmpeg refused the way the
+  flip was limited to the block's time.
 - **Some videos from a website had no picture while others from the same site did**: Craftora
   only tried the website's largest picture, which isn't there for every video (YouTube's, for
   one), and gave up after one try. It now tries the video's other pictures in turn, and once

@@ -752,7 +752,7 @@ export function TimelineEditor({
                           onPointerDown={(e) => e.stopPropagation()}
                           onClick={() => onJoin(clip)}
                         >
-                          <Icon name={kind ? "check" : "plus"} size={10} />
+                          <Icon name={kind ? "check" : "plus"} size={8} />
                         </button>
                       );
                     })}

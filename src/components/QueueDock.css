@@ -1,8 +1,58 @@
+/* The Queue button at the top right, and its list dropping down under it. */
 .queue {
-  grid-area: queue;
-  flex-shrink: 0;
-  background: var(--bg-rail);
-  border-top: 1px solid var(--line);
+  position: relative;
+}
+
+.queue__button {
+  position: relative;
+  overflow: hidden;
+}
+
+.queue__button.is-failed svg {
+  color: var(--danger);
+}
+
+/* How many are still to do. */
+.queue__badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--text);
+  color: var(--bg-canvas);
+  font-size: 11px;
+}
+
+/* Overall progress, a line along the button's foot. */
+.queue__overall {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--line);
+}
+
+.queue__overall span {
+  display: block;
+  height: 100%;
+  background: var(--text);
+  transition: width var(--dur) linear;
+}
+
+.queue__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  width: min(780px, calc(100vw - 32px));
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
+  animation: pop-in var(--dur-fast) var(--ease-out) backwards;
 }
 
 .queue__head {
@@ -23,19 +73,6 @@
   color: var(--text-2);
 }
 
-.queue__overall {
-  width: 160px;
-  height: 4px;
-  background: var(--line);
-}
-
-.queue__overall span {
-  display: block;
-  height: 100%;
-  background: var(--text-2);
-  transition: width var(--dur) linear;
-}
-
 .queue__actions {
   margin-left: auto;
   display: flex;
@@ -43,16 +80,8 @@
   gap: 4px;
 }
 
-.queue__actions svg {
-  transition: transform var(--dur) var(--ease-out);
-}
-
-.queue__chevron--closed {
-  transform: rotate(180deg);
-}
-
 .queue__list {
-  max-height: 178px;
+  max-height: min(420px, 60vh);
   overflow-y: auto;
 }
 

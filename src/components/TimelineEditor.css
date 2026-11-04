@@ -393,8 +393,8 @@
   z-index: 2;
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   padding: 0;
   transform: translate(-50%, -50%);
   border: 0;
