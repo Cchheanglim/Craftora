@@ -1468,6 +1468,7 @@ export default function App() {
       <Ambient active={theme !== "classic"} />
       {fetchReview.dialog}
       <Toolbar
+        queue={<QueueDock queue={queue} freshId={freshId} />}
         url={url}
         onUrlChange={(next) => {
           setUrl(next);
@@ -1820,7 +1821,6 @@ export default function App() {
         </div>
       )}
 
-      <QueueDock queue={queue} freshId={freshId} />
       <TextMenu />
       {closeDialog}
       {welcoming && (

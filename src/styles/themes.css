@@ -93,7 +93,7 @@
   padding: 0;
 }
 
-:root[data-theme] :is(.toolbar, .side, .app__panel, .queue, .preview, .tl, .home, .library) {
+:root[data-theme] :is(.toolbar, .side, .app__panel, .preview, .tl, .home, .library) {
   border: 1px solid var(--glass-edge);
   border-radius: 18px;
   background: var(--bg-panel);
@@ -125,7 +125,7 @@
   margin-right: calc(-1 * var(--panel-w) - 12px);
 }
 
-:root[data-theme] :is(.confirm, .welcome, .text-menu, .export__more, .tl__menu) {
+:root[data-theme] :is(.confirm, .welcome, .text-menu, .export__more, .tl__menu, .queue__panel) {
   border-color: var(--glass-edge);
   -webkit-backdrop-filter: blur(30px) saturate(170%);
   backdrop-filter: blur(30px) saturate(170%);

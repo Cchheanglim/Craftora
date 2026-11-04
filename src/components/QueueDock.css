@@ -47,12 +47,89 @@
   top: calc(100% + 6px);
   right: 0;
   z-index: 60;
-  width: min(780px, calc(100vw - 32px));
+  width: min(440px, calc(100vw - 32px));
+  overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: var(--bg-raised);
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
   animation: pop-in var(--dur-fast) var(--ease-out) backwards;
+}
+
+/* In the drop-down each item is two lines beside its picture: name and details, then its
+   progress (or "Finished") with the size; its buttons on the right. */
+.queue__panel .queue__head {
+  height: 44px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.queue__panel .queue__head .btn--ghost {
+  height: 28px;
+  padding: 0 8px;
+  font-size: var(--text-xs);
+}
+
+.queue__panel .queue__head .btn--icon,
+.queue__panel .queue__row-actions .btn--icon {
+  width: 28px;
+  height: 28px;
+}
+
+.queue__panel .queue__list {
+  max-height: min(440px, 60vh);
+}
+
+.queue__panel .queue__row {
+  grid-template-columns: 72px minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "thumb name name actions"
+    "thumb progress size actions";
+  column-gap: 12px;
+  row-gap: 6px;
+  height: auto;
+  padding: 10px 8px 10px 14px;
+}
+
+.queue__panel .queue__row:first-child {
+  border-top: 0;
+}
+
+.queue__panel .queue__name {
+  display: contents;
+}
+
+.queue__panel .queue__name > .thumb {
+  grid-area: thumb;
+  width: 72px;
+  height: 40px;
+}
+
+.queue__panel .queue__name > div {
+  grid-area: name;
+  font-size: var(--text-sm);
+}
+
+.queue__panel .queue__progress {
+  grid-area: progress;
+  min-width: 0;
+}
+
+.queue__panel .queue__size {
+  grid-area: size;
+  align-self: end;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.queue__panel .queue__row-actions {
+  grid-area: actions;
+  gap: 2px;
+}
+
+.queue__panel .queue__empty {
+  padding: var(--space-5, 24px) var(--space-4);
+  text-align: center;
 }
 
 .queue__head {
@@ -81,7 +158,7 @@
 }
 
 .queue__list {
-  max-height: min(420px, 60vh);
+  max-height: 178px;
   overflow-y: auto;
 }
 
