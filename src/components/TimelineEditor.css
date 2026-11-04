@@ -393,27 +393,24 @@
   z-index: 2;
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   transform: translate(-50%, -50%);
-  border: 1px solid var(--line-strong);
+  border: 0;
   border-radius: var(--radius-sm);
-  background: var(--bg-raised);
-  color: var(--text-2);
+  /* A dark ring keeps it apart from the clips' frames on either side. */
+  box-shadow: 0 0 0 2px var(--bg-canvas);
+  background: var(--text);
+  color: var(--bg-canvas);
+  opacity: 0.85;
   cursor: pointer;
 }
 
 .tl__join:hover,
-.tl__join:focus-visible {
-  border-color: var(--text);
-  color: var(--text);
-}
-
+.tl__join:focus-visible,
 .tl__join.is-set {
-  background: var(--text);
-  border-color: var(--text);
-  color: var(--bg-canvas);
+  opacity: 1;
 }
 
 .tl__join:disabled {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEdit } from "../src/project/actions";
-import { captionLines, emptyProject, mediaFromSource, sameFormat, type Project } from "../src/project/model";
+import { captionLines, emptyProject, mediaFromSource, sameFormat, upgradeProject, type Project } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
 const source = (kind: "video" | "audio" | "image"): MediaSource => ({
@@ -14,12 +14,13 @@ const source = (kind: "video" | "audio" | "image"): MediaSource => ({
   streams: [{ id: `local:${kind}`, kind: kind === "audio" ? "audio" : "video", label: "", detail: "", sizeMb: 1 }],
 });
 
-/** A project with one clip of `kind` on the track it lands on, then moved to `to`. */
-function moved(kind: "video" | "audio" | "image", to: string): string | undefined {
+/** A project with one clip of `kind` on the track it lands on, then moved to a new track "top". */
+function moved(kind: "video" | "audio" | "image"): string | undefined {
   const media = mediaFromSource(source(kind));
   let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
   p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
-  p = applyEdit(p, { type: "moveClip", clipId: "c", trackId: to, start: 0 });
+  p = applyEdit(p, { type: "addTrack", trackId: "top" });
+  p = applyEdit(p, { type: "moveClip", clipId: "c", trackId: "top", start: 0 });
   return p.clips.find((c) => c.id === "c")?.trackId;
 }
 
@@ -60,32 +61,43 @@ test("a wrong name is fixed in every caption, or in just the line retyped", () =
   expect(texts(one)).toEqual([">> Mr. Crabs! Mr. crabs?", "Me? Yes, SpongeBob."]);
 });
 
-test("a video can move onto an audio track for its sound, and back", () => {
-  expect(moved("video", "audio-1")).toBe("audio-1");
+test("a new edit starts with one track, and any clip moves onto any track", () => {
+  expect(emptyProject().tracks.length).toBe(1);
+  expect(moved("video")).toBe("top");
+  expect(moved("audio")).toBe("top");
+  expect(moved("image")).toBe("top");
 });
 
-test("sound files stay off video tracks, pictures off audio tracks, nothing media goes on text", () => {
-  expect(moved("audio", "video-2")).toBe("audio-1");
-  expect(moved("image", "audio-1")).not.toBe("audio-1");
-  expect(moved("video", "text-1")).not.toBe("text-1");
+test("a video goes on the main track, sound on a track below it, text on one above it", () => {
+  const video = mediaFromSource(source("video"));
+  const music = mediaFromSource(source("audio"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: video });
+  p = applyEdit(p, { type: "importMedia", item: music });
+  p = applyEdit(p, { type: "addClip", clipId: "v", mediaId: video.id, at: 0 });
+  p = applyEdit(p, { type: "addClip", clipId: "m", mediaId: music.id, at: 0 });
+  p = applyEdit(p, { type: "addText", clipId: "t", at: 0 });
+  const row = (id: string) => p.tracks.findIndex((t) => t.id === p.clips.find((c) => c.id === id)?.trackId);
+  expect(p.tracks[row("v")].magnetic).toBe(true);
+  expect(row("m")).toBeGreaterThan(row("v"));
+  expect(row("t")).toBeLessThan(row("v"));
 });
 
-test("media dropped on a text track lands on a track that can take it", () => {
-  const media = mediaFromSource(source("video"));
-  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
-  p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, trackId: "text-1", at: 2 });
-  expect(p.clips.find((c) => c.id === "c")?.trackId).toBe("video-1");
-});
-
-test("an audio track turned off with its eye is silent in the export", async () => {
+test("a muted track is silent in the export; a hidden one keeps its sound", async () => {
   const { planExport } = await import("../src/project/exportPlan");
   const media = mediaFromSource(source("audio"));
   let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
   p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
-  p = applyEdit(p, { type: "updateTrack", trackId: "audio-1", patch: { hidden: true } });
+  const trackId = p.clips[0].trackId;
   const settings = { output: "audio", videoContainer: "mp4", audioContainer: "mp3", cutMode: "fast", frameId: "1080p", quality: "fast" } as const;
-  const plan = planExport(p, settings);
-  expect(plan.kind === "render" && plan.spec.clips.map((c) => c.volume)).toEqual([0]);
+  const volumes = (q: Project) => {
+    const plan = planExport(q, settings);
+    return plan.kind === "render" && plan.spec.clips.map((c) => c.volume);
+  };
+  expect(volumes(applyEdit(p, { type: "updateTrack", trackId, patch: { hidden: true } }))).toEqual([1]);
+  expect(volumes(applyEdit(p, { type: "setTrackMuted", trackId, muted: true }))).toEqual([0]);
+  // A project saved when an audio track's eye turned it off: that track is now muted.
+  const old = { ...p, tracks: [{ id: trackId, kind: "audio", name: "Audio 1", hidden: true }] } as unknown as Project;
+  expect(upgradeProject(old).tracks[0]).toEqual({ id: trackId, name: "Audio 1", muted: true, hidden: undefined });
 });
 
 test("a picture that fills the frame is rendered, not copied as it is", async () => {
@@ -137,7 +149,7 @@ test("cutting silences, splitting by chapters, and muting a track update the tim
   p = applyEdit(p, { type: "cutSilences", clipId: p.clips[1].id, ranges: [[5, 7]] });
   expect(p.clips.length).toBe(3);
 
-  p = applyEdit(p, { type: "setTrackMuted", trackId: "video-1", muted: true });
+  p = applyEdit(p, { type: "setTrackMuted", trackId: p.clips[0].trackId, muted: true });
   const settings = { output: "video", videoContainer: "mp4", audioContainer: "mp3", cutMode: "fast", frameId: "1080p", quality: "fast" } as const;
   const plan = planExport(p, settings);
   expect(plan.kind === "render" && plan.spec.clips.every((c) => c.volume === 0)).toBe(true);

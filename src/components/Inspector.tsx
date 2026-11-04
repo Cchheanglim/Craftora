@@ -267,7 +267,7 @@ export function Inspector({
       )}
 
       {!isText && !isBlock && !track.magnetic && (
-        <p className="insp__hint">To add a transition, turn on the magnet on this track (in the track's header), so clips sit back to back.</p>
+        <p className="insp__hint">To add a transition, put this clip right after another one and click the + where they meet.</p>
       )}
 
       {onTransition && (
