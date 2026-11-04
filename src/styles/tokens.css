@@ -34,14 +34,14 @@
   --accent-wash: rgb(250 45 72 / 0.12);
 
   /* Timeline clips, told apart by track kind (never red: red is the cut and the action) */
-  --clip-video: #273142;
-  --clip-video-line: #415372;
+  --clip-video: #0f4f54;
+  --clip-video-line: #2a9ba3;
   --clip-audio: #22362c;
   --clip-audio-line: #3b6450;
   --clip-text: #3a3222;
   --clip-text-line: #6e5b36;
-  --clip-effect: #1f383b;
-  --clip-effect-line: #3c6e73;
+  --clip-effect: #273142;
+  --clip-effect-line: #415372;
 
   /* State */
   --ok: #30d158;
