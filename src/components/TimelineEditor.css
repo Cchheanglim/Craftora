@@ -141,8 +141,8 @@
 
 .tl__head .tl__cover {
   order: 2;
-  width: 44px;
-  height: min(52px, calc(100% - 8px));
+  width: 36px;
+  height: min(44px, calc(100% - 10px));
 }
 
 .tl__head-more {
@@ -512,11 +512,11 @@
 .tl__clip.is-media .tl__label {
   order: 0;
   flex: none;
-  height: 16px;
-  padding: 0 6px;
+  height: 14px;
+  padding: 0 5px;
   color: #fff;
-  font-size: 10.5px;
-  line-height: 16px;
+  font-size: 10px;
+  line-height: 14px;
 }
 
 .tl__clip.is-media .tl__frames {

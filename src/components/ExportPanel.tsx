@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AudioContainer, ExportSettings, VideoContainer } from "../types";
 import { FRAMES, formatSize, type ExportPlan } from "../project/exportPlan";
 import { Icon } from "./Icon";
@@ -27,7 +27,6 @@ interface ExportPanelProps {
   /** A preset: picks the frame and sets every picture to fill it (or to fit). */
   onPreset: (frameId: string, fill: boolean) => void;
   /** The selected clip's settings, shown above the export settings. */
-  children?: ReactNode;
 }
 
 /** One click for the usual places a video goes. */
@@ -53,7 +52,6 @@ export function ExportPanel({
   onChooseOutputDir,
   fastEncoder,
   onPreset,
-  children,
 }: ExportPanelProps) {
   const [copied, setCopied] = useState(false);
   const [moreBelow, setMoreBelow] = useState(false);
@@ -126,10 +124,8 @@ export function ExportPanel({
   };
 
   return (
-    <aside className="export" aria-label="Clip and export settings">
+    <aside className="export" aria-label="Export settings">
       <div ref={bodyRef} className="export__body">
-        {children}
-
         <h2 className="export__title">Export</h2>
 
         <fieldset>

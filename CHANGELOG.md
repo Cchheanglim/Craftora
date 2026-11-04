@@ -20,7 +20,7 @@
   - With a clip selected, clicking a tile puts it on that clip.
 - **Right-click a clip**: Copy, Cut, Paste, Delete, Edit (Freeze frame, Reverse, Mirror, Rotate,
   Crop), Export this clip, Replace clip, Open file location. Ctrl+C, Ctrl+X and Ctrl+V work too.
-- **Rotate** a picture a quarter turn at a time (also in Edit & export).
+- **Rotate** a picture a quarter turn at a time (also in Edit).
 - **Cover** on the main track: the project's picture, from the frame at the playhead or a
   picture on your PC. Exported videos have it built in as their cover.
 - **Every track works the same**: any track takes videos, pictures, sound, text and effects, and
@@ -32,6 +32,9 @@
 
 **Changed**
 
+- **Edit and Export are separate tabs** on the right (they were one, Edit & export): Edit has the
+  selected clip's settings, Export the export settings and Add to queue (Ctrl+Enter still works
+  from anywhere).
 - **The left sidebar and the right panel can be resized**: drag their inner edge (a line shows
   when you point at it). Craftora remembers the widths, and the middle always keeps room for the
   preview (a narrow timeline shows its tools as icons). File details in the sidebar and panel tabs

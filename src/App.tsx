@@ -337,7 +337,7 @@ export default function App() {
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const [cuttingSilences, setCuttingSilences] = useState(false);
-  const [rightTab, setRightTab] = useState<"edit" | "transcript" | "assistant" | FxTab>("edit");
+  const [rightTab, setRightTab] = useState<"edit" | "export" | "transcript" | "assistant" | FxTab>("edit");
   /** How much of each link preview is cached on disk (by cache id), 0–100. */
   const [cached, setCached] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -1389,7 +1389,7 @@ export default function App() {
       mirror: () => patch({ mirror: !clip.mirror }),
       rotate: () => patch({ rotate: ((clip.rotate ?? 0) + 90) % 360 || undefined }),
       crop: () => {
-        // The crop sliders in Edit & export.
+        // The crop sliders in Edit.
         setSelectedId(clip.id);
         setRightTab("edit");
         if (!rightOpen) toggleRight();
@@ -1712,7 +1712,10 @@ export default function App() {
         <div className={`app__panel${rightOpen ? "" : " is-closed"}`} inert={!rightOpen}>
           <div className="segmented app__tabs" role="group" aria-label="Right panel">
             <button type="button" aria-pressed={rightTab === "edit"} onClick={() => setRightTab("edit")}>
-              Edit & export
+              Edit
+            </button>
+            <button type="button" aria-pressed={rightTab === "export"} onClick={() => setRightTab("export")}>
+              Export
             </button>
             <button type="button" aria-pressed={rightTab === "transcript"} onClick={() => setRightTab("transcript")}>
               Transcript
@@ -1750,7 +1753,7 @@ export default function App() {
             />
           ) : rightTab === "assistant" ? (
             <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} />
-          ) : (
+          ) : rightTab === "export" ? (
             <ExportPanel
               settings={effective}
               onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
@@ -1770,7 +1773,12 @@ export default function App() {
               outputDir={outputDir}
               onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
               fastEncoder={fastEncoder}
-            >
+            />
+          ) : (
+            // Edit: the selected clip's settings (and the captions' style).
+            <aside className="export" aria-label="Clip settings">
+              <div className="export__body">
+              {!selected && selectedId !== SHOWN_CAPTIONS && <p className="export__hint">Click a clip on the timeline to change it here.</p>}
               {(selectedId === SHOWN_CAPTIONS || selectedTrack?.name === "Captions") && (
                 <CaptionStyle
                   layout={project.captionLayout ?? CAPTIONS}
@@ -1832,7 +1840,8 @@ export default function App() {
                   canSplit={playback.time > selected.start && playback.time < clipEnd(selected)}
                 />
               )}
-            </ExportPanel>
+              </div>
+            </aside>
           )}
         </div>
       )}

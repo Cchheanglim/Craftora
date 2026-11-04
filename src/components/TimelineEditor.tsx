@@ -101,13 +101,13 @@ const SIZES: { size: TrackSize; label: string }[] = [
   { size: "m", label: "Medium" },
   { size: "l", label: "Large" },
 ];
-const ROW_PX: Record<TrackSize, number> = { s: 32, m: 52, l: 74 };
+const ROW_PX: Record<TrackSize, number> = { s: 30, m: 48, l: 62 };
 /** A track's row size: as set in its menu, else large for the main track and medium for the others. */
 const rowSize = (t: Track, main: boolean): TrackSize => t.height ?? (main ? "l" : "m");
 /** Share of a video clip's row its sound-wave band takes, by the track's Waveform size. */
-const WAVE_SHARE: Record<TrackSize, number> = { s: 0.12, m: 0.2, l: 0.32 };
+const WAVE_SHARE: Record<TrackSize, number> = { s: 0.1, m: 0.17, l: 0.28 };
 /** The name bar along the top of a video or sound clip. */
-const LABEL_PX = 16;
+const LABEL_PX = 14;
 
 export function TimelineEditor({
   project,

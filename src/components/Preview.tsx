@@ -605,7 +605,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               <select
                 id="preview-quality"
                 className="field mono"
-                title="Preview quality (exports use the quality picked in Edit & export)"
+                title="Preview quality (exports use the quality picked in Export)"
                 value={quality.height ?? ""}
                 onChange={(e) => quality.onChange(e.target.value ? Number(e.target.value) : undefined)}
               >

@@ -77,7 +77,7 @@ export type FxItem =
 /** A new filter or effect block off any clip lasts this long; drag its edges to change it. */
 export const BLOCK_LENGTH = 3;
 
-/** A filter or effect block's name on the timeline and in Edit & export. */
+/** A filter or effect block's name on the timeline and in Edit. */
 export function blockLabel(c: Clip): string {
   return LOOKS.find((l) => l.id === c.look)?.label ?? PICTURE_EFFECTS.find((e) => e.id === c.effect)?.label ?? "Effect";
 }
