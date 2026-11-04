@@ -15,7 +15,6 @@ import {
   clipEnd,
   clipLength,
   isStill,
-  isBlock,
   captionLines,
   unmarked,
   transitionLength,

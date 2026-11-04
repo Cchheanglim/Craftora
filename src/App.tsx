@@ -1123,7 +1123,7 @@ export default function App() {
     setView("editor");
   };
 
-  /** The selected clip, or else the clip under the playhead on the lowest video track that has one. */
+  /** The selected clip, or else the clip under the playhead on the lowest track that has one. */
   const splitTarget = () => {
     const t = playback.time;
     const under = (c: (typeof project.clips)[number]) => t > c.start && t < clipEnd(c);
@@ -1146,7 +1146,7 @@ export default function App() {
   const applyFx = (item: FxItem, trackId: string | undefined, time: number) => {
     const done = dropEdits(project, item, trackId, time, [crypto.randomUUID(), crypto.randomUUID()]);
     if (!done) {
-      setError(item.kind === "transition" ? "Drop a transition on the join between two video clips." : "Drop it on a video clip, where that part should start.");
+      setError(item.kind === "transition" ? "Drop a transition on the join between two clips, or click the + there." : "Drop it on the video clip it should change.");
       return;
     }
     setError(null);
@@ -1678,6 +1678,13 @@ export default function App() {
               onClipCommand={clipCommand}
               canPaste={canPaste}
               onCover={(choice) => void chooseCover(choice)}
+              onJoin={(clip) => {
+                // The clip after the join: a transition clicked now goes on this join, a filter or effect on it.
+                setSelectedId(clip.id);
+                playback.seek(clip.start);
+                setRightTab("transitions");
+                if (!rightOpen) toggleRight();
+              }}
             />
           </div>
         )}
@@ -1708,9 +1715,10 @@ export default function App() {
             <FxPanel
               tab={rightTab}
               onPick={(item) => {
-                // On the selected clip's track (if it has pictures or sound), at the playhead.
-                const kind = selectedTrack?.kind;
-                applyFx(item, kind === "video" || kind === "audio" || kind === "effect" ? selectedTrack!.id : undefined, playback.time);
+                // On the selected clip (a transition on the join before it), else at the playhead.
+                if (!selected) return applyFx(item, undefined, playback.time);
+                const inside = playback.time >= selected.start && playback.time < clipEnd(selected);
+                applyFx(item, selected.trackId, item.kind !== "transition" && inside ? playback.time : selected.start);
               }}
             />
           ) : rightTab === "transcript" ? (

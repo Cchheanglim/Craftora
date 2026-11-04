@@ -8,6 +8,7 @@ import {
   POSITIONS,
   SPEEDS,
   clipEnd,
+  showsPicture,
   projectDuration,
   silencesFromPeaks,
   trackLabel,
@@ -67,7 +68,7 @@ export function describe(p: Project, playhead: number, ids: ShortIds): string {
       if (c.fadeIn) out.fadeIn = c.fadeIn;
       if (c.fadeOut) out.fadeOut = c.fadeOut;
       if (c.transition) out.transition = c.transition;
-      if (c.mediaId ? p.tracks.find((t) => t.id === c.trackId)?.kind === "video" : true) {
+      if (c.mediaId ? showsPicture(p, c) : true) {
         out.size = r2(c.size);
         out.x = r2(c.x);
         out.y = r2(c.y);
@@ -86,11 +87,10 @@ export function describe(p: Project, playhead: number, ids: ShortIds): string {
       sound: m.hasAudio,
       ...(m.source.chapters?.length ? { chapters: m.source.chapters.length } : {}),
     })),
-    // Listed top to bottom: higher video tracks are drawn over lower ones.
+    // Listed top to bottom: higher tracks are drawn over lower ones.
     tracks: p.tracks.map((t) => ({
       id: ids.short(t.id, "t"),
       name: trackLabel(p, t),
-      kind: t.kind,
       ...(t.magnetic ? { magnetic: true } : {}),
       ...(t.muted ? { muted: true } : {}),
     })),
@@ -107,7 +107,7 @@ export const TOOLS = [
     type: "function",
     name: "add_clip",
     description:
-      "Put imported media on the timeline. Without a track: video goes to the bottom video track, sound-only media to an audio track. Give a higher video track for a picture over another, or an audio track id to use only the sound.",
+      "Put imported media on the timeline. Without a track: videos and pictures go to the main track, sound-only media to a free track below it. Give a higher track for a picture over another. Any track takes any media.",
     parameters: {
       type: "object",
       properties: {
@@ -121,7 +121,7 @@ export const TOOLS = [
   {
     type: "function",
     name: "add_text",
-    description: "Add a title or caption on the text track.",
+    description: "Add a title or caption (it goes on a free track above the videos).",
     parameters: {
       type: "object",
       properties: {
@@ -182,7 +182,7 @@ export const TOOLS = [
   {
     type: "function",
     name: "set_track_muted",
-    description: "Mute or unmute a video or audio track.",
+    description: "Mute or unmute a track.",
     parameters: { type: "object", properties: { track_id: { type: "string" }, muted: { type: "boolean" } }, required: ["track_id", "muted"] },
   },
   {
@@ -241,8 +241,8 @@ export const TOOLS = [
   {
     type: "function",
     name: "add_track",
-    description: "Add an empty track. Video tracks go above the other video tracks (drawn on top), text tracks at the top, audio tracks at the bottom.",
-    parameters: { type: "object", properties: { kind: { type: "string", enum: ["video", "audio", "text"] } }, required: ["kind"] },
+    description: "Add an empty track at the top (drawn over the others). Every track takes videos, pictures, sound and text.",
+    parameters: { type: "object", properties: {} },
   },
   {
     type: "function",
@@ -397,10 +397,8 @@ export function runTool(name: string, args: Record<string, unknown>, ctx: ToolCo
       return edits([{ type: "setTransition", clipId: clip!.id, transition }], kind === "none" ? `Removed the transition into ${String(args.clip_id)}` : `Added a ${kind === "dip" ? "dip to black" : "crossfade"} into ${String(args.clip_id)}`);
     }
     case "add_track": {
-      const kind = args.kind;
-      if (kind !== "video" && kind !== "audio" && kind !== "text") return fail(p, "kind must be video, audio or text.");
-      const id = `${kind}-${crypto.randomUUID().slice(0, 8)}`;
-      const outcome = edits([{ type: "addTrack", trackId: id, kind }], `Added a ${kind} track`);
+      const id = `track-${crypto.randomUUID().slice(0, 8)}`;
+      const outcome = edits([{ type: "addTrack", trackId: id }], "Added a track");
       return outcome.result.ok ? { ...outcome, result: { ok: true, track_id: ids.short(id, "t") } } : outcome;
     }
     case "remove_track": {
@@ -432,11 +430,11 @@ The user describes edits in plain words; you make them with the tools, then repl
 
 How the timeline works:
 - Times are in seconds. Each message ends with the current timeline as JSON (ids like c1 = clip, m1 = media, t1 = track).
-- Tracks are listed top to bottom. All video tracks work the same way; higher ones are drawn over lower ones. A video's size 1 fills the frame; smaller sizes with x/y make picture-in-picture.
+- Tracks are listed top to bottom. All tracks work the same way and take videos, pictures, sound and text; higher ones are drawn over lower ones. A video's size 1 fills the frame; smaller sizes with x/y make picture-in-picture.
 - A magnetic track (magnetic: true) keeps its clips back to back with no gaps; moving or deleting a clip there shifts the others, and only magnetic tracks can have transitions.
-- Audio tracks hold music and voice-overs, text tracks hold titles. Any number of tracks can be added.
+- Any number of tracks can be added.
 - A clip's "uses" is the part of its media it plays, in media seconds; start/end are timeline seconds.
-- Images (image: true) are still pictures on a video track: they can be any length (trim_clip the end), start at 5 seconds, and have no sound or speed.
+- Images (image: true) are still pictures: they can be any length (trim_clip the end), start at 5 seconds, and have no sound or speed.
 - After every round of tool calls you get the updated timeline back; use its ids, not guesses.
 
 Rules:

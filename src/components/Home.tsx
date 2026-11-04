@@ -383,10 +383,9 @@ function ReportDetails({ report }: { report: SiteReport }) {
 /** A saved project's first video (a file on this PC or a link), from where its clip starts, to play while its row is hovered. */
 async function projectVideo(id: string): Promise<string | undefined> {
   const { project } = await loadProject(id);
-  const onVideoTrack = (trackId: string) => project.tracks.find((t) => t.id === trackId)?.kind === "video";
   for (const clip of [...project.clips].sort((a, b) => a.start - b.start)) {
     const media = project.media.find((m) => m.id === clip.mediaId);
-    if (media && !media.source.image && media.hasVideo && onVideoTrack(clip.trackId)) {
+    if (media && !media.source.image && media.hasVideo) {
       const video = media.source.local ? await playableFile(media.source.url) : await hoverVideo(media.source.url);
       return video && `${video}#t=${clip.in}`;
     }
