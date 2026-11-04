@@ -10,7 +10,8 @@ import {
   MIN_CLIP,
   NO_CROP,
   POSITIONS,
-  baseVideoTrack,
+  mainTrack,
+  showsPicture,
   clipEnd,
   clipLength,
   isStill,
@@ -24,7 +25,6 @@ import {
   type MediaItem,
   type Project,
   type Track,
-  type TrackKind,
   type Transition,
 } from "./model";
 
@@ -37,18 +37,18 @@ export type EditAction =
   | { type: "removeMedia"; mediaId: string }
   | { type: "setMediaFormat"; mediaId: string; videoFormat?: string; audioFormat?: string }
   /**
-   * Without a track: video goes to the bottom video track, sound to an audio track. On a
-   * magnetic track `at` picks the slot; elsewhere it's the start time (playhead).
+   * Without a track: videos and pictures go to the main track, sound to a free track below it. On
+   * a magnetic track `at` picks the slot; elsewhere it's the start time (playhead).
    */
   | { type: "addClip"; clipId: string; mediaId: string; trackId?: string; at?: number }
   | { type: "addText"; clipId: string; at: number; text?: string }
   /** The project's cover picture (a JPEG data URL), or none. */
   | { type: "setCover"; cover: string | null }
-  /** A copied clip, pasted at `at` on its own track (or a free one of its kind there). */
+  /** A copied clip, pasted at `at` on its own track (or a free one there). */
   | { type: "pasteClip"; clip: Clip; newClipId: string; at: number }
   /** Another file in a clip's place, from that file's start, as long as the clip was (or the file is). */
   | { type: "replaceClipMedia"; clipId: string; mediaId: string }
-  /** A filter (`look`) or effect block on an effects track (`trackId`, or one free at `at`). */
+  /** A filter (`look`) or effect block on track `trackId` (or another one free at `at`). */
   | { type: "addBlock"; clipId: string; at: number; length: number; trackId?: string; look?: Clip["look"]; effect?: Clip["effect"] }
   /** The media's captions as text clips on a new "Captions" track, lined up with each of its clips. */
   | { type: "addCaptions"; mediaId: string; trackId: string }
@@ -74,8 +74,8 @@ export type EditAction =
   | { type: "setSpeed"; clipId: string; speed: number }
   /** Magnetic tracks: how the clip takes over from the one before it; null for a straight cut. */
   | { type: "setTransition"; clipId: string; transition: Transition | null }
-  /** A new empty track: video above the other video tracks, text at the top, audio at the bottom. */
-  | { type: "addTrack"; trackId: string; kind: TrackKind }
+  /** A new empty track at the top. */
+  | { type: "addTrack"; trackId: string }
   /** Removes a track and every clip on it. */
   | { type: "removeTrack"; trackId: string }
   /** Magnet on: the track's clips close up and stay back to back. */
@@ -91,7 +91,6 @@ const round = (t: number) => Math.round(t * 1000) / 1000;
 /** Rounded down, so something placed at the playhead is already showing there. */
 const floorMs = (t: number) => Math.floor(t * 1000) / 1000;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-const LABELS: Record<TrackKind, string> = { video: "Video", audio: "Audio", text: "Text", effect: "Effects" };
 
 function newClip(fields: Pick<Clip, "id" | "trackId" | "start" | "in" | "out"> & Partial<Clip>): Clip {
   return {
@@ -138,17 +137,6 @@ export function packedTrack(p: Project, trackId: string, except?: string): { cli
  * The order index a clip dropped on a magnetic track at `start` takes: it goes before the
  * first other clip whose middle is to the right of its left edge.
  */
-/**
- * Whether `clip` can sit on `track`: text on text tracks; a video on a video track or, for just
- * its sound, on an audio track; a sound file only on audio tracks; a picture only on video tracks.
- */
-export function fitsTrack(p: Project, clip: Clip, track: Track): boolean {
-  if (!clip.mediaId) return track.kind === (isBlock(clip) ? "effect" : "text");
-  const media = p.media.find((m) => m.id === clip.mediaId);
-  if (!media || track.kind === "text" || track.kind === "effect") return false;
-  return track.kind === "video" ? media.hasVideo : !media.source.image;
-}
-
 export function slotOn(p: Project, trackId: string, clipId: string, start: number): number {
   const others = packedTrack(p, trackId, clipId);
   const index = others.findIndex(({ clip, start: s }) => start < s + clipLength(clip) / 2);
@@ -176,46 +164,45 @@ function insertAt(p: Project, trackId: string, clip: Clip, slot: number): Projec
 
 const overlaps = (a: Clip, b: Clip) => a.id !== b.id && a.start < clipEnd(b) - 1e-6 && b.start < clipEnd(a) - 1e-6;
 
-/** Adds an empty track of `kind`: video above the other video tracks, text on top, audio at the bottom. */
-function withTrack(p: Project, kind: TrackKind, id = `${kind}-${crypto.randomUUID().slice(0, 8)}`): { project: Project; trackId: string } {
+/** Adds an empty track, at the top or (`below`) at the bottom. */
+function withTrack(p: Project, below = false, id = `track-${crypto.randomUUID().slice(0, 8)}`): { project: Project; trackId: string } {
   const used = new Set(p.tracks.map((t) => t.name));
-  let n = p.tracks.filter((t) => t.kind === kind).length + 1;
-  while (used.has(`${LABELS[kind]} ${n}`)) n++;
-  const track: Track = { id, kind, name: `${LABELS[kind]} ${n}` };
-  const tracks = [...p.tracks];
-  if (kind === "audio") tracks.push(track);
-  else if (kind === "text" || kind === "effect") tracks.unshift(track);
-  else {
-    // Above the other video tracks; with none, above the audio tracks; with neither, last.
-    const above = tracks.findIndex((t) => t.kind === "video");
-    const beforeAudio = tracks.findIndex((t) => t.kind === "audio");
-    const at = above !== -1 ? above : beforeAudio !== -1 ? beforeAudio : tracks.length;
-    tracks.splice(at, 0, track);
-  }
-  return { project: { ...p, tracks }, trackId: id };
+  let n = p.tracks.length + 1;
+  while (used.has(`Track ${n}`)) n++;
+  const track: Track = { id, name: `Track ${n}` };
+  return { project: { ...p, tracks: below ? [...p.tracks, track] : [track, ...p.tracks] }, trackId: id };
 }
 
-/** A track of `kind` where `probe` fits without overlapping, adding one if needed. */
-function freeTrack(p: Project, kind: TrackKind, probe: Clip, preferred?: string): { project: Project; trackId: string } {
-  const candidates = p.tracks.filter((t) => t.kind === kind && !t.magnetic && !t.locked);
-  const ordered = preferred ? [...candidates.filter((t) => t.id === preferred), ...candidates.filter((t) => t.id !== preferred)] : candidates;
-  for (const track of ordered) {
+/** A sound file's clip: no picture, so its tracks go below the main track rather than over it. */
+const soundOnly = (p: Project, c: Clip) => Boolean(c.mediaId) && !showsPicture(p, c);
+
+/**
+ * A track without the magnet where `probe` fits without overlapping: `preferred` if it's free
+ * there, else the nearest one above the main track (below it for sound), else a new one.
+ */
+function freeTrack(p: Project, probe: Clip, preferred?: string): { project: Project; trackId: string } {
+  const sound = soundOnly(p, probe);
+  const main = mainTrack(p);
+  const at = main ? p.tracks.indexOf(main) : p.tracks.length;
+  const side = sound ? p.tracks.slice(at + 1) : p.tracks.slice(0, at).reverse();
+  const candidates = [...p.tracks.filter((t) => t.id === preferred), ...side].filter((t) => !t.magnetic && !t.locked);
+  for (const track of candidates) {
     const busy = p.clips.some((c) => c.trackId === track.id && overlaps({ ...probe, trackId: track.id }, c));
     if (!busy) return { project: p, trackId: track.id };
   }
-  return withTrack(p, kind);
+  return withTrack(p, sound);
 }
 
-/** Places a new clip on `track` (or a free track of its kind). */
-function place(p: Project, track: Track | undefined, kind: TrackKind, clip: Clip, at: number | undefined): Project {
-  if (track?.magnetic) {
+/** Places a new clip on `track` (or a free track). Only videos, pictures and sound join a magnetic track's row. */
+function place(p: Project, track: Track | undefined, clip: Clip, at: number | undefined): Project {
+  if (track?.magnetic && clip.mediaId) {
     const slot = at === undefined ? Infinity : slotOn(p, track.id, clip.id, at);
     return insertAt(p, track.id, clip, slot);
   }
   // Without a time, after the last clip on the track; on a busy spot, another track.
   const end = track ? Math.max(0, ...p.clips.filter((c) => c.trackId === track.id).map(clipEnd)) : 0;
   const probe = { ...clip, start: floorMs(Math.max(0, at ?? end)) };
-  const placed = freeTrack(p, kind, probe, track?.id);
+  const placed = freeTrack(p, probe, track?.id);
   return { ...placed.project, clips: [...placed.project.clips, { ...probe, trackId: placed.trackId }] };
 }
 
@@ -310,14 +297,10 @@ export function applyEdit(p: Project, action: EditAction): Project {
     case "addClip": {
       const media = p.media.find((m) => m.id === action.mediaId);
       if (!media) return p;
-      // Dropped on a text or effects track: it goes on a track that can take it instead of nowhere.
-      const requested = p.tracks.find((t) => t.id === action.trackId && t.kind !== "text" && t.kind !== "effect");
-      // A file without picture always lands on a sound track.
-      const kind: TrackKind = !media.hasVideo || requested?.kind === "audio" ? "audio" : "video";
-      const track = requested?.kind === kind ? requested : kind === "video" ? baseVideoTrack(p) : p.tracks.find((t) => t.kind === "audio");
+      const track = p.tracks.find((t) => t.id === action.trackId) ?? (media.hasVideo ? mainTrack(p) : undefined);
       const length = media.source.image ? DEFAULT_IMAGE_LENGTH : media.source.duration;
       const clip = newClip({ id: action.clipId, trackId: track?.id ?? "", mediaId: media.id, start: 0, in: 0, out: length });
-      return place(p, track, kind, clip, action.at);
+      return place(p, track, clip, action.at);
     }
 
     case "setCover":
@@ -327,23 +310,19 @@ export function applyEdit(p: Project, action: EditAction): Project {
       // Its media must still be in this project.
       if (action.clip.mediaId && !p.media.some((m) => m.id === action.clip.mediaId)) return p;
       const copy: Clip = { ...action.clip, id: action.newClipId, transition: undefined };
-      const own = p.tracks.find((t) => t.id === action.clip.trackId && !t.locked && fitsTrack(p, copy, t));
-      const media = p.media.find((m) => m.id === copy.mediaId);
-      const kind: TrackKind = own?.kind ?? (isBlock(copy) ? "effect" : !copy.mediaId ? "text" : media?.hasVideo ? "video" : "audio");
-      return place(p, own, kind, copy, action.at);
+      const own = p.tracks.find((t) => t.id === action.clip.trackId && !t.locked);
+      return place(p, own, copy, action.at);
     }
 
     case "replaceClipMedia": {
       const clip = p.clips.find((c) => c.id === action.clipId);
       const media = p.media.find((m) => m.id === action.mediaId);
-      const track = clip && p.tracks.find((t) => t.id === clip.trackId);
-      if (!clip?.mediaId || !media || !track) return p;
+      if (!clip?.mediaId || !media) return p;
       // The same stretch of the new file: as much media as the clip used (a still used its length).
       const used = isStill(p, clip) ? clipLength(clip) : clip.out - clip.in;
       const replaced: Clip = media.source.image
         ? { ...clip, mediaId: media.id, in: 0, out: round(clipLength(clip)), speed: 1, reverse: false }
         : { ...clip, mediaId: media.id, in: 0, out: round(Math.min(media.source.duration, used)) };
-      if (!fitsTrack(p, replaced, track)) return p;
       const next = { ...p, clips: p.clips.map((c) => (c.id === clip.id ? fitFades(replaced) : c)) };
       return isMagnetic(p, clip.trackId) ? packMagnetic(next) : next;
     }
@@ -351,8 +330,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
     case "addBlock": {
       if (!action.look === !action.effect) return p;
       const clip = newClip({ id: action.clipId, trackId: "", start: 0, in: 0, out: round(Math.max(MIN_CLIP, action.length)), look: action.look, effect: action.effect });
-      const track = p.tracks.find((t) => t.kind === "effect" && !t.locked && (action.trackId ? t.id === action.trackId : true));
-      return place(p, track, "effect", clip, action.at);
+      return place(p, p.tracks.find((t) => t.id === action.trackId), clip, action.at);
     }
 
     case "addText": {
@@ -369,7 +347,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
         x: bottom.x,
         y: bottom.y,
       });
-      return place(p, p.tracks.find((t) => t.kind === "text" && !t.magnetic), "text", clip, action.at);
+      return place(p, undefined, clip, action.at);
     }
 
     case "addCaptions": {
@@ -403,7 +381,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
         }
       }
       if (added.length === 0) return p;
-      const { project } = withTrack(p, "text", action.trackId);
+      const { project } = withTrack(p, false, action.trackId);
       const tracks = project.tracks.map((t) => (t.id === action.trackId ? { ...t, name: "Captions" } : t));
       return { ...project, tracks, clips: [...project.clips, ...added] };
     }
@@ -411,9 +389,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
     case "moveClip": {
       const clip = p.clips.find((c) => c.id === action.clipId);
       if (!clip) return p;
-      const target = p.tracks.find((t) => t.id === (action.trackId ?? clip.trackId));
-      const current = p.tracks.find((t) => t.id === clip.trackId);
-      const track = target && fitsTrack(p, clip, target) ? target : current;
+      const track = p.tracks.find((t) => t.id === (action.trackId ?? clip.trackId)) ?? p.tracks.find((t) => t.id === clip.trackId);
       if (!track) return p;
       // A transition belongs to the clip's place on its track; a new place starts without one.
       const moved = track.id === clip.trackId ? clip : { ...clip, transition: undefined };
@@ -579,7 +555,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
 
     case "addTrack":
       if (p.tracks.some((t) => t.id === action.trackId)) return p;
-      return withTrack(p, action.kind, action.trackId).project;
+      return withTrack(p, false, action.trackId).project;
 
     case "removeTrack":
       if (!p.tracks.some((t) => t.id === action.trackId)) return p;
@@ -602,7 +578,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
       return { ...p, tracks: p.tracks.map((t) => (t.id === action.trackId ? { ...t, ...action.patch } : t)) };
 
     case "setTrackMuted":
-      if (!p.tracks.some((t) => t.id === action.trackId && t.kind !== "text" && t.kind !== "effect")) return p;
+      if (!p.tracks.some((t) => t.id === action.trackId)) return p;
       return { ...p, tracks: p.tracks.map((t) => (t.id === action.trackId ? { ...t, muted: action.muted || undefined } : t)) };
 
     case "layoutCaptions": {

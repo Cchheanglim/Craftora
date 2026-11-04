@@ -1,12 +1,12 @@
 /**
  * Filters, effects and transitions (the right panel's tabs), dragged onto the timeline:
- * - Filters (colour looks) and picture effects are blocks on an effects track: for their time they
- *   change every picture under them (not text). The preview and the export draw the same maths.
- * - Time effects (slow motion, speed up, reverse) go on the clip they're dropped on: Craftora cuts
- *   that part out and changes it; dragging the piece's edges takes in more or less of the clip.
+ * - Filters (colour looks) and picture effects are blocks on a track: for their time they change
+ *   every picture under them (not text). The preview and the export draw the same maths. Dropped
+ *   on a clip, a block covers that clip (a piece of a split clip covers just that piece).
+ * - Time effects (slow motion, speed up, reverse) change the clip (or piece) they're dropped on.
  * - Transitions go on the join between two clips.
  */
-import { MIN_CLIP, TRANSITION_KINDS, clipEnd, trackOrder, type Clip, type Project, type Transition } from "./model";
+import { MIN_CLIP, TRANSITION_KINDS, clipEnd, clipLength, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
 import type { ClipPatch, EditAction } from "./actions";
 
 /**
@@ -69,10 +69,8 @@ export type FxItem =
   | { kind: "time"; id: string }
   | { kind: "transition"; id: Transition["kind"] };
 
-/** A new filter or effect block lasts this long; drag its edges to change it. */
+/** A new filter or effect block off any clip lasts this long; drag its edges to change it. */
 export const BLOCK_LENGTH = 3;
-/** The part of a clip a time effect changes at first. */
-export const TIME_PART = 3;
 
 /** A filter or effect block's name on the timeline and in Edit & export. */
 export function blockLabel(c: Clip): string {
@@ -80,9 +78,11 @@ export function blockLabel(c: Clip): string {
 }
 
 /**
- * The edits a dragged (or clicked) item makes when it lands at `time` on track `trackId` (or, with
- * no track, on the main video track), and the clip to select afterwards. Null when there's nothing
- * there for it to go on. `newIds`: ids for any clips it makes.
+ * The edits a dragged (or clicked) item makes when it lands at `time` on track `trackId`, and the
+ * clip to select afterwards. On a clip there, a filter or effect covers that clip and a time effect
+ * changes it; off any clip, a filter or effect is a short block at `time`. With no track (clicked
+ * with nothing selected), time effects and transitions use the main track. Null when there's
+ * nothing there for it to go on. `newIds`: ids for any clips it makes.
  */
 export function dropEdits(
   p: Project,
@@ -91,21 +91,23 @@ export function dropEdits(
   time: number,
   newIds: [string, string],
 ): { edits: EditAction[]; select?: string } | null {
+  const dropped = p.tracks.find((t) => t.id === trackId);
+  const mediaOn = (id?: string) => (id ? trackOrder(p, id).filter((c) => c.mediaId) : []);
+  const clipAt = (clips: Clip[]) => clips.find((c) => time >= c.start && time < clipEnd(c));
   if (item.kind === "filter" || item.kind === "effect") {
     const block = item.kind === "filter" ? { look: item.id } : { effect: item.id };
-    const onEffects = p.tracks.find((t) => t.id === trackId && !t.locked)?.kind === "effect" ? trackId : undefined;
-    return { edits: [{ type: "addBlock", clipId: newIds[0], at: time, length: BLOCK_LENGTH, trackId: onEffects, ...block }], select: newIds[0] };
+    const clip = clipAt(mediaOn(dropped?.id).filter((c) => showsPicture(p, c)));
+    const [at, length] = clip ? [clip.start, clipLength(clip)] : [time, BLOCK_LENGTH];
+    return { edits: [{ type: "addBlock", clipId: newIds[0], at, length, trackId: dropped?.id, ...block }], select: newIds[0] };
   }
-  const track = p.tracks.find((t) => t.id === trackId && (t.kind === "video" || t.kind === "audio")) ?? [...p.tracks].reverse().find((t) => t.kind === "video");
+  const track = dropped ?? mainTrack(p);
   if (!track || track.locked) return null;
-  const order = trackOrder(p, track.id).filter((c) => c.mediaId);
+  const order = mediaOn(track.id);
   if (item.kind === "time") {
-    const clip = order.find((c) => time >= c.start && time < clipEnd(c));
+    const clip = clipAt(order);
     const effect = TIME_EFFECTS.find((e) => e.id === item.id);
     if (!clip || !effect) return null;
-    // A part from where it was dropped, kept inside the clip.
-    const from = Math.min(Math.max(time, clip.start), clipEnd(clip) - MIN_CLIP);
-    const { edits, target } = effectEdits(clip, effect.change, [from, Math.min(from + TIME_PART, clipEnd(clip))], newIds);
+    const { edits, target } = effectEdits(clip, effect.change, undefined, newIds);
     return { edits, select: target };
   }
   // A transition: on the join nearest to where it was dropped.

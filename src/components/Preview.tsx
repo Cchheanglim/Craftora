@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { isBlock, clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
+import { isBlock, showsPicture, clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
 import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -179,7 +179,6 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   });
 
   const trackIndex = new Map(project.tracks.map((t, i) => [t.id, i]));
-  const trackKind = (c: Clip) => project.tracks.find((t) => t.id === c.trackId)?.kind;
   const trackMuted = (c: Clip) => trackSilent(project.tracks.find((t) => t.id === c.trackId));
   const trackHidden = (c: Clip) => Boolean(project.tracks.find((t) => t.id === c.trackId)?.hidden);
   const mediaOf = (c: Clip) => project.media.find((m) => m.id === c.mediaId);
@@ -195,7 +194,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   // covers the outgoing clip). The same order as the export.
   const layer = (c: Clip) => (project.tracks.length - (trackIndex.get(c.trackId) ?? 0)) * 10_000 + (orders.get(c.trackId)?.indexOf(c) ?? 0);
   const byLayer = (a: Clip, b: Clip) => layer(a) - layer(b);
-  const pictures = project.clips.filter((c) => c.mediaId && trackKind(c) === "video").sort(byLayer);
+  const pictures = project.clips.filter((c) => showsPicture(project, c)).sort(byLayer);
   /** Fades and transitions together: how visible and how loud a clip is now. */
   const mix = (c: Clip) => {
     const fade = fadeAt(c, time);
@@ -203,10 +202,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const t = order ? transitionMix(order, c, time) : { picture: 1, sound: 1 };
     return { picture: fade * t.picture, sound: fade * t.sound };
   };
-  const sounds = project.clips.filter((c) => c.mediaId && trackKind(c) === "audio");
+  // Sound files (pictures play their own sound).
+  const sounds = project.clips.filter((c) => c.mediaId && !showsPicture(project, c));
   const texts = project.clips.filter((c) => !c.mediaId && !isBlock(c) && !trackHidden(c)).sort(byLayer);
   // Filter and effect blocks showing now change the pictures (not text), lowest track first.
-  const blocks = blocksStyle(project.clips.filter((c) => trackKind(c) === "effect" && active(c) && !trackHidden(c)).sort(byLayer), time, stageRef.current?.clientWidth ?? frame.width);
+  const blocks = blocksStyle(project.clips.filter((c) => isBlock(c) && active(c) && !trackHidden(c)).sort(byLayer), time, stageRef.current?.clientWidth ?? frame.width);
   const captionTracks = new Set(project.tracks.filter((t) => t.name === "Captions").map((t) => t.id));
   const hasCaptions = project.media.some((m) => m.captions) || captionTracks.size > 0;
   const isCaption = (c: Clip) => c.trackId.startsWith(SHOWN_CAPTIONS) || captionTracks.has(c.trackId);
@@ -230,7 +230,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     </button>
   );
   const selected = project.clips.find((c) => c.id === selectedId);
-  const editable = (c?: Clip) => Boolean(c && trackKind(c) !== "audio");
+  const editable = (c?: Clip) => Boolean(c && (!c.mediaId || showsPicture(project, c)));
 
   // The combined radio wave across the timeline, shown right under the video.
   const timelineWave = useMemo(() => {
@@ -238,7 +238,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const audible = project.clips.filter((c) => {
       const t = project.tracks.find((tr) => tr.id === c.trackId);
       const m = project.media.find((x) => x.id === c.mediaId);
-      return c.mediaId && t && t.kind !== "text" && !trackSilent(t) && c.volume > 0 && m?.hasAudio && !m.source.image;
+      return c.mediaId && t && !trackSilent(t) && c.volume > 0 && m?.hasAudio && !m.source.image;
     });
     const mediaPeaks = new Map(project.media.map((m) => [m.id, peaksFor(m)]));
     return Array.from({ length: WAVE_BARS }, (_, i) => {
