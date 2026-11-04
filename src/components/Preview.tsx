@@ -544,7 +544,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
         {/* While a link stays slow, the message stays between its short waits. */}
         {playing && (playback.waiting || playback.slow) && (
           <p className="preview__waiting">
-            {playback.slow ? "Still loading from the website…" : "Loading…"}
+            {playback.slow && linkHere ? "Still loading from the website…" : "Loading…"}
             {playback.slow && downloadHere}
           </p>
         )}

@@ -1,4 +1,4 @@
-import { useCallback, useReducer } from "react";
+import { useCallback, useMemo, useReducer } from "react";
 import { applyEdit, type EditAction } from "./actions";
 import type { MediaItem, Project } from "./model";
 
@@ -65,20 +65,33 @@ function reducer(state: State, action: Action): State {
 /** The project plus Undo/Redo. Every change goes through `edit` with a named action. */
 export function useProject(initial: () => Project) {
   const [state, dispatch] = useReducer(reducer, undefined, () => ({ project: initial(), past: [], future: [] }));
-  return {
-    project: state.project,
-    canUndo: state.past.length > 0,
-    canRedo: state.future.length > 0,
-    edit: useCallback((edit: EditAction) => dispatch({ type: "edit", edit, transient: false }), []),
-    /** For live updates during a drag, after `checkpoint`. */
-    editLive: useCallback((edit: EditAction) => dispatch({ type: "edit", edit, transient: true }), []),
-    checkpoint: useCallback(() => dispatch({ type: "checkpoint" }), []),
-    undo: useCallback(() => dispatch({ type: "undo" }), []),
-    redo: useCallback(() => dispatch({ type: "redo" }), []),
-    commit: useCallback((project: Project, transient: boolean) => dispatch({ type: "commit", project, transient }), []),
-    reset: useCallback((project: Project) => dispatch({ type: "reset", project }), []),
-    refreshMedia: useCallback((mediaId: string, patch: Partial<MediaItem>) => dispatch({ type: "refreshMedia", mediaId, patch }), []),
-  };
+  const edit = useCallback((edit: EditAction) => dispatch({ type: "edit", edit, transient: false }), []);
+  const editLive = useCallback((edit: EditAction) => dispatch({ type: "edit", edit, transient: true }), []);
+  const checkpoint = useCallback(() => dispatch({ type: "checkpoint" }), []);
+  const undo = useCallback(() => dispatch({ type: "undo" }), []);
+  const redo = useCallback(() => dispatch({ type: "redo" }), []);
+  const commit = useCallback((project: Project, transient: boolean) => dispatch({ type: "commit", project, transient }), []);
+  const reset = useCallback((project: Project) => dispatch({ type: "reset", project }), []);
+  const refreshMedia = useCallback((mediaId: string, patch: Partial<MediaItem>) => dispatch({ type: "refreshMedia", mediaId, patch }), []);
+  // The same object until the project changes: effects that depend on it (App's event listeners)
+  // re-subscribed on every playback frame when this was a new object each render.
+  return useMemo(
+    () => ({
+      project: state.project,
+      canUndo: state.past.length > 0,
+      canRedo: state.future.length > 0,
+      edit,
+      /** For live updates during a drag, after `checkpoint`. */
+      editLive,
+      checkpoint,
+      undo,
+      redo,
+      commit,
+      reset,
+      refreshMedia,
+    }),
+    [state, edit, editLive, checkpoint, undo, redo, commit, reset, refreshMedia],
+  );
 }
 
 export type ProjectApi = ReturnType<typeof useProject>;

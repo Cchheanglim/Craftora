@@ -252,10 +252,20 @@ export function TimelineEditor({
   const onPointerMove = useRef<(e: PointerEvent) => void>(() => {});
   const onPointerUp = useRef<() => void>(() => {});
 
+  /** Near the timeline's left or right edge, a drag scrolls it along. */
+  const scrollAtEdge = (clientX: number) => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const r = scroller.getBoundingClientRect();
+    if (clientX > r.right - 36) scroller.scrollLeft += 14;
+    else if (clientX < r.left + 36) scroller.scrollLeft = Math.max(0, scroller.scrollLeft - 14);
+  };
+
   onPointerMove.current = (e) => {
     const g = gestureRef.current;
     if (!g) return;
     if (g.kind === "scrub") {
+      scrollAtEdge(e.clientX);
       playback.seek(timeAt(e.clientX));
       return;
     }
@@ -280,12 +290,7 @@ export function TimelineEditor({
       const trackId = lane && !lane.locked ? lane.id : (ghostRef.current?.trackId ?? clip.trackId);
       setGhost({ clipId: clip.id, start: Math.max(0, start), trackId });
     } else {
-      const scroller = scrollRef.current;
-      if (scroller) {
-        const r = scroller.getBoundingClientRect();
-        if (e.clientX > r.right - 36) scroller.scrollLeft += 14;
-        else if (e.clientX < r.left + 36) scroller.scrollLeft = Math.max(0, scroller.scrollLeft - 14);
-      }
+      scrollAtEdge(e.clientX);
       api.editLive({ type: "trimClip", clipId: clip.id, edge: g.mode, time: snap(getTimeAt(e.clientX, g), clip.id) });
     }
   };
