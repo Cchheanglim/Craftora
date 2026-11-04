@@ -23,6 +23,18 @@
   height: 28px;
 }
 
+/* A narrow timeline (wide side panels) keeps only the tools' icons; each still names itself on hover. */
+.tl {
+  container-type: inline-size;
+}
+
+@container (max-width: 820px) {
+  .tl__toolbar .btn--ghost {
+    gap: 0;
+    font-size: 0;
+  }
+}
+
 .tl__toolbar .btn--icon {
   width: 28px;
   height: 28px;

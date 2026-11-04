@@ -1478,7 +1478,7 @@ export default function App() {
   };
 
   return (
-    <div className="app" data-left={leftOpen ? "open" : "closed"} style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${panelWidth}px` } as CSSProperties}>
+    <div className="app" data-left={leftOpen ? "open" : "closed"} style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen ? sideWidth : 56, PANEL_WIDTH)}px` } as CSSProperties}>
       <Ambient active={theme !== "classic"} />
       {fetchReview.dialog}
       <Toolbar
