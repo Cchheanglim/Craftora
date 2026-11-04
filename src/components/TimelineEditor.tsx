@@ -629,7 +629,7 @@ export function TimelineEditor({
                   if (el) laneRefs.current.set(track.id, el);
                   else laneRefs.current.delete(track.id);
                 }}
-                className={["tl__lane", `is-${track.kind}`, track.locked && "is-locked", track.hidden && "is-hidden"].filter(Boolean).join(" ")}
+                className={["tl__lane", track.locked && "is-locked", track.hidden && "is-hidden"].filter(Boolean).join(" ")}
                 style={rowStyle(track)}
                 onPointerDown={(e) => {
                   onSelect(null);
@@ -648,12 +648,12 @@ export function TimelineEditor({
                     const isGhost = clip.id === ghost?.clipId;
                     const { start } = where(clip);
                     const length = clipLength(clip);
-                    // Pictures on a video track show their frames along the clip.
-                    const picture = media && track.kind === "video" ? (media.source.image ? media.source.previewUrl : media.source.thumbnail) : undefined;
-                    const strip = media && track.kind === "video" ? (strips[media.source.previewUrl] ?? (picture ? { url: picture, frames: 1 } : undefined)) : undefined;
+                    // Videos and pictures show their frames along the clip.
+                    const picture = media?.hasVideo ? (media.source.image ? media.source.previewUrl : media.source.thumbnail) : undefined;
+                    const strip = media?.hasVideo ? (strips[media.source.previewUrl] ?? (picture ? { url: picture, frames: 1 } : undefined)) : undefined;
                     const classes = [
                       "tl__clip",
-                      `is-${track.kind}`,
+                      `is-${isBlock(clip) ? "effect" : !media ? "text" : media.hasVideo ? "video" : "audio"}`,
                       isSelected && "is-selected",
                       isGhost && "is-dragging",
                       media?.missing && "is-missing",
@@ -733,6 +733,29 @@ export function TimelineEditor({
                       </div>
                     );
                   })}
+                {/* A + where two clips meet (a split, or clips back to back): transitions there. */}
+                {!ghost &&
+                  trackOrder(project, track.id)
+                    .filter((c) => c.mediaId)
+                    .filter((c, i, order) => i > 0 && c.start <= clipEnd(order[i - 1]) + 0.05)
+                    .map((clip) => {
+                      const kind = TRANSITION_KINDS.find((t) => t.kind === clip.transition?.kind);
+                      return (
+                        <button
+                          key={`join-${clip.id}`}
+                          type="button"
+                          className={kind ? "tl__join is-set" : "tl__join"}
+                          style={{ left: (clip.start + overlap(clip) / 2) * pps }}
+                          aria-label={kind ? `${kind.label} at ${formatClock(clip.start)}: change it` : `Add a transition at ${formatClock(clip.start)}`}
+                          title={kind ? `${kind.label}: click to change it` : "Add a transition here"}
+                          disabled={track.locked}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={() => onJoin(clip)}
+                        >
+                          <Icon name={kind ? "check" : "plus"} size={10} />
+                        </button>
+                      );
+                    })}
               </div>
             ))}
 
@@ -784,7 +807,7 @@ export function TimelineEditor({
                   x={clipMenu.x}
                   y={clipMenu.y}
                   clip={clip}
-                  picture={track?.kind === "video" && Boolean(media)}
+                  picture={Boolean(media?.hasVideo)}
                   video={Boolean(media && !media.source.image)}
                   local={Boolean(media?.source.local)}
                   locked={Boolean(track?.locked)}
