@@ -1,8 +1,8 @@
 import type { KeyboardEvent, PointerEvent } from "react";
 
 /** How narrow and wide the left sidebar and the right panel can be dragged. */
-export const SIDE_WIDTH = { min: 180, max: 400, usual: 232 };
-export const PANEL_WIDTH = { min: 280, max: 560, usual: 340 };
+export const SIDE_WIDTH = { min: 220, max: 400, usual: 232 };
+export const PANEL_WIDTH = { min: 320, max: 560, usual: 340 };
 
 /**
  * The grab strip on the inner edge of the left sidebar (`edge` "right") or the right panel
@@ -57,7 +57,6 @@ export function EdgeResizer({
       aria-valuenow={width}
       aria-valuemin={limits.min}
       aria-valuemax={limits.max}
-      title="Drag to resize"
       tabIndex={0}
       onPointerDown={drag}
       onKeyDown={nudge}

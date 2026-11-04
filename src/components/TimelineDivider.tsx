@@ -48,7 +48,6 @@ export function TimelineDivider({ height, onResize }: { height: number | null; o
       aria-orientation="horizontal"
       aria-label="Preview and timeline size"
       aria-valuenow={height ?? undefined}
-      title="Drag to resize the preview and the timeline"
       tabIndex={0}
       onPointerDown={drag}
       onKeyDown={nudge}

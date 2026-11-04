@@ -32,6 +32,8 @@
 
 **Changed**
 
+- **The left sidebar and the right panel can be resized**: drag their inner edge (a line shows
+  when you point at it). Craftora remembers the widths.
 - **The timeline looks like a familiar editor's**: video clips are teal, with their name and
   length on a bar along the top, frames in the middle and the sound wave along the bottom. The
   main track is taller, with Cover at the right of its buttons and a line above it; tracks sit in

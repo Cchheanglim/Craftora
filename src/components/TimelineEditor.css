@@ -500,11 +500,11 @@
 .tl__clip.is-media .tl__label {
   order: 0;
   flex: none;
-  height: 18px;
+  height: 16px;
   padding: 0 6px;
   color: #fff;
-  font-size: 11px;
-  line-height: 18px;
+  font-size: 10.5px;
+  line-height: 16px;
 }
 
 .tl__clip.is-media .tl__frames {
