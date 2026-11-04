@@ -34,25 +34,25 @@ export function FxPanel({ tab, onPick }: { tab: FxTab; onPick: (item: FxItem) =>
     <section className="fx-panel" aria-label={tab === "filters" ? "Filters" : tab === "effects" ? "Effects" : "Transitions"}>
       {tab === "filters" && (
         <>
-          <p className="fx-panel__hint">Drag a filter onto the timeline and stretch it over the part you want. It colours every picture under it, not text.</p>
+          <p className="fx-panel__hint">Drag a filter onto a clip to colour all of it (split the clip first for just a part), or onto an empty spot and stretch it. It colours every picture under it, not text.</p>
           <div className="fx__grid">{LOOKS.map((look) => tile({ kind: "filter", id: look.id }, look.label, lookFilter(look.id)))}</div>
         </>
       )}
       {tab === "effects" && (
         <>
-          <p className="fx-panel__hint">Drag an effect onto the timeline and stretch it over the part you want. It changes every picture under it.</p>
+          <p className="fx-panel__hint">Drag an effect onto a clip to cover all of it, or onto an empty spot and stretch it. It changes every picture under it.</p>
           <div className="fx__grid">{PICTURE_EFFECTS.map((effect) => tile({ kind: "effect", id: effect.id }, effect.label))}</div>
           <h3 className="section-label">Speed and direction</h3>
           <p className="fx-panel__hint">
-            Drop one on a video clip where it should start: that part plays slower, faster or backwards. Drag the edges of that part to take in
-            more or less of the clip.
+            Drop one on a clip: it plays slower, faster or backwards. Split the clip first to change just a part. Smooth slow-mo makes in-between
+            frames in the export, so it takes longer to export.
           </p>
           <div className="fx__grid">{TIME_EFFECTS.map((effect) => tile({ kind: "time", id: effect.id }, effect.label))}</div>
         </>
       )}
       {tab === "transitions" && (
         <>
-          <p className="fx-panel__hint">Drop a transition on the join between two clips. Craftora turns on the track's magnet so they sit back to back.</p>
+          <p className="fx-panel__hint">Click the + where two clips meet, then pick a transition here; or drag one onto that join.</p>
           <div className="fx__grid">{TRANSITION_KINDS.map((t) => tile({ kind: "transition", id: t.kind }, t.label))}</div>
         </>
       )}

@@ -276,6 +276,7 @@
 
 .preview__clock {
   font-size: var(--text-tc);
+  white-space: nowrap;
 }
 
 .preview__total {

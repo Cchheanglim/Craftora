@@ -252,9 +252,13 @@
   font-size: 12.5px;
 }
 
+/* One line, cut with … when the sidebar is narrow (it used to wrap under the buttons). */
 .side__file-meta {
   font-size: 11px;
   color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .side__file .btn--icon {

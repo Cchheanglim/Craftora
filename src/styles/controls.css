@@ -180,6 +180,10 @@ select.field {
 
 .segmented button {
   height: 26px;
+  /* One line: a narrow panel cuts a label rather than doubling the button. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;

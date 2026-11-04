@@ -110,6 +110,9 @@ struct ClipSpec {
     /// Pictures: degrees turned clockwise (0, 90, 180 or 270), after the crop.
     #[serde(default)]
     rotate: u16,
+    /// Slowed down with in-between frames made by motion interpolation (Smooth slow-mo).
+    #[serde(default)]
+    smooth: bool,
     /// Filter blocks: the colour steps, in order (effects.ts `LookStep`): CSS filter names and amounts.
     #[serde(default)]
     look: Vec<(String, f64)>,
@@ -227,6 +230,16 @@ impl ClipSpec {
             chain.push_str(&format!(",setpts=PTS/{:.4}", self.speed));
         }
         chain
+    }
+
+    /// Smooth slow-mo: in-between frames up to the export's frame rate, made from the motion
+    /// between frames (slow: a few frames a second), instead of each frame shown longer.
+    fn smooth_frames(&self, fps: u32) -> String {
+        if self.smooth && self.speed < 1.0 {
+            format!(",minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1")
+        } else {
+            String::new()
+        }
     }
 
     /// Picture fades to transparent (what's below shows through; black at the bottom).
@@ -465,8 +478,9 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                     let (bw, bh) = (((w as f64) * clip.size).round().max(2.0), ((h as f64) * clip.size).round().max(2.0));
                     let fit = if clip.fill { "increase" } else { "decrease" };
                     graph.push(format!(
-                        "[{k}:v]setpts=PTS-STARTPTS{},scale=w={bw}:h={bh}:force_original_aspect_ratio={fit}:force_divisible_by=2,setsar=1,fps={fps},format=yuva420p{},setpts=PTS+{start}/TB[v{i}]",
+                        "[{k}:v]setpts=PTS-STARTPTS{},scale=w={bw}:h={bh}:force_original_aspect_ratio={fit}:force_divisible_by=2,setsar=1{},fps={fps},format=yuva420p{},setpts=PTS+{start}/TB[v{i}]",
                         clip.picture_edits(),
+                        clip.smooth_frames(fps),
                         clip.picture_fades()
                     ));
                     graph.push(format!(
@@ -751,6 +765,16 @@ mod tests {
         assert!(edits.find("crop=").unwrap() < edits.find("transpose=clock").unwrap(), "{edits}");
         let upside: ClipSpec = serde_json::from_str(r#"{"role":"video","layer":0,"start":0,"in":0,"out":1,"rotate":180}"#).unwrap();
         assert_eq!(upside.picture_edits(), ",hflip,vflip");
+    }
+
+    #[test]
+    fn makes_in_between_frames_only_for_smooth_slow_motion() {
+        let smooth: ClipSpec = serde_json::from_str(r#"{"role":"video","start":0,"in":0,"out":2,"speed":0.5,"smooth":true}"#).unwrap();
+        assert!(smooth.smooth_frames(30).starts_with(",minterpolate=fps=30:"));
+        let plain: ClipSpec = serde_json::from_str(r#"{"role":"video","start":0,"in":0,"out":2,"speed":0.5}"#).unwrap();
+        assert_eq!(plain.smooth_frames(30), "");
+        let fast: ClipSpec = serde_json::from_str(r#"{"role":"video","start":0,"in":0,"out":2,"speed":2,"smooth":true}"#).unwrap();
+        assert_eq!(fast.smooth_frames(30), "");
     }
 
     #[test]

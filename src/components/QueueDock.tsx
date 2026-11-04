@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Job } from "../types";
 import type { Queue } from "../state/useQueue";
 import { formatSize } from "../project/exportPlan";
@@ -25,21 +25,37 @@ function ago(ms: number): string {
   return `${Math.round(minutes / 60)} h ago`;
 }
 
+/** The Queue button at the top right (next to Import), with the list of downloads and exports under it. */
 export function QueueDock({ queue, freshId }: QueueDockProps) {
   const { jobs } = queue;
   const running = jobs.filter(isActive).length;
   const waiting = jobs.filter((j) => j.status === "waiting").length;
   const paused = jobs.filter((j) => j.status === "paused").length;
   const failed = jobs.filter((j) => j.status === "failed").length;
-  // Opens when work starts and folds to its header when it's all done (open while something failed,
-  // to show why), so idle pages get the room. A click holds until work starts or stops again.
-  const working = running + waiting > 0;
-  const [open, setOpen] = useState(working || failed > 0);
-  const [wasWorking, setWasWorking] = useState(working);
-  if (working !== wasWorking) {
-    setWasWorking(working);
-    setOpen(working || failed > 0);
+  const [open, setOpen] = useState(false);
+  // A new failure opens the list, to show why.
+  const [failedBefore, setFailedBefore] = useState(failed);
+  if (failed !== failedBefore) {
+    setFailedBefore(failed);
+    if (failed > failedBefore) setOpen(true);
   }
+  // Closes on a click anywhere else, or Escape. (Its confirm dialogs are inside it.)
+  const boxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.querySelector("dialog[open]")) setOpen(false);
+    };
+    window.addEventListener("pointerdown", away);
+    window.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("pointerdown", away);
+      window.removeEventListener("keydown", escape);
+    };
+  }, [open]);
   const finished = jobs.filter((j) => j.status === "finished").length;
   const unfinished = jobs.filter((j) => j.status !== "finished" && j.status !== "failed");
   const overall = unfinished.length
@@ -55,59 +71,65 @@ export function QueueDock({ queue, freshId }: QueueDockProps) {
   ].filter(Boolean);
 
   return (
-    <section className="queue" aria-label="Queue">
-      <header className="queue__head">
-        <h2>Queue</h2>
-        <span className="queue__counts">{counts.length ? counts.join(" · ") : "Empty"}</span>
-        {!open && unfinished.length > 0 && (
+    <div ref={boxRef} className="queue">
+      <button
+        type="button"
+        className={failed ? "btn btn--secondary queue__button is-failed" : "btn btn--secondary queue__button"}
+        aria-expanded={open}
+        aria-controls="queue-panel"
+        title={counts.length ? `Queue: ${counts.join(", ")}` : "Queue: your downloads and exports"}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Icon name={failed ? "alert" : "download"} size={14} />
+        Queue
+        {unfinished.length > 0 && <span className="queue__badge mono">{unfinished.length}</span>}
+        {unfinished.length > 0 && (
           <span className="queue__overall" aria-hidden="true">
             <span style={{ width: `${overall}%` }} />
           </span>
         )}
-        <div className="queue__actions">
-          {jobs.some((j) => queue.canPauseJob(j) && (isActive(j) || j.status === "waiting")) ? (
-            <button type="button" className="btn btn--ghost" onClick={queue.pauseAll}>
-              Pause all
-            </button>
-          ) : (
-            paused > 0 && (
-              <button type="button" className="btn btn--ghost" onClick={queue.resumeAll}>
-                Resume all
-              </button>
-            )
-          )}
-          {finished > 0 && (
-            <button type="button" className="btn btn--ghost" onClick={queue.clearFinished}>
-              Clear finished
-            </button>
-          )}
-          <button
-            type="button"
-            className="btn btn--icon"
-            aria-label={open ? "Hide queue" : "Show queue"}
-            aria-expanded={open}
-            aria-controls="queue-list"
-            onClick={() => setOpen((o) => !o)}
-          >
-            <Icon name="chevronDown" className={open ? undefined : "queue__chevron--closed"} />
-          </button>
-        </div>
-      </header>
-
+      </button>
       {open && (
-        <div id="queue-list" className="queue__list">
-          {jobs.length === 0 ? (
-            <p className="queue__empty">Nothing queued. Set a range and press Add to queue; jobs run here while you keep trimming.</p>
-          ) : (
-            <ul>
-              {jobs.map((job) => (
-                <QueueRow key={job.id} job={job} queue={queue} fresh={job.id === freshId} />
-              ))}
-            </ul>
-          )}
-        </div>
+        <section id="queue-panel" className="queue__panel" aria-label="Queue">
+          <header className="queue__head">
+            <h2>Queue</h2>
+            <span className="queue__counts">{counts.length ? counts.join(" · ") : "Empty"}</span>
+            <div className="queue__actions">
+              {jobs.some((j) => queue.canPauseJob(j) && (isActive(j) || j.status === "waiting")) ? (
+                <button type="button" className="btn btn--ghost" onClick={queue.pauseAll}>
+                  Pause all
+                </button>
+              ) : (
+                paused > 0 && (
+                  <button type="button" className="btn btn--ghost" onClick={queue.resumeAll}>
+                    Resume all
+                  </button>
+                )
+              )}
+              {finished > 0 && (
+                <button type="button" className="btn btn--ghost" onClick={queue.clearFinished}>
+                  Clear finished
+                </button>
+              )}
+              <button type="button" className="btn btn--icon" aria-label="Close the queue" onClick={() => setOpen(false)}>
+                <Icon name="x" size={14} />
+              </button>
+            </div>
+          </header>
+          <div className="queue__list">
+            {jobs.length === 0 ? (
+              <p className="queue__empty">Nothing queued. Exports and downloads run here while you keep editing.</p>
+            ) : (
+              <ul>
+                {jobs.map((job) => (
+                  <QueueRow key={job.id} job={job} queue={queue} fresh={job.id === freshId} />
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
       )}
-    </section>
+    </div>
   );
 }
 

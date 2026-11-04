@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type RefObject } from "react";
+import { useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { checkSite, errorText } from "../lib/engine";
 import { siteVerdict, type Verdict } from "./Home";
@@ -7,6 +7,8 @@ import { CopyReport } from "./CopyReport";
 import "./Toolbar.css";
 
 interface ToolbarProps {
+  /** The Queue button (QueueDock), next to Import. */
+  queue: ReactNode;
   url: string;
   onUrlChange: (url: string) => void;
   onFetch: (url: string) => void;
@@ -32,6 +34,7 @@ interface ToolbarProps {
 }
 
 export function Toolbar({
+  queue,
   url,
   onUrlChange,
   onFetch,
@@ -167,6 +170,7 @@ export function Toolbar({
             {update.label}
           </button>
         )}
+        {queue}
         {onImport && (
           <button type="button" className="btn btn--secondary" onClick={onImport} disabled={fetching} title="Import files (Ctrl+O)">
             <Icon name="upload" size={14} />

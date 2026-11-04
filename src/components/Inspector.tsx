@@ -256,7 +256,7 @@ export function Inspector({
       {!isText && !isImage && !isBlock && (
         <div className="insp__field">
           <label htmlFor="insp-speed">Speed</label>
-          <select id="insp-speed" className="field mono" value={clip.speed} onChange={(e) => onSpeed(Number(e.target.value))}>
+          <select id="insp-speed" className="field" value={clip.speed} onChange={(e) => onSpeed(Number(e.target.value))}>
             {SPEEDS.map((s) => (
               <option key={s} value={s}>
                 {s}×{s === 1 ? " (normal)" : ""}
@@ -267,7 +267,7 @@ export function Inspector({
       )}
 
       {!isText && !isBlock && !track.magnetic && (
-        <p className="insp__hint">To add a transition, turn on the magnet on this track (in the track's header), so clips sit back to back.</p>
+        <p className="insp__hint">To add a transition, put this clip right after another one and click the + where they meet.</p>
       )}
 
       {onTransition && (

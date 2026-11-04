@@ -31,24 +31,34 @@ test("a filter is the same CSS filter steps the export gets", () => {
   expect(lookSteps("not-a-look")).toEqual([]);
 });
 
-test("a filter dropped on a video track becomes a block on an effects track", () => {
+test("a filter dropped on a clip covers that clip, on a track above it", () => {
   let p = withClip();
   const done = dropEdits(p, { kind: "filter", id: "bw" }, mainTrack(p), 2, ["f", "x"])!;
   p = run(p, done.edits);
   const block = p.clips.find((c) => c.id === "f")!;
   expect(done.select).toBe("f");
-  expect(p.tracks.find((t) => t.id === block.trackId)?.kind).toBe("effect");
-  expect([block.start, clipEnd(block), block.look]).toEqual([2, 5, "bw"]);
+  const row = (trackId: string) => p.tracks.findIndex((t) => t.id === trackId);
+  expect(row(block.trackId)).toBeLessThan(row(mainTrack(p)));
+  expect([block.start, clipEnd(block), block.look]).toEqual([0, 10, "bw"]);
   // The video clip isn't touched.
   expect(p.clips.find((c) => c.id === "c")).toMatchObject({ start: 0, in: 0, out: 10 });
-  // A second block at the same time goes on another effects track.
+  // Off any clip: a 3 s block where it was dropped; at the same time as another, on another track.
   p = run(p, dropEdits(p, { kind: "effect", id: "blur" }, block.trackId, 3, ["e", "y"])!.edits);
-  expect(p.clips.find((c) => c.id === "e")!.trackId).not.toBe(block.trackId);
+  const blur = p.clips.find((c) => c.id === "e")!;
+  expect([blur.start, clipEnd(blur)]).toEqual([3, 6]);
+  expect(blur.trackId).not.toBe(block.trackId);
+  // On a piece of a split clip: just that piece.
+  p = applyEdit(p, { type: "splitClip", clipId: "c", newClipId: "b", at: 6 });
+  p = run(p, dropEdits(p, { kind: "filter", id: "sepia" }, mainTrack(p), 7, ["s", "z"])!.edits);
+  const sepia = p.clips.find((c) => c.id === "s")!;
+  expect([sepia.start, clipEnd(sepia)]).toEqual([6, 10]);
 });
 
-test("slow motion dropped on a clip slows just that part, and its edges move the cut", () => {
+test("slow motion dropped on a piece of a split clip slows that piece, and its edges move the cut", () => {
   let p = withClip();
-  const done = dropEdits(p, { kind: "time", id: "slow" }, mainTrack(p), 2, ["end", "middle"])!;
+  p = applyEdit(p, { type: "splitClip", clipId: "c", newClipId: "end", at: 5 });
+  p = applyEdit(p, { type: "splitClip", clipId: "c", newClipId: "middle", at: 2 });
+  const done = dropEdits(p, { kind: "time", id: "slow" }, mainTrack(p), 3, ["x", "y"])!;
   p = run(p, done.edits);
   const pieces = () => [...p.clips].sort((a, b) => a.start - b.start).map((c) => [c.id, c.start, c.in, c.out, c.speed]);
   expect(done.select).toBe("middle");

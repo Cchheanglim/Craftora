@@ -5,7 +5,7 @@ import { blockLabel, type FxItem } from "../project/effects";
 import { packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
-import { formatClock } from "../lib/timecode";
+import { formatClock, formatTimecode } from "../lib/timecode";
 import { filmstrip, type Strip } from "../lib/thumbnail";
 import { Icon, type IconName } from "./Icon";
 import "./TimelineEditor.css";
@@ -101,10 +101,13 @@ const SIZES: { size: TrackSize; label: string }[] = [
   { size: "m", label: "Medium" },
   { size: "l", label: "Large" },
 ];
-const ROW_PX: Record<TrackSize, number> = { s: 28, m: 44, l: 72 };
-/** A track's row height when it was changed in its menu (each kind has its usual one in the CSS). */
-const rowStyle = (t: Track) => (t.height ? { height: ROW_PX[t.height] } : undefined);
-const WAVE_HEIGHT: Record<TrackSize, string> = { s: "22%", m: "42%", l: "78%" };
+const ROW_PX: Record<TrackSize, number> = { s: 30, m: 48, l: 62 };
+/** A track's row size: as set in its menu, else large for the main track and medium for the others. */
+const rowSize = (t: Track, main: boolean): TrackSize => t.height ?? (main ? "l" : "m");
+/** Share of a video clip's row its sound-wave band takes, by the track's Waveform size. */
+const WAVE_SHARE: Record<TrackSize, number> = { s: 0.1, m: 0.17, l: 0.28 };
+/** The name bar along the top of a video or sound clip. */
+const LABEL_PX = 14;
 
 export function TimelineEditor({
   project,
@@ -252,10 +255,20 @@ export function TimelineEditor({
   const onPointerMove = useRef<(e: PointerEvent) => void>(() => {});
   const onPointerUp = useRef<() => void>(() => {});
 
+  /** Near the timeline's left or right edge, a drag scrolls it along. */
+  const scrollAtEdge = (clientX: number) => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const r = scroller.getBoundingClientRect();
+    if (clientX > r.right - 36) scroller.scrollLeft += 14;
+    else if (clientX < r.left + 36) scroller.scrollLeft = Math.max(0, scroller.scrollLeft - 14);
+  };
+
   onPointerMove.current = (e) => {
     const g = gestureRef.current;
     if (!g) return;
     if (g.kind === "scrub") {
+      scrollAtEdge(e.clientX);
       playback.seek(timeAt(e.clientX));
       return;
     }
@@ -280,12 +293,7 @@ export function TimelineEditor({
       const trackId = lane && !lane.locked ? lane.id : (ghostRef.current?.trackId ?? clip.trackId);
       setGhost({ clipId: clip.id, start: Math.max(0, start), trackId });
     } else {
-      const scroller = scrollRef.current;
-      if (scroller) {
-        const r = scroller.getBoundingClientRect();
-        if (e.clientX > r.right - 36) scroller.scrollLeft += 14;
-        else if (e.clientX < r.left + 36) scroller.scrollLeft = Math.max(0, scroller.scrollLeft - 14);
-      }
+      scrollAtEdge(e.clientX);
       api.editLive({ type: "trimClip", clipId: clip.id, edge: g.mode, time: snap(getTimeAt(e.clientX, g), clip.id) });
     }
   };
@@ -455,12 +463,13 @@ export function TimelineEditor({
       <div className="tl__body">
         <div className="tl__heads">
           <div className="tl__ruler-spacer" />
+          <div className="tl__lanes">
           {project.tracks.map((track) => {
             const clipCount = project.clips.filter((c) => c.trackId === track.id).length;
             const name = trackLabel(project, track);
             const menuOpen = menu?.trackId === track.id;
             return (
-              <div key={track.id} className="tl__head" style={rowStyle(track)} role="group" aria-label={name}>
+              <div key={track.id} className={track.id === main?.id ? "tl__head is-main" : "tl__head"} style={{ height: ROW_PX[rowSize(track, track.id === main?.id)] }} role="group" aria-label={name}>
                 {track.id === main?.id ? (
                   <button
                     type="button"
@@ -548,9 +557,9 @@ export function TimelineEditor({
                             key={size}
                             type="button"
                             role="menuitemradio"
-                            aria-checked={(track.height ?? "m") === size}
-                            autoFocus={(track.height ?? "m") === size}
-                            onClick={() => api.edit({ type: "updateTrack", trackId: track.id, patch: { height: size === "m" ? undefined : size } })}
+                            aria-checked={rowSize(track, track.id === main?.id) === size}
+                            autoFocus={rowSize(track, track.id === main?.id) === size}
+                            onClick={() => api.edit({ type: "updateTrack", trackId: track.id, patch: { height: size } })}
                           >
                             {label}
                           </button>
@@ -602,6 +611,7 @@ export function TimelineEditor({
               </div>
             );
           })}
+          </div>
         </div>
 
         <div
@@ -614,7 +624,7 @@ export function TimelineEditor({
           }}
         >
           <div ref={contentRef} className="tl__content" style={{ width: contentWidth }}>
-            <div className="tl__ruler mono" onPointerDown={beginScrub}>
+            <div className="tl__ruler mono" style={{ "--minor": `${(step * pps) / 5}px` } as CSSProperties} onPointerDown={beginScrub}>
               {ticks.map((t) => (
                 <span key={t} style={{ left: t * pps }}>
                   {formatClock(t)}
@@ -622,6 +632,7 @@ export function TimelineEditor({
               ))}
             </div>
 
+            <div className="tl__lanes">
             {project.tracks.map((track) => (
               <div
                 key={track.id}
@@ -629,8 +640,8 @@ export function TimelineEditor({
                   if (el) laneRefs.current.set(track.id, el);
                   else laneRefs.current.delete(track.id);
                 }}
-                className={["tl__lane", track.locked && "is-locked", track.hidden && "is-hidden"].filter(Boolean).join(" ")}
-                style={rowStyle(track)}
+                className={["tl__lane", track.id === main?.id && "is-main", track.locked && "is-locked", track.hidden && "is-hidden"].filter(Boolean).join(" ")}
+                style={{ height: ROW_PX[rowSize(track, track.id === main?.id)] }}
                 onPointerDown={(e) => {
                   onSelect(null);
                   beginScrub(e);
@@ -651,8 +662,12 @@ export function TimelineEditor({
                     // Videos and pictures show their frames along the clip.
                     const picture = media?.hasVideo ? (media.source.image ? media.source.previewUrl : media.source.thumbnail) : undefined;
                     const strip = media?.hasVideo ? (strips[media.source.previewUrl] ?? (picture ? { url: picture, frames: 1 } : undefined)) : undefined;
+                    // Video clips: a name bar, the frames, then a band for the sound wave.
+                    const rowPx = ROW_PX[rowSize(track, track.id === main?.id)];
+                    const waveBand = media?.hasAudio && !media.source.image ? Math.max(6, Math.round(rowPx * WAVE_SHARE[track.wave ?? "m"])) : 0;
                     const classes = [
                       "tl__clip",
+                      media && "is-media",
                       `is-${isBlock(clip) ? "effect" : !media ? "text" : media.hasVideo ? "video" : "audio"}`,
                       isSelected && "is-selected",
                       isGhost && "is-dragging",
@@ -686,7 +701,7 @@ export function TimelineEditor({
                         }}
                       >
                         {strip && media && (
-                          <ClipFrames clip={clip} strip={strip} pps={pps} cellHeight={ROW_PX[track.height ?? "m"] - 10} duration={media.source.image ? 0 : media.source.duration} />
+                          <ClipFrames clip={clip} strip={strip} pps={pps} cellHeight={rowPx - 10 - LABEL_PX - waveBand} duration={media.source.image ? 0 : media.source.duration} />
                         )}
                         {clip.fadeIn > 0 && <span className="tl__fade is-in" style={{ width: clip.fadeIn * pps }} aria-hidden="true" />}
                         {clip.fadeOut > 0 && <span className="tl__fade is-out" style={{ width: clip.fadeOut * pps }} aria-hidden="true" />}
@@ -699,7 +714,7 @@ export function TimelineEditor({
                           />
                         )}
                         {media?.hasAudio && !media.source.image && (
-                          <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={trackSilent(track)} height={track.wave && WAVE_HEIGHT[track.wave]} />
+                          <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={trackSilent(track)} height={media.hasVideo ? `${waveBand}px` : undefined} />
                         )}
                         {media?.source.chapters
                           ?.filter((ch) => ch.start > clip.in + 0.2 && ch.start < clip.out - 0.2)
@@ -721,12 +736,13 @@ export function TimelineEditor({
                         <span className="tl__label truncate">
                           {media?.missing && "Missing · "}
                           {label}
-                          {media && <span className="tl__length mono">{formatClock(length)}</span>}
+                          {media && <span className="tl__length mono">{formatTimecode(length)}</span>}
                         </span>
                         {(clip.speed !== 1 || clip.reverse) && (
                           <span className="tl__tag mono" aria-hidden="true">
                             {clip.reverse ? "◀ " : ""}
                             {clip.speed !== 1 ? `${clip.speed}×` : ""}
+                            {clip.smooth && clip.speed < 1 ? " smooth" : ""}
                           </span>
                         )}
                         <span className="tl__trim is-end" title="Drag to change duration" onPointerDown={beginDrag(clip, "end")} aria-hidden="true" />
@@ -752,12 +768,13 @@ export function TimelineEditor({
                           onPointerDown={(e) => e.stopPropagation()}
                           onClick={() => onJoin(clip)}
                         >
-                          <Icon name={kind ? "check" : "plus"} size={10} />
+                          <Icon name={kind ? "check" : "plus"} size={8} />
                         </button>
                       );
                     })}
               </div>
             ))}
+            </div>
 
             {coverMenu && createPortal(
               <>

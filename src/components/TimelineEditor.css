@@ -23,6 +23,18 @@
   height: 28px;
 }
 
+/* A narrow timeline (wide side panels) keeps only the tools' icons; each still names itself on hover. */
+.tl {
+  container-type: inline-size;
+}
+
+@container (max-width: 820px) {
+  .tl__toolbar .btn--ghost {
+    gap: 0;
+    font-size: 0;
+  }
+}
+
 .tl__toolbar .btn--icon {
   width: 28px;
   height: 28px;
@@ -43,18 +55,22 @@
 
 .tl__body {
   display: flex;
-  max-height: 232px;
+  height: 232px;
   overflow-y: auto;
 }
 
+/* The tracks (and their heads beside them) sit in the middle when there's room, as one block. */
 .tl__heads {
   width: 158px;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   border-right: 1px solid var(--line);
   background: var(--bg-panel);
 }
 
 .tl__ruler-spacer {
+  flex-shrink: 0;
   height: 22px;
   border-bottom: 1px solid var(--line);
 }
@@ -106,9 +122,27 @@
   object-fit: cover;
 }
 
-/* Pushes the buttons to the right. */
+.tl__lanes {
+  flex-shrink: 0;
+  margin: auto 0;
+}
+
+/* The main track: a line above it, set apart from the tracks over it. */
+.tl__head.is-main,
+.tl__lane.is-main {
+  border-top: 1px solid var(--line);
+}
+
+/* The buttons on the left, Cover (main track) on the right next to the clips. */
 .tl__head-gap {
   flex: 1;
+  order: 1;
+}
+
+.tl__head .tl__cover {
+  order: 2;
+  width: 36px;
+  height: min(44px, calc(100% - 10px));
 }
 
 .tl__head-more {
@@ -309,12 +343,21 @@
 
 .tl__content {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
 }
 
+/* Labelled ticks, with four small ones between (--minor: their spacing, set from the zoom). */
 .tl__ruler {
   position: relative;
+  flex-shrink: 0;
   height: 22px;
   border-bottom: 1px solid var(--line);
+  background-image: repeating-linear-gradient(to right, var(--line-strong) 0 1px, transparent 1px var(--minor, 20px));
+  background-size: 100% 5px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
   font-size: 10.5px;
   color: var(--text-3);
   cursor: ew-resize;
@@ -393,27 +436,24 @@
   z-index: 2;
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   padding: 0;
   transform: translate(-50%, -50%);
-  border: 1px solid var(--line-strong);
+  border: 0;
   border-radius: var(--radius-sm);
-  background: var(--bg-raised);
-  color: var(--text-2);
+  /* A dark ring keeps it apart from the clips' frames on either side. */
+  box-shadow: 0 0 0 2px var(--bg-canvas);
+  background: var(--text);
+  color: var(--bg-canvas);
+  opacity: 0.85;
   cursor: pointer;
 }
 
 .tl__join:hover,
-.tl__join:focus-visible {
-  border-color: var(--text);
-  color: var(--text);
-}
-
+.tl__join:focus-visible,
 .tl__join.is-set {
-  background: var(--text);
-  border-color: var(--text);
-  color: var(--bg-canvas);
+  opacity: 1;
 }
 
 .tl__join:disabled {
@@ -463,29 +503,48 @@
   background-repeat: no-repeat;
 }
 
-/* Over frames: the name and length in a small dark tag at the top, the wave on a dark band at the bottom. */
-.tl__clip.has-frames {
-  align-items: flex-start;
+/* Videos and sound in bands: the name and length along the top, then the frames, then the wave. */
+.tl__clip.is-media {
+  flex-direction: column;
+  align-items: stretch;
 }
 
-.tl__clip.has-frames .tl__label {
+.tl__clip.is-media .tl__label {
+  order: 0;
   flex: none;
-  max-width: calc(100% - 4px);
-  margin: 2px;
+  height: 14px;
   padding: 0 5px;
-  border-radius: 2px;
-  background: rgb(0 0 0 / 0.55);
   color: #fff;
-  font-size: 10.5px;
-  line-height: 16px;
+  font-size: 10px;
+  line-height: 14px;
 }
 
-.tl__clip.has-frames .tl__wave {
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 0 4px;
-  background: rgb(0 0 0 / 0.45);
+.tl__clip.is-media .tl__frames {
+  position: relative;
+  inset: auto;
+  order: 1;
+  flex: 1;
+  min-height: 0;
+}
+
+.tl__clip.is-media .tl__wave {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  order: 2;
+  flex: none;
+  padding: 2px 3px 0;
+}
+
+/* A sound file has no frames: its wave takes the rest of the clip. */
+.tl__clip.is-media.is-audio .tl__wave {
+  flex: 1;
+  height: auto;
+}
+
+.tl__clip.is-media.is-video .tl__wave > span {
+  background: var(--clip-video-line);
 }
 
 .tl__length {
@@ -607,8 +666,8 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 13px;
-  margin-left: -6.5px;
+  width: 17px;
+  margin-left: -8.5px;
   cursor: ew-resize;
   touch-action: none;
   z-index: 4;
@@ -619,7 +678,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 5.5px;
+  left: 7.5px;
   width: 2px;
   background: var(--accent);
   pointer-events: none;
@@ -630,10 +689,11 @@
   position: absolute;
   top: 0;
   left: 1.5px;
-  width: 10px;
-  height: 12px;
+  width: 14px;
+  height: 18px;
+  border-radius: 3px 3px 0 0;
   background: var(--accent);
-  clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%);
+  clip-path: polygon(0 0, 100% 0, 100% 66%, 50% 100%, 0 66%);
   pointer-events: none;
 }
 
