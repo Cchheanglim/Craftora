@@ -7,16 +7,13 @@ import type { Caption, MediaSource } from "../types";
 import type { LibraryEntry } from "../lib/storage";
 import type { LookId, PictureEffectId } from "./effects";
 
-/** "effect": filter and effect blocks (effects.ts), which change the pictures under them. */
-export type TrackKind = "video" | "audio" | "text" | "effect";
-
 /**
- * A row on the timeline. Every track of a kind works the same way; higher video tracks are
- * drawn over lower ones. There can be as many tracks as the user wants.
+ * A row on the timeline. Every track works the same way: it holds videos, pictures, sound, text
+ * and filter/effect blocks alike, and higher tracks are drawn over lower ones. There can be as
+ * many tracks as the user wants.
  */
 export interface Track {
   id: string;
-  kind: TrackKind;
   name: string;
   /** Clips stay back to back with no gaps (a main track's magnet); allows transitions. */
   magnetic?: boolean;
@@ -24,9 +21,9 @@ export interface Track {
   muted?: boolean;
   /** Its clips can't be picked, moved or trimmed, and nothing can be dropped on it. */
   locked?: boolean;
-  /** Its pictures, text or effects don't show in the preview or the export (sound still plays); an audio track is off. */
+  /** Its pictures, text and effects don't show in the preview or the export (sound still plays). */
   hidden?: boolean;
-  /** Row height on the timeline; the kind's usual height when absent. */
+  /** Row height on the timeline; the usual height when absent. */
   height?: TrackSize;
   /** How tall sound waves are drawn on its clips; the usual height when absent. */
   wave?: TrackSize;
@@ -137,9 +134,9 @@ export interface Clip {
   reverse: boolean;
   /** Pictures: turned clockwise by this many degrees (90, 180 or 270); upright when absent. */
   rotate?: number;
-  /** A filter block (on an effects track): its colour look, effects.ts `LOOKS`. */
+  /** A filter block: its colour look, effects.ts `LOOKS`. */
   look?: LookId;
-  /** An effect block (on an effects track): effects.ts `PICTURE_EFFECTS`. */
+  /** An effect block: effects.ts `PICTURE_EFFECTS`. */
   effect?: PictureEffectId;
   /** Seconds of fade from black/silence at the start and to black/silence at the end. */
   fadeIn: number;
@@ -206,8 +203,8 @@ export function trackLabel(project: Project, track: Track): string {
   if (track.name === "Captions") return track.name;
   return `Track ${project.tracks.filter((t) => t.name !== "Captions").findIndex((t) => t.id === track.id) + 1}`;
 }
-/** No sound from this track: muted, or an audio track that's hidden (turned off). */
-export const trackSilent = (t?: Track) => Boolean(t?.muted || (t?.kind === "audio" && t.hidden));
+/** No sound from this track. */
+export const trackSilent = (t?: Track) => Boolean(t?.muted);
 export const DEFAULT_TEXT_LENGTH = 3;
 /** How long an image is shown when first added. */
 export const DEFAULT_IMAGE_LENGTH = 5;
@@ -286,12 +283,8 @@ export function projectDuration(p: Project): number {
 export function emptyProject(): Project {
   return {
     media: [],
-    tracks: [
-      { id: "text-1", kind: "text", name: "Text 1" },
-      { id: "video-2", kind: "video", name: "Video 2" },
-      { id: "video-1", kind: "video", name: "Video 1", magnetic: true },
-      { id: "audio-1", kind: "audio", name: "Audio 1" },
-    ],
+    // One track to start with; more are added as they're needed.
+    tracks: [{ id: "track-1", name: "Track 1", magnetic: true }],
     clips: [],
   };
 }
@@ -304,8 +297,11 @@ export function upgradeProject(p: Project): Project {
   return {
     ...p,
     tracks: p.tracks.map((t) => {
-      const { main, ...rest } = t as Track & { main?: boolean };
-      return main ? { ...rest, magnetic: true } : rest;
+      // Tracks had kinds (video, audio, text, effects) before every track took everything;
+      // a hidden audio track was off, which is now its mute.
+      const { main, kind, ...rest } = t as Track & { main?: boolean; kind?: string };
+      const off = kind === "audio" && rest.hidden ? { hidden: undefined, muted: true } : {};
+      return { ...rest, ...off, ...(main ? { magnetic: true } : {}) };
     }),
     clips: p.clips.map((c) => {
       const legacy = c as Clip & { position?: Position };
@@ -325,15 +321,17 @@ export function upgradeProject(p: Project): Project {
   };
 }
 
-/** The bottom video track: where new videos go by default. */
-export const baseVideoTrack = (p: Project) => [...p.tracks].reverse().find((t) => t.kind === "video");
+/** The main track (the lowest with the magnet on, else the bottom one): where new videos go by default. */
+export const mainTrack = (p: Project) => [...p.tracks].reverse().find((t) => t.magnetic) ?? p.tracks[p.tracks.length - 1];
 export const trackOf = (p: Project, c: Clip) => p.tracks.find((t) => t.id === c.trackId);
 export const mediaOf = (p: Project, c: Clip) => p.media.find((m) => m.id === c.mediaId);
+/** A clip that draws a picture: a video or a still image (not a sound file, text or a block). */
+export const showsPicture = (p: Project, c: Clip) => Boolean(c.mediaId && mediaOf(p, c)?.hasVideo);
 
 /** A clip with no media time of its own (text, or a still image): it can be any length. */
 export const isStill = (p: Project, c: Clip) => !c.mediaId || Boolean(mediaOf(p, c)?.source.image);
 
-/** A filter or effect block (they live on effects tracks), rather than text. */
+/** A filter or effect block, rather than text. */
 export const isBlock = (c: Clip) => Boolean(c.look || c.effect);
 
 /** A name for the project list: the first thing imported. */

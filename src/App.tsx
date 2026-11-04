@@ -80,7 +80,8 @@ import { cutModeApplies, formatSize, frameOf, planExport, type ExportPlan } from
 import {
   CAPTIONS,
   NO_CROP,
-  baseVideoTrack,
+  mainTrack,
+  showsPicture,
   clipEnd,
   emptyProject,
   mediaTimeAt,
@@ -143,7 +144,7 @@ function demoProject(): Project {
     clips: [
       {
         id: "demo-clip",
-        trackId: baseVideoTrack(project)!.id,
+        trackId: mainTrack(project)!.id,
         mediaId: item.id,
         start: 0,
         in: 84,
@@ -475,7 +476,7 @@ export default function App() {
   const toggleRight = useCallback(() => setRightOpen((o) => (remember("craftora.right", !o), !o)), []);
 
   // A timeline with nothing visual can only be saved as sound.
-  const hasPicture = project.clips.some((c) => !c.mediaId || project.tracks.find((t) => t.id === c.trackId)?.kind === "video");
+  const hasPicture = project.clips.some((c) => !c.mediaId || showsPicture(project, c));
   const effective: ExportSettings = useMemo(() => (hasPicture ? settings : { ...settings, output: "audio" }), [hasPicture, settings]);
   // Captions on (CC in the preview): shown there and burned into the export alike.
   const [showCaptions, setShowCaptions] = useState(() => {
@@ -1122,14 +1123,13 @@ export default function App() {
     setView("editor");
   };
 
-  /** The selected clip, or else the clip under the playhead on the lowest video track that has one. */
+  /** The selected clip, or else the clip under the playhead on the lowest track that has one. */
   const splitTarget = () => {
     const t = playback.time;
     const under = (c: (typeof project.clips)[number]) => t > c.start && t < clipEnd(c);
     const selectedClip = project.clips.find((c) => c.id === selectedId && under(c));
     if (selectedClip) return selectedClip;
-    const videoTracks = project.tracks.filter((tr) => tr.kind === "video").reverse();
-    for (const track of videoTracks) {
+    for (const track of [...project.tracks].reverse()) {
       const clip = project.clips.find((c) => c.trackId === track.id && under(c));
       if (clip) return clip;
     }
@@ -1146,7 +1146,7 @@ export default function App() {
   const applyFx = (item: FxItem, trackId: string | undefined, time: number) => {
     const done = dropEdits(project, item, trackId, time, [crypto.randomUUID(), crypto.randomUUID()]);
     if (!done) {
-      setError(item.kind === "transition" ? "Drop a transition on the join between two video clips." : "Drop it on a video clip, where that part should start.");
+      setError(item.kind === "transition" ? "Drop a transition on the join between two clips, or click the + there." : "Drop it on the video clip it should change.");
       return;
     }
     setError(null);
@@ -1293,11 +1293,6 @@ export default function App() {
     if (!path) return;
     try {
       const source = await openLocal(path);
-      const onVideo = project.tracks.find((t) => t.id === clip.trackId)?.kind === "video";
-      if (onVideo && !source.image && !source.streams.some((s) => s.kind === "video")) {
-        setError("That file has no picture. Pick a video or a picture for a video track.");
-        return;
-      }
       const item = importSource(source, false);
       api.edit({ type: "replaceClipMedia", clipId: clip.id, mediaId: item.id });
     } catch (err) {
@@ -1349,9 +1344,9 @@ export default function App() {
     } else {
       // The top picture showing at the playhead.
       const t = playback.time;
-      const order = [...project.tracks].filter((tr) => tr.kind === "video" && !tr.hidden).map((tr) => tr.id);
+      const order = [...project.tracks].filter((tr) => !tr.hidden).map((tr) => tr.id);
       const showing = project.clips
-        .filter((c) => order.includes(c.trackId) && t >= c.start && t < clipEnd(c))
+        .filter((c) => order.includes(c.trackId) && showsPicture(project, c) && t >= c.start && t < clipEnd(c))
         .sort((a, b) => order.indexOf(a.trackId) - order.indexOf(b.trackId))[0];
       const media = project.media.find((m) => m.id === showing?.mediaId);
       if (!showing || !media) return setError("Move the playhead to a picture first, then use its frame as the cover.");
@@ -1683,6 +1678,13 @@ export default function App() {
               onClipCommand={clipCommand}
               canPaste={canPaste}
               onCover={(choice) => void chooseCover(choice)}
+              onJoin={(clip) => {
+                // The clip after the join: a transition clicked now goes on this join, a filter or effect on it.
+                setSelectedId(clip.id);
+                playback.seek(clip.start);
+                setRightTab("transitions");
+                if (!rightOpen) toggleRight();
+              }}
             />
           </div>
         )}
@@ -1713,9 +1715,10 @@ export default function App() {
             <FxPanel
               tab={rightTab}
               onPick={(item) => {
-                // On the selected clip's track (if it has pictures or sound), at the playhead.
-                const kind = selectedTrack?.kind;
-                applyFx(item, kind === "video" || kind === "audio" || kind === "effect" ? selectedTrack!.id : undefined, playback.time);
+                // On the selected clip (a transition on the join before it), else at the playhead.
+                if (!selected) return applyFx(item, undefined, playback.time);
+                const inside = playback.time >= selected.start && playback.time < clipEnd(selected);
+                applyFx(item, selected.trackId, item.kind !== "transition" && inside ? playback.time : selected.start);
               }}
             />
           ) : rightTab === "transcript" ? (
@@ -1741,8 +1744,8 @@ export default function App() {
               captionsDrawn={showCaptions && project.media.some((m) => m.captions)}
               onPreset={(frameId, fill) => {
                 setSettings((prev) => ({ ...prev, frameId }));
-                // Every picture on a video track fits or fills the new frame, as one undo step.
-                const pictures = project.clips.filter((c) => c.mediaId && project.tracks.find((t) => t.id === c.trackId)?.kind === "video");
+                // Every video and picture fits or fills the new frame, as one undo step.
+                const pictures = project.clips.filter((c) => showsPicture(project, c));
                 const next = pictures.reduce((p, c) => applyEdit(p, { type: "updateClip", clipId: c.id, patch: { fill } }), project);
                 if (next !== project) api.commit(next, false);
               }}

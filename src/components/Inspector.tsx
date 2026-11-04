@@ -8,6 +8,7 @@ import {
   TRANSITION_KINDS,
   clipEnd,
   clipLength,
+  isBlock as blockClip,
   isCropped,
   presetAt,
   type CaptionLayout,
@@ -93,11 +94,11 @@ export function Inspector({
   trackName,
   canSplit,
 }: InspectorProps) {
-  // A filter or effect block (on an effects track): only its timing is set here.
-  const isBlock = track.kind === "effect";
+  // A filter or effect block: only its timing is set here.
+  const isBlock = blockClip(clip);
   const isText = !clip.mediaId && !isBlock;
   const isImage = Boolean(media?.source.image);
-  const isPicture = track.kind === "video";
+  const isPicture = Boolean(media?.hasVideo);
   const hasSound = Boolean(media?.hasAudio);
   const streams = media && !media.source.local ? media.source.streams.filter((s) => s.kind === (isPicture ? "video" : "audio")) : [];
   const length = clipLength(clip);

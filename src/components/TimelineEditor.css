@@ -266,10 +266,6 @@
 }
 
 /* "+ Track" and its small menu. */
-.tl__add {
-  position: relative;
-}
-
 .tl__menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -302,13 +298,6 @@
 .tl__menu button:hover,
 .tl__menu button:focus-visible {
   background: var(--bg-hover);
-}
-
-.tl__head.is-text,
-.tl__lane.is-text,
-.tl__head.is-effect,
-.tl__lane.is-effect {
-  height: 32px;
 }
 
 .tl__scroll {
@@ -350,7 +339,7 @@
   background: rgb(255 255 255 / 0.015);
 }
 
-/* Clips: colour tells the track kind apart; white outline marks the selection. */
+/* Clips: colour tells videos, sound, text and effects apart; white outline marks the selection. */
 .tl__clip {
   position: absolute;
   top: 4px;
@@ -395,6 +384,40 @@
   outline: 2px solid var(--text);
   outline-offset: -1px;
   z-index: 1;
+}
+
+/* The + where two clips meet: opens Transitions for that join (a tick once it has one). */
+.tl__join {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.tl__join:hover,
+.tl__join:focus-visible {
+  border-color: var(--text);
+  color: var(--text);
+}
+
+.tl__join.is-set {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg-canvas);
+}
+
+.tl__join:disabled {
+  display: none;
 }
 
 /* Being moved: drawn above the rest, slightly see-through so the gap below shows. */

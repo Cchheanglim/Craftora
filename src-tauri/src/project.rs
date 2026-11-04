@@ -501,9 +501,9 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                     // For the block's time only.
                     let on = format!("enable='between(t,{},{})'", secs(clip.start), secs(clip.end()));
                     let filters: Vec<String> = if clip.effect.is_empty() {
-                        clip.look.iter().filter_map(|(op, amount)| look_filter(op, *amount)).map(|f| format!("{}:{on}", f.trim_start_matches(','))).collect()
+                        clip.look.iter().filter_map(|(op, amount)| look_filter(op, *amount)).map(|f| timed(f.trim_start_matches(','), &on)).collect()
                     } else {
-                        effect_filter(&clip.effect, clip.start, clip.length(), w).map(|f| format!("{f}:{on}")).into_iter().collect()
+                        effect_filter(&clip.effect, clip.start, clip.length(), w).map(|f| timed(&f, &on)).into_iter().collect()
                     };
                     if filters.is_empty() {
                         continue;
@@ -668,6 +668,12 @@ fn effect_filter(effect: &str, start: f64, length: f64, width: u32) -> Option<St
     })
 }
 
+/// A filter limited to `on` (its time range). A filter without options (hflip) takes it after
+/// `=`; FFmpeg refuses `hflip:enable=…`.
+fn timed(filter: &str, on: &str) -> String {
+    format!("{filter}{}{on}", if filter.contains('=') { ':' } else { '=' })
+}
+
 /// One colour step of a look as FFmpeg draws it, with the same maths as the CSS filter function
 /// the preview uses (Filter Effects spec matrices, on the picture's RGB values); starts with a comma.
 /// None for a name or amount the catalog never sends.
@@ -728,7 +734,7 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cover_bytes, effect_filter, look_filter, ClipSpec};
+    use super::{cover_bytes, effect_filter, look_filter, timed, ClipSpec};
 
     #[test]
     fn takes_only_a_jpeg_as_the_cover() {
@@ -754,6 +760,9 @@ mod tests {
         assert_eq!(effect_filter("blur", 0.0, 1.0, 1000).unwrap(), "gblur=sigma=6.00");
         assert_eq!(effect_filter("mirror", 0.0, 1.0, 1920).unwrap(), "hflip");
         assert!(effect_filter("explode", 0.0, 1.0, 1920).is_none());
+        let on = "enable='between(t,1.000,2.000)'";
+        assert_eq!(timed("hflip", on), "hflip=enable='between(t,1.000,2.000)'");
+        assert_eq!(timed("gblur=sigma=6.00", on), "gblur=sigma=6.00:enable='between(t,1.000,2.000)'");
     }
 
     #[test]

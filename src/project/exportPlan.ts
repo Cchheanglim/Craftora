@@ -59,7 +59,7 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
   const [clip] = project.clips;
   const media = project.media.find((m) => m.id === clip.mediaId);
   const track = project.tracks.find((t) => t.id === clip.trackId);
-  const onVideoTrack = track?.kind === "video" && !track.muted;
+  const onVideoTrack = Boolean(track && !track.muted && !track.hidden);
   const untouched =
     clip.volume === 1 &&
     !clip.mirror &&
@@ -72,7 +72,7 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
     !clip.fill &&
     clip.size >= 0.999 &&
     clip.start < 0.001;
-  return media && !media.source.image && untouched && onVideoTrack ? { clip, media } : null;
+  return media?.hasVideo && !media.source.image && untouched && onVideoTrack ? { clip, media } : null;
 }
 
 /** Whether the Fast/Precise choice applies (only the single-cut path can skip re-encoding). */
@@ -154,7 +154,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     const order = track?.magnetic ? trackOrder(project, track.id) : [];
     const i = order.findIndex((o) => o.id === c.id);
     const next = i >= 0 ? order[i + 1] : undefined;
-    const role: RenderClip["role"] = isBlock(c) ? "effect" : !c.mediaId ? "text" : track?.kind === "audio" || track?.hidden ? "audio" : "video";
+    const role: RenderClip["role"] = isBlock(c) ? "effect" : !c.mediaId ? "text" : track?.hidden ? "audio" : "video";
     return {
       role,
       // Lower tracks first; on a track, later clips over earlier ones (for transitions).
@@ -189,7 +189,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   });
   const media = used.map((m) => {
     // Sound-only use of a link downloads just the audio stream.
-    const pictureNeeded = project.clips.some((c) => c.mediaId === m.id && project.tracks.find((t) => t.id === c.trackId)?.kind === "video");
+    const pictureNeeded = m.hasVideo && project.clips.some((c) => c.mediaId === m.id && !hidden.has(c.trackId));
     return {
       id: m.id,
       local: Boolean(m.source.local),
