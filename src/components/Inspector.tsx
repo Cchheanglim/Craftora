@@ -23,6 +23,7 @@ import {
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
+import { blockLabel } from "../project/effects";
 import "./Inspector.css";
 
 const TEXT_COLORS = [
@@ -65,6 +66,8 @@ interface InspectorProps {
   onDelete: () => void;
   /** A moved or renamed file: let the user find it. */
   onRelink: (media: MediaItem) => void;
+  /** What the editor calls the clip's track ("Track 2"). */
+  trackName: string;
   canSplit: boolean;
 }
 
@@ -87,9 +90,12 @@ export function Inspector({
   onAddCaptions,
   onDelete,
   onRelink,
+  trackName,
   canSplit,
 }: InspectorProps) {
-  const isText = !clip.mediaId;
+  // A filter or effect block (on an effects track): only its timing is set here.
+  const isBlock = track.kind === "effect";
+  const isText = !clip.mediaId && !isBlock;
   const isImage = Boolean(media?.source.image);
   const isPicture = track.kind === "video";
   const hasSound = Boolean(media?.hasAudio);
@@ -102,13 +108,13 @@ export function Inspector({
   return (
     <section className="insp" aria-labelledby="insp-title">
       <header className="insp__head">
-        <Icon name={isText ? "text" : isImage ? "image" : isPicture ? "film" : "music"} size={14} />
+        <Icon name={isBlock ? "sparkle" : isText ? "text" : isImage ? "image" : isPicture ? "film" : "music"} size={14} />
         <h2 id="insp-title" className="truncate">
-          {isText ? "Text" : (media?.name ?? "Clip")}
+          {isBlock ? `${clip.look ? "Filter" : "Effect"}: ${blockLabel(clip)}` : isText ? "Text" : (media?.name ?? "Clip")}
         </h2>
       </header>
       <p className="insp__meta">
-        {track.name} · <span className="mono">{formatClock(clip.start)}</span> → <span className="mono">{formatClock(clipEnd(clip))}</span> ·{" "}
+        {trackName} · <span className="mono">{formatClock(clip.start)}</span> → <span className="mono">{formatClock(clipEnd(clip))}</span> ·{" "}
         <span className="mono">{formatClock(length)}</span> long
       </p>
       {media?.missing && (
@@ -122,6 +128,13 @@ export function Inspector({
           <Icon name="folder" size={14} />
           Find file
         </button>
+      )}
+
+      {isBlock && (
+        <p className="insp__hint">
+          It changes the pictures under it while it lasts (not text). Drag it on the timeline to move it, or drag its edges to start or end it
+          somewhere else.
+        </p>
       )}
 
       {onDuration && (
@@ -222,6 +235,10 @@ export function Inspector({
             <input type="checkbox" checked={clip.mirror} onChange={(e) => onChange({ mirror: e.target.checked })} />
             <span>Mirror</span>
           </label>
+          <button type="button" className="btn btn--ghost insp__rotate" title="Turn it a quarter clockwise" onClick={() => onChange({ rotate: ((clip.rotate ?? 0) + 90) % 360 || undefined })}>
+            <Icon name="rotate" size={14} />
+            Rotate{clip.rotate ? ` · ${clip.rotate}°` : ""}
+          </button>
           <label className="option" title="Cover the whole frame, cutting off the edges, instead of showing black bars">
             <input type="checkbox" checked={Boolean(clip.fill)} onChange={(e) => onChange({ fill: e.target.checked })} />
             <span>Fill the frame</span>
@@ -235,7 +252,7 @@ export function Inspector({
         </div>
       )}
 
-      {!isText && !isImage && (
+      {!isText && !isImage && !isBlock && (
         <div className="insp__field">
           <label htmlFor="insp-speed">Speed</label>
           <select id="insp-speed" className="field mono" value={clip.speed} onChange={(e) => onSpeed(Number(e.target.value))}>
@@ -248,7 +265,7 @@ export function Inspector({
         </div>
       )}
 
-      {!isText && !track.magnetic && (
+      {!isText && !isBlock && !track.magnetic && (
         <p className="insp__hint">To add a transition, turn on the magnet on this track (in the track's header), so clips sit back to back.</p>
       )}
 
@@ -290,14 +307,17 @@ export function Inspector({
         </fieldset>
       )}
 
+      {!isBlock && (
       <fieldset className="insp__group">
         <legend>Fade</legend>
         <Slider id="insp-fade-in" label="In" min={0} max={maxFade} step={0.1} value={clip.fadeIn} format={sec} onCheckpoint={onCheckpoint} onChange={(fadeIn) => onChange({ fadeIn }, true)} />
         <Slider id="insp-fade-out" label="Out" min={0} max={maxFade} step={0.1} value={clip.fadeOut} format={sec} onCheckpoint={onCheckpoint} onChange={(fadeOut) => onChange({ fadeOut }, true)} />
       </fieldset>
+      )}
 
       {!isText &&
         !isImage &&
+        !isBlock &&
         (hasSound ? (
           <Slider
             id="insp-volume"

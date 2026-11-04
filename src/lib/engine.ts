@@ -270,7 +270,8 @@ export async function probeLocal(path: string): Promise<MediaSource> {
       ...source,
       previewUrl,
       previewAudioUrl: assetUrl(source.previewAudioUrl ?? ""),
-      thumbnail: source.thumbnail || (source.image ? previewUrl : previewUrl ? `${previewUrl}#t=0.5` : ""),
+      // A sound file has no frame to show: no picture rather than a broken one.
+      thumbnail: source.thumbnail || (source.image ? previewUrl : previewUrl && source.streams.some((s) => s.kind === "video") ? `${previewUrl}#t=0.5` : ""),
     };
   } catch (err) {
     throw new Error(message(err));

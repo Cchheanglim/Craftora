@@ -40,6 +40,8 @@
   --clip-audio-line: #3b6450;
   --clip-text: #3a3222;
   --clip-text-line: #6e5b36;
+  --clip-effect: #1f383b;
+  --clip-effect-line: #3c6e73;
 
   /* State */
   --ok: #30d158;

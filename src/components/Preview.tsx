@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
+import { isBlock, clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
 import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
+import { blocksStyle } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
 import { SyncedMedia } from "./SyncedMedia";
@@ -179,10 +180,13 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
 
   const trackIndex = new Map(project.tracks.map((t, i) => [t.id, i]));
   const trackKind = (c: Clip) => project.tracks.find((t) => t.id === c.trackId)?.kind;
-  const trackMuted = (c: Clip) => Boolean(project.tracks.find((t) => t.id === c.trackId)?.muted);
+  const trackMuted = (c: Clip) => trackSilent(project.tracks.find((t) => t.id === c.trackId));
+  const trackHidden = (c: Clip) => Boolean(project.tracks.find((t) => t.id === c.trackId)?.hidden);
   const mediaOf = (c: Clip) => project.media.find((m) => m.id === c.mediaId);
   const active = (c: Clip) => time >= c.start && time < clipEnd(c);
   const mediaTime = (c: Clip) => (active(c) ? mediaTimeAt(c, time) : null);
+  /** A clip whose turn comes within a few seconds waits on its first frame (no black flash at a cut). */
+  const cueOf = (c: Clip) => (!active(c) && c.start >= time && c.start - time < 5 ? mediaTimeAt(c, c.start) : undefined);
   const stageAspect = frame.width / frame.height;
 
   // Each magnetic track's clips in play order, for transitions.
@@ -200,7 +204,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     return { picture: fade * t.picture, sound: fade * t.sound };
   };
   const sounds = project.clips.filter((c) => c.mediaId && trackKind(c) === "audio");
-  const texts = project.clips.filter((c) => !c.mediaId).sort(byLayer);
+  const texts = project.clips.filter((c) => !c.mediaId && !isBlock(c) && !trackHidden(c)).sort(byLayer);
+  // Filter and effect blocks showing now change the pictures (not text), lowest track first.
+  const blocks = blocksStyle(project.clips.filter((c) => trackKind(c) === "effect" && active(c) && !trackHidden(c)).sort(byLayer), time, stageRef.current?.clientWidth ?? frame.width);
   const captionTracks = new Set(project.tracks.filter((t) => t.name === "Captions").map((t) => t.id));
   const hasCaptions = project.media.some((m) => m.captions) || captionTracks.size > 0;
   const isCaption = (c: Clip) => c.trackId.startsWith(SHOWN_CAPTIONS) || captionTracks.has(c.trackId);
@@ -232,7 +238,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const audible = project.clips.filter((c) => {
       const t = project.tracks.find((tr) => tr.id === c.trackId);
       const m = project.media.find((x) => x.id === c.mediaId);
-      return c.mediaId && t && t.kind !== "text" && !t.muted && c.volume > 0 && m?.hasAudio && !m.source.image;
+      return c.mediaId && t && t.kind !== "text" && !trackSilent(t) && c.volume > 0 && m?.hasAudio && !m.source.image;
     });
     const mediaPeaks = new Map(project.media.map((m) => [m.id, peaksFor(m)]));
     return Array.from({ length: WAVE_BARS }, (_, i) => {
@@ -386,6 +392,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               </span>
             </span>
           )}
+          <div className="preview__pictures" style={{ filter: blocks.filter, transform: blocks.mirror ? "scaleX(-1)" : undefined }}>
           {pictures.map((clip) => {
             const media = mediaOf(clip);
             const canPlay = Boolean(media?.source.previewUrl && !failed.has(media.source.previewUrl));
@@ -400,7 +407,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 key={clip.id}
                 clip={clip}
                 stageAspect={stageAspect}
-                visible={t !== null}
+                visible={t !== null && !trackHidden(clip)}
                 opacity={t === null ? 0 : mix(clip).picture}
                 selected={isSelected}
                 poster={poster}
@@ -430,6 +437,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         kind="video"
                         src={media.source.previewUrl}
                         time={t}
+                        cue={cueOf(clip)}
                         playing={running}
                         volume={clip.volume * mix(clip).sound}
                         muted={muted || trackMuted(clip) || separateSound}
@@ -448,6 +456,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         kind="audio"
                         src={media.source.previewAudioUrl!}
                         time={t}
+                        cue={cueOf(clip)}
                         playing={running}
                         volume={clip.volume * mix(clip).sound}
                         muted={muted || trackMuted(clip)}
@@ -462,6 +471,10 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               </PictureLayer>
             );
           })}
+          {blocks.layers.map((layer, i) => (
+            <span key={i} className="preview__fx-layer" style={{ background: layer.color, opacity: layer.opacity }} aria-hidden="true" />
+          ))}
+          </div>
           {sounds.map((clip) => {
             const media = mediaOf(clip);
             const src = media?.source.previewAudioUrl || media?.source.previewUrl;
@@ -472,6 +485,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 kind="audio"
                 src={src}
                 time={mediaTime(clip)}
+                cue={cueOf(clip)}
                 playing={running}
                 volume={clip.volume * mix(clip).sound}
                 muted={muted || trackMuted(clip)}
@@ -713,7 +727,21 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, poster, o
   const { left, top, right, bottom } = clip.crop;
   const keptW = 1 - left - right;
   const keptH = 1 - top - bottom;
-  const aspect = (videoAspect * keptW) / keptH;
+  const upright = (videoAspect * keptW) / keptH;
+  // A quarter turn swaps the picture's shape; the crop window turns inside the box (the export: crop, then transpose).
+  const turn = clip.rotate ?? 0;
+  const sideways = turn === 90 || turn === 270;
+  const aspect = sideways ? 1 / upright : upright;
+  const turned: CSSProperties | undefined = turn
+    ? {
+        inset: "auto",
+        left: "50%",
+        top: "50%",
+        width: sideways ? `${100 / aspect}%` : "100%",
+        height: sideways ? `${100 * aspect}%` : "100%",
+        transform: `translate(-50%, -50%) rotate(${turn}deg)`,
+      }
+    : undefined;
 
   // Size 1 fits the frame keeping the shape (FFmpeg: force_original_aspect_ratio=decrease), or
   // with `fill` covers it, the frame cutting off what spills over (=increase).
@@ -740,7 +768,7 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, poster, o
       onPointerDown={onPointerDown}
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
     >
-      <div className="preview__crop">
+      <div className="preview__crop" style={turned}>
         {!ready && poster && (
           <img
             src={poster}

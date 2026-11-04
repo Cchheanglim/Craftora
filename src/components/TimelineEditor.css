@@ -75,9 +75,148 @@
   color: var(--text-3);
 }
 
-.tl__head .truncate {
+/* Cover, on the main track: its picture, or an icon. */
+.tl__cover {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 40px;
+  height: calc(100% - 6px);
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-2);
+  font-size: 9.5px;
+  overflow: hidden;
+}
+
+.tl__cover:hover {
+  border-color: var(--line-hover);
+  color: var(--text);
+}
+
+.tl__cover img {
+  width: 100%;
+  min-height: 0;
   flex: 1;
-  min-width: 0;
+  object-fit: cover;
+}
+
+/* Pushes the buttons to the right. */
+.tl__head-gap {
+  flex: 1;
+}
+
+.tl__head-more {
+  position: relative;
+}
+
+/* A clip's right-click menu (ClipMenu): over everything; a click anywhere else closes it. */
+.tl__menu-catcher {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+/* Over the catcher (.tl__menu, further down, would put it under). */
+.tl__menu.tl__clip-menu,
+.tl__menu.tl__track-menu {
+  z-index: 41;
+}
+
+.tl__clip-menu {
+  min-width: 220px;
+}
+
+.tl__clip-menu hr {
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.tl__menu-text {
+  flex: 1;
+}
+
+.tl__menu kbd {
+  font-family: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.tl__menu button:disabled {
+  color: var(--text-3);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.tl__menu button:disabled:hover {
+  background: transparent;
+}
+
+.tl__submenu {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Beside the Edit item (more specific than .tl__menu, which opens downwards). */
+.tl__menu.tl__submenu-list {
+  top: -4px;
+  left: 100%;
+  margin-left: 4px;
+}
+
+/* Bridges the gap to the Edit item, so moving the pointer across doesn't close the list. */
+.tl__submenu-list::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  width: 10px;
+}
+
+/* The … menu: track height, waveform size, magnet, remove. */
+.tl__track-menu {
+  min-width: 190px;
+}
+
+.tl__menu-label {
+  padding: 4px var(--space-2) 2px;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.tl__sizes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.tl__menu .tl__sizes button {
+  justify-content: center;
+  height: 26px;
+  font-size: var(--text-xs);
+}
+
+.tl__menu button[aria-checked="true"] {
+  background: var(--bg-selected);
+}
+
+/* Locked: its clips can't be picked; hidden: they don't show. */
+.tl__lane.is-locked .tl__clip {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.tl__lane.is-hidden .tl__clip {
+  opacity: 0.4;
 }
 
 /* Magnet and remove: small square buttons, faint until the row is hovered. */
@@ -103,6 +242,17 @@
 .tl__head-btn:hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+/* Mute on a track without sound (text, effects). */
+.tl__head .tl__head-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.tl__head .tl__head-btn:disabled:hover {
+  background: transparent;
+  color: var(--text-3);
 }
 
 .tl__head .tl__head-btn svg {
@@ -155,7 +305,9 @@
 }
 
 .tl__head.is-text,
-.tl__lane.is-text {
+.tl__lane.is-text,
+.tl__head.is-effect,
+.tl__lane.is-effect {
   height: 32px;
 }
 
@@ -233,6 +385,12 @@
   border-color: var(--clip-text-line);
 }
 
+/* Filter and effect blocks (effects.ts). */
+.tl__clip.is-effect {
+  background: var(--clip-effect);
+  border-color: var(--clip-effect-line);
+}
+
 .tl__clip.is-selected {
   outline: 2px solid var(--text);
   outline-offset: -1px;
@@ -266,6 +424,52 @@
 }
 
 /* The audio wave along the bottom of video and audio clips. */
+/* A video clip's frames (ClipFrames), under its name and sound wave. */
+.tl__frames {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tl__frames > span {
+  flex: none;
+  height: 100%;
+  background-image: var(--strip);
+  background-repeat: no-repeat;
+}
+
+/* Over frames: the name and length in a small dark tag at the top, the wave on a dark band at the bottom. */
+.tl__clip.has-frames {
+  align-items: flex-start;
+}
+
+.tl__clip.has-frames .tl__label {
+  flex: none;
+  max-width: calc(100% - 4px);
+  margin: 2px;
+  padding: 0 5px;
+  border-radius: 2px;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
+.tl__clip.has-frames .tl__wave {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0 4px;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.tl__length {
+  margin-left: 6px;
+  opacity: 0.75;
+}
+
 .tl__wave {
   position: absolute;
   left: 4px;

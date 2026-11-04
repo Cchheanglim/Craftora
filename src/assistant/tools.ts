@@ -10,6 +10,7 @@ import {
   clipEnd,
   projectDuration,
   silencesFromPeaks,
+  trackLabel,
   type Position,
   type Project,
 } from "../project/model";
@@ -88,7 +89,7 @@ export function describe(p: Project, playhead: number, ids: ShortIds): string {
     // Listed top to bottom: higher video tracks are drawn over lower ones.
     tracks: p.tracks.map((t) => ({
       id: ids.short(t.id, "t"),
-      name: t.name,
+      name: trackLabel(p, t),
       kind: t.kind,
       ...(t.magnetic ? { magnetic: true } : {}),
       ...(t.muted ? { muted: true } : {}),
@@ -426,7 +427,7 @@ export function runTool(name: string, args: Record<string, unknown>, ctx: ToolCo
 }
 
 /** Shared ground rules for the model. */
-export const SYSTEM_INSTRUCTION = `You are the editing assistant inside Craftora, a desktop video editor like a simple CapCut.
+export const SYSTEM_INSTRUCTION = `You are the editing assistant inside Craftora, a simple desktop video editor.
 The user describes edits in plain words; you make them with the tools, then reply in one or two short sentences, in the user's language.
 
 How the timeline works:

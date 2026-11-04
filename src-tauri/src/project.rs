@@ -39,6 +39,9 @@ pub struct RenderSpec {
     file_name: String,
     #[serde(default)]
     quality: Quality,
+    /// Video files: the cover picture (a JPEG data URL from the editor's Cover), built in as the file's cover.
+    #[serde(default)]
+    cover: String,
 }
 
 #[derive(Deserialize)]
@@ -63,6 +66,8 @@ enum Role {
     Video,
     Audio,
     Text,
+    /// A filter or effect block (effects.ts): changes the pictures under it while it lasts.
+    Effect,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Default)]
@@ -102,6 +107,15 @@ struct ClipSpec {
     mirror: bool,
     #[serde(default)]
     reverse: bool,
+    /// Pictures: degrees turned clockwise (0, 90, 180 or 270), after the crop.
+    #[serde(default)]
+    rotate: u16,
+    /// Filter blocks: the colour steps, in order (effects.ts `LookStep`): CSS filter names and amounts.
+    #[serde(default)]
+    look: Vec<(String, f64)>,
+    /// Effect blocks: effects.ts `PICTURE_EFFECTS` id.
+    #[serde(default)]
+    effect: String,
     /// Cover size × the frame (what spills over is cut off by the frame) instead of fitting inside.
     #[serde(default)]
     fill: bool,
@@ -202,6 +216,13 @@ impl ClipSpec {
         if l > 0.0 || t > 0.0 || r > 0.0 || b > 0.0 {
             chain.push_str(&format!(",crop=w=iw*{:.4}:h=ih*{:.4}:x=iw*{l:.4}:y=ih*{t:.4}", 1.0 - l - r, 1.0 - t - b));
         }
+        // Turned after the crop (the crop is set on the upright picture), as the preview does.
+        chain.push_str(match self.rotate {
+            90 => ",transpose=clock",
+            180 => ",hflip,vflip",
+            270 => ",transpose=cclock",
+            _ => "",
+        });
         if self.speed != 1.0 {
             chain.push_str(&format!(",setpts=PTS/{:.4}", self.speed));
         }
@@ -329,6 +350,9 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             || !(0.01..=1.0).contains(&clip.size)
             || !(0.0..=1.0).contains(&clip.x)
             || !(0.0..=1.0).contains(&clip.y)
+            || ![0, 90, 180, 270].contains(&clip.rotate)
+            || clip.look.len() > MAX_LOOK_STEPS
+            || !clip.look.iter().all(|(op, amount)| look_filter(op, *amount).is_some())
         {
             return Err("A clip on the timeline has an invalid setting.".into());
         }
@@ -340,6 +364,12 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
                 let hex = clip.color.strip_prefix('#').unwrap_or("");
                 if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
                     return Err("A text clip has an invalid color.".into());
+                }
+            }
+            // A filter (colour steps, checked above) or one known effect, never both.
+            Role::Effect => {
+                if clip.look.is_empty() == clip.effect.is_empty() || (!clip.effect.is_empty() && effect_filter(&clip.effect, clip.start, clip.length(), 1920).is_none()) {
+                    return Err("An effect on the timeline isn't one Craftora knows.".into());
                 }
             }
             _ => {
@@ -421,7 +451,8 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         graph.push(format!("color=black:s={w}x{h}:r={fps}:d={},format=yuv420p[base]", secs(total)));
         let mut picture = String::from("base");
         let mut layered: Vec<(usize, &ClipSpec)> = spec.clips.iter().enumerate().filter(|(_, c)| c.role != Role::Audio).collect();
-        layered.sort_by_key(|(_, c)| c.layer);
+        // Pictures first, then the filter and effect blocks over them, then text on top (as the preview shows them).
+        layered.sort_by_key(|(_, c)| (matches!(c.role, Role::Effect) as u8 + 2 * matches!(c.role, Role::Text) as u8, c.layer));
         for (i, clip) in layered {
             let (start, end) = (secs(clip.start), secs(clip.end()));
             match clip.role {
@@ -466,6 +497,20 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                     ));
                     picture = format!("p{i}");
                 }
+                Role::Effect => {
+                    // For the block's time only.
+                    let on = format!("enable='between(t,{},{})'", secs(clip.start), secs(clip.end()));
+                    let filters: Vec<String> = if clip.effect.is_empty() {
+                        clip.look.iter().filter_map(|(op, amount)| look_filter(op, *amount)).map(|f| format!("{}:{on}", f.trim_start_matches(','))).collect()
+                    } else {
+                        effect_filter(&clip.effect, clip.start, clip.length(), w).map(|f| format!("{f}:{on}")).into_iter().collect()
+                    };
+                    if filters.is_empty() {
+                        continue;
+                    }
+                    graph.push(format!("[{picture}]{}[p{i}]", filters.join(",")));
+                    picture = format!("p{i}");
+                }
                 Role::Audio => {}
             }
         }
@@ -498,6 +543,14 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         return Err("There's no sound on the timeline to save.".into());
     }
 
+    // The cover: a picture stream marked as the file's cover, which players and File Explorer show.
+    let cover = if is_video && matches!(spec.container, Container::Mp4 | Container::Mkv) { cover_file(&spec.cover, work)? } else { None };
+    let cover_input = cover.map(|path| {
+        let index = inputs.iter().filter(|a| *a == "-i").count();
+        inputs.extend(["-i".into(), path.to_string_lossy().into_owned()]);
+        index
+    });
+
     // 4. Encode, on the graphics card when asked and possible; if that fails, on the processor.
     let encoder = if is_video { encoders::for_render(app, spec.quality).await } else { Encoder::Software };
     // From a file: hundreds of text clips (captions) would pass Windows' 32,767-character command limit.
@@ -511,6 +564,9 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
             args.extend(["-map".into(), "[outv]".into()]);
             args.extend(encoder.args(spec.quality));
             args.extend(["-r".into(), fps.to_string()]);
+            if let Some(index) = cover_input {
+                args.extend(["-map".into(), format!("{index}:v"), "-c:v:1".into(), "copy".into(), "-disposition:v:1".into(), "attached_pic".into()]);
+            }
         }
         match &sound {
             Some(label) => {
@@ -571,4 +627,148 @@ fn font_path(text: &str, font: &str) -> String {
         .find(|p| p.exists())
         .unwrap_or_else(|| fonts.join("arial.ttf"));
     path.to_string_lossy().replace('\\', "/").replace(':', "\\:")
+}
+
+/// Writes the editor's cover (a JPEG data URL) into the working folder; None without one.
+fn cover_file(data_url: &str, work: &Path) -> Result<Option<PathBuf>, String> {
+    if data_url.is_empty() {
+        return Ok(None);
+    }
+    let bytes = cover_bytes(data_url).ok_or("The cover picture can't be read. Pick it again.")?;
+    let path = work.join("cover.jpg");
+    std::fs::write(&path, bytes).map_err(|e| format!("Couldn't prepare the cover: {e}"))?;
+    Ok(Some(path))
+}
+
+/// A JPEG data URL's picture, if it really is a JPEG and not too big for a cover.
+fn cover_bytes(data_url: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data_url.strip_prefix("data:image/jpeg;base64,")?).ok()?;
+    (bytes.starts_with(&[0xFF, 0xD8, 0xFF]) && bytes.len() <= 8_000_000).then_some(bytes)
+}
+
+/// More than any look in effects.ts has.
+const MAX_LOOK_STEPS: usize = 8;
+
+/// Blur's strength: its standard deviation as a share of the frame width (effects.ts `BLUR_SHARE`).
+const BLUR_SHARE: f64 = 0.006;
+
+/// An effect block from `start` for `length` seconds, as the preview draws it (effects.ts
+/// `blocksStyle`); without its time range (the caller adds it). None for an effect the catalog
+/// doesn't have.
+fn effect_filter(effect: &str, start: f64, length: f64, width: u32) -> Option<String> {
+    let (st, d) = (secs(start), secs(length));
+    Some(match effect {
+        "fade-in" => format!("fade=t=in:st={st}:d={d}:color=black"),
+        "fade-out" => format!("fade=t=out:st={st}:d={d}:color=black"),
+        "flash" => format!("fade=t=in:st={st}:d={d}:color=white"),
+        "blur" => format!("gblur=sigma={:.2}", BLUR_SHARE * f64::from(width)),
+        "mirror" => "hflip".into(),
+        _ => return None,
+    })
+}
+
+/// One colour step of a look as FFmpeg draws it, with the same maths as the CSS filter function
+/// the preview uses (Filter Effects spec matrices, on the picture's RGB values); starts with a comma.
+/// None for a name or amount the catalog never sends.
+fn look_filter(op: &str, amount: f64) -> Option<String> {
+    let mixer = |m: [f64; 9]| {
+        let names = ["rr", "rg", "rb", "gr", "gg", "gb", "br", "bg", "bb"];
+        let options: Vec<String> = names.iter().zip(m).map(|(name, v)| format!("{name}={v:.5}")).collect();
+        format!(",colorchannelmixer={}", options.join(":"))
+    };
+    let within = |lo: f64, hi: f64| amount.is_finite() && (lo..=hi).contains(&amount);
+    match op {
+        "grayscale" if within(0.0, 1.0) => {
+            let k = 1.0 - amount;
+            Some(mixer([
+                0.2126 + 0.7874 * k, 0.7152 - 0.7152 * k, 0.0722 - 0.0722 * k,
+                0.2126 - 0.2126 * k, 0.7152 + 0.2848 * k, 0.0722 - 0.0722 * k,
+                0.2126 - 0.2126 * k, 0.7152 - 0.7152 * k, 0.0722 + 0.9278 * k,
+            ]))
+        }
+        "sepia" if within(0.0, 1.0) => {
+            let k = 1.0 - amount;
+            Some(mixer([
+                0.393 + 0.607 * k, 0.769 - 0.769 * k, 0.189 - 0.189 * k,
+                0.349 - 0.349 * k, 0.686 + 0.314 * k, 0.168 - 0.168 * k,
+                0.272 - 0.272 * k, 0.534 - 0.534 * k, 0.131 + 0.869 * k,
+            ]))
+        }
+        // Up to 2: colorchannelmixer takes factors from -2 to 2.
+        "saturate" if within(0.0, 2.0) => {
+            let s = amount;
+            Some(mixer([
+                0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s,
+                0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s,
+                0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s,
+            ]))
+        }
+        "hue-rotate" if within(-180.0, 180.0) => {
+            let (sin, cos) = amount.to_radians().sin_cos();
+            Some(mixer([
+                0.213 + cos * 0.787 - sin * 0.213, 0.715 - cos * 0.715 - sin * 0.715, 0.072 - cos * 0.072 + sin * 0.928,
+                0.213 - cos * 0.213 + sin * 0.143, 0.715 + cos * 0.285 + sin * 0.140, 0.072 - cos * 0.072 - sin * 0.283,
+                0.213 - cos * 0.213 - sin * 0.787, 0.715 - cos * 0.715 + sin * 0.715, 0.072 + cos * 0.928 + sin * 0.072,
+            ]))
+        }
+        "brightness" if within(0.0, 2.0) => Some(mixer([amount, 0.0, 0.0, 0.0, amount, 0.0, 0.0, 0.0, amount])),
+        // lutrgb keeps each result within 0..maxval, as the CSS functions do.
+        "contrast" if within(0.0, 3.0) => {
+            let channel = format!("'(val-maxval/2)*{amount:.4}+maxval/2'");
+            Some(format!(",lutrgb=r={channel}:g={channel}:b={channel}"))
+        }
+        "invert" if within(0.0, 1.0) => {
+            let channel = format!("'val*{:.4}+maxval*{amount:.4}'", 1.0 - 2.0 * amount);
+            Some(format!(",lutrgb=r={channel}:g={channel}:b={channel}"))
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cover_bytes, effect_filter, look_filter, ClipSpec};
+
+    #[test]
+    fn takes_only_a_jpeg_as_the_cover() {
+        assert_eq!(cover_bytes("data:image/jpeg;base64,/9j/4AAQ").unwrap()[..3], [0xFF, 0xD8, 0xFF]);
+        assert!(cover_bytes("data:image/png;base64,iVBORw0KGgo=").is_none());
+        assert!(cover_bytes("data:image/jpeg;base64,aGVsbG8=").is_none());
+        assert!(cover_bytes("not a picture").is_none());
+    }
+
+    #[test]
+    fn turns_a_picture_after_its_crop() {
+        let clip: ClipSpec = serde_json::from_str(r#"{"role":"video","layer":0,"start":0,"in":0,"out":1,"crop":[0.1,0,0,0],"rotate":90}"#).unwrap();
+        let edits = clip.picture_edits();
+        assert!(edits.find("crop=").unwrap() < edits.find("transpose=clock").unwrap(), "{edits}");
+        let upside: ClipSpec = serde_json::from_str(r#"{"role":"video","layer":0,"start":0,"in":0,"out":1,"rotate":180}"#).unwrap();
+        assert_eq!(upside.picture_edits(), ",hflip,vflip");
+    }
+
+    #[test]
+    fn draws_each_effect_block() {
+        assert_eq!(effect_filter("fade-in", 2.0, 3.0, 1920).unwrap(), "fade=t=in:st=2.000:d=3.000:color=black");
+        assert_eq!(effect_filter("flash", 0.0, 1.0, 1920).unwrap(), "fade=t=in:st=0.000:d=1.000:color=white");
+        assert_eq!(effect_filter("blur", 0.0, 1.0, 1000).unwrap(), "gblur=sigma=6.00");
+        assert_eq!(effect_filter("mirror", 0.0, 1.0, 1920).unwrap(), "hflip");
+        assert!(effect_filter("explode", 0.0, 1.0, 1920).is_none());
+    }
+
+    #[test]
+    fn draws_each_look_step_and_refuses_anything_else() {
+        // No change at all for "none" amounts: the identity matrix.
+        assert_eq!(look_filter("grayscale", 0.0).unwrap(), ",colorchannelmixer=rr=1.00000:rg=0.00000:rb=0.00000:gr=0.00000:gg=1.00000:gb=0.00000:br=0.00000:bg=0.00000:bb=1.00000");
+        assert!(look_filter("saturate", 1.0).unwrap().contains("rr=1.00000:rg=0.00000"));
+        assert!(look_filter("hue-rotate", 0.0).unwrap().contains("rr=1.00000:rg=0.00000"));
+        assert!(look_filter("grayscale", 1.0).unwrap().contains("rr=0.21260:rg=0.71520:rb=0.07220"));
+        assert_eq!(look_filter("contrast", 1.5).unwrap(), ",lutrgb=r='(val-maxval/2)*1.5000+maxval/2':g='(val-maxval/2)*1.5000+maxval/2':b='(val-maxval/2)*1.5000+maxval/2'");
+        assert!(look_filter("invert", 1.0).unwrap().contains("r='val*-1.0000+maxval*1.0000'"));
+        // Only the catalog's names and amounts reach FFmpeg.
+        assert!(look_filter("saturate", 2.5).is_none());
+        assert!(look_filter("blur", 1.0).is_none());
+        assert!(look_filter("brightness", f64::NAN).is_none());
+        assert!(look_filter("grayscale';drawtext", 1.0).is_none());
+    }
 }

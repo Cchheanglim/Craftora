@@ -7,6 +7,8 @@ interface SyncedMediaProps {
   src: string;
   /** Where this element should be on its own timeline right now; null while it's off. */
   time: number | null;
+  /** While off: where to wait (a clip's first frame, when its turn is coming), so it starts without a black flash. */
+  cue?: number;
   playing: boolean;
   /** 0–1 (higher values are capped; the export can go louder). */
   volume: number;
@@ -39,7 +41,7 @@ const MAX_RATE = 16;
  * A video or audio element that follows the editor's playhead: a layer, or the separate
  * sound stream of a video-only preview.
  */
-export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, reverse, className, style, onLoadedMetadata, onReady, onLoading, onFailed }: SyncedMediaProps) {
+export function SyncedMedia({ kind, src, time, cue, playing, volume, muted, rate, reverse, className, style, onLoadedMetadata, onReady, onLoading, onFailed }: SyncedMediaProps) {
   const ref = useRef<HTMLVideoElement & HTMLAudioElement>(null);
   /**
    * Where the element should be. Seeks aren't stacked: while one is running, newer times
@@ -64,6 +66,7 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
     if (!el) return;
     if (time === null || (el.duration && time >= el.duration)) {
       if (!el.paused) el.pause();
+      if (time === null && cue !== undefined && !el.seeking && Math.abs(el.currentTime - cue) > 0.04) el.currentTime = cue;
       return;
     }
     const drift = Math.abs(el.currentTime - time);
@@ -80,7 +83,7 @@ export function SyncedMedia({ kind, src, time, playing, volume, muted, rate, rev
       if (!el.paused) el.pause();
       if (!el.seeking && drift > 0.04) el.currentTime = time;
     }
-  }, [time, playing, reverse, rate]);
+  }, [time, cue, playing, reverse, rate]);
 
   // Loading only holds the clock for clips on screen now, and never for reversed clips,
   // which seek all the time by design.

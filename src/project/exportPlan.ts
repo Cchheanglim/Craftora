@@ -5,7 +5,8 @@
  */
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
-import { clipLength, isCropped, projectDuration, trackOrder, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
+import { lookSteps } from "./effects";
+import { isBlock, clipLength, isCropped, projectDuration, trackOrder, trackSilent, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
   { id: "1080p", label: "16:9 · 1920 × 1080", width: 1920, height: 1080 },
@@ -53,7 +54,8 @@ const compact = (seconds: number) => formatTimecode(seconds).slice(0, 8).replace
 
 /** One full-size video clip with nothing changed: eligible for the fast, lossless path. */
 function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | null {
-  if (project.clips.length !== 1) return null;
+  // A cover is built in while rendering.
+  if (project.clips.length !== 1 || project.cover) return null;
   const [clip] = project.clips;
   const media = project.media.find((m) => m.id === clip.mediaId);
   const track = project.tracks.find((t) => t.id === clip.trackId);
@@ -61,6 +63,7 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
   const untouched =
     clip.volume === 1 &&
     !clip.mirror &&
+    !clip.rotate &&
     !clip.reverse &&
     clip.speed === 1 &&
     !clip.fadeIn &&
@@ -144,13 +147,14 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   // Everything else: one render of the whole timeline.
   const frame = frameOf(settings);
   const used = project.media.filter((m) => project.clips.some((c) => c.mediaId === m.id));
-  const clips: RenderClip[] = project.clips.map((c) => {
+  const hidden = new Set(project.tracks.filter((t) => t.hidden).map((t) => t.id));
+  const clips: RenderClip[] = project.clips.filter((c) => !hidden.has(c.trackId) || c.mediaId).map((c) => {
     const trackIndex = project.tracks.findIndex((t) => t.id === c.trackId);
     const track = project.tracks[trackIndex];
     const order = track?.magnetic ? trackOrder(project, track.id) : [];
     const i = order.findIndex((o) => o.id === c.id);
     const next = i >= 0 ? order[i + 1] : undefined;
-    const role: RenderClip["role"] = !c.mediaId ? "text" : track?.kind === "audio" ? "audio" : "video";
+    const role: RenderClip["role"] = isBlock(c) ? "effect" : !c.mediaId ? "text" : track?.kind === "audio" || track?.hidden ? "audio" : "video";
     return {
       role,
       // Lower tracks first; on a track, later clips over earlier ones (for transitions).
@@ -160,9 +164,12 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       in: c.in,
       out: c.out,
       speed: c.mediaId ? c.speed : 1,
-      volume: track?.muted ? 0 : c.volume,
+      volume: trackSilent(track) ? 0 : c.volume,
       mirror: c.mirror,
       reverse: c.reverse,
+      rotate: c.rotate ?? 0,
+      look: lookSteps(c.look),
+      effect: c.effect ?? "",
       fadeIn: c.fadeIn,
       fadeOut: c.fadeOut,
       crop: [c.crop.left, c.crop.top, c.crop.right, c.crop.bottom],
@@ -200,7 +207,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
 
   const counts = {
     clips: project.clips.filter((c) => c.mediaId).length,
-    texts: project.clips.filter((c) => !c.mediaId).length,
+    texts: project.clips.filter((c) => !c.mediaId && !isBlock(c)).length,
   };
   const summary = [
     formatClock(duration),
@@ -217,6 +224,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     .map((m) => `yt-dlp -f "${m.format}" --download-sections "*…" --force-keyframes-at-cuts "${m.src}"`);
   const graph = [
     project.clips.some((c) => c.mirror) && "hflip",
+    project.clips.some(isBlock) && "filters and effects",
     project.clips.some((c) => c.reverse) && "reverse",
     project.clips.some((c) => isCropped(c.crop)) && "crop",
     project.clips.some((c) => c.speed !== 1) && "setpts, atempo",
@@ -235,7 +243,18 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
 
   return {
     kind: "render",
-    spec: { media, clips, width: frame.width, height: frame.height, fps: FPS, output: settings.output, container, fileName, quality: settings.quality },
+    spec: {
+      media,
+      clips,
+      width: frame.width,
+      height: frame.height,
+      fps: FPS,
+      output: settings.output,
+      container,
+      fileName,
+      quality: settings.quality,
+      cover: isVideo ? project.cover : undefined,
+    },
     sizeMb,
     fileName,
     title,

@@ -24,6 +24,8 @@
   --clip-audio-line: rgb(110 200 150 / 0.42);
   --clip-text: rgb(206 156 64 / 0.3);
   --clip-text-line: rgb(230 190 110 / 0.45);
+  --clip-effect: rgb(56 170 180 / 0.28);
+  --clip-effect-line: rgb(110 210 220 / 0.42);
   --radius: 10px;
   --radius-sm: 7px;
   --glass-edge: rgb(255 255 255 / 0.1);
@@ -62,6 +64,8 @@
   --clip-audio-line: rgb(44 140 92 / 0.5);
   --clip-text: rgb(214 152 40 / 0.22);
   --clip-text-line: rgb(186 128 24 / 0.5);
+  --clip-effect: rgb(40 150 160 / 0.2);
+  --clip-effect-line: rgb(30 130 140 / 0.5);
   --ok: #187a3b;
   --warn: #9a5b00;
   --danger: #cc2929;
@@ -121,7 +125,7 @@
   margin-right: calc(-1 * var(--panel-w) - 12px);
 }
 
-:root[data-theme] :is(.confirm, .welcome, .text-menu, .export__more) {
+:root[data-theme] :is(.confirm, .welcome, .text-menu, .export__more, .tl__menu) {
   border-color: var(--glass-edge);
   -webkit-backdrop-filter: blur(30px) saturate(170%);
   backdrop-filter: blur(30px) saturate(170%);

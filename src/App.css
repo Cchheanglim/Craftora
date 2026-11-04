@@ -103,6 +103,11 @@
   margin: var(--space-3) var(--space-5) 0;
 }
 
+/* The second row of tabs (Filters, Effects, Transitions) sits close under the first. */
+.app__tabs.is-second {
+  margin-top: var(--space-2);
+}
+
 /* Shown while files are dragged over the window. */
 .app__drop {
   position: fixed;
