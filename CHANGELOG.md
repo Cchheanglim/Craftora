@@ -12,6 +12,9 @@
     picture under it, not text. The export draws exactly what the preview shows.
   - **Slow motion, Speed up, Reverse**: drop one on a clip (or a piece of a split clip) and it
     changes.
+  - **Smooth slow-mo**: half speed with new in-between frames made in the export (motion
+    interpolation), instead of each frame shown twice. Exporting it takes much longer (about
+    15 seconds per second of slowed video), so split out just the part to slow first.
   - **Transitions**: click the **+** where two clips meet (after a split, say), then pick one; or
     drop one on that join. A join with a transition shows a tick.
   - With a clip selected, clicking a tile puts it on that clip.
@@ -29,6 +32,11 @@
 
 **Changed**
 
+- **The timeline looks like a familiar editor's**: video clips are teal, with their name and
+  length on a bar along the top, frames in the middle and the sound wave along the bottom. The
+  main track is taller, with Cover at the right of its buttons and a line above it; tracks sit in
+  the middle of the timeline when there are only a few. The ruler has small ticks between its
+  times. Effect blocks are now blue.
 - **Text is always drawn over pictures in exports**, as the preview shows it, whatever track
   it's on.
 
@@ -62,6 +70,13 @@
 
 **Fixed**
 
+- **Editing felt slow, worst on fast screens**: during playback the editor stopped and restarted
+  two of its listeners on every frame (hundreds of calls a second to the app's back end). It now
+  draws about twice as many frames a second.
+- **A slow file from this PC said "Still loading from the website…"**: it now says Loading…; the
+  website wording is kept for links.
+- **The playhead couldn't be dragged past the edge of the timeline**: the timeline now scrolls
+  along, as it does when dragging a clip's edge. Its pin is bigger and easier to grab.
 - **Exports with a Mirror effect block failed** ("Invalid argument"): FFmpeg refused the way the
   flip was limited to the block's time.
 - **Some videos from a website had no picture while others from the same site did**: Craftora

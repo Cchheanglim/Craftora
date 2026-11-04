@@ -103,6 +103,7 @@ import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { Home, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
+import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH } from "./components/EdgeResizer";
 import { dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, type FxTab } from "./components/FxPanel";
 import { useFetchReview } from "./components/FetchDetails";
@@ -199,10 +200,10 @@ function remembered(key: string, fallback: boolean): boolean {
     return fallback;
   }
 }
-/** The timeline height (px) the user dragged it to, if they did; storage may be unavailable. */
-function rememberedHeight(): number | null {
+/** A size (px) the user dragged something to, if they did; storage may be unavailable. */
+function rememberedSize(key: string): number | null {
   try {
-    return Number(localStorage.getItem("craftora.timelineHeight")) || null;
+    return Number(localStorage.getItem(key)) || null;
   } catch {
     return null;
   }
@@ -289,10 +290,21 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Settings page: how many jobs run at once.
   const [maxRunning, setMaxRunning] = useState(() => rememberedCount("craftora.maxRunning", MAX_RUNNING));
-  const [timelineHeight, setTimelineHeight] = useState(rememberedHeight);
+  const [timelineHeight, setTimelineHeight] = useState(() => rememberedSize("craftora.timelineHeight"));
   const resizeTimeline = (height: number) => {
     setTimelineHeight(height);
     rememberText("craftora.timelineHeight", String(height));
+  };
+  // The left sidebar's and the right panel's widths, dragged by their inner edges.
+  const [sideWidth, setSideWidth] = useState(() => Math.min(SIDE_WIDTH.max, Math.max(SIDE_WIDTH.min, rememberedSize("craftora.sideWidth") ?? SIDE_WIDTH.usual)));
+  const [panelWidth, setPanelWidth] = useState(() => Math.min(PANEL_WIDTH.max, Math.max(PANEL_WIDTH.min, rememberedSize("craftora.panelWidth") ?? PANEL_WIDTH.usual)));
+  const resizeSide = (width: number) => {
+    setSideWidth(width);
+    rememberText("craftora.sideWidth", String(width));
+  };
+  const resizePanel = (width: number) => {
+    setPanelWidth(width);
+    rememberText("craftora.panelWidth", String(width));
   };
   // Settings → Theme; main.tsx already put the saved one on the page.
   const [theme, setTheme] = useState(savedTheme);
@@ -1464,7 +1476,7 @@ export default function App() {
   };
 
   return (
-    <div className="app" data-left={leftOpen ? "open" : "closed"}>
+    <div className="app" data-left={leftOpen ? "open" : "closed"} style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${panelWidth}px` } as CSSProperties}>
       <Ambient active={theme !== "classic"} />
       {fetchReview.dialog}
       <Toolbar
@@ -1691,6 +1703,8 @@ export default function App() {
         )}
       </main>
 
+      {leftOpen && <EdgeResizer edge="right" width={sideWidth} limits={SIDE_WIDTH} label="Sidebar width" onResize={resizeSide} />}
+      {view === "editor" && rightOpen && <EdgeResizer edge="left" width={panelWidth} limits={PANEL_WIDTH} label="Right panel width" onResize={resizePanel} />}
       {view === "editor" && (
         // Stays mounted when closed so it can slide away; inert keeps it out of Tab and clicks.
         <div className={`app__panel${rightOpen ? "" : " is-closed"}`} inert={!rightOpen}>
