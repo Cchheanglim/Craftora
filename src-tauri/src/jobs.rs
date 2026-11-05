@@ -169,7 +169,8 @@ impl Jobs {
     pub(crate) fn stop(&self, id: &str) -> bool {
         let mut jobs = self.0.lock().unwrap();
         let Some(job) = jobs.get_mut(id) else { return false };
-        job.children.iter_mut().fold(false, |ok, child| child.write(b"q").is_ok() || ok)
+        // Every process is asked (not `any`, which would stop at the first).
+        job.children.iter_mut().map(|child| child.write(b"q").is_ok()).collect::<Vec<_>>().contains(&true)
     }
 
     /// Stops a download but keeps what it saved, to continue later (`pause_job`).

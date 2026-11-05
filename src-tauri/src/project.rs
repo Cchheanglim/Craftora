@@ -446,16 +446,20 @@ fn pieces(len_out: f64, w: u32, h: u32, free_bytes: Option<u64>, threads: usize)
     4.min(by_memory).min(by_cpu).min(by_length).max(1)
 }
 
-/// Output `(first_frame, count)` for each of the `n` pieces of a `frames`-frame clip.
-fn piece_frames(frames: u64, n: usize) -> Vec<(u64, u64)> {
+/// Output `(first_frame, count)` for each of the `n` pieces of a `frames`-frame clip. Every cut is
+/// a multiple of `step` (output frames per source frame), so each piece starts on a real frame.
+fn piece_frames(frames: u64, n: usize, step: u64) -> Vec<(u64, u64)> {
     let n = n as u64;
-    (0..n)
-        .map(|j| {
-            let start = j * frames / n;
-            let end = (j + 1) * frames / n;
-            (start, end - start)
-        })
-        .collect()
+    let cut = |j: u64| if j == n { frames } else { j * frames / n / step * step };
+    (0..n).map(|j| (cut(j), cut(j + 1) - cut(j))).filter(|&(_, count)| count > 0).collect()
+}
+
+/// Output frames per source frame for Smooth slow-mo (2 at half speed from 30 to 30 fps), when it's
+/// a whole number. shortcut: other frame rates (24 fps exported at 30) keep the one-pass way;
+/// cut on the nearest real frames if those turn out common.
+fn frame_step(export_fps: u32, source_fps: Option<f64>, speed: f64) -> Option<u64> {
+    let step = f64::from(export_fps) / (source_fps? * speed);
+    ((step - step.round()).abs() < 0.01 && step >= 1.0).then(|| step.round() as u64)
 }
 
 async fn render(app: &AppHandle, spec: &RenderSpec) -> Result<PathBuf, String> {
@@ -503,24 +507,26 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                 continue;
             }
             let Some(source) = clip.media_id.as_deref().and_then(|id| sources.get(id)) else { continue };
-            if source.image || !source.info.has_video {
+            // shortcut: a reversed clip keeps the one-pass way (its pieces would have to be cut from
+            // the end of the source); split it too if reversed smooth slow-mo turns out common.
+            if source.image || !source.info.has_video || clip.reverse {
                 continue;
             }
+            let Some(step) = frame_step(fps, source.info.fps, clip.speed) else { continue };
             let len_out = clip.length();
-            let n = pieces(len_out, w, h, free_memory(), threads);
             let frames = (len_out * f64::from(fps)).round().max(1.0) as u64;
+            let split = piece_frames(frames, pieces(len_out, w, h, free_memory(), threads), step);
+            let n = split.len();
             let from = (clip.in_point - source.offset).max(0.0);
-            let chain = clip.picture_chain(w, h, fps);
             let progress = Arc::new(Mutex::new(vec![0.0_f64; n]));
             let _ = app.emit("job-event", progress_event(&spec.id, "smoothing", Some(0.0)));
 
             let mut handles = Vec::with_capacity(n);
-            for (j, (first_frame, count)) in piece_frames(frames, n).into_iter().enumerate() {
-                // With `reverse`, piece `j` takes the mirrored source slice (frames counted from the end)
-                // that lands at output position `j` after the piece's own `reverse` filter runs.
-                let source_first = if clip.reverse { frames - first_frame - count } else { first_frame };
-                let piece_start = from + (source_first as f64) / f64::from(fps) * clip.speed;
-                let piece_len = (count as f64) / f64::from(fps) * clip.speed;
+            for (j, (first_frame, count)) in split.into_iter().enumerate() {
+                // Every piece seeks where the one-pass export does and skips whole source frames, so
+                // it starts on exactly the frame the one-pass export shows there; the frames after its
+                // end are still coming, so minterpolate has the next frame at the cut.
+                let chain = format!("trim=start_frame={},{}", first_frame / step, clip.picture_chain(w, h, fps));
                 let args: Vec<String> = vec![
                     "-y".into(),
                     "-hide_banner".into(),
@@ -528,14 +534,14 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                     "-progress".into(),
                     "pipe:1".into(),
                     "-ss".into(),
-                    secs(piece_start),
+                    secs(from),
                     "-t".into(),
-                    secs(piece_len + 0.2),
+                    secs(clip.out - clip.in_point),
                     "-i".into(),
                     source.path.to_string_lossy().into_owned(),
                     "-an".into(),
                     "-vf".into(),
-                    chain.clone(),
+                    chain,
                     "-c:v".into(),
                     "libx264".into(),
                     "-preset".into(),
@@ -907,7 +913,7 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cover_bytes, effect_filter, look_filter, piece_frames, pieces, timed, ClipSpec};
+    use super::{cover_bytes, effect_filter, frame_step, look_filter, piece_frames, pieces, timed, ClipSpec};
 
     #[test]
     fn picks_how_many_smooth_pieces_fit() {
@@ -922,10 +928,16 @@ mod tests {
 
     #[test]
     fn splits_smooth_frames_without_gaps_or_drift() {
-        let split = piece_frames(655, 4);
+        let split = piece_frames(655, 4, 2);
         assert_eq!(split.len(), 4);
         assert_eq!(split.iter().map(|(_, count)| count).sum::<u64>(), 655);
         assert!(split.windows(2).all(|w| w[0].0 < w[1].0 && w[0].0 + w[0].1 == w[1].0));
+        // At half speed every 2nd output frame is a real one: each piece starts on one.
+        assert!(split.iter().all(|(first, _)| first % 2 == 0));
+        assert_eq!(frame_step(30, Some(30.0), 0.5), Some(2));
+        assert_eq!(frame_step(30, Some(60.0), 0.5), Some(1));
+        assert_eq!(frame_step(30, Some(24.0), 0.5), None);
+        assert_eq!(frame_step(30, None, 0.5), None);
     }
 
     #[test]
