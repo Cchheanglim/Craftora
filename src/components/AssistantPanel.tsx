@@ -269,30 +269,34 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
             ))}
           <option value={CONNECT}>Connect another AI…</option>
         </select>
-        <label htmlFor="asst-model" className="sr-only">
-          Model
-        </label>
-        <select
-          id="asst-model"
-          className="field"
-          value={model}
-          onChange={(e) => {
-            if (e.target.value === SEARCH) setSearching(true);
-            else chooseModel(e.target.value);
-          }}
-          disabled={busy || !models?.length}
-        >
-          {!models && <option value="">{modelsError ? "Couldn't load models" : "Loading models…"}</option>}
-          {models?.length === 0 && <option value="">{isKeyed(provider) ? "No usable models for this key" : "No models found"}</option>}
-          {recommended.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-              {m.why ? ` (${m.why})` : ""}
-            </option>
-          ))}
-          {model && !recommended.some((m) => m.id === model) && <option value={model}>{models?.find((m) => m.id === model)?.label ?? model}</option>}
-          {models && models.length > recommended.length && <option value={SEARCH}>Search all {models.length} models…</option>}
-        </select>
+        {!provider.startsWith("program:") && (
+          <>
+            <label htmlFor="asst-model" className="sr-only">
+              Model
+            </label>
+            <select
+              id="asst-model"
+              className="field"
+              value={model}
+              onChange={(e) => {
+                if (e.target.value === SEARCH) setSearching(true);
+                else chooseModel(e.target.value);
+              }}
+              disabled={busy || !models?.length}
+            >
+              {!models && <option value="">{modelsError ? "Couldn't load models" : "Loading models…"}</option>}
+              {models?.length === 0 && <option value="">{isKeyed(provider) ? "No usable models for this key" : "No models found"}</option>}
+              {recommended.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                  {m.why ? ` (${m.why})` : ""}
+                </option>
+              ))}
+              {model && !recommended.some((m) => m.id === model) && <option value={model}>{models?.find((m) => m.id === model)?.label ?? model}</option>}
+              {models && models.length > recommended.length && <option value={SEARCH}>Search all {models.length} models…</option>}
+            </select>
+          </>
+        )}
         <button type="button" className="btn btn--ghost" onClick={() => void startOver()} disabled={busy || entries.length === 0} title="Start a new conversation">
           New chat
         </button>
@@ -436,6 +440,7 @@ interface SetupProps {
 
 /** Connecting an AI: one already on this PC, or an AI service with an API key. */
 function Setup({ found, provider, onUse, onScan, onAddress, onBack, onProvider, onSaved }: SetupProps) {
+  const [view, setView] = useState<"pc" | "key">(() => (found.some((f) => f.ready) ? "pc" : "key"));
   const [scanning, setScanning] = useState(false);
   const [address, setAddress] = useState("");
   const [checking, setChecking] = useState(false);
@@ -448,7 +453,8 @@ function Setup({ found, provider, onUse, onScan, onAddress, onBack, onProvider, 
 
   const connect = async (e: FormEvent) => {
     e.preventDefault();
-    const target = address.trim();
+    const raw = address.trim();
+    const target = raw.includes("://") ? raw : `http://${raw}`;
     setChecking(true);
     setError(null);
     try {
@@ -465,70 +471,83 @@ function Setup({ found, provider, onUse, onScan, onAddress, onBack, onProvider, 
   return (
     <section className="asst" aria-labelledby="asst-setup-title">
       <div className="asst__setup">
-        {onBack && (
-          <button type="button" className="btn btn--ghost" onClick={onBack}>
-            Back to chat
-          </button>
-        )}
-        <h2 id="asst-setup-title">Connect your AI</h2>
-        <h3>On this PC</h3>
-        <p>Use an AI program or server you already have. It uses its own sign-in, so no key is needed.</p>
-        {found.length > 0 ? (
-          <ul className="asst__found">
-            {found.map((f) => (
-              <li key={sourceOf(f)}>
-                <span>
-                  {f.name}
-                  {/* A program's install path is long and says little; it's kept on hover. */}
-                  <span className="mono" title={f.detail}>
-                    {f.kind === "program" && f.ready ? "Installed" : f.detail}
-                  </span>
-                </span>
-                {f.ready && (
-                  <button type="button" className="btn btn--secondary" onClick={() => onUse(sourceOf(f))}>
-                    Use
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="asst__fine">None found.</p>
-        )}
-        <button type="button" className="btn btn--ghost" onClick={rescan} disabled={scanning}>
-          {scanning ? "Scanning…" : "Scan again"}
-        </button>
-        <form className="asst__form" onSubmit={(e) => void connect(e)}>
-          <label htmlFor="asst-address">Address of a local AI server</label>
-          <div className="asst__row">
-            <input
-              id="asst-address"
-              className="field mono"
-              placeholder="http://localhost:11434/v1"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? "asst-address-error" : undefined}
-            />
-            <button type="submit" className="btn btn--secondary" disabled={checking || !address.trim()}>
-              {checking ? "Checking…" : "Connect"}
+        <div className="asst__setup-head">
+          <h2 id="asst-setup-title">Connect your AI</h2>
+          {onBack && (
+            <button type="button" className="btn btn--ghost" onClick={onBack}>
+              Back to chat
             </button>
-          </div>
-          {error && (
-            <p id="asst-address-error" className="asst__error" role="alert">
-              {error}
-            </p>
           )}
-        </form>
-        <ul className="asst__safety">
-          <li>Each message sends your timeline (clip names, times and the words in text and captions) to that program or server, and on to its AI service. Not your videos, sound or files.</li>
-          <li>Craftora runs AI programs in an empty folder and blocks their file and command tools, so they can't change your files.</li>
-          <li>AI programs are slower than an API key: each step takes a few seconds.</li>
-        </ul>
-        <h3>With an API key</h3>
-        <KeySetup provider={provider} onProvider={onProvider} onSaved={onSaved} />
+        </div>
+        <div className="segmented" role="group" aria-label="How to connect">
+          <button type="button" aria-pressed={view === "pc"} onClick={() => setView("pc")}>
+            On this PC
+          </button>
+          <button type="button" aria-pressed={view === "key"} onClick={() => setView("key")}>
+            API key
+          </button>
+        </div>
+        {view === "pc" ? (
+          <>
+            <p>Use an AI program or server you already have. It uses its own sign-in, so no key is needed.</p>
+            {found.length > 0 ? (
+              <ul className="asst__found">
+                {found.map((f) => (
+                  <li key={sourceOf(f)} className={f.ready ? undefined : "is-off"}>
+                    <span>
+                      {f.name}
+                      {/* A program's install path is long and says little; it's kept on hover. */}
+                      <span className="mono" title={f.detail}>
+                        {f.kind === "program" && f.ready ? "Installed" : f.detail}
+                      </span>
+                    </span>
+                    {f.ready && (
+                      <button type="button" className="btn btn--secondary" onClick={() => onUse(sourceOf(f))}>
+                        Use
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="asst__fine">None found.</p>
+            )}
+            <button type="button" className="btn btn--ghost asst__scan" onClick={rescan} disabled={scanning}>
+              {scanning ? "Scanning…" : "Scan again"}
+            </button>
+            <form className="asst__form" onSubmit={(e) => void connect(e)}>
+              <label htmlFor="asst-address">Address of a local AI server</label>
+              <div className="asst__row">
+                <input
+                  id="asst-address"
+                  className="field mono"
+                  placeholder="e.g. localhost:11434"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? "asst-address-error" : undefined}
+                />
+                <button type="submit" className="btn btn--secondary" disabled={checking || !address.trim()}>
+                  {checking ? "Checking…" : "Connect"}
+                </button>
+              </div>
+              {error && (
+                <p id="asst-address-error" className="asst__error" role="alert">
+                  {error}
+                </p>
+              )}
+            </form>
+            <ul className="asst__safety">
+              <li>Each message sends your timeline (clip names, times and the words in text and captions) to that program or server, and on to its AI service. Not your videos, sound or files.</li>
+              <li>Craftora runs AI programs in an empty folder and blocks their file and command tools, so they can't change your files.</li>
+              <li>AI programs are slower than an API key: each step takes a few seconds.</li>
+            </ul>
+          </>
+        ) : (
+          <KeySetup provider={provider} onProvider={onProvider} onSaved={onSaved} />
+        )}
       </div>
     </section>
   );
