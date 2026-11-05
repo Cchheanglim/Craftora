@@ -47,7 +47,7 @@
   top: calc(100% + 6px);
   right: 0;
   z-index: 60;
-  width: min(440px, calc(100vw - 32px));
+  width: min(400px, calc(100vw - 32px));
   overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
@@ -56,24 +56,24 @@
   animation: pop-in var(--dur-fast) var(--ease-out) backwards;
 }
 
-/* In the drop-down each item is two lines beside its picture: name and details, then its
-   progress (or "Finished") with the size; its buttons on the right. */
+/* In the drop-down each item is compact, beside a small picture: name and details with the size
+   on the right, then its progress (or "Finished") with its buttons on the right. */
 .queue__panel .queue__head {
-  height: 44px;
-  padding: 0 8px 0 14px;
+  height: 36px;
+  padding: 0 6px 0 12px;
   border-bottom: 1px solid var(--line-soft);
 }
 
 .queue__panel .queue__head .btn--ghost {
-  height: 28px;
-  padding: 0 8px;
+  height: 24px;
+  padding: 0 6px;
   font-size: var(--text-xs);
 }
 
 .queue__panel .queue__head .btn--icon,
 .queue__panel .queue__row-actions .btn--icon {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
 }
 
 .queue__panel .queue__list {
@@ -81,14 +81,14 @@
 }
 
 .queue__panel .queue__row {
-  grid-template-columns: 72px minmax(0, 1fr) auto auto;
+  grid-template-columns: 48px minmax(0, 1fr) auto auto;
   grid-template-areas:
-    "thumb name name actions"
-    "thumb progress size actions";
-  column-gap: 12px;
-  row-gap: 6px;
+    "thumb name name size"
+    "thumb progress actions actions";
+  column-gap: 10px;
+  row-gap: 4px;
   height: auto;
-  padding: 10px 8px 10px 14px;
+  padding: 7px 6px 7px 12px;
 }
 
 .queue__panel .queue__row:first-child {
@@ -101,8 +101,9 @@
 
 .queue__panel .queue__name > .thumb {
   grid-area: thumb;
-  width: 72px;
-  height: 40px;
+  align-self: center;
+  width: 48px;
+  height: 27px;
 }
 
 .queue__panel .queue__name > div {
@@ -117,7 +118,7 @@
 
 .queue__panel .queue__size {
   grid-area: size;
-  align-self: end;
+  align-self: start;
   font-size: var(--text-xs);
   color: var(--text-3);
 }
@@ -303,6 +304,12 @@
   gap: var(--space-2);
   font-size: var(--text-xs);
   color: var(--text-2);
+}
+
+/* "48% · 00:56 left" stays on one line; the words beside it shorten instead. */
+.queue__status .mono {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .queue__done {
