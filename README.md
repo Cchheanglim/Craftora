@@ -309,19 +309,6 @@ you have opened in Craftora. See [SECURITY.md](SECURITY.md) to report a problem.
 - Faster previews of large files from this PC.
 - Code-signed installers on GitHub.
 
-## Licences
-
-Craftora is [MIT-licensed](LICENSE). The bundled engines have their own licences:
-
-- **yt-dlp:** [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE) (public domain).
-- **FFmpeg:** a **GPL** build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds),
-  which includes libx264. The installer ships its licence, and every release attaches the
-  exact FFmpeg source and build scripts.
-- **Deno** (runs YouTube's player code for yt-dlp): MIT.
-- **whisper.cpp** and the Whisper "base" speech model: MIT.
-
-Full details: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
 ## Responsible use
 
 Please read this before you use Craftora to fetch, download or record anything.
@@ -339,7 +326,7 @@ it doesn't include, suggest or link to any place to find movies, shows or other 
   content that is free to use (public domain, or a licence such as Creative Commons that allows it).
 - Downloading or sharing movies, TV shows, music, sports broadcasts, games, courses or other
   copyrighted work without permission may be illegal where you live, even if the website lets
-  you watch it for free. **Don't use Craftora for that.**
+  you watch it for free.
 - Follow each website's terms of service. Some sites don't allow downloads at all, even of
   videos you can watch there.
 - Follow the laws of your country. You alone decide what you fetch, so you alone are
@@ -350,29 +337,6 @@ it doesn't include, suggest or link to any place to find movies, shows or other 
 Craftora doesn't break or get around copy protection (DRM), paywalls or other technical
 protections, and isn't meant to be used that way. Don't use it to copy paid, rented or
 subscription content that you aren't allowed to keep.
-
-### Signing in to websites
-
-When you **Sign in to …** a website, you are using your own account under that website's rules.
-Only fetch what your account allows you to, and don't share the downloads if the site forbids
-it. Your sign-in stays on your PC (see [PRIVACY.md](PRIVACY.md)).
-
-### Live recordings
-
-Only record streams you're allowed to record. Recording other people can also be against
-privacy or recording laws where you or they live, so ask first when it matters.
-
-### What you make and share
-
-Editing a video doesn't make it yours. If you publish or share something you made with Craftora,
-make sure you have the rights to every clip, song, image and caption in it. Ideas like "fair use"
-are different in each country and don't automatically cover you.
-
-### Other services
-
-Optional features such as the AI assistant, the VirusTotal link check and a proxy connect to
-services that you choose and set up with your own keys or addresses. Their own terms apply, and
-Craftora isn't responsible for them. A link check that says a site looks safe isn't a guarantee.
 
 ### No warranty
 
@@ -388,3 +352,18 @@ rights in a way we can help with, [open an issue](https://github.com/Cchheanglim
 
 By using Craftora you agree to use it only in ways that are legal and that respect the rights of
 others.
+
+## Licences
+
+Craftora is [MIT-licensed](LICENSE). The bundled engines have their own licences:
+
+- **yt-dlp:** [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE) (public domain).
+- **FFmpeg:** a **GPL** build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds),
+  which includes libx264. The installer ships its licence, and every release attaches the
+  exact FFmpeg source and build scripts.
+- **Deno** (runs YouTube's player code for yt-dlp): MIT.
+- **whisper.cpp** and the Whisper "base" speech model: MIT.
+
+Full details: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Only download content you have the right to. Respect each site's terms of service.
