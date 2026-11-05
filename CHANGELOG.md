@@ -6,6 +6,9 @@
 
 - **A sound when a download or export finishes**, whether Craftora is in front or not. Windows
   notifications from Craftora are silent now, so you hear only this sound.
+- **Settings → Preferences**: turn the finish sound on or off, and choose whether files imported
+  from this PC go straight onto the timeline or wait under In this project.
+- **Time left** for exports in the queue, worked out from how fast it's going.
 - **Filters, Effects and Transitions** tabs on the right, each tile showing Craftora's cat doing
   it. Drag one onto the timeline (or click it to put it at the playhead):
   - **Filters** (14 colour looks) and **effects** (fade in, fade out, flash, blur, mirror) become
@@ -45,7 +48,14 @@
   (dropping a transition turns it on for that track).
 - **The playhead goes anywhere on the timeline**, past the last clip and on an empty timeline.
 - **Files imported from this PC wait under In this project** instead of going onto the timeline:
-  drag them in or press their +. Fetched links still go straight onto the timeline.
+  drag them in or press their +. Fetched links still go straight onto the timeline. (Settings →
+  Preferences brings the old way back.)
+- **Smooth slow-mo exports 2–3× faster**: each smooth clip is made in up to 4 pieces at once (fewer
+  when memory is short), then joined frame-exactly. Reversed smooth clips, and frame rates that
+  don't divide evenly (24 fps exported at 30), still take the slower one-pass way.
+- **The queue drop-down is smaller**, and its progress line no longer wraps.
+- **Reverse is an effect only**: drag Effects → Reverse onto a clip (the Edit panel's Reverse tick
+  box is gone). Right-click ▸ Edit ▸ Reverse still turns it off again.
 - **Edit and Export are separate tabs** on the right (they were one, Edit & export): Edit has the
   selected clip's settings, Export the export settings and Add to queue (Ctrl+Enter still works
   from anywhere).

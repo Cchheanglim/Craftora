@@ -60,8 +60,9 @@
   gap: var(--space-2);
 }
 
-/* On its own (Cut silences without Split chapters), it takes the whole row, as wide as the buttons below. */
-.insp__pair > :only-child {
+/* Left alone in the last row (Fill the frame; Cut silences without Split chapters), it takes the
+   whole row, as wide as the buttons below. */
+.insp__pair > :last-child:nth-child(odd) {
   grid-column: 1 / -1;
 }
 
@@ -194,7 +195,7 @@
   padding: 0 4px;
 }
 
-/* Rotate sits among the tick boxes (Mirror, Fill the frame, Reverse): boxed the same way. */
+/* Rotate sits among the tick boxes (Mirror, Fill the frame): boxed the same way. */
 .insp__pair .insp__rotate {
   justify-content: flex-start;
   gap: 10px;
