@@ -2,8 +2,7 @@
 //! comes from. Only the website's name is looked up, never the video's link.
 //!
 //! The key is the user's own free VirusTotal key (Settings → Links), kept in Windows Credential
-//! Manager like the AI keys. A copy built with `CRAFTORA_VT_KEY` (the owner's `.env`) falls back
-//! to that one when no key is saved.
+//! Manager like the AI keys. No key is ever built into the program: anyone could read it out.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -11,8 +10,6 @@ use std::time::Duration;
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use tauri::Url;
-
-const BUILT_IN: Option<&str> = option_env!("CRAFTORA_VT_KEY");
 
 fn entry() -> Result<Entry, String> {
     Entry::new("Craftora", "virustotal").map_err(|e| format!("Couldn't reach Windows Credential Manager: {e}"))
@@ -22,14 +19,10 @@ fn own_key() -> Option<String> {
     entry().ok()?.get_password().ok()
 }
 
-fn key() -> Option<String> {
-    own_key().or_else(|| BUILT_IN.map(str::trim).filter(|k| !k.is_empty()).map(String::from))
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SiteChecks {
-    /// A key is there (the user's or a built-in one): links can be checked.
+    /// A key is saved: links can be checked.
     available: bool,
     /// The user saved their own key (Settings shows Remove).
     own_key: bool,
@@ -37,7 +30,7 @@ pub struct SiteChecks {
 
 #[tauri::command]
 pub fn site_check_available() -> SiteChecks {
-    SiteChecks { available: key().is_some(), own_key: own_key().is_some() }
+    SiteChecks { available: own_key().is_some(), own_key: own_key().is_some() }
 }
 
 /// Saves the user's VirusTotal key once VirusTotal accepts it, or forgets it with `None`.
@@ -191,7 +184,7 @@ fn report_url(site: &str) -> String {
 /// The VirusTotal report on the website `link` comes from.
 #[tauri::command]
 pub async fn check_site(link: String) -> Result<SiteReport, String> {
-    let key = key().ok_or("Add your free VirusTotal API key in Settings → Links to check links.")?;
+    let key = own_key().ok_or("Add your free VirusTotal API key in Settings → Links to check links.")?;
     let site = site_of(link.trim()).ok_or("That doesn't look like a link to a website. Paste one starting with https://")?;
     let response = lookup(&site, &key).await?;
     match response.status().as_u16() {
