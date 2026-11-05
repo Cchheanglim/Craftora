@@ -232,7 +232,7 @@ fn run(program: Program, prompt: &str) -> Result<String, String> {
         Some(Ok(answer)) if status.success() || !answer.is_empty() => Ok(answer),
         Some(Err(why)) => Err(format!("{name}: {why}")),
         _ => {
-            let last = err.lines().chain(out.lines()).map(str::trim).filter(|l| !l.is_empty()).last().unwrap_or("it stopped without answering");
+            let last = err.lines().chain(out.lines()).map(str::trim).rfind(|l| !l.is_empty()).unwrap_or("it stopped without answering");
             Err(format!("{name} couldn't answer: {}", last.chars().take(300).collect::<String>()))
         }
     }

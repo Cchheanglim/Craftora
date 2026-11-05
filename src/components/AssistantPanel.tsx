@@ -3,8 +3,20 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { errorText, inDesktopApp } from "../lib/engine";
 import type { Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
-import { fallbackModels, hasKey, listModels, preferredModel, recommendedModels, setKey, useAssistant, type ModelInfo } from "../assistant/useAssistant";
+import {
+  fallbackModels,
+  hasKey,
+  listModels,
+  localModels,
+  preferredModel,
+  recommendedModels,
+  scanAgents,
+  setKey,
+  useAssistant,
+  type ModelInfo,
+} from "../assistant/useAssistant";
 import { PROVIDERS, providerName, type Provider } from "../assistant/providers";
+import { OWN_MODEL, isKeyed, sourceOf, targetOf, type Found, type Source } from "../assistant/agents";
 import { Icon } from "./Icon";
 import { useConfirm } from "./ConfirmDialog";
 import "./AssistantPanel.css";
@@ -21,14 +33,18 @@ const MODEL_KEY = "craftora.assistantModel";
  * GitHub issue naming the AI and model; the user pastes the reply themselves, so nothing is sent
  * without them seeing it.
  */
-const reportUrl = (provider: Provider, model: string) =>
+const reportUrl = (name: string, model: string) =>
   `https://github.com/Cchheanglim/Craftora/issues/new?${new URLSearchParams({
     title: "Report an AI assistant reply",
-    body: `AI: ${providerName(provider)}\nModel: ${model || "unknown"}\n\nWhat did the assistant say or do? (paste the reply here)\n\n\nWhy is it wrong or inappropriate?\n`,
+    body: `AI: ${name}\nModel: ${model || "unknown"}\n\nWhat did the assistant say or do? (paste the reply here)\n\n\nWhy is it wrong or inappropriate?\n`,
   })}`;
 const PROVIDER_KEY = "craftora.assistantProvider";
+/** The local AI server address the user connected by hand. */
+const LOCAL_KEY = "craftora.localAddress";
 /** The model list's last entry, which opens the search instead of picking a model. */
 const SEARCH = "__search__";
+/** The AI list's last entry, which opens the setup screen instead of picking an AI. */
+const CONNECT = "__connect__";
 
 interface AssistantPanelProps {
   api: ProjectApi;
@@ -52,14 +68,29 @@ function remember(key: string, value: string) {
   }
 }
 // Gemini keeps the old key, so a model picked before other AIs existed stays picked.
-const modelKey = (provider: Provider) => (provider === "gemini" ? MODEL_KEY : `${MODEL_KEY}.${provider}`);
+const modelKey = (source: Source) => (source === "gemini" ? MODEL_KEY : `${MODEL_KEY}.${source}`);
+
+const localServer = (address: string): Found => ({ id: address, name: "Local AI server", kind: "server", ready: true, detail: address });
+/** The scan plus the address connected by hand, which the scan may not try. */
+function withSaved(list: Found[]): Found[] {
+  const address = remembered(LOCAL_KEY);
+  return address && !list.some((f) => f.kind === "server" && f.id === address) ? [...list, localServer(address)] : list;
+}
+function rememberedSource(): Source {
+  const saved = remembered(PROVIDER_KEY) ?? "";
+  return isKeyed(saved as Source) || /^(program|server):/.test(saved) ? (saved as Source) : "gemini";
+}
 
 /** Chat with the AI editing assistant, which edits the timeline with the editor's own actions. */
 export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelProps) {
   /** The AIs with a saved key; null while checking. */
   const [keys, setKeys] = useState<Provider[] | null>(null);
-  const [provider, setProvider] = useState<Provider>(() => PROVIDERS.find((p) => p.id === remembered(PROVIDER_KEY))?.id ?? "gemini");
-  const ready = Boolean(keys?.includes(provider));
+  /** AI programs and local servers on this PC; null while scanning. */
+  const [found, setFound] = useState<Found[] | null>(null);
+  const [provider, setProvider] = useState<Source>(rememberedSource);
+  const ready = Boolean(keys && found && (isKeyed(provider) ? keys.includes(provider) : found.some((f) => sourceOf(f) === provider && f.ready)));
+  /** The setup screen, opened from the chat to connect another AI. */
+  const [connecting, setConnecting] = useState(false);
   const [model, setModel] = useState("");
   /** The models this key can use; null while loading. */
   const [models, setModels] = useState<ModelInfo[] | null>(null);
@@ -73,9 +104,12 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
   const fallbacks = useMemo(() => (models && provider === "gemini" ? fallbackModels(models) : []), [models, provider]);
   const { entries, busy, send, reset } = useAssistant({ api, current, playhead, seek, provider, model, fallbacks });
   const { ask, dialog } = useConfirm();
-  const recommended = models ? recommendedModels(models, provider) : [];
+  const recommended = models ? (isKeyed(provider) ? recommendedModels(models, provider) : models.map((m) => ({ ...m, why: "" }))) : [];
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const matches = (models ?? []).filter((m) => words.every((w) => `${m.id} ${m.label}`.toLowerCase().includes(w)));
+  const name = isKeyed(provider) ? providerName(provider) : (found?.find((f) => sourceOf(f) === provider)?.name ?? targetOf(provider));
+  // The key form needs an AI service; with a program or server in use it starts on Gemini.
+  const keyed: Provider = isKeyed(provider) ? provider : "gemini";
 
   const startOver = async () => {
     const ok = await ask({
@@ -87,6 +121,7 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
   };
 
   const removeKey = async () => {
+    if (!isKeyed(provider)) return;
     const name = providerName(provider);
     const ok = await ask({
       title: `Remove your ${name} API key?`,
@@ -98,11 +133,32 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
   };
 
   // Switching AI starts a new chat: each keeps its conversation in its own form.
-  const chooseProvider = (next: Provider) => {
+  const chooseProvider = (next: Source) => {
     if (next === provider) return;
     setProvider(next);
     remember(PROVIDER_KEY, next);
     reset();
+  };
+
+  const use = (next: Source) => {
+    chooseProvider(next);
+    setConnecting(false);
+  };
+
+  const scan = () =>
+    scanAgents()
+      .catch(() => [] as Found[])
+      .then((list) => setFound(withSaved(list)));
+
+  // A server address that answered: keep it, list it, and use it.
+  const useAddress = (address: string) => {
+    remember(LOCAL_KEY, address);
+    const source: Source = `server:${address}`;
+    setFound((list) => {
+      const now = list ?? [];
+      return now.some((f) => sourceOf(f) === source && f.ready) ? now : [...now.filter((f) => sourceOf(f) !== source), localServer(address)];
+    });
+    use(source);
   };
 
   useEffect(() => {
@@ -111,23 +167,30 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
       const saved = PROVIDERS.filter((_, i) => has[i]).map((p) => p.id);
       setKeys(saved);
       // The AI used last, or else one that has a key.
-      setProvider((now) => (saved.includes(now) || saved.length === 0 ? now : saved[0]));
+      setProvider((now) => (!isKeyed(now) || saved.includes(now) || saved.length === 0 ? now : saved[0]));
     });
+    void scan();
   }, []);
 
-  // Once there's a key, ask the provider which models it can use.
+  // Once it's ready, ask the AI which models it can use.
   useEffect(() => {
     if (!ready) return;
     setModels(null);
     setModelsError(null);
     setModel("");
+    // Agent programs use whatever model they're set up with.
+    if (provider.startsWith("program:")) {
+      setModels([OWN_MODEL]);
+      setModel(OWN_MODEL.id);
+      return;
+    }
     let live = true;
-    listModels(provider)
+    (isKeyed(provider) ? listModels(provider) : localModels(targetOf(provider)))
       .then((list) => {
         if (!live) return;
         setModels(list);
         const saved = remembered(modelKey(provider));
-        setModel(list.some((m) => m.id === saved) ? saved! : (preferredModel(list, provider) ?? ""));
+        setModel(list.some((m) => m.id === saved) ? saved! : ((isKeyed(provider) ? preferredModel(list, provider) : list[0]?.id) ?? ""));
       })
       .catch((err) => live && setModelsError(errorText(err)));
     return () => {
@@ -159,13 +222,21 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
       </section>
     );
   }
-  if (!keys) return <section className="asst" aria-label="Assistant" />;
-  if (!ready)
+  if (!keys || !found) return <section className="asst" aria-label="Assistant" />;
+  if (!ready || connecting)
     return (
-      <KeySetup
-        provider={provider}
+      <Setup
+        found={found}
+        provider={keyed}
+        onUse={use}
+        onScan={scan}
+        onAddress={useAddress}
+        onBack={ready ? () => setConnecting(false) : undefined}
         onProvider={chooseProvider}
-        onSaved={() => setKeys((list) => [...(list ?? []).filter((p) => p !== provider), provider])}
+        onSaved={() => {
+          setKeys((list) => [...(list ?? []).filter((p) => p !== keyed), keyed]);
+          use(keyed);
+        }}
       />
     );
 
@@ -176,13 +247,27 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
         <label htmlFor="asst-provider" className="sr-only">
           AI
         </label>
-        <select id="asst-provider" className="field asst__provider" value={provider} onChange={(e) => chooseProvider(e.target.value as Provider)} disabled={busy}>
+        <select
+          id="asst-provider"
+          className="field asst__provider"
+          value={provider}
+          onChange={(e) => (e.target.value === CONNECT ? setConnecting(true) : chooseProvider(e.target.value as Source))}
+          disabled={busy}
+        >
           {PROVIDERS.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
               {keys.includes(p.id) ? "" : " (add key)"}
             </option>
           ))}
+          {found
+            .filter((f) => f.ready)
+            .map((f) => (
+              <option key={sourceOf(f)} value={sourceOf(f)}>
+                {f.name}
+              </option>
+            ))}
+          <option value={CONNECT}>Connect another AI…</option>
         </select>
         <label htmlFor="asst-model" className="sr-only">
           Model
@@ -198,7 +283,7 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
           disabled={busy || !models?.length}
         >
           {!models && <option value="">{modelsError ? "Couldn't load models" : "Loading models…"}</option>}
-          {models?.length === 0 && <option value="">No usable models for this key</option>}
+          {models?.length === 0 && <option value="">{isKeyed(provider) ? "No usable models for this key" : "No models found"}</option>}
           {recommended.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
@@ -307,14 +392,20 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
         />
         <div className="asst__actions">
           <span className="asst__links">
-            <button type="button" className="asst__link" onClick={() => void removeKey()}>
-              Remove {providerName(provider)} key
-            </button>
+            {isKeyed(provider) ? (
+              <button type="button" className="asst__link" onClick={() => void removeKey()}>
+                Remove {name} key
+              </button>
+            ) : (
+              <button type="button" className="asst__link" onClick={() => setConnecting(true)}>
+                Use another AI
+              </button>
+            )}
             <button
               type="button"
               className="asst__link"
               title="Tell us about a wrong or inappropriate reply"
-              onClick={() => void openUrl(reportUrl(provider, model))}
+              onClick={() => void openUrl(reportUrl(name, model))}
             >
               Report a reply
             </button>
@@ -325,6 +416,117 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
           </button>
         </div>
       </form>
+    </section>
+  );
+}
+
+interface SetupProps {
+  found: Found[];
+  /** The AI service the key form shows. */
+  provider: Provider;
+  onUse: (source: Source) => void;
+  onScan: () => Promise<void>;
+  /** A local server address that answered. */
+  onAddress: (address: string) => void;
+  /** Back to the chat; only when the current AI is ready. */
+  onBack?: () => void;
+  onProvider: (p: Provider) => void;
+  onSaved: () => void;
+}
+
+/** Connecting an AI: one already on this PC, or an AI service with an API key. */
+function Setup({ found, provider, onUse, onScan, onAddress, onBack, onProvider, onSaved }: SetupProps) {
+  const [scanning, setScanning] = useState(false);
+  const [address, setAddress] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const rescan = () => {
+    setScanning(true);
+    void onScan().finally(() => setScanning(false));
+  };
+
+  const connect = async (e: FormEvent) => {
+    e.preventDefault();
+    const target = address.trim();
+    setChecking(true);
+    setError(null);
+    try {
+      await localModels(target);
+      setAddress("");
+      onAddress(target);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <section className="asst" aria-labelledby="asst-setup-title">
+      <div className="asst__setup">
+        {onBack && (
+          <button type="button" className="btn btn--ghost" onClick={onBack}>
+            Back to chat
+          </button>
+        )}
+        <h2 id="asst-setup-title">Connect your AI</h2>
+        <h3>On this PC</h3>
+        <p>Use an AI program or server you already have. It uses its own sign-in, so no key is needed.</p>
+        {found.length > 0 ? (
+          <ul className="asst__found">
+            {found.map((f) => (
+              <li key={sourceOf(f)}>
+                <span>
+                  {f.name}
+                  <span className="mono">{f.detail}</span>
+                </span>
+                {f.ready && (
+                  <button type="button" className="btn btn--secondary" onClick={() => onUse(sourceOf(f))}>
+                    Use
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="asst__fine">None found.</p>
+        )}
+        <button type="button" className="btn btn--ghost" onClick={rescan} disabled={scanning}>
+          {scanning ? "Scanning…" : "Scan again"}
+        </button>
+        <form className="asst__form" onSubmit={(e) => void connect(e)}>
+          <label htmlFor="asst-address">Address of a local AI server</label>
+          <div className="asst__row">
+            <input
+              id="asst-address"
+              className="field mono"
+              placeholder="http://localhost:11434/v1"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "asst-address-error" : undefined}
+            />
+            <button type="submit" className="btn btn--secondary" disabled={checking || !address.trim()}>
+              {checking ? "Checking…" : "Connect"}
+            </button>
+          </div>
+          {error && (
+            <p id="asst-address-error" className="asst__error" role="alert">
+              {error}
+            </p>
+          )}
+        </form>
+        <ul className="asst__safety">
+          <li>Each message sends your timeline (clip names, times and the words in text and captions) to that program or server, and on to its AI service. Not your videos, sound or files.</li>
+          <li>Craftora runs AI programs in an empty folder and blocks their file and command tools, so they can't change your files.</li>
+          <li>AI programs are slower than an API key: each step takes a few seconds.</li>
+        </ul>
+        <h3>With an API key</h3>
+        <KeySetup provider={provider} onProvider={onProvider} onSaved={onSaved} />
+      </div>
     </section>
   );
 }
@@ -358,59 +560,56 @@ function KeySetup({ provider, onProvider, onSaved }: { provider: Provider; onPro
   };
 
   return (
-    <section className="asst" aria-labelledby="asst-setup-title">
-      <form className="asst__setup" onSubmit={save}>
-        <h2 id="asst-setup-title">Connect your AI</h2>
-        <p>The assistant works with your own account at one of these AI services. Pick one and paste its API key.</p>
-        <div className="segmented" role="group" aria-label="AI service">
-          {PROVIDERS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              aria-pressed={p.id === provider}
-              onClick={() => {
-                onProvider(p.id);
-                setKeyText("");
-                setError(null);
-              }}
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
-        <p className="asst__fine">{info.keyHelp}</p>
-        <button type="button" className="btn btn--secondary" onClick={() => void openUrl(info.keyPage)}>
-          <Icon name="link" size={13} />
-          Get a {info.name} key
-        </button>
-        <label htmlFor="asst-key">Paste your {info.name} API key</label>
-        <input
-          id="asst-key"
-          type="password"
-          className="field mono"
-          value={key}
-          onChange={(e) => setKeyText(e.target.value)}
-          autoComplete="off"
-          spellCheck={false}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? "asst-key-error" : "asst-key-detail"}
-        />
-        {error && (
-          <p id="asst-key-error" className="asst__error" role="alert">
-            {error}
-          </p>
-        )}
-        <ul id="asst-key-detail" className="asst__safety">
-          <li>Craftora checks the key with {info.company} first, and only keeps it if it works.</li>
-          <li>It's stored encrypted in Windows Credential Manager on this PC, and never shown again, not even to Craftora's screens.</li>
-          <li>It's only ever sent to {info.company}, over a secure connection. Never to Craftora or anyone else.</li>
-          <li>Each message sends your timeline to {info.company}: clip names, times and the words in text and captions. Not your videos, sound or files.</li>
-          <li>{info.company} bills your account for what you use. Remove the key any time.</li>
-        </ul>
-        <button type="submit" className="btn btn--primary" disabled={saving || !key.trim()}>
-          {saving ? "Checking the key…" : "Save key"}
-        </button>
-      </form>
-    </section>
+    <form className="asst__form" onSubmit={save}>
+      <p>The assistant works with your own account at one of these AI services. Pick one and paste its API key.</p>
+      <div className="segmented" role="group" aria-label="AI service">
+        {PROVIDERS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            aria-pressed={p.id === provider}
+            onClick={() => {
+              onProvider(p.id);
+              setKeyText("");
+              setError(null);
+            }}
+          >
+            {p.name}
+          </button>
+        ))}
+      </div>
+      <p className="asst__fine">{info.keyHelp}</p>
+      <button type="button" className="btn btn--secondary" onClick={() => void openUrl(info.keyPage)}>
+        <Icon name="link" size={13} />
+        Get a {info.name} key
+      </button>
+      <label htmlFor="asst-key">Paste your {info.name} API key</label>
+      <input
+        id="asst-key"
+        type="password"
+        className="field mono"
+        value={key}
+        onChange={(e) => setKeyText(e.target.value)}
+        autoComplete="off"
+        spellCheck={false}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? "asst-key-error" : "asst-key-detail"}
+      />
+      {error && (
+        <p id="asst-key-error" className="asst__error" role="alert">
+          {error}
+        </p>
+      )}
+      <ul id="asst-key-detail" className="asst__safety">
+        <li>Craftora checks the key with {info.company} first, and only keeps it if it works.</li>
+        <li>It's stored encrypted in Windows Credential Manager on this PC, and never shown again, not even to Craftora's screens.</li>
+        <li>It's only ever sent to {info.company}, over a secure connection. Never to Craftora or anyone else.</li>
+        <li>Each message sends your timeline to {info.company}: clip names, times and the words in text and captions. Not your videos, sound or files.</li>
+        <li>{info.company} bills your account for what you use. Remove the key any time.</li>
+      </ul>
+      <button type="submit" className="btn btn--primary" disabled={saving || !key.trim()}>
+        {saving ? "Checking the key…" : "Save key"}
+      </button>
+    </form>
   );
 }
