@@ -4,6 +4,7 @@
 
 **New**
 
+- **A sound when a download or export finishes**, whether Craftora is in front or not.
 - **Filters, Effects and Transitions** tabs on the right, each tile showing Craftora's cat doing
   it. Drag one onto the timeline (or click it to put it at the playhead):
   - **Filters** (14 colour looks) and **effects** (fade in, fade out, flash, blur, mirror) become

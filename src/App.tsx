@@ -692,14 +692,18 @@ export default function App() {
   }, [taskbar]);
 
   // While Craftora is in the background, Windows says when a download, export or recording ends.
+  // A finished download or export also plays Craftora's sound (public/mixkitvideogametreasure_edit.mp3), focused or not.
   const lastStatus = useRef(new Map<string, Job["status"]>());
   useEffect(() => {
     const before = lastStatus.current;
     lastStatus.current = new Map(queue.jobs.map((j) => [j.id, j.status]));
-    if (!inDesktopApp || document.hasFocus()) return;
-    for (const j of queue.jobs) {
+    const ended = queue.jobs.filter((j) => {
       const was = before.get(j.id);
-      if ((was !== "downloading" && was !== "encoding") || (j.status !== "finished" && j.status !== "failed")) continue;
+      return (was === "downloading" || was === "encoding") && (j.status === "finished" || j.status === "failed");
+    });
+    if (ended.some((j) => j.status === "finished" && !j.record)) void new Audio("/mixkitvideogametreasure_edit.mp3").play().catch(() => {});
+    if (!inDesktopApp || document.hasFocus()) return;
+    for (const j of ended) {
       const what = j.record ? "Recording" : j.prefetch ? "Download" : "Export";
       const page: View = j.prefetch || j.record ? "downloads" : "library";
       const open = `Click to open ${page === "downloads" ? "Downloads" : "Exports"}.`;
