@@ -119,7 +119,8 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
 
 **AI assistant** (optional): describe an edit in your own words, such as "add the title My
 Trip for 3 seconds" or "put crossfades between all the clips", and it makes the edit. It
-uses your own API key for Gemini, ChatGPT or Claude; see [The AI assistant](#the-ai-assistant).
+uses your own API key for Gemini, ChatGPT or Claude, or an AI already on your PC (Claude Code,
+Codex, Gemini CLI, Antigravity, Ollama, LM Studio); see [The AI assistant](#the-ai-assistant).
 
 **Export**
 - MP4 or MKV video, or audio only (MP3, WAV, FLAC), in 16:9, 9:16 (Shorts and Reels), 1:1
@@ -166,7 +167,11 @@ uses your own API key for Gemini, ChatGPT or Claude; see [The AI assistant](#the
 ## The AI assistant
 
 1. Open the **Assistant** tab at the top of the right panel.
-2. Pick the AI you have an account with and paste its API key:
+2. **AI on this PC:** Craftora lists the AI programs it finds (Claude Code, Codex, Gemini CLI,
+   Antigravity) and local AI servers that are running (Ollama, LM Studio). Click **Use**; no key
+   is needed, because each one uses its own sign-in. Another local server works too: type its
+   address, such as `http://localhost:11434/v1`. AI programs answer more slowly than a key does.
+   **Or with an API key:** pick the AI you have an account with and paste its API key:
    [Gemini](https://aistudio.google.com/apikey) (free to start),
    [ChatGPT](https://platform.openai.com/api-keys) or [Claude](https://console.anthropic.com/settings/keys)
    (both need API credit). App subscriptions (Google AI Pro, ChatGPT Plus, Claude Pro) don't

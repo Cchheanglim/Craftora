@@ -429,11 +429,12 @@
   z-index: 1;
 }
 
-/* The + where two clips meet: opens Transitions for that join (a tick once it has one). */
+/* The + where two clips meet: opens Transitions for that join (a tick once it has one). Above the
+   playhead, which stands right on it after a split at the playhead. */
 .tl__join {
   position: absolute;
   top: 50%;
-  z-index: 2;
+  z-index: 5;
   display: grid;
   place-items: center;
   width: 14px;
