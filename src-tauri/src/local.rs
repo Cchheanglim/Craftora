@@ -107,6 +107,8 @@ impl ProbeStream {
 pub struct ProbeInfo {
     pub has_video: bool,
     pub has_audio: bool,
+    /// Frames a second of the video, when known (Smooth slow-mo cuts its pieces on real frames).
+    pub fps: Option<f64>,
 }
 
 pub async fn probe(app: &AppHandle, path: &Path) -> Result<ProbeInfo, String> {
@@ -115,6 +117,7 @@ pub async fn probe(app: &AppHandle, path: &Path) -> Result<ProbeInfo, String> {
     Ok(ProbeInfo {
         has_video: video.is_some(),
         has_audio: probe.streams.iter().any(|s| s.is_audio()),
+        fps: video.and_then(|v| v.avg_frame_rate.as_deref()).and_then(frame_rate),
     })
 }
 

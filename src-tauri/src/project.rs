@@ -6,16 +6,18 @@
 //! before `-i`), so a clip from the end of a long video doesn't decode everything before it.
 //! Links are fetched first by yt-dlp, just the parts the timeline uses.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::encoders::{self, Encoder, Quality};
+use crate::engine::FFMPEG;
 use crate::jobs::{
-    deliver, download, is_web_link, output_dir, run_ffmpeg, safe_stem, secs, spawn_job, work_dir, Container,
-    Download, DownloadTarget, Output,
+    deliver, download, is_web_link, output_dir, progress_event, run_ffmpeg, run_streaming, safe_stem, secs,
+    spawn_job, work_dir, Container, Download, DownloadTarget, Jobs, Output,
 };
 use crate::local::{normalize, probe, OpenedFiles, ProbeInfo};
 
@@ -242,6 +244,18 @@ impl ClipSpec {
         }
     }
 
+    /// Picture edits, scaling into the frame, and Smooth slow-mo in-between frames.
+    fn picture_chain(&self, w: u32, h: u32, fps: u32) -> String {
+        // Fits inside size × the frame (or covers it, with `fill`), keeping its shape.
+        let (bw, bh) = (((w as f64) * self.size).round().max(2.0), ((h as f64) * self.size).round().max(2.0));
+        let fit = if self.fill { "increase" } else { "decrease" };
+        format!(
+            "setpts=PTS-STARTPTS{},scale=w={bw}:h={bh}:force_original_aspect_ratio={fit}:force_divisible_by=2,setsar=1{}",
+            self.picture_edits(),
+            self.smooth_frames(fps)
+        )
+    }
+
     /// Picture fades to transparent (what's below shows through; black at the bottom).
     fn picture_fades(&self) -> String {
         self.ramps(false)
@@ -405,6 +419,49 @@ struct Source {
     info: ProbeInfo,
 }
 
+/// Available physical memory in bytes, so Smooth slow-mo doesn't start more FFmpeg processes
+/// than RAM can hold.
+#[cfg(windows)]
+fn free_memory() -> Option<u64> {
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    // SAFETY: `status` is zeroed with `dwLength` set to its size, as `GlobalMemoryStatusEx` requires.
+    unsafe {
+        let mut status: MEMORYSTATUSEX = std::mem::zeroed();
+        status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+        (GlobalMemoryStatusEx(&raw mut status) != 0).then_some(status.ullAvailPhys)
+    }
+}
+
+#[cfg(not(windows))]
+fn free_memory() -> Option<u64> {
+    None
+}
+
+/// How many FFmpeg processes to run side by side for a Smooth slow-mo clip (1–4).
+fn pieces(len_out: f64, w: u32, h: u32, free_bytes: Option<u64>, threads: usize) -> usize {
+    let per_piece = 150_000_000.0 + 300.0 * f64::from(w) * f64::from(h);
+    let by_memory = free_bytes.map_or(2, |free| (free as f64 * 0.6 / per_piece).floor() as usize);
+    let by_cpu = threads / 2;
+    let by_length = (len_out / 2.0).ceil() as usize;
+    4.min(by_memory).min(by_cpu).min(by_length).max(1)
+}
+
+/// Output `(first_frame, count)` for each of the `n` pieces of a `frames`-frame clip. Every cut is
+/// a multiple of `step` (output frames per source frame), so each piece starts on a real frame.
+fn piece_frames(frames: u64, n: usize, step: u64) -> Vec<(u64, u64)> {
+    let n = n as u64;
+    let cut = |j: u64| if j == n { frames } else { j * frames / n / step * step };
+    (0..n).map(|j| (cut(j), cut(j + 1) - cut(j))).filter(|&(_, count)| count > 0).collect()
+}
+
+/// Output frames per source frame for Smooth slow-mo (2 at half speed from 30 to 30 fps), when it's
+/// a whole number. shortcut: other frame rates (24 fps exported at 30) keep the one-pass way;
+/// cut on the nearest real frames if those turn out common.
+fn frame_step(export_fps: u32, source_fps: Option<f64>, speed: f64) -> Option<u64> {
+    let step = f64::from(export_fps) / (source_fps? * speed);
+    ((step - step.round()).abs() < 0.01 && step >= 1.0).then(|| step.round() as u64)
+}
+
 async fn render(app: &AppHandle, spec: &RenderSpec) -> Result<PathBuf, String> {
     let dir = output_dir(app)?;
     let work = work_dir(app, &spec.id)?;
@@ -439,12 +496,115 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         sources.insert(media.id.as_str(), Source { path, offset, info, image: media.image });
     }
 
-    // 2. One input per clip, starting at the clip's first frame.
+    // Pre-render each Smooth slow-mo video clip in up to 4 pieces side by side.
     let (w, h, fps) = (spec.width, spec.height, spec.fps);
     let is_video = spec.output == Output::Video;
+    let mut smoothed: HashSet<usize> = HashSet::new();
+    if is_video {
+        let threads = std::thread::available_parallelism().map(usize::from).unwrap_or(4);
+        for (i, clip) in spec.clips.iter().enumerate() {
+            if clip.role != Role::Video || !clip.smooth || clip.speed >= 1.0 {
+                continue;
+            }
+            let Some(source) = clip.media_id.as_deref().and_then(|id| sources.get(id)) else { continue };
+            // shortcut: a reversed clip keeps the one-pass way (its pieces would have to be cut from
+            // the end of the source); split it too if reversed smooth slow-mo turns out common.
+            if source.image || !source.info.has_video || clip.reverse {
+                continue;
+            }
+            let Some(step) = frame_step(fps, source.info.fps, clip.speed) else { continue };
+            let len_out = clip.length();
+            let frames = (len_out * f64::from(fps)).round().max(1.0) as u64;
+            let split = piece_frames(frames, pieces(len_out, w, h, free_memory(), threads), step);
+            let n = split.len();
+            let from = (clip.in_point - source.offset).max(0.0);
+            let progress = Arc::new(Mutex::new(vec![0.0_f64; n]));
+            let _ = app.emit("job-event", progress_event(&spec.id, "smoothing", Some(0.0)));
+
+            let mut handles = Vec::with_capacity(n);
+            for (j, (first_frame, count)) in split.into_iter().enumerate() {
+                // Every piece seeks where the one-pass export does and skips whole source frames, so
+                // it starts on exactly the frame the one-pass export shows there; the frames after its
+                // end are still coming, so minterpolate has the next frame at the cut.
+                let chain = format!("trim=start_frame={},{}", first_frame / step, clip.picture_chain(w, h, fps));
+                let args: Vec<String> = vec![
+                    "-y".into(),
+                    "-hide_banner".into(),
+                    "-nostats".into(),
+                    "-progress".into(),
+                    "pipe:1".into(),
+                    "-ss".into(),
+                    secs(from),
+                    "-t".into(),
+                    secs(clip.out - clip.in_point),
+                    "-i".into(),
+                    source.path.to_string_lossy().into_owned(),
+                    "-an".into(),
+                    "-vf".into(),
+                    chain,
+                    "-c:v".into(),
+                    "libx264".into(),
+                    "-preset".into(),
+                    "ultrafast".into(),
+                    "-crf".into(),
+                    "12".into(),
+                    "-pix_fmt".into(),
+                    "yuv420p".into(),
+                    "-r".into(),
+                    fps.to_string(),
+                    "-frames:v".into(),
+                    count.to_string(),
+                    format!("smooth-{i}-{j}.mkv"),
+                ];
+                let task_app = app.clone();
+                let job_id = spec.id.clone();
+                let work_dir = work.to_path_buf();
+                let progress = Arc::clone(&progress);
+                handles.push(tauri::async_runtime::spawn(async move {
+                    let res = run_streaming(&task_app, &job_id, FFMPEG, args, Some(&work_dir), |line| {
+                        let micros: f64 = line.strip_prefix("out_time_us=")?.trim().parse().ok()?;
+                        let mut done = progress.lock().unwrap();
+                        done[j] = (micros / 1_000_000.0).max(0.0);
+                        let sum: f64 = done.iter().sum();
+                        let percent = (sum / len_out.max(0.1) * 100.0).clamp(0.0, 100.0);
+                        Some(progress_event(&job_id, "smoothing", Some(percent)))
+                    })
+                    .await;
+                    if res.is_err() {
+                        let jobs = task_app.state::<Jobs>();
+                        if !jobs.is_cancelled(&job_id) && !jobs.is_paused(&job_id) {
+                            jobs.kill_children(&job_id);
+                        }
+                    }
+                    res
+                }));
+            }
+
+            let mut all_ok = true;
+            for handle in handles {
+                if !handle.await.is_ok_and(|r| r.is_ok()) {
+                    all_ok = false;
+                }
+            }
+            let jobs = app.state::<Jobs>();
+            if jobs.is_cancelled(&spec.id) || jobs.is_paused(&spec.id) {
+                return Err("Cancelled".into());
+            }
+            if all_ok {
+                let list: String = (0..n).map(|j| format!("file 'smooth-{i}-{j}.mkv'\n")).collect();
+                if std::fs::write(work.join(format!("smooth-{i}.txt")), list).is_ok() {
+                    smoothed.insert(i);
+                }
+            }
+        }
+    }
+
+    // 2. One input per clip, starting at the clip's first frame.
     let total = spec.clips.iter().map(ClipSpec::end).fold(0.0, f64::max);
     let mut inputs: Vec<String> = Vec::new();
     let mut input_of: HashMap<usize, (usize, &Source)> = HashMap::new();
+    let mut smooth_of: HashMap<usize, usize> = HashMap::new();
+    let mut next_input = 0usize;
     for (i, clip) in spec.clips.iter().enumerate() {
         let Some(source) = clip.media_id.as_deref().and_then(|id| sources.get(id)) else { continue };
         if source.image {
@@ -455,7 +615,13 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
             inputs.extend(["-ss".into(), secs(from), "-t".into(), secs(clip.out - clip.in_point)]);
         }
         inputs.extend(["-i".into(), source.path.to_string_lossy().into_owned()]);
-        input_of.insert(i, (input_of.len(), source));
+        input_of.insert(i, (next_input, source));
+        next_input += 1;
+        if smoothed.contains(&i) {
+            inputs.extend(["-f".into(), "concat".into(), "-safe".into(), "0".into(), "-i".into(), format!("smooth-{i}.txt")]);
+            smooth_of.insert(i, next_input);
+            next_input += 1;
+        }
     }
 
     // 3. The filter graph.
@@ -474,13 +640,12 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                     if !source.info.has_video {
                         continue;
                     }
-                    // Fits inside size × the frame (or covers it, with `fill`), keeping its shape.
-                    let (bw, bh) = (((w as f64) * clip.size).round().max(2.0), ((h as f64) * clip.size).round().max(2.0));
-                    let fit = if clip.fill { "increase" } else { "decrease" };
+                    let chain = match smooth_of.get(&i) {
+                        Some(&s) => format!("[{s}:v]setpts=PTS-STARTPTS"),
+                        None => format!("[{k}:v]{}", clip.picture_chain(w, h, fps)),
+                    };
                     graph.push(format!(
-                        "[{k}:v]setpts=PTS-STARTPTS{},scale=w={bw}:h={bh}:force_original_aspect_ratio={fit}:force_divisible_by=2,setsar=1{},fps={fps},format=yuva420p{},setpts=PTS+{start}/TB[v{i}]",
-                        clip.picture_edits(),
-                        clip.smooth_frames(fps),
+                        "{chain},fps={fps},format=yuva420p{},setpts=PTS+{start}/TB[v{i}]",
                         clip.picture_fades()
                     ));
                     graph.push(format!(
@@ -748,7 +913,32 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cover_bytes, effect_filter, look_filter, timed, ClipSpec};
+    use super::{cover_bytes, effect_filter, frame_step, look_filter, piece_frames, pieces, timed, ClipSpec};
+
+    #[test]
+    fn picks_how_many_smooth_pieces_fit() {
+        assert_eq!(pieces(20.0, 1920, 1080, Some(32_000_000_000), 16), 4);
+        assert_eq!(pieces(20.0, 1920, 1080, Some(8_000_000_000), 16), 4);
+        assert_eq!(pieces(20.0, 1920, 1080, Some(1_000_000_000), 16), 1);
+        assert_eq!(pieces(3.0, 1920, 1080, Some(32_000_000_000), 16), 2);
+        assert_eq!(pieces(0.5, 1920, 1080, Some(32_000_000_000), 16), 1);
+        assert_eq!(pieces(20.0, 1920, 1080, Some(32_000_000_000), 2), 1);
+        assert_eq!(pieces(20.0, 1920, 1080, None, 16), 2);
+    }
+
+    #[test]
+    fn splits_smooth_frames_without_gaps_or_drift() {
+        let split = piece_frames(655, 4, 2);
+        assert_eq!(split.len(), 4);
+        assert_eq!(split.iter().map(|(_, count)| count).sum::<u64>(), 655);
+        assert!(split.windows(2).all(|w| w[0].0 < w[1].0 && w[0].0 + w[0].1 == w[1].0));
+        // At half speed every 2nd output frame is a real one: each piece starts on one.
+        assert!(split.iter().all(|(first, _)| first % 2 == 0));
+        assert_eq!(frame_step(30, Some(30.0), 0.5), Some(2));
+        assert_eq!(frame_step(30, Some(60.0), 0.5), Some(1));
+        assert_eq!(frame_step(30, Some(24.0), 0.5), None);
+        assert_eq!(frame_step(30, None, 0.5), None);
+    }
 
     #[test]
     fn takes_only_a_jpeg_as_the_cover() {

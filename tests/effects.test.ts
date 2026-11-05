@@ -14,7 +14,7 @@ const video: MediaSource = {
   streams: [{ id: "local:video", kind: "video", label: "", detail: "", sizeMb: 1 }],
 };
 
-/** A project with one 10 s video clip "c" at the start (on the magnetic main track). */
+/** A project with one 10 s video clip "c" at the start (on the main track). */
 function withClip(): Project {
   const media = mediaFromSource(video);
   const p = applyEdit(emptyProject(), { type: "importMedia", item: media });
@@ -113,9 +113,10 @@ test("a pasted clip lands at the playhead, and a replaced one keeps its place", 
   const clip = p.clips.find((c) => c.id === "c")!;
   p = applyEdit(p, { type: "pasteClip", clip, newClipId: "copy", at: 3 });
   const copy = p.clips.find((c) => c.id === "copy")!;
-  // The main track is magnetic: like dropped media, the copy goes in where the playhead is (here before the clip, 3 s is in its first half).
-  expect([copy.trackId, copy.start, copy.in, copy.out]).toEqual([clip.trackId, 0, 0, 10]);
-  expect(p.clips.find((c) => c.id === "c")!.start).toBe(10);
+  // Like dropped media, the copy goes in at the playhead; the clip is there, so on a track above.
+  expect([copy.start, copy.in, copy.out]).toEqual([3, 0, 10]);
+  expect(copy.trackId).not.toBe(clip.trackId);
+  expect(p.clips.find((c) => c.id === "c")!.start).toBe(0);
   // A clip whose media was removed can't be pasted.
   expect(applyEdit(p, { type: "pasteClip", clip: { ...clip, mediaId: "gone" }, newClipId: "x", at: 0 })).toBe(p);
 
@@ -126,7 +127,7 @@ test("a pasted clip lands at the playhead, and a replaced one keeps its place", 
     { type: "importMedia", item: shorter },
     { type: "replaceClipMedia", clipId: "c", mediaId: longer.id },
   ]);
-  expect(p.clips.find((c) => c.id === "c")).toMatchObject({ mediaId: longer.id, start: 10, in: 0, out: 10 });
+  expect(p.clips.find((c) => c.id === "c")).toMatchObject({ mediaId: longer.id, start: 0, in: 0, out: 10 });
   // A shorter file gives what it has.
   p = applyEdit(p, { type: "replaceClipMedia", clipId: "c", mediaId: shorter.id });
   expect(p.clips.find((c) => c.id === "c")).toMatchObject({ mediaId: shorter.id, in: 0, out: 4 });

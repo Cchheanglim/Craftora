@@ -4,6 +4,8 @@
 
 **New**
 
+- **A sound when a download or export finishes**, whether Craftora is in front or not. Windows
+  notifications from Craftora are silent now, so you hear only this sound.
 - **Filters, Effects and Transitions** tabs on the right, each tile showing Craftora's cat doing
   it. Drag one onto the timeline (or click it to put it at the playhead):
   - **Filters** (14 colour looks) and **effects** (fade in, fade out, flash, blur, mirror) become
@@ -38,6 +40,12 @@
 
 **Changed**
 
+- **Tracks start with the magnet off**: clips move freely on every track, the main track too, and
+  filters, effects and pictures can go on any of them. Turn the magnet on in a track's ⋯ menu
+  (dropping a transition turns it on for that track).
+- **The playhead goes anywhere on the timeline**, past the last clip and on an empty timeline.
+- **Files imported from this PC wait under In this project** instead of going onto the timeline:
+  drag them in or press their +. Fetched links still go straight onto the timeline.
 - **Edit and Export are separate tabs** on the right (they were one, Edit & export): Edit has the
   selected clip's settings, Export the export settings and Add to queue (Ctrl+Enter still works
   from anywhere).
@@ -83,6 +91,9 @@
 
 **Fixed**
 
+- **The track lines on the left didn't meet the lines across the timeline** (they were half a
+  scrollbar lower).
+- **Slow motion, Speed up or Reverse on a picture** now says pictures have no speed.
 - **The + on a join couldn't be clicked right after a split**: the playhead stands exactly there
   after splitting and took the click. The + is now on top.
 - **A speed effect dropped on a picture did nothing**: it now says to drop it on a video clip.

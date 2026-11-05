@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEdit } from "../src/project/actions";
-import { captionLines, emptyProject, mediaFromSource, sameFormat, upgradeProject, type Project } from "../src/project/model";
+import { captionLines, emptyProject, mainTrack, mediaFromSource, sameFormat, upgradeProject, type Project } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
 const source = (kind: "video" | "audio" | "image"): MediaSource => ({
@@ -77,9 +77,26 @@ test("a video goes on the main track, sound on a track below it, text on one abo
   p = applyEdit(p, { type: "addClip", clipId: "m", mediaId: music.id, at: 0 });
   p = applyEdit(p, { type: "addText", clipId: "t", at: 0 });
   const row = (id: string) => p.tracks.findIndex((t) => t.id === p.clips.find((c) => c.id === id)?.trackId);
-  expect(p.tracks[row("v")].magnetic).toBe(true);
+  expect(p.tracks[row("v")]).toBe(mainTrack(p));
   expect(row("m")).toBeGreaterThan(row("v"));
   expect(row("t")).toBeLessThan(row("v"));
+});
+
+test("tracks start without the magnet: a clip on the main track moves where it's dropped", () => {
+  const video = mediaFromSource(source("video"));
+  const music = mediaFromSource(source("audio"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: video });
+  p = applyEdit(p, { type: "importMedia", item: music });
+  // Music first: it goes on a track below, and the empty one above stays the main track.
+  p = applyEdit(p, { type: "addClip", clipId: "m", mediaId: music.id, at: 0 });
+  p = applyEdit(p, { type: "addClip", clipId: "v", mediaId: video.id });
+  const v = () => p.clips.find((c) => c.id === "v")!;
+  expect(p.tracks.every((t) => !t.magnetic)).toBe(true);
+  expect(v().trackId).toBe(mainTrack(p).id);
+  expect(p.tracks.findIndex((t) => t.id === p.clips.find((c) => c.id === "m")?.trackId)).toBeGreaterThan(p.tracks.indexOf(mainTrack(p)));
+  p = applyEdit(p, { type: "moveClip", clipId: "v", start: 3 });
+  expect(v().start).toBe(3);
+  expect(v().trackId).toBe(mainTrack(p).id);
 });
 
 test("a muted track is silent in the export; a hidden one keeps its sound", async () => {
@@ -277,8 +294,9 @@ test("the transcript follows the timeline, words are timed in their line, and pi
   const media = { ...mediaFromSource(source("video")), captions: { label: "English", lines } };
   let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
   p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
-  // Starting the clip 1 s in moves every line 1 s earlier on the timeline.
+  // Starting the clip 1 s in (and moving it back to 0:00) moves every line 1 s earlier on the timeline.
   p = applyEdit(p, { type: "trimClip", clipId: "c", edge: "start", time: 1 });
+  p = applyEdit(p, { type: "moveClip", clipId: "c", start: 0 });
   const said = transcript(p);
   expect(said.map((l) => [l.text, l.start])).toEqual([
     ["Hello there", 0],

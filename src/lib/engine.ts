@@ -21,7 +21,7 @@ export type JobEvent =
   | {
       kind: "progress";
       id: string;
-      phase: "downloading" | "processing" | "cutting" | "encoding" | "recording";
+      phase: "downloading" | "processing" | "cutting" | "smoothing" | "encoding" | "recording";
       percent: number | null;
       downloadedBytes: number | null;
       totalBytes: number | null;

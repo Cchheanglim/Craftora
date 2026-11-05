@@ -14,6 +14,8 @@ pub fn notify(app: AppHandle, title: String, line: String, detail: String, page:
             .title(&title)
             .text1(&line)
             .text2(&detail)
+            // Silent: Craftora plays its own sound when something finishes (App.tsx).
+            .sound(None)
             .on_activated(move |_| {
                 if let Some(main) = handle.get_webview_window("main") {
                     let _ = main.unminimize();

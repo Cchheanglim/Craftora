@@ -285,8 +285,8 @@ export function projectDuration(p: Project): number {
 export function emptyProject(): Project {
   return {
     media: [],
-    // One track to start with; more are added as they're needed.
-    tracks: [{ id: "track-1", name: "Track 1", magnetic: true }],
+    // One track to start with, magnet off (clips move freely); more are added as they're needed.
+    tracks: [{ id: "track-1", name: "Track 1" }],
     clips: [],
   };
 }
@@ -323,8 +323,15 @@ export function upgradeProject(p: Project): Project {
   };
 }
 
-/** The main track (the lowest with the magnet on, else the bottom one): where new videos go by default. */
-export const mainTrack = (p: Project) => [...p.tracks].reverse().find((t) => t.magnetic) ?? p.tracks[p.tracks.length - 1];
+/**
+ * The main track, where new videos go by default and the Cover sits: the lowest with the magnet on,
+ * else the lowest showing a picture, else the lowest without sound (music added below doesn't take it).
+ */
+export const mainTrack = (p: Project) => {
+  const up = [...p.tracks].reverse();
+  const has = (t: Track, test: (c: Clip) => boolean) => p.clips.some((c) => c.trackId === t.id && test(c));
+  return up.find((t) => t.magnetic) ?? up.find((t) => has(t, (c) => showsPicture(p, c))) ?? up.find((t) => !has(t, (c) => Boolean(c.mediaId))) ?? up[0];
+};
 export const trackOf = (p: Project, c: Clip) => p.tracks.find((t) => t.id === c.trackId);
 export const mediaOf = (p: Project, c: Clip) => p.media.find((m) => m.id === c.mediaId);
 /** A clip that draws a picture: a video or a still image (not a sound file, text or a block). */

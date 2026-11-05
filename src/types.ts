@@ -197,7 +197,7 @@ export interface Job {
   /** A live link being recorded into this media item; Stop keeps the recording. */
   record?: { mediaId: string };
   /** "processing" while yt-dlp merges or converts after downloading. */
-  phase?: "downloading" | "processing" | "cutting" | "encoding" | "recording";
+  phase?: "downloading" | "processing" | "cutting" | "smoothing" | "encoding" | "recording";
   downloadedBytes?: number;
   totalBytes?: number;
   speedBps?: number;
