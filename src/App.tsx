@@ -990,13 +990,11 @@ export default function App() {
     setBusy(true);
     setError(null);
     const failed: string[] = [];
-    // Only the first file goes straight onto an empty timeline; the rest wait in Media.
-    let place = project.clips.length === 0;
+    // Files from this PC wait under In this project until dragged or added (fetched links go straight on).
     const results = await Promise.allSettled(paths.map((path) => openLocal(path)));
     results.forEach((res, i) => {
       if (res.status === "fulfilled") {
-        importSource(res.value, place);
-        place = false;
+        importSource(res.value, false);
       } else {
         failed.push(`${paths[i].split(/[\\/]/).pop()}: ${errorText(res.reason)}`);
       }
@@ -1164,7 +1162,7 @@ export default function App() {
   const applyFx = (item: FxItem, trackId: string | undefined, time: number) => {
     const done = dropEdits(project, item, trackId, time, [crypto.randomUUID(), crypto.randomUUID()]);
     if (!done) {
-      setError(item.kind === "transition" ? "Drop a transition on the join between two clips, or click the + there." : "Drop it on the video clip it should change.");
+      setError(item.kind === "transition" ? "Drop a transition on the join between two clips, or click the + there." : "Drop it on a video or sound clip (pictures have no speed).");
       return;
     }
     setError(null);
