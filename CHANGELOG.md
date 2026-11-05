@@ -1,6 +1,6 @@
 # What's new in Craftora
 
-## Next version
+## 0.6.0 (November 2026)
 
 **New**
 
@@ -18,8 +18,8 @@
   - **Slow motion, Speed up, Reverse**: drop one on a clip (or a piece of a split clip) and it
     changes.
   - **Smooth slow-mo**: half speed with new in-between frames made in the export (motion
-    interpolation), instead of each frame shown twice. Exporting it takes much longer (about
-    15 seconds per second of slowed video), so split out just the part to slow first.
+    interpolation), instead of each frame shown twice. It exports much more slowly than the other
+    effects (several seconds per second of slowed video), so split out just the part to slow first.
   - **Transitions**: click the **+** where two clips meet (after a split, say), then pick one; or
     drop one on that join. A join with a transition shows a tick.
   - With a clip selected, clicking a tile puts it on that clip.
@@ -70,7 +70,6 @@
   times. Effect blocks are now blue.
 - **Text is always drawn over pictures in exports**, as the preview shows it, whatever track
   it's on.
-
 - **Settings → Links** lists each website with when it was last used (opened in Craftora's
   window, or fetched from with its login). The box for typing a website to open is gone; when a
   link needs a login, Fetch still offers to open its page. **Sign out of all** stays.
@@ -101,9 +100,8 @@
 
 **Fixed**
 
-- **No VirusTotal key is built into Craftora any more**: a copy built on the owner's PC (the Store
-  package) carried one that anyone could read out. "Check the website" now uses only the key you
-  add in Settings → Links.
+- **Website checks use only your own VirusTotal key** (Settings → Links); no key is built into
+  Craftora.
 - **Downloads listed Windows' hidden files** (desktop.ini, which can't be deleted there); hidden and
   system files are left out now.
 - **Clicking the empty space above or below the tracks didn't move the playhead** (only the ruler
@@ -113,7 +111,6 @@
 - **Slow motion, Speed up or Reverse on a picture** now says pictures have no speed.
 - **The + on a join couldn't be clicked right after a split**: the playhead stands exactly there
   after splitting and took the click. The + is now on top.
-- **A speed effect dropped on a picture did nothing**: it now says to drop it on a video clip.
 - **Light glass: clip names on the timeline were hard to read** (white on pale teal).
 - **Glass themes: the Queue's list was see-through**, with the video showing sharply behind it.
 - **Editing felt slow, worst on fast screens**: during playback the editor stopped and restarted
@@ -138,7 +135,6 @@
   Download for editing, which goes on from where it was.
 - **Hovering a project or a History row whose video is a link** didn't play it (only files on
   this PC did): it now plays the link's light 480p stream, after a few seconds the first time.
-
 - **Broken pictures on the timeline** for some files from your PC (ones whose sound the preview
   can't play as is, such as AC3): the clip's picture turned into a broken image once Craftora's
   preview copy was ready.
