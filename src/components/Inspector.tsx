@@ -244,12 +244,6 @@ export function Inspector({
             <input type="checkbox" checked={Boolean(clip.fill)} onChange={(e) => onChange({ fill: e.target.checked })} />
             <span>Fill the frame</span>
           </label>
-          {!isImage && (
-            <label className="option">
-              <input type="checkbox" checked={clip.reverse} onChange={(e) => onChange({ reverse: e.target.checked })} />
-              <span>Reverse</span>
-            </label>
-          )}
         </div>
       )}
 

@@ -72,6 +72,7 @@ import { MAX_RUNNING, useQueue } from "./state/useQueue";
 import { storeEdition, useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
 import { applyTheme, saveTheme, savedTheme, type Theme } from "./lib/theme";
+import { preference } from "./lib/preferences";
 import { useGlideScroll } from "./lib/glide";
 import { useProject } from "./project/useProject";
 import { applyEdit, SHOWN_CAPTIONS, timelineCaptions, withShownCaptions } from "./project/actions";
@@ -701,7 +702,7 @@ export default function App() {
       const was = before.get(j.id);
       return (was === "downloading" || was === "encoding") && (j.status === "finished" || j.status === "failed");
     });
-    if (ended.some((j) => j.status === "finished" && !j.record)) void new Audio("/mixkitvideogametreasure_edit.mp3").play().catch(() => {});
+    if (preference("finishSound") && ended.some((j) => j.status === "finished" && !j.record)) void new Audio("/mixkitvideogametreasure_edit.mp3").play().catch(() => {});
     if (!inDesktopApp || document.hasFocus()) return;
     for (const j of ended) {
       const what = j.record ? "Recording" : j.prefetch ? "Download" : "Export";
@@ -990,11 +991,12 @@ export default function App() {
     setBusy(true);
     setError(null);
     const failed: string[] = [];
-    // Files from this PC wait under In this project until dragged or added (fetched links go straight on).
+    // Settings → Preferences: onto the timeline one after another, or waiting under In this project.
+    const place = preference("importToTimeline");
     const results = await Promise.allSettled(paths.map((path) => openLocal(path)));
     results.forEach((res, i) => {
       if (res.status === "fulfilled") {
-        importSource(res.value, false);
+        importSource(res.value, place);
       } else {
         failed.push(`${paths[i].split(/[\\/]/).pop()}: ${errorText(res.reason)}`);
       }

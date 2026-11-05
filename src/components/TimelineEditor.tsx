@@ -629,7 +629,17 @@ export function TimelineEditor({
             setPps((p) => Math.min(MAX_PPS, Math.max(MIN_PPS, p * (e.deltaY < 0 ? 1.2 : 1 / 1.2))));
           }}
         >
-          <div ref={contentRef} className="tl__content" style={{ width: contentWidth }}>
+          {/* A press anywhere here (a track, or the empty space above and below them) moves the playhead;
+              the ruler, clips and the join + handle their own presses. */}
+          <div
+            ref={contentRef}
+            className="tl__content"
+            style={{ width: contentWidth }}
+            onPointerDown={(e) => {
+              onSelect(null);
+              beginScrub(e);
+            }}
+          >
             <div className="tl__ruler mono" style={{ "--minor": `${(step * pps) / 5}px` } as CSSProperties} onPointerDown={beginScrub}>
               {ticks.map((t) => (
                 <span key={t} style={{ left: t * pps }}>
@@ -648,10 +658,6 @@ export function TimelineEditor({
                 }}
                 className={["tl__lane", track.id === main?.id && "is-main", track.locked && "is-locked", track.hidden && "is-hidden"].filter(Boolean).join(" ")}
                 style={{ height: ROW_PX[rowSize(track, track.id === main?.id)] }}
-                onPointerDown={(e) => {
-                  onSelect(null);
-                  beginScrub(e);
-                }}
                 onPointerUp={onMediaDrop(track)}
               >
                 {project.clips

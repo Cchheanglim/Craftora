@@ -5,6 +5,7 @@ import { Icon } from "./Icon";
 import { Links, UpdateControls, type LinkSettings } from "./Home";
 import type { Updates } from "../lib/updates";
 import type { Theme } from "../lib/theme";
+import { preference, setPreference, type Preference } from "../lib/preferences";
 import { setShowHiddenLists, showHiddenLists } from "./Hidden";
 import "./Library.css";
 
@@ -91,7 +92,7 @@ export function Settings({ theme, onTheme, outputDir, onChooseOutputDir, downloa
         <p className="library__muted">More at once finishes a long queue sooner but makes each job slower. Live recordings don't count.</p>
       </div>
 
-
+      <Preferences />
 
       <div className="library__group">
         <h2 className="section-label">Updates</h2>
@@ -112,6 +113,38 @@ export function Settings({ theme, onTheme, outputDir, onChooseOutputDir, downloa
         </div>
       )}
     </section>
+  );
+}
+
+/** Small on/off choices (lib/preferences.ts), each a two-button switch like the others here. */
+function Preferences() {
+  const [chosen, setChosen] = useState(() => ({ finishSound: preference("finishSound"), importToTimeline: preference("importToTimeline") }));
+  const choose = (name: Preference, on: boolean) => {
+    setPreference(name, on);
+    setChosen((c) => ({ ...c, [name]: on }));
+  };
+  const rows: [Preference, string, string, [string, string]][] = [
+    ["finishSound", "Sound when a download or export finishes", "Plays whether Craftora is in front or not.", ["On", "Off"]],
+    ["importToTimeline", "Files imported from this PC", "Just import: they wait under In this project. Links you fetch always go onto the timeline.", ["Add to timeline", "Just import"]],
+  ];
+  return (
+    <div className="library__group">
+      <h2 className="section-label">Preferences</h2>
+      {rows.map(([name, label, hint, [yes, no]]) => (
+        <div key={name} className="library__pref">
+          <span>{label}</span>
+          <div className="segmented library__choice" role="group" aria-label={label}>
+            <button type="button" aria-pressed={chosen[name]} onClick={() => choose(name, true)}>
+              {yes}
+            </button>
+            <button type="button" aria-pressed={!chosen[name]} onClick={() => choose(name, false)}>
+              {no}
+            </button>
+          </div>
+          <p className="library__muted">{hint}</p>
+        </div>
+      ))}
+    </div>
   );
 }
 

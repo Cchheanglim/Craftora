@@ -526,7 +526,9 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                 // Every piece seeks where the one-pass export does and skips whole source frames, so
                 // it starts on exactly the frame the one-pass export shows there; the frames after its
                 // end are still coming, so minterpolate has the next frame at the cut.
-                let chain = format!("trim=start_frame={},{}", first_frame / step, clip.picture_chain(w, h, fps));
+                // At the end of the file minterpolate has no next frame and comes up short: the last
+                // frame is held (tpad) so the piece still has all its frames, not black ones.
+                let chain = format!("trim=start_frame={},{},tpad=stop_mode=clone:stop_duration=2", first_frame / step, clip.picture_chain(w, h, fps));
                 let args: Vec<String> = vec![
                     "-y".into(),
                     "-hide_banner".into(),

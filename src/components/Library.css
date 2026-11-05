@@ -220,6 +220,15 @@
   align-self: flex-start;
 }
 
+/* A preference: its name, the switch, then a line on what it does. */
+.library__pref {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
 .library__choice button {
   padding: 0 var(--space-3);
 }
