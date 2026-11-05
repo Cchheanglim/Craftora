@@ -170,8 +170,8 @@ async fn call(provider: Provider, request: reqwest::RequestBuilder) -> Result<Va
 #[derive(Serialize)]
 pub struct ModelInfo {
     /// e.g. "gemini-3.8-flash", "gpt-5", "claude-opus-5"
-    id: String,
-    label: String,
+    pub(crate) id: String,
+    pub(crate) label: String,
 }
 
 /// The chat models `provider`'s key can use, as the provider lists them.

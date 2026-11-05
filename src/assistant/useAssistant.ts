@@ -12,6 +12,8 @@ import { ShortIds } from "./tools";
 import { runTurn, type Answer, type Content } from "./conversation";
 import { friendlyError, reliable } from "./reliable";
 import { fromAnthropic, fromOpenAI, toAnthropic, toOpenAI, type Provider, type Request } from "./providers";
+import { isKeyed, targetOf, type Found, type Source } from "./agents";
+import { fromAgentText, toAgentPrompt } from "./agentText";
 
 export interface ModelInfo {
   id: string;
@@ -40,8 +42,18 @@ export const setKey = (provider: Provider, key: string | null) => call<void>("as
 export const listModels = (provider: Provider) =>
   call<ModelInfo[]>("assistant_models", { provider }).catch((err: Error) => Promise.reject(new Error(friendlyError(err.message, undefined, provider))));
 
-/** One request to `provider`, translated from and back to the conversation's (Gemini's) shape. */
-function generateWith(provider: Provider): (model: string, body: unknown) => Promise<Answer> {
+/** The agent programs and local AI servers on this PC, found or not. */
+export const scanAgents = () => call<Found[]>("agents_scan");
+/** The models a local AI server has; also how an address is checked before it's kept. */
+export const localModels = (address: string) => call<ModelInfo[]>("local_models", { address });
+
+/** One request to `source`, translated from and back to the conversation's (Gemini's) shape. */
+function generateWith(source: Source): (model: string, body: unknown) => Promise<Answer> {
+  if (source.startsWith("program:"))
+    return async (_model, body) => fromAgentText(await call<string>("agent_run", { program: targetOf(source), prompt: toAgentPrompt(body as Request) }));
+  if (source.startsWith("server:"))
+    return async (model, body) => fromOpenAI(await call("local_generate", { address: targetOf(source), body: toOpenAI(model, body as Request) }));
+  const provider = source as Provider;
   const send = <T,>(model: string, body: unknown) => call<T>("assistant_generate", { provider, model, body });
   if (provider === "openai") return async (model, body) => fromOpenAI(await send(model, toOpenAI(model, body as Request)));
   if (provider === "anthropic") return async (model, body) => fromAnthropic(await send(model, toAnthropic(model, body as Request)));
@@ -110,7 +122,7 @@ interface Options {
   current: () => Project;
   playhead: () => number;
   seek: (t: number) => void;
-  provider: Provider;
+  provider: Source;
   model: string;
   /** Tried in order when `model` is busy or not in the plan. */
   fallbacks: string[];
@@ -142,7 +154,8 @@ export function useAssistant({ api, current, playhead, seek, provider, model, fa
             fallbacks,
             (from, to, why) => add({ kind: "action", text: `${to} answered instead of ${from}. ${why}` }),
             undefined,
-            provider,
+            // Agents and local servers word their own errors (no HTTP codes), so it's unused there.
+            isKeyed(provider) ? provider : undefined,
           ),
           current,
           playhead,

@@ -1,3 +1,4 @@
+mod agents;
 mod assistant;
 mod captions;
 mod diag;
@@ -166,6 +167,10 @@ pub fn run() {
             encoders::export_encoder,
             assistant::assistant_models,
             assistant::assistant_generate,
+            agents::agents_scan,
+            agents::agent_run,
+            agents::local_models,
+            agents::local_generate,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
