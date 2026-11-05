@@ -49,12 +49,8 @@ export function usePlayback(duration: number) {
     return () => cancelAnimationFrame(frame);
   }, [playing, speed, duration]);
 
-  // Keep the playhead inside the timeline when clips are removed or shortened.
-  useEffect(() => {
-    if (timeRef.current > duration) setTime(duration);
-  }, [duration]);
-
-  const seek = useCallback((t: number) => setTime(Math.min(Math.max(0, t), duration)), [duration]);
+  // The playhead goes anywhere on the timeline, past the last clip too (even with no clips).
+  const seek = useCallback((t: number) => setTime(Math.max(0, t)), []);
 
   const toggle = useCallback(() => {
     if (duration <= 0) return;

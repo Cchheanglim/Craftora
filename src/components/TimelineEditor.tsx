@@ -142,6 +142,7 @@ export function TimelineEditor({
   const [pps, setPps] = useState(40);
   // 0 until measured, so the first automatic fit uses the real width.
   const [viewWidth, setViewWidth] = useState(0);
+  const [scrollbar, setScrollbar] = useState(0);
   const [fitted, setFitted] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
   // Each video's filmstrip, made in the background (by preview address); until then its clips show its picture.
@@ -186,13 +187,18 @@ export function TimelineEditor({
     };
   }, [menuOpen]);
 
-  // Track the visible width for "fit" and the content width.
+  // Track the visible width for "fit" and the content width, and the scrollbar under the clips:
+  // the heads leave the same room below so both sides centre their rows on the same lines.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const observer = new ResizeObserver(() => setViewWidth(el.clientWidth));
+    const measure = () => {
+      setViewWidth(el.clientWidth);
+      setScrollbar(el.offsetHeight - el.clientHeight);
+    };
+    const observer = new ResizeObserver(measure);
     observer.observe(el);
-    setViewWidth(el.clientWidth);
+    measure();
     return () => observer.disconnect();
   }, []);
 
@@ -217,7 +223,7 @@ export function TimelineEditor({
     else if (x < el.scrollLeft) el.scrollLeft = Math.max(0, x - 80);
   }, [playback.time, playback.playing, pps]);
 
-  const contentWidth = Math.max(viewWidth, (Math.max(duration, 10) + 10) * pps);
+  const contentWidth = Math.max(viewWidth, (Math.max(duration, 10, playback.time) + 10) * pps);
   const timeAt = (clientX: number) => {
     const rect = contentRef.current!.getBoundingClientRect();
     return Math.max(0, (clientX - rect.left) / pps);
@@ -461,7 +467,7 @@ export function TimelineEditor({
       </div>
 
       <div className="tl__body">
-        <div className="tl__heads">
+        <div className="tl__heads" style={{ paddingBottom: scrollbar }}>
           <div className="tl__ruler-spacer" />
           <div className="tl__lanes">
           {project.tracks.map((track) => {
