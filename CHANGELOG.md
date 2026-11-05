@@ -29,6 +29,12 @@
   has the same lock, hide and mute buttons and a ⋯ menu (track height, waveform size, magnet,
   remove). Hide hides a track's pictures, text and effects (its sound still plays); mute
   silences it. Video clips show frames along them, with their name, length and sound wave.
+- **The assistant works without an API key** when you already have an AI on this PC. The
+  Assistant tab lists what it finds: the AI programs Claude Code, Codex, Gemini CLI and
+  Antigravity (each uses its own sign-in), and local AI servers such as Ollama and LM Studio. Or
+  type the address of any other AI server on this PC. Craftora runs AI programs in an empty
+  folder with their file and command tools blocked. They're slower than a key (about 10 to 35
+  seconds per reply). Switch between them and your API keys from the list at the top.
 
 **Changed**
 

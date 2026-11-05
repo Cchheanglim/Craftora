@@ -479,7 +479,10 @@ function Setup({ found, provider, onUse, onScan, onAddress, onBack, onProvider, 
               <li key={sourceOf(f)}>
                 <span>
                   {f.name}
-                  <span className="mono">{f.detail}</span>
+                  {/* A program's install path is long and says little; it's kept on hover. */}
+                  <span className="mono" title={f.detail}>
+                    {f.kind === "program" && f.ready ? "Installed" : f.detail}
+                  </span>
                 </span>
                 {f.ready && (
                   <button type="button" className="btn btn--secondary" onClick={() => onUse(sourceOf(f))}>

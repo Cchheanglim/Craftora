@@ -38,7 +38,10 @@ These are the only times Craftora goes online:
   service's terms apply: [Gemini API terms](https://ai.google.dev/gemini-api/terms),
   [OpenAI terms](https://openai.com/policies/), [Anthropic terms](https://www.anthropic.com/legal).
   Keys are stored in Windows Credential Manager and never leave your PC except to that service.
-  You can remove a key at any time.
+  You can remove a key at any time. Instead of a key, you can pick an AI program or local AI
+  server already on your PC (such as Claude Code or Ollama). Then that program gets the same text
+  and sends it on to its own AI service, under that service's terms; Craftora doesn't send it
+  anywhere else. Craftora only connects to AI servers on your own PC.
 - **Update checks.** Craftora asks GitHub whether a newer version exists when it starts. Turn
   this off on the Home screen (About → Check automatically) or check by hand instead. The
   request carries no personal information beyond what any web request does. Copies from the
