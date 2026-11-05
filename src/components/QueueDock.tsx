@@ -348,6 +348,7 @@ function statusText(job: Job): string {
       return `${verb} · ${formatSize((job.sizeMb * (job.progress ?? 0)) / 100)} of ${formatSize(job.sizeMb)}`;
     }
     case "encoding":
+      if (job.phase === "smoothing") return "Making the smooth slow-mo";
       return job.phase === "processing" ? "Finishing with FFmpeg" : job.phase === "cutting" ? "Cutting with FFmpeg" : "Encoding with FFmpeg";
     case "paused":
       // An export can't go on from the middle of a cut or an encode.
@@ -359,6 +360,21 @@ function statusText(job: Job): string {
 
 function progressText(job: Job): string {
   if (job.status === "waiting" || job.progress === null) return "";
-  const eta = job.status === "downloading" && job.etaSeconds ? ` · ${formatClock(job.etaSeconds)}` : "";
-  return `${Math.round(job.progress)}%${eta}`;
+  const left = job.status === "downloading" ? job.etaSeconds : encodeLeft(job);
+  return `${Math.round(job.progress)}%${left ? ` · ${formatClock(left)} left` : ""}`;
+}
+
+/** When each FFmpeg step was first seen running, and at what percent: its pace so far gives the time left. */
+const firstSeen = new Map<string, { at: number; percent: number }>();
+function encodeLeft(job: Job): number | undefined {
+  if (job.status !== "encoding" || job.progress === null) return undefined;
+  const key = `${job.id}:${job.phase}`;
+  const seen = firstSeen.get(key);
+  // A paused export starts over, so its percent goes back down: time it afresh.
+  if (!seen || job.progress < seen.percent) {
+    firstSeen.set(key, { at: Date.now(), percent: job.progress });
+    return undefined;
+  }
+  const [done, seconds] = [job.progress - seen.percent, (Date.now() - seen.at) / 1000];
+  return done >= 1 && seconds >= 3 ? (seconds / done) * (100 - job.progress) : undefined;
 }
