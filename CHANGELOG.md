@@ -101,6 +101,9 @@
 
 **Fixed**
 
+- **No VirusTotal key is built into Craftora any more**: a copy built on the owner's PC (the Store
+  package) carried one that anyone could read out. "Check the website" now uses only the key you
+  add in Settings → Links.
 - **Downloads listed Windows' hidden files** (desktop.ini, which can't be deleted there); hidden and
   system files are left out now.
 - **Clicking the empty space above or below the tracks didn't move the playhead** (only the ruler
