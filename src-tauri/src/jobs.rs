@@ -110,7 +110,8 @@ pub struct Jobs(Mutex<HashMap<String, Running>>);
 
 #[derive(Default)]
 struct Running {
-    child: Option<CommandChild>,
+    /// Usually one process; Smooth slow-mo runs several side by side (project.rs).
+    children: Vec<CommandChild>,
     cancelled: bool,
     paused: bool,
 }
@@ -132,10 +133,17 @@ impl Jobs {
         let mut jobs = self.0.lock().unwrap();
         match jobs.get_mut(id) {
             Some(job) if !job.cancelled && !job.paused => {
-                job.child = Some(child);
+                job.children.push(child);
                 None
             }
             _ => Some(child),
+        }
+    }
+
+    /// Forgets a finished process so its old PID is never killed later.
+    pub(crate) fn detach(&self, id: &str, pid: u32) {
+        if let Some(job) = self.0.lock().unwrap().get_mut(id) {
+            job.children.retain(|c| c.pid() != pid);
         }
     }
 
@@ -144,13 +152,13 @@ impl Jobs {
     }
 
     fn cancel(&self, id: &str) -> bool {
-        let child = {
+        let children = {
             let mut jobs = self.0.lock().unwrap();
             let Some(job) = jobs.get_mut(id) else { return false };
             job.cancelled = true;
-            job.child.take()
+            std::mem::take(&mut job.children)
         };
-        if let Some(child) = child {
+        for child in children {
             kill_tree(child);
         }
         true
@@ -160,24 +168,39 @@ impl Jobs {
     /// normally with what it saved. `cancel` instead throws the work away.
     pub(crate) fn stop(&self, id: &str) -> bool {
         let mut jobs = self.0.lock().unwrap();
-        jobs.get_mut(id).and_then(|j| j.child.as_mut()).is_some_and(|child| child.write(b"q").is_ok())
+        let Some(job) = jobs.get_mut(id) else { return false };
+        job.children.iter_mut().fold(false, |ok, child| child.write(b"q").is_ok() || ok)
     }
 
     /// Stops a download but keeps what it saved, to continue later (`pause_job`).
     fn pause(&self, id: &str) -> bool {
-        let child = {
+        let children = {
             let mut jobs = self.0.lock().unwrap();
             let Some(job) = jobs.get_mut(id) else { return false };
             job.paused = true;
-            job.child.take()
+            std::mem::take(&mut job.children)
         };
-        if let Some(child) = child {
+        for child in children {
             kill_tree(child);
         }
         true
     }
 
-    fn is_paused(&self, id: &str) -> bool {
+    /// Stops every running process of a job without cancelling or pausing the job itself.
+    pub(crate) fn kill_children(&self, id: &str) {
+        let children = self
+            .0
+            .lock()
+            .unwrap()
+            .get_mut(id)
+            .map(|j| std::mem::take(&mut j.children))
+            .unwrap_or_default();
+        for child in children {
+            kill_tree(child);
+        }
+    }
+
+    pub(crate) fn is_paused(&self, id: &str) -> bool {
         self.0.lock().unwrap().get(id).is_some_and(|j| j.paused)
     }
 
@@ -753,7 +776,8 @@ pub(crate) async fn run_streaming(
         command = command.current_dir(dir);
     }
     let (mut rx, child) = command.spawn().map_err(|e| format!("Couldn't start {program}: {e}"))?;
-    let _tied = crate::engine::tie(child.pid());
+    let pid = child.pid();
+    let _tied = crate::engine::tie(pid);
     if let Some(child) = jobs.attach(id, child) {
         let _ = child.kill();
         return Err("Cancelled".into());
@@ -780,6 +804,7 @@ pub(crate) async fn run_streaming(
             _ => {}
         }
     }
+    jobs.detach(id, pid);
 
     match exit_code {
         Some(0) => Ok(()),
