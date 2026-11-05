@@ -101,6 +101,8 @@
 
 **Fixed**
 
+- **Downloads listed Windows' hidden files** (desktop.ini, which can't be deleted there); hidden and
+  system files are left out now.
 - **Clicking the empty space above or below the tracks didn't move the playhead** (only the ruler
   and the tracks did); now a click or drag anywhere on the timeline does.
 - **The track lines on the left didn't meet the lines across the timeline** (they were half a

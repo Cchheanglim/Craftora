@@ -473,7 +473,7 @@ pub fn list_downloads(app: AppHandle) -> Result<Downloads, String> {
     // Working folders of downloads in progress (and other hidden files) aren't finished downloads.
     let mut files: Vec<DownloadedFile> = entries
         .flatten()
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()) && !e.file_name().to_string_lossy().starts_with('.'))
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()) && !e.file_name().to_string_lossy().starts_with('.') && !is_hidden(e))
         .filter_map(|e| {
             let meta = e.metadata().ok()?;
             let modified = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?;
@@ -487,6 +487,19 @@ pub fn list_downloads(app: AppHandle) -> Result<Downloads, String> {
         .collect();
     files.sort_by_key(|f| std::cmp::Reverse(f.modified_ms));
     Ok(Downloads { folder: dir.to_string_lossy().into_owned(), files })
+}
+
+/// Files Windows marks hidden or system (desktop.ini, Thumbs.db), which it keeps in many folders.
+#[cfg(windows)]
+fn is_hidden(entry: &std::fs::DirEntry) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const HIDDEN_OR_SYSTEM: u32 = 0x2 | 0x4;
+    entry.metadata().is_ok_and(|m| m.file_attributes() & HIDDEN_OR_SYSTEM != 0)
+}
+
+#[cfg(not(windows))]
+fn is_hidden(_: &std::fs::DirEntry) -> bool {
+    false
 }
 
 /// A whole link to download before editing ("Download first").
@@ -819,6 +832,21 @@ pub(crate) async fn run_streaming(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn hidden_system_files_are_not_downloads() {
+        let dir = std::env::temp_dir().join(format!("craftora-hidden-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("clip.mp4"), b"x").unwrap();
+        std::fs::write(dir.join("desktop.ini"), b"x").unwrap();
+        // Marked the way Windows marks its own desktop.ini.
+        std::process::Command::new("attrib").args(["+h", "+s"]).arg(dir.join("desktop.ini")).status().unwrap();
+        let shown: Vec<String> = std::fs::read_dir(&dir).unwrap().flatten().filter(|e| !is_hidden(e)).map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        std::process::Command::new("attrib").args(["-h", "-s"]).arg(dir.join("desktop.ini")).status().unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(shown, ["clip.mp4"]);
+    }
 
     #[test]
     fn file_names_keep_spaces_but_not_what_windows_refuses() {
