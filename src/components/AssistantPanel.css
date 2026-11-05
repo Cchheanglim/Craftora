@@ -182,7 +182,8 @@
   align-self: flex-start;
 }
 
-/* The AI service: as wide as its name; the model list takes the rest. */
+/* The AI service: as wide as its name; the model list takes the rest. Alone (AI programs have no
+   model list), it fills the row. */
 .asst__head .asst__provider:not(:only-of-type) {
   flex: 0 0 auto;
 }

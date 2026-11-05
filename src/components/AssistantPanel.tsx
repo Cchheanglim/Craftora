@@ -542,7 +542,7 @@ function Setup({ found, provider, onUse, onScan, onAddress, onBack, onProvider, 
             <ul className="asst__safety">
               <li>Each message sends your timeline (clip names, times and the words in text and captions) to that program or server, and on to its AI service. Not your videos, sound or files.</li>
               <li>Craftora runs AI programs in an empty folder and blocks their file and command tools, so they can't change your files.</li>
-              <li>AI programs are slower than an API key: each step takes a few seconds.</li>
+              <li>AI programs are slower than an API key: a reply can take half a minute.</li>
             </ul>
           </>
         ) : (
