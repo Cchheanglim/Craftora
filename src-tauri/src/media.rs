@@ -694,7 +694,9 @@ fn stamp_referer(formats: &mut [Format], page: Option<&str>) {
 /// the inputs (each with the headers its server wants) and whether `-c copy` can be used as-is.
 pub(crate) async fn live_inputs(app: &AppHandle, url: &str, format: Option<&str>) -> Result<(Vec<(String, BTreeMap<String, String>)>, bool), String> {
     if let Some(format_id) = format.filter(|f| !f.is_empty() && *f != "live") {
-        let formats = match fetched_formats().lock().unwrap().remove(url) {
+        // Taken out first: the lock mustn't be held while `read_link` waits.
+        let cached = fetched_formats().lock().unwrap().remove(url);
+        let formats = match cached {
             Some(formats) => formats,
             None => {
                 let mut info = read_link(app, url).await?;
