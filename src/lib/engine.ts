@@ -142,8 +142,8 @@ export const HLS_RELAY = "http://cmedia.localhost/hls";
 export const RECORDINGS = "http://cmedia.localhost/rec/";
 export const recordingUrl = (jobId: string) => `${RECORDINGS}${jobId}/index.m3u8`;
 
-/** Starts recording a live link as job `id`; resolves with the growing playlist's path. */
-export const recordLive = (spec: { id: string; url: string; title: string }) =>
+/** Starts recording a live link (or making an HLS preview for a link) as job `id`; resolves with the growing playlist's path. */
+export const recordLive = (spec: { id: string; url: string; title: string; format?: string }) =>
   invoke<string>("record_live", { spec }).catch((err) => Promise.reject(new Error(message(err))));
 /** Ends a recording and keeps it: the job finishes with the whole video as an MP4. */
 export const stopRecording = (id: string) => invoke<boolean>("stop_recording", { id });

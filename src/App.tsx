@@ -28,6 +28,7 @@ import {
   probeLocal,
   recordLive,
   recordingUrl,
+  RECORDINGS,
   allowLocal,
   pickFolder,
   saveSnapshot,
@@ -578,7 +579,7 @@ export default function App() {
     for (const m of project.media) {
       const s = m.source;
       // A recording in progress isn't probed: it keeps growing, and its playlist plays as it is.
-      if (!s.local || s.image || s.live || peaksTried.current.has(m.id)) continue;
+      if (!s.local || s.image || s.live || s.previewUrl.startsWith(RECORDINGS) || peaksTried.current.has(m.id)) continue;
       peaksTried.current.add(m.id);
       // Wait until the video is already open in the editor before running background ffprobe/ffmpeg tasks.
       window.setTimeout(() => {
@@ -817,34 +818,39 @@ export default function App() {
     return id;
   };
 
-  /** A live link is recorded while it plays, so it can be edited before the stream ends. */
+  /** A live link (or a link with no playable preview) is recorded into HLS while it plays, then joined into one MP4. */
   const recordForEditing = (item: MediaItem) => {
     const id = crypto.randomUUID();
+    const isLive = Boolean(item.source.live);
+    const stream = item.source.streams.find((s) => s.id === item.videoFormat);
     queue.add({
       id,
       title: item.name,
-      summary: "Live stream · edit what's recorded while it plays",
+      summary: isLive
+        ? "Live stream · edit what's recorded while it plays"
+        : `Download for editing · ${formatClock(item.source.duration)} · ${stream?.label ?? "best quality"}`,
       kind: "video",
       status: "downloading",
       phase: "recording",
       progress: null,
       needsEncode: false,
-      sizeMb: 0,
+      sizeMb: stream?.sizeMb ?? 0,
       fileName: item.name,
-      command: `ffmpeg -i <live stream of "${item.source.url}"> -c copy -f hls index.m3u8`,
+      command: `ffmpeg -i <${isLive ? "live stream" : "stream"} of "${item.source.url}"> -f hls index.m3u8`,
       thumbnail: item.source.thumbnail,
       record: { mediaId: item.id },
     });
-    recordLive({ id, url: item.source.url, title: item.name })
+    recordLive({ id, url: item.source.url, title: item.name, format: isLive ? undefined : item.videoFormat })
       .then((path) => recordings.current.set(id, { mediaId: item.id, path }))
       .catch((err) => {
         queue.remove(id);
-        setError(`Couldn't record the live stream: ${errorText(err)}`);
+        if (!isLive) downloadForEditing(item);
+        else setError(`Couldn't record the live stream: ${errorText(err)}`);
       });
   };
 
-  // Live recordings: every few seconds the media's length catches up with the parts saved so far.
-  // From the first part on, the preview plays the recording and exports read it like a local file.
+  // Recordings in progress: every second or so the preview switches to the HLS playlist once the
+  // first part is ready, and a live or unknown-length video's length catches up with the parts saved.
   const recordings = useRef(new Map<string, { mediaId: string; path: string }>());
   const recordingIds = queue.jobs.filter((j) => j.record && j.status === "downloading").map((j) => j.id).join();
   useEffect(() => {
@@ -853,19 +859,26 @@ export default function App() {
       for (const id of recordingIds.split(",")) {
         const rec = recordings.current.get(id);
         const item = rec && projectRef.current.media.find((m) => m.id === rec.mediaId);
-        if (!rec || !item?.source.live) continue;
+        if (!rec || !item) continue;
         const playlist = await fetch(recordingUrl(id)).then((r) => (r.ok ? r.text() : "")).catch(() => "");
         const seconds = [...playlist.matchAll(/#EXTINF:([\d.]+)/g)].reduce((sum, m) => sum + Number(m[1]), 0);
-        if (seconds <= item.source.duration) continue;
+        if (seconds <= 0 || (seconds <= item.source.duration && item.source.previewUrl === recordingUrl(id))) continue;
         if (!item.source.local) await allowLocal(rec.path).catch(() => {});
         const current = projectRef.current.media.find((m) => m.id === rec.mediaId);
         if (!current) continue;
         api.refreshMedia(current.id, {
-          source: { ...current.source, url: rec.path, local: true, previewUrl: recordingUrl(id), previewHls: true, duration: seconds },
+          source: {
+            ...current.source,
+            url: rec.path,
+            local: true,
+            previewUrl: recordingUrl(id),
+            previewHls: true,
+            duration: Math.max(current.source.duration, seconds),
+          },
         });
       }
     };
-    const timer = window.setInterval(() => void catchUp(), 3000);
+    const timer = window.setInterval(() => void catchUp(), 1000);
     return () => window.clearInterval(timer);
   }, [recordingIds, api]);
 
@@ -874,6 +887,15 @@ export default function App() {
   const swapped = useRef(new Set<string>());
   useEffect(() => {
     for (const job of queue.jobs) {
+      if (job.record && job.status === "failed" && !swapped.current.has(job.id)) {
+        const item = projectRef.current.media.find((m) => m.id === job.record!.mediaId);
+        if (item && !item.source.live && !item.source.local) {
+          swapped.current.add(job.id);
+          queue.remove(job.id);
+          downloadForEditing(item);
+          continue;
+        }
+      }
       const target = job.prefetch ?? job.record;
       if (!target || job.status !== "finished" || !job.outputPath || swapped.current.has(job.id)) continue;
       swapped.current.add(job.id);
@@ -928,7 +950,7 @@ export default function App() {
       // A live stream goes to Media only: drag in the parts you want as they're recorded. So does a
       // video with no known length yet (behind a site's bot check): it downloads first.
       const item = importSource(source, !source.live && source.duration > 0);
-      if (source.live && inDesktopApp) recordForEditing(item);
+      if ((source.live || (!source.previewUrl && !source.downloadFirst && item.hasVideo)) && inDesktopApp) recordForEditing(item);
       else if ((!source.previewUrl || source.downloadFirst) && inDesktopApp) downloadForEditing(item);
       // A bot-checked site's video plays and downloads through this window: keep it (minimized is fine).
       if (found)
