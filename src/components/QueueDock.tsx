@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Job } from "../types";
-import type { Queue } from "../state/useQueue";
+import { resumable, type Queue } from "../state/useQueue";
 import { formatSize } from "../project/exportPlan";
 import { formatClock } from "../lib/timecode";
 import { playableFile, revealFile, stopRecording } from "../lib/engine";
@@ -141,8 +141,8 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
   const shownTitle = job.rename ?? job.title;
   const { ask, dialog } = useConfirm();
   const cancel = async () => {
-    // A job that hasn't started loses nothing; a running one (or a paused download) loses its progress.
-    const running = job.status === "downloading" || job.status === "encoding" || (job.status === "paused" && Boolean(job.prefetch));
+    // A job that hasn't started loses nothing; a running one (or a download that went on before) loses its progress.
+    const running = job.status === "downloading" || job.status === "encoding" || ((job.status === "paused" || job.status === "waiting") && resumable(job) && job.progress !== 0);
     const what = job.prefetch || job.record ? "download" : "export";
     const ok =
       !running ||
@@ -352,7 +352,7 @@ function statusText(job: Job): string {
       return job.phase === "processing" ? "Finishing with FFmpeg" : job.phase === "cutting" ? "Cutting with FFmpeg" : "Encoding with FFmpeg";
     case "paused":
       // An export can't go on from the middle of a cut or an encode.
-      return !job.prefetch && (job.spec || job.render) ? "Paused · starts again when resumed" : "Paused";
+      return !resumable(job) && (job.spec || job.render) ? "Paused · starts again when resumed" : "Paused";
     default:
       return job.after?.length ? "Waiting for its video to download" : "Waiting";
   }

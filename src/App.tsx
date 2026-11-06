@@ -68,7 +68,7 @@ import {
   type LibraryEntry,
 } from "./lib/storage";
 import { captureFrame, captureThumbnail, coverFrame } from "./lib/thumbnail";
-import { MAX_RUNNING, useQueue } from "./state/useQueue";
+import { MAX_RUNNING, resumable, useQueue } from "./state/useQueue";
 import { storeEdition, useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
 import { applyTheme, saveTheme, savedTheme, type Theme } from "./lib/theme";
@@ -657,9 +657,9 @@ export default function App() {
   /** Media id → how making its captions is going, for the Media list. */
   const [captioning, setCaptioning] = useState<Record<string, string>>({});
 
-  // Closing stops everything still running (engine.rs `tie`), so ask first. Paused downloads are kept.
+  // Closing stops everything still running (engine.rs `tie`), so ask first. Downloads are kept and go on next time.
   const running =
-    queue.jobs.filter((j) => j.status === "waiting" || j.status === "downloading" || j.status === "encoding" || (j.status === "paused" && !j.prefetch)).length +
+    queue.jobs.filter((j) => !resumable(j) && (j.status === "waiting" || j.status === "downloading" || j.status === "encoding" || j.status === "paused")).length +
     Object.values(captioning).filter((text) => text !== "couldn't make captions").length;
   const runningRef = useRef(running);
   runningRef.current = running;
@@ -673,8 +673,8 @@ export default function App() {
       event.preventDefault();
       const ok = await askClose({
         title: "Close Craftora?",
-        message: `${count === 1 ? "1 download, export or caption is" : `${count} downloads, exports or captions are`} not finished. Closing stops ${count === 1 ? "it" : "them"} and what ${count === 1 ? "it has" : "they have"} done so far is lost.`,
-        note: "Paused downloads are kept and wait in the queue next time.",
+        message: `${count === 1 ? "1 export or caption is" : `${count} exports or captions are`} not finished. Closing stops ${count === 1 ? "it" : "them"} and what ${count === 1 ? "it has" : "they have"} done so far is lost.`,
+        note: "Downloads are kept and go on where they stopped next time.",
         confirmLabel: "Stop and close",
         danger: true,
       });
@@ -698,9 +698,10 @@ export default function App() {
   useEffect(() => {
     const before = lastStatus.current;
     lastStatus.current = new Map(queue.jobs.map((j) => [j.id, j.status]));
+    // A download made only for an export says nothing when it ends: the export does.
     const ended = queue.jobs.filter((j) => {
       const was = before.get(j.id);
-      return (was === "downloading" || was === "encoding") && (j.status === "finished" || j.status === "failed");
+      return (was === "downloading" || was === "encoding") && (j.status === "finished" || j.status === "failed") && !j.prefetch?.forExport;
     });
     if (preference("finishSound") && ended.some((j) => j.status === "finished" && !j.record)) void new Audio("/mixkitvideogametreasure_edit.mp3").play().catch(() => {});
     if (!inDesktopApp || document.hasFocus()) return;
@@ -798,8 +799,11 @@ export default function App() {
       });
   };
 
-  /** Queues a whole link to download, so it edits like a file on this PC. Returns the queue job's id. */
-  const downloadForEditing = (item: MediaItem) => {
+  /**
+   * Queues a whole link to download, so it edits like a file on this PC. Returns the queue job's id.
+   * `forExport`: only an export needs it, so it's kept out of the Downloads folder (jobs.rs `sources_dir`).
+   */
+  const downloadForEditing = (item: MediaItem, forExport = false) => {
     if (!inDesktopApp || item.source.local) return;
     // Meanwhile, fill the preview's cache from the start, so scrubbing what's done is instant. Not
     // through the page window (bot-checked sites): that would fetch the whole video twice.
@@ -810,7 +814,7 @@ export default function App() {
     queue.add({
       id,
       title: item.name,
-      summary: `Download for editing · ${formatClock(item.source.duration)} · ${stream?.label ?? "best quality"}`,
+      summary: `${forExport ? "Video for your export" : "Download for editing"} · ${formatClock(item.source.duration)} · ${stream?.label ?? "best quality"}`,
       kind: item.hasVideo ? "video" : "audio",
       status: "waiting",
       progress: 0,
@@ -819,7 +823,7 @@ export default function App() {
       fileName: item.name,
       command: `yt-dlp -f "${format}" ${item.hasVideo ? "--merge-output-format mp4" : "-x --audio-format m4a"} "${item.source.url}"`,
       thumbnail: item.source.thumbnail,
-      prefetch: { mediaId: item.id, url: item.source.url, format, title: item.name, audioOnly: !item.hasVideo },
+      prefetch: { mediaId: item.id, url: item.source.url, format, title: item.name, audioOnly: !item.hasVideo, forExport },
     });
     return id;
   };
@@ -1260,7 +1264,7 @@ export default function App() {
     // An edited video renders links from whole downloads, which go on where they were after a pause,
     // and then the editor plays the files instead of streaming the links.
     const links = plan.kind === "render" ? source.media.filter((m) => !m.source.local && !m.source.live && plan.spec.media.some((s) => s.id === m.id)) : [];
-    const after = links.flatMap((m) => queue.jobs.find((j) => j.prefetch?.mediaId === m.id && j.status !== "failed")?.id ?? downloadForEditing(m) ?? []);
+    const after = links.flatMap((m) => queue.jobs.find((j) => j.prefetch?.mediaId === m.id && j.status !== "failed")?.id ?? downloadForEditing(m, true) ?? []);
     const job: Job = {
       id,
       title: plan.title,
