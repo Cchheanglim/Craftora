@@ -81,6 +81,7 @@ pub async fn make_captions(
     id: String,
     source: String,
     local: bool,
+    gpu: bool,
 ) -> Result<Vec<Caption>, String> {
     if id.is_empty() || id.len() > 64 || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return Err("Not a media id.".into());
@@ -100,13 +101,13 @@ pub async fn make_captions(
     let work = app.path().app_cache_dir().map_err(|e| e.to_string())?.join(format!("speech-{id}"));
     std::fs::create_dir_all(&work).map_err(|e| format!("Couldn't make a working folder: {e}"))?;
     let started = std::time::Instant::now();
-    let made = listen(&app, &id, file, &source, &model, &work).await;
+    let made = listen(&app, &id, file, &source, &model, &work, gpu).await;
     crate::diag::note(format!("captions from the sound: {} in {:.0}s", if made.is_ok() { "made" } else { "failed" }, started.elapsed().as_secs_f64()));
     let _ = std::fs::remove_dir_all(&work);
     made
 }
 
-async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, model: &Path, work: &Path) -> Result<Vec<Caption>, String> {
+async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, model: &Path, work: &Path, gpu: bool) -> Result<Vec<Caption>, String> {
     // Reading a long file's sound takes a while too, so it's said for files as well as links.
     report(app, id, "sound", 0.0);
     let input = match file {
@@ -139,7 +140,11 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, mo
     // `-dtw` times each word (`from_whisper_json`; it needs flash attention off), measured 0.1–0.25 s from the
     // speech even under music. `-mc 0`: no earlier text carried into the next 30 s, which made whisper repeat a
     // line over what came after. Together ~10% slower than before.
-    let args = ["-m", &model, "-f", &wav_text, "-l", "auto", "-t", &threads, "-mc", "0", "-nfa", "-dtw", "base", "-ojf", "-of", &out, "-pp"];
+    let mut args = vec!["-m", &model, "-f", &wav_text, "-l", "auto", "-t", &threads, "-mc", "0", "-nfa", "-dtw", "base", "-ojf", "-of", &out, "-pp"];
+    // Settings → Preferences → Make captions with: Processor. Otherwise whisper takes the graphics card when it finds one.
+    if !gpu {
+        args.push("-ng");
+    }
     let (mut rx, child) = crate::engine::command(app, WHISPER)?
         .args(args)
         .spawn()

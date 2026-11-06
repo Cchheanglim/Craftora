@@ -118,7 +118,11 @@ export function Settings({ theme, onTheme, outputDir, onChooseOutputDir, downloa
 
 /** Small on/off choices (lib/preferences.ts), each a two-button switch like the others here. */
 function Preferences() {
-  const [chosen, setChosen] = useState(() => ({ finishSound: preference("finishSound"), importToTimeline: preference("importToTimeline") }));
+  const [chosen, setChosen] = useState(() => ({
+    finishSound: preference("finishSound"),
+    importToTimeline: preference("importToTimeline"),
+    captionsOnGpu: preference("captionsOnGpu"),
+  }));
   const choose = (name: Preference, on: boolean) => {
     setPreference(name, on);
     setChosen((c) => ({ ...c, [name]: on }));
@@ -126,6 +130,7 @@ function Preferences() {
   const rows: [Preference, string, string, [string, string]][] = [
     ["finishSound", "Sound when a download or export finishes", "Plays whether Craftora is in front or not.", ["On", "Off"]],
     ["importToTimeline", "Files imported from this PC", "Just import: they wait under In this project. Links you fetch always go onto the timeline.", ["Add to timeline", "Just import"]],
+    ["captionsOnGpu", "Make captions with", "The graphics card is much faster. A PC without a usable one uses the processor anyway.", ["Graphics card", "Processor"]],
   ];
   return (
     <div className="library__group">

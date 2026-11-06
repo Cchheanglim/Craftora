@@ -490,7 +490,7 @@ export const linkPeaks = (url: string) => invoke<number[]>("link_peaks", { url }
 /** A fetched video's captions (`MediaSource.captions.url`) as timed lines. */
 export const loadCaptions = (url: string, link: string) => invoke<Caption[]>("load_captions", { url, link });
 /** Captions made from what's said (whisper.cpp, on this PC); `source` is a file path or a link. */
-export const makeCaptions = (id: string, source: string, local: boolean) => invoke<Caption[]>("make_captions", { id, source, local });
+export const makeCaptions = (id: string, source: string, local: boolean, gpu: boolean) => invoke<Caption[]>("make_captions", { id, source, local, gpu });
 export interface SpeechProgress {
   id: string;
   /** "model": downloading the speech model (first time only); "sound": getting a link's sound. */
