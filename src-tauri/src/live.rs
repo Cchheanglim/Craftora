@@ -27,16 +27,24 @@ pub struct LiveRecording {
     id: String,
     url: String,
     title: String,
+    #[serde(default)]
+    format: Option<String>,
 }
 
-/// Starts recording a live link as job `id`; returns the growing playlist's path. The job ends
-/// (`job-event` "done", with the MP4) when `stop_recording` is called or the stream ends.
+/// Starts recording a live link (or making an HLS preview for a link the WebView can't play) as
+/// job `id`; returns the growing playlist's path. The job ends (`job-event` "done", with the MP4)
+/// when `stop_recording` is called or the video ends.
 #[tauri::command]
 pub async fn record_live(app: AppHandle, recordings: State<'_, Recordings>, spec: LiveRecording) -> Result<String, String> {
     if !is_web_link(&spec.url) {
         return Err("Only web links can be recorded.".into());
     }
-    let mut inputs = crate::media::live_inputs(&app, &spec.url).await?;
+    let (mut inputs, copy) = crate::media::live_inputs(&app, &spec.url, spec.format.as_deref()).await?;
+    let encoder = if copy {
+        None
+    } else {
+        Some(crate::encoders::for_render(&app, crate::encoders::Quality::Fast).await)
+    };
     // Behind a bot check FFmpeg can't get in, so it reads the stream through the page window.
     let through_page = crate::signin::bot_checked(&spec.url);
     if through_page {
@@ -53,7 +61,7 @@ pub async fn record_live(app: AppHandle, recordings: State<'_, Recordings>, spec
     std::fs::create_dir_all(&folder).map_err(|e| format!("Couldn't create the recording folder: {e}"))?;
     recordings.0.lock().unwrap().insert(spec.id.clone(), folder.clone());
 
-    let args = record_args(&inputs, through_page);
+    let args = record_args(&inputs, through_page, encoder);
     let (task_app, id) = (app.clone(), spec.id.clone());
     let task_folder = folder.clone();
     let started = spawn_job(app.clone(), spec.id.clone(), async move {
@@ -77,7 +85,7 @@ pub fn stop_recording(jobs: State<'_, Jobs>, id: String) -> bool {
     jobs.stop(&id)
 }
 
-fn record_args(inputs: &[(String, BTreeMap<String, String>)], through_page: bool) -> Vec<String> {
+fn record_args(inputs: &[(String, BTreeMap<String, String>)], through_page: bool, encoder: Option<crate::encoders::Encoder>) -> Vec<String> {
     let mut args: Vec<String> = ["-hide_banner", "-nostats", "-loglevel", "error"].map(String::from).to_vec();
     for (url, headers) in inputs {
         if through_page {
@@ -97,10 +105,18 @@ fn record_args(inputs: &[(String, BTreeMap<String, String>)], through_page: bool
     }
     let audio_input = inputs.len() - 1;
     args.extend(["-map".into(), "0:v:0?".into(), "-map".into(), format!("{audio_input}:a:0?")]);
+    match encoder {
+        None => args.extend(["-c", "copy"].map(String::from)),
+        Some(enc) => {
+            args.extend(["-vf", "scale=-2:'trunc(min(720,ih)/2)*2'"].map(String::from));
+            args.extend(enc.args(crate::encoders::Quality::Fast));
+            args.extend(["-c:a", "aac", "-b:a", "160k", "-ac", "2"].map(String::from));
+        }
+    }
     // 4-second parts; the playlist keeps every part ("event"), and a part only appears in it
     // once it's complete (temp_file), so the preview and exports never read half a part.
     for arg in [
-        "-c", "copy", "-f", "hls", "-hls_time", "4", "-hls_list_size", "0", "-hls_playlist_type", "event",
+        "-f", "hls", "-hls_time", "4", "-hls_list_size", "0", "-hls_playlist_type", "event",
         "-hls_flags", "temp_file", "-hls_segment_filename", "part%05d.ts", PLAYLIST,
     ] {
         args.push(arg.into());
