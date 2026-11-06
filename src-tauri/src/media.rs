@@ -752,17 +752,23 @@ fn pick_stream(formats: &[Format], format_id: &str) -> Option<(Vec<StreamInput>,
         _ => vec![input(video)?],
     };
     let is_dash = video.protocol.as_deref() == Some("http_dash_segments");
+    // A plain file often doesn't say what's in it (""): it's tried as it is, and if FFmpeg can't copy it the job
+    // fails and App.tsx downloads the link instead.
+    let copies = |codec: Option<&str>, wanted: &str| {
+        let name = codec_name(codec);
+        name.is_empty() || name == wanted
+    };
     let v_h264 = if is_dash {
         formats.iter().filter(|f| f.has_video()).all(|f| codec_name(f.vcodec.as_deref()) == "H.264" && f.height.unwrap_or(0) <= 720)
     } else {
-        codec_name(video.vcodec.as_deref()) == "H.264"
+        copies(video.vcodec.as_deref(), "H.264")
     };
     let a_aac = if is_dash {
         formats.iter().filter(|f| f.has_audio()).all(|f| codec_name(f.acodec.as_deref()) == "AAC")
     } else if video.has_audio() {
-        codec_name(video.acodec.as_deref()) == "AAC"
+        copies(video.acodec.as_deref(), "AAC")
     } else {
-        audio.is_none_or(|a| codec_name(a.acodec.as_deref()) == "AAC")
+        audio.is_none_or(|a| copies(a.acodec.as_deref(), "AAC"))
     };
     Some((inputs, v_h264 && a_aac))
 }
@@ -898,5 +904,12 @@ mod tests {
         assert_eq!(inputs.len(), 1);
         assert_eq!(inputs[0].0, "https://d/m.mpd");
         assert!(!copy);
+
+        // A plain .mkv that doesn't say what's in it: tried as it is.
+        let plain = br#"{"title":"P","formats":[{"format_id":"x-matroska","ext":"mkv","url":"https://p/v.mkv","protocol":"http"}]}"#;
+        let plain_info: Info = serde_json::from_slice(plain).unwrap();
+        let (inputs, copy) = pick_stream(&plain_info.formats, "x-matroska").unwrap();
+        assert_eq!(inputs.len(), 1);
+        assert!(copy);
     }
 }

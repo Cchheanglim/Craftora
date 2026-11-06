@@ -2,6 +2,18 @@
 
 ## Next version
 
+**New**
+
+- **Captions on the graphics card.** With a graphics card of its own (NVIDIA, AMD or Intel Arc),
+  Craftora makes captions there: a 12-minute film in about 25 s instead of 45 s, with fewer wrong
+  words. Settings → Preferences → **Make captions with** switches between the graphics card and the
+  processor. (The first time on a graphics card it downloads 190 MB once.)
+- **Captions fill in while they're made**: every few minutes of video shows as soon as it's done.
+- **The Transcript shows where you are**: the line being said is marked in red, and so is the word.
+- **Links the preview couldn't play now play within seconds** (videos sent in small pieces, MKV and
+  other files the player doesn't open): Craftora copies the video as it comes in and plays the copy,
+  at the original quality. It used to download the whole video first.
+
 **Fixed**
 
 - **Downloads started over after Pause or after closing Craftora** (#123). A whole link exported
@@ -15,14 +27,12 @@
 - **Captions made from the sound showed before the words, stayed too long, or landed in odd
   places** (#126, #127). Each line is now timed by when its words are said, also under music
   (measured: within 0.15 s of the speech starting, before up to 10 s early). Sound tags like
-  [Music], which the speech model also gave to cries and groans, are left out, and whisper no
-  longer repeats a line over what comes after. Captions made earlier can be made again (Transcript
-  → Make captions).
-
-**Changed**
-
-- Captions from the sound appear all at once when they're done (the percent keeps moving), instead
-  of a few lines along the way.
+  [Music], which the speech model also gave to cries and groans, are left out. Measured on a
+  12-minute film against its official subtitles: fewer wrong words (31% instead of 37% on the
+  graphics card, 27% on the processor) and less than half as many lines shown before the words.
+  Captions made earlier can be made again (Transcript → Make captions).
+- **Some links that played had no picture** in the media list (stream playlists): Craftora now
+  takes one from the video.
 
 ## 0.6.0 (November 2026)
 

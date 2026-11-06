@@ -195,7 +195,7 @@ export interface Job {
   /** Downloads: the name the user gave it; the file takes it when the download finishes. */
   rename?: string;
   /** A live link being recorded into this media item; Stop keeps the recording. */
-  record?: { mediaId: string };
+  record?: { mediaId: string; live: boolean };
   /** "processing" while yt-dlp merges or converts after downloading. */
   phase?: "downloading" | "processing" | "cutting" | "smoothing" | "encoding" | "recording";
   downloadedBytes?: number;

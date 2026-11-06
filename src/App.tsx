@@ -704,10 +704,10 @@ export default function App() {
       const was = before.get(j.id);
       return (was === "downloading" || was === "encoding") && (j.status === "finished" || j.status === "failed") && !j.prefetch?.forExport;
     });
-    if (preference("finishSound") && ended.some((j) => j.status === "finished" && !j.record)) void new Audio("/mixkitvideogametreasure_edit.mp3").play().catch(() => {});
+    if (preference("finishSound") && ended.some((j) => j.status === "finished" && !j.record?.live)) void new Audio("/mixkitvideogametreasure_edit.mp3").play().catch(() => {});
     if (!inDesktopApp || document.hasFocus()) return;
     for (const j of ended) {
-      const what = j.record ? "Recording" : j.prefetch ? "Download" : "Export";
+      const what = j.record?.live ? "Recording" : j.prefetch || j.record ? "Download" : "Export";
       const page: View = j.prefetch || j.record ? "downloads" : "library";
       const open = `Click to open ${page === "downloads" ? "Downloads" : "Exports"}.`;
       const saved = j.prefetch ? "Ready to edit" : `Saved as ${j.outputPath?.split(/[\\/]/).pop() ?? j.fileName}`;
@@ -849,7 +849,8 @@ export default function App() {
       fileName: item.name,
       command: `ffmpeg -i <${isLive ? "live stream" : "stream"} of "${item.source.url}"> -f hls index.m3u8`,
       thumbnail: item.source.thumbnail,
-      record: { mediaId: item.id },
+      // Not live: a link the player can't play, copied while it's fetched so it plays at once (live.rs).
+      record: { mediaId: item.id, live: isLive },
     });
     recordLive({ id, url: item.source.url, title: item.name, format: isLive ? undefined : item.videoFormat })
       .then((path) => recordings.current.set(id, { mediaId: item.id, path }))
@@ -1585,7 +1586,7 @@ export default function App() {
             .filter((j) => j.status === "downloading" || j.status === "encoding")
             .map((j) => ({
               id: j.id,
-              label: j.record ? "Recording live" : j.prefetch ? "Downloading" : j.status === "downloading" ? "Getting video to export" : "Exporting",
+              label: j.record?.live ? "Recording live" : j.prefetch || j.record ? "Downloading" : j.status === "downloading" ? "Getting video to export" : "Exporting",
               detail: j.rename ?? j.title,
               percent: j.record ? null : j.progress,
             })),

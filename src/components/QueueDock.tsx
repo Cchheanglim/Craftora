@@ -228,7 +228,7 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
             <Icon name="check" size={14} />
             Finished <span>· {job.finishedAt ? ago(job.finishedAt) : ""}</span>
           </span>
-        ) : job.record && job.status === "downloading" ? (
+        ) : job.record?.live && job.status === "downloading" ? (
           <button type="button" className="btn btn--icon" aria-label={`Stop recording ${job.title}`} title="Stop recording" onClick={() => void stop()}>
             <Icon name="stop" size={14} />
           </button>
@@ -344,7 +344,7 @@ function statusText(job: Job): string {
         return `${verb} · ${mb(job.downloadedBytes)}${of}${speed}`;
       }
       if (job.spec) return `${verb}…`;
-      if (job.record) return "Recording live";
+      if (job.record) return job.record.live ? "Recording live" : `${verb}…`;
       return `${verb} · ${formatSize((job.sizeMb * (job.progress ?? 0)) / 100)} of ${formatSize(job.sizeMb)}`;
     }
     case "encoding":
