@@ -31,6 +31,12 @@ const BASE: SpeechModel = SpeechModel { file: "ggml-base.bin", bytes: 147_951_46
 const SMALL: SpeechModel = SpeechModel { file: "ggml-small-q5_1.bin", bytes: 190_085_487, dtw: "small" };
 
 #[derive(Serialize, Clone)]
+struct Lines<'a> {
+    id: &'a str,
+    lines: &'a [Caption],
+}
+
+#[derive(Serialize, Clone)]
 struct Progress<'a> {
     id: &'a str,
     /// "model" (downloading it, first time only), "sound" (getting and reading the audio) or "listening".
@@ -149,16 +155,62 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, (m
         .unwrap_or_default();
 
     report(app, id, "listening", 0.0);
+    // whisper reads 16 kHz, 16-bit mono: 32,000 bytes a second after the 44-byte header.
+    let length = std::fs::metadata(&wav).map_or(0.0, |m| m.len().saturating_sub(44) as f64 / 32_000.0);
+    let mut captions: Vec<Caption> = Vec::new();
+    let all = pieces(length, &silences);
+    for (n, &(from, to)) in all.iter().enumerate() {
+        let out = work.join(format!("captions-{n}"));
+        whisper_piece(app, id, (model, dtw), &wav_text, &out, card, (from, to, length)).await?;
+        let json = std::fs::read_to_string(out.with_extension("json")).map_err(|_| "whisper finished but made no captions.".to_string())?;
+        let mut lines = from_whisper_json(&json)?;
+        for line in &mut lines {
+            fit_to_speech(line, &silences);
+        }
+        // Each piece's lines go to the editor as soon as it's done: a long video's captions fill in as they're made.
+        if n + 1 < all.len() {
+            let _ = app.emit("speech-lines", Lines { id, lines: &lines });
+        }
+        captions.extend(lines);
+    }
+    // A line at the end of one piece mustn't overlap the first of the next.
+    for i in 1..captions.len() {
+        let next = captions[i].start;
+        captions[i - 1].end = captions[i - 1].end.min(next).max(captions[i - 1].start);
+    }
+    Ok(captions)
+}
+
+/// Where a long sound is cut into pieces of about 5 minutes, so their captions show while the rest is made: in the
+/// middle of the quiet stretch nearest each cut (within 30 s), so no word is cut in two.
+fn pieces(length: f64, silences: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    const PIECE: f64 = 300.0;
+    let mut cuts = vec![0.0];
+    while let Some(&last) = cuts.last()
+        && length - last > PIECE * 1.5
+    {
+        let target = last + PIECE;
+        let quiet = silences.iter().map(|(a, b)| (a + b) / 2.0).filter(|m| (m - target).abs() <= 30.0);
+        cuts.push(quiet.min_by(|a, b| (a - target).abs().total_cmp(&(b - target).abs())).unwrap_or(target));
+    }
+    cuts.push(length.max(0.0));
+    cuts.windows(2).map(|w| (w[0], w[1])).collect()
+}
+
+/// Runs whisper on `from`–`to` seconds of the sound, writing `out`.json; progress is reported for the whole sound.
+async fn whisper_piece(app: &AppHandle, id: &str, (model, dtw): (&Path, &str), wav: &str, out: &Path, card: Option<u32>, (from, to, length): (f64, f64, f64)) -> Result<(), String> {
     // Half the processor: fetching, the preview and exports stay quick while captions are made.
     let threads = std::thread::available_parallelism().map_or(2, |n| (n.get() / 2).clamp(1, 8)).to_string();
-    let (model, out) = (model.to_string_lossy().into_owned(), work.join("captions").to_string_lossy().into_owned());
+    let (model, out) = (model.to_string_lossy().into_owned(), out.to_string_lossy().into_owned());
+    let (offset, duration) = (((from * 1000.0) as u64).to_string(), (((to - from) * 1000.0).ceil() as u64).to_string());
     // `-dtw` times each word (`from_whisper_json`; it needs flash attention off), measured 0.1–0.25 s from the
-    // speech even under music. `-mc 0`: no earlier text carried into the next 30 s, which made whisper repeat a
-    // line over what came after. Together ~10% slower than before.
+    // speech even under music.
     let device = card.map(|n| n.to_string());
-    let mut args = vec!["-m", &model, "-f", &wav_text, "-l", "auto", "-t", &threads, "-mc", "0", "-nfa", "-dtw", dtw, "-ojf", "-of", &out, "-pp"];
+    let mut args = vec!["-m", &model, "-f", wav, "-l", "auto", "-t", &threads, "-ot", &offset, "-d", &duration, "-nfa", "-dtw", dtw, "-ojf", "-of", &out, "-pp"];
     match &device {
-        Some(n) => args.extend(["-dev", n]),
+        // `-mc 0` (no earlier text carried into the next 30 s): on the graphics card whisper otherwise looped and wrote
+        // 3 lines for a 12-minute film. On the processor it isn't needed and it lost lines (23 of 76 against 19).
+        Some(n) => args.extend(["-dev", n, "-mc", "0"]),
         None => args.push("-ng"),
     }
     let (mut rx, child) = crate::engine::command(app, WHISPER)?
@@ -170,12 +222,12 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, (m
     while let Some(event) = rx.recv().await {
         match event {
             CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
-                // Lines whisper prints as it goes ("[00:00:04.640 --> …] It records…") aren't shown any more:
-                // with `-dtw` it prints only some, repeated and out of order (3 of 56 in 7 minutes).
+                // The lines whisper prints as it goes ("[00:00:04.640 --> …] It records…") aren't used: with `-dtw` it
+                // prints only some, repeated and out of order. Each piece's JSON is read when it's done instead.
                 for line in String::from_utf8_lossy(&bytes).lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('[')) {
                     // "whisper_print_progress_callback: progress =  45%"
                     match line.split("progress =").nth(1).and_then(|p| p.trim().trim_end_matches('%').trim().parse::<f64>().ok()) {
-                        Some(percent) => report(app, id, "listening", percent),
+                        Some(percent) => report(app, id, "listening", ((from + (to - from) * percent / 100.0) / length.max(1.0) * 100.0).min(100.0)),
                         None => line.clone_into(&mut last_line),
                     }
                 }
@@ -187,12 +239,7 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, (m
     if code != Some(0) {
         return Err(format!("Making captions failed: {last_line}"));
     }
-    let json = std::fs::read_to_string(work.join("captions.json")).map_err(|_| "whisper finished but made no captions.".to_string())?;
-    let mut captions = from_whisper_json(&json)?;
-    for caption in &mut captions {
-        fit_to_speech(caption, &silences);
-    }
-    Ok(captions)
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -375,6 +422,16 @@ mod tests {
         let mut c = Caption { start: 1.0, end: 2.0, text: "x".into() };
         fit_to_speech(&mut c, &[(0.0, 5.0)]);
         assert_eq!((c.start, c.end), (1.0, 2.0));
+    }
+
+    #[test]
+    fn cuts_long_sound_in_quiet_places() {
+        // 16:40 of sound, quiet at 4:58–5:02 and 9:40–9:44: cut in the middle of each; the last piece runs to the end.
+        let cut = pieces(1000.0, &[(100.0, 101.0), (298.0, 302.0), (580.0, 584.0), (900.0, f64::MAX)]);
+        assert_eq!(cut, [(0.0, 300.0), (300.0, 582.0), (582.0, 1000.0)]);
+        // No quiet stretch near a cut: cut there anyway. Short sound: one piece.
+        assert_eq!(pieces(700.0, &[]), [(0.0, 300.0), (300.0, 700.0)]);
+        assert_eq!(pieces(400.0, &[]), [(0.0, 400.0)]);
     }
 
     #[test]

@@ -65,6 +65,16 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
     return !clip || (middle >= clip.in && middle < clip.out);
   };
   const current = lines.findIndex((l) => time >= l.start && time < l.end);
+  /** Picked to cut wins; on the current line, marks the word at `time` and words still ahead. */
+  const wordClass = (line: number, word: number) => {
+    if (picked.has(keyOf(line, word))) return "is-picked";
+    if (line !== current) return undefined;
+    const w = words[line][word];
+    const start = timelineAt(line, w.start);
+    if (time < start) return "is-unsaid";
+    if (w.word && time < timelineAt(line, w.end)) return "is-said";
+    return undefined;
+  };
   // In braces: scrollIntoView returns a promise in WebView2, which React would take for a clean-up.
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: "nearest" });
@@ -138,7 +148,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
     return (
       <div className="transcript transcript--empty">
         <Icon name="captions" size={18} />
-        <p>{captionStatus ? `${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. The transcript shows here when it's done.` : "Nothing said on the timeline yet."}</p>
+        <p>{captionStatus ? `${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. It fills in every few minutes of the video.` : "Nothing said on the timeline yet."}</p>
         <p className="transcript__muted">Videos that come with captions show what's said here, to edit by text.</p>
         {onMakeCaptions && (
           <>
@@ -224,7 +234,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
                       <span
                         key={j}
                         data-word={w.word ? keyOf(i, j) : undefined}
-                        className={picked.has(keyOf(i, j)) ? "is-picked" : undefined}
+                        className={wordClass(i, j)}
                         onClick={() => {
                           if (!window.getSelection()?.isCollapsed) return;
                           seek(timelineAt(i, w.start));
@@ -251,7 +261,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
             </li>
           );
         })}
-        {captionStatus && <li className="transcript__line transcript__pending">{`${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. The rest shows here when it's done.`}</li>}
+        {captionStatus && <li className="transcript__line transcript__pending">{`${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. The rest fills in as it's made.`}</li>}
       </ol>
 
       <div className="transcript__foot">

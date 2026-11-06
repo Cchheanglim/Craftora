@@ -20,6 +20,7 @@ import {
   loadCaptions,
   makeCaptions,
   onSpeechProgress,
+  onSpeechLines,
   detectSilences,
   openLocal,
   renameDownload,
@@ -734,11 +735,21 @@ export default function App() {
     const unlisten = onSpeechProgress(({ id, stage, percent }) =>
       setCaptioning((all) => ({
         ...all,
-        [id]: stage === "model" ? `getting the speech model, ${Math.floor(percent)}%` : stage === "sound" ? "getting the sound for captions…" : `making captions, ${Math.floor(percent)}%`,
+        [id]: stage === "model" ? `getting ready for captions, ${Math.floor(percent)}%` : stage === "sound" ? "getting the sound for captions…" : `making captions, ${Math.floor(percent)}%`,
       })),
     );
-    return () => void unlisten.then((stop) => stop());
-  }, []);
+    // Each finished piece (about 5 minutes) shows while the rest is still being made.
+    const unlines = onSpeechLines((id, lines) => {
+      const current = projectRef.current.media.find((m) => m.id === id);
+      if (!current) return;
+      const before = current.captions?.partial ? current.captions.lines : [];
+      api.refreshMedia(id, { captions: { label: SPOKEN, lines: [...before, ...lines], partial: true } });
+    });
+    return () => {
+      void unlisten.then((stop) => stop());
+      void unlines.then((stop) => stop());
+    };
+  }, [api]);
   // Media that captions can be made for from its sound: none yet, unfinished, or made before lines
   // were timed by their words. Not while it's being done (a failed try can be tried again).
   const uncaptioned = inDesktopApp

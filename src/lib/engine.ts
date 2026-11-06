@@ -497,6 +497,9 @@ export interface SpeechProgress {
   stage: "model" | "sound" | "listening";
   percent: number;
 }
+/** Captions for each finished piece of the sound (about 5 minutes), before the whole video is done. */
+export const onSpeechLines = (handler: (id: string, lines: Caption[]) => void): Promise<UnlistenFn> =>
+  listen<{ id: string; lines: Caption[] }>("speech-lines", (e) => handler(e.payload.id, e.payload.lines));
 export const onSpeechProgress = (handler: (progress: SpeechProgress) => void): Promise<UnlistenFn> =>
   listen<SpeechProgress>("speech-progress", (e) => handler(e.payload));
 export const detectSilences = (path: string, start: number, end: number) => invoke<[number, number][]>("detect_silences", { path, start, end });

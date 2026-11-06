@@ -87,14 +87,17 @@
   padding: var(--space-2);
   border-radius: var(--radius);
   color: var(--text-2);
+  transition: background-color var(--dur-fast) linear;
 }
 
 .transcript__line:hover {
   background: var(--bg-raised);
 }
 
+/* Playhead's line: red wash and left bar (inset so the text doesn't shift). */
 .transcript__line.is-current {
-  background: var(--bg-selected);
+  background: var(--accent-wash);
+  box-shadow: inset 2px 0 0 var(--accent);
   color: var(--text);
 }
 
@@ -120,6 +123,16 @@
   cursor: text;
   /* The app turns text selection off; words are picked by selecting them here. */
   user-select: text;
+}
+
+/* Word being said at the playhead: colour and wash only (bold would shift the line). */
+.transcript__text .is-said {
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+
+.transcript__text .is-unsaid {
+  color: var(--text-2);
 }
 
 /* Words picked to cut: crossed out in the cut's red. */
