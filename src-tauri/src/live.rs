@@ -40,11 +40,11 @@ pub async fn record_live(app: AppHandle, recordings: State<'_, Recordings>, spec
         return Err("Only web links can be recorded.".into());
     }
     let (mut inputs, copy) = crate::media::live_inputs(&app, &spec.url, spec.format.as_deref()).await?;
-    let encoder = if copy {
-        None
-    } else {
-        Some(crate::encoders::for_render(&app, crate::encoders::Quality::Fast).await)
-    };
+    // The preview copy is also what the project edits and exports from: one that had to be converted would be
+    // lower quality than the download, so such a link downloads first instead (App.tsx falls back to that).
+    if !copy {
+        return Err("This video can't be copied as it is for a preview; it downloads first instead.".into());
+    }
     // Behind a bot check FFmpeg can't get in, so it reads the stream through the page window.
     let through_page = crate::signin::bot_checked(&spec.url);
     if through_page {
@@ -61,7 +61,7 @@ pub async fn record_live(app: AppHandle, recordings: State<'_, Recordings>, spec
     std::fs::create_dir_all(&folder).map_err(|e| format!("Couldn't create the recording folder: {e}"))?;
     recordings.0.lock().unwrap().insert(spec.id.clone(), folder.clone());
 
-    let args = record_args(&inputs, through_page, encoder);
+    let args = record_args(&inputs, through_page);
     let (task_app, id) = (app.clone(), spec.id.clone());
     let task_folder = folder.clone();
     let started = spawn_job(app.clone(), spec.id.clone(), async move {
@@ -85,7 +85,7 @@ pub fn stop_recording(jobs: State<'_, Jobs>, id: String) -> bool {
     jobs.stop(&id)
 }
 
-fn record_args(inputs: &[(String, BTreeMap<String, String>)], through_page: bool, encoder: Option<crate::encoders::Encoder>) -> Vec<String> {
+fn record_args(inputs: &[(String, BTreeMap<String, String>)], through_page: bool) -> Vec<String> {
     let mut args: Vec<String> = ["-hide_banner", "-nostats", "-loglevel", "error"].map(String::from).to_vec();
     for (url, headers) in inputs {
         if through_page {
@@ -105,18 +105,10 @@ fn record_args(inputs: &[(String, BTreeMap<String, String>)], through_page: bool
     }
     let audio_input = inputs.len() - 1;
     args.extend(["-map".into(), "0:v:0?".into(), "-map".into(), format!("{audio_input}:a:0?")]);
-    match encoder {
-        None => args.extend(["-c", "copy"].map(String::from)),
-        Some(enc) => {
-            args.extend(["-vf", "scale=-2:'trunc(min(720,ih)/2)*2'"].map(String::from));
-            args.extend(enc.args(crate::encoders::Quality::Fast));
-            args.extend(["-c:a", "aac", "-b:a", "160k", "-ac", "2"].map(String::from));
-        }
-    }
     // 4-second parts; the playlist keeps every part ("event"), and a part only appears in it
     // once it's complete (temp_file), so the preview and exports never read half a part.
     for arg in [
-        "-f", "hls", "-hls_time", "4", "-hls_list_size", "0", "-hls_playlist_type", "event",
+        "-c", "copy", "-f", "hls", "-hls_time", "4", "-hls_list_size", "0", "-hls_playlist_type", "event",
         "-hls_flags", "temp_file", "-hls_segment_filename", "part%05d.ts", PLAYLIST,
     ] {
         args.push(arg.into());
@@ -190,14 +182,10 @@ mod tests {
     fn records_picture_and_sound_from_separate_inputs() {
         let headers = BTreeMap::from([("Referer".to_string(), "https://shop.example/".to_string()), ("Bad".to_string(), "a\r\nX: y".to_string())]);
         let inputs = [("https://v.example/v.m3u8".into(), headers), ("https://v.example/a.m3u8".into(), BTreeMap::new())];
-        let args = record_args(&inputs, false, None);
+        let args = record_args(&inputs, false);
         let joined = args.join(" ");
         assert!(joined.contains("-headers Referer: https://shop.example/\r\n -i https://v.example/v.m3u8 -i https://v.example/a.m3u8"));
         assert!(!joined.contains("X: y"));
         assert!(joined.contains("-map 0:v:0? -map 1:a:0? -c copy -f hls"));
-
-        let reencoded = record_args(&inputs, false, Some(crate::encoders::Encoder::Software)).join(" ");
-        assert!(reencoded.contains("-vf scale=-2:'trunc(min(720,ih)/2)*2' -c:v libx264"));
-        assert!(reencoded.contains("-c:a aac -b:a 160k -ac 2 -f hls"));
     }
 }
