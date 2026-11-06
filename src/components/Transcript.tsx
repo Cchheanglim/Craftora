@@ -138,7 +138,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
     return (
       <div className="transcript transcript--empty">
         <Icon name="captions" size={18} />
-        <p>{captionStatus ? `${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. The transcript fills in as it's heard.` : "Nothing said on the timeline yet."}</p>
+        <p>{captionStatus ? `${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. The transcript shows here when it's done.` : "Nothing said on the timeline yet."}</p>
         <p className="transcript__muted">Videos that come with captions show what's said here, to edit by text.</p>
         {onMakeCaptions && (
           <>
@@ -251,7 +251,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
             </li>
           );
         })}
-        {captionStatus && <li className="transcript__line transcript__pending">{`${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. The rest fills in as it's heard.`}</li>}
+        {captionStatus && <li className="transcript__line transcript__pending">{`${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. The rest shows here when it's done.`}</li>}
       </ol>
 
       <div className="transcript__foot">
