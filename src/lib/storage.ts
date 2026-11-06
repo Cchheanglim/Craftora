@@ -134,7 +134,7 @@ export const LIBRARY_LIMIT = 300;
 export const loadMediaLibrary = (): LibraryEntry[] => browserRead<LibraryEntry[]>(MEDIA_LIBRARY, []);
 export const saveMediaLibrary = (entries: LibraryEntry[]) => browserWrite(MEDIA_LIBRARY, entries);
 
-/** Paused downloads, so they wait in the queue after Craftora is closed (their parts stay on disk). */
+/** Downloads not finished when Craftora closed, so they wait in the queue next time (their parts stay on disk). */
 export const loadPausedDownloads = (): Job[] => browserRead<Job[]>(PAUSED_DOWNLOADS, []);
 export const savePausedDownloads = (jobs: Job[]) => browserWrite(PAUSED_DOWNLOADS, jobs);
 

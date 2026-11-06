@@ -27,16 +27,24 @@ pub struct LiveRecording {
     id: String,
     url: String,
     title: String,
+    #[serde(default)]
+    format: Option<String>,
 }
 
-/// Starts recording a live link as job `id`; returns the growing playlist's path. The job ends
-/// (`job-event` "done", with the MP4) when `stop_recording` is called or the stream ends.
+/// Starts recording a live link (or making an HLS preview for a link the WebView can't play) as
+/// job `id`; returns the growing playlist's path. The job ends (`job-event` "done", with the MP4)
+/// when `stop_recording` is called or the video ends.
 #[tauri::command]
 pub async fn record_live(app: AppHandle, recordings: State<'_, Recordings>, spec: LiveRecording) -> Result<String, String> {
     if !is_web_link(&spec.url) {
         return Err("Only web links can be recorded.".into());
     }
-    let mut inputs = crate::media::live_inputs(&app, &spec.url).await?;
+    let (mut inputs, copy) = crate::media::live_inputs(&app, &spec.url, spec.format.as_deref()).await?;
+    // The preview copy is also what the project edits and exports from: one that had to be converted would be
+    // lower quality than the download, so such a link downloads first instead (App.tsx falls back to that).
+    if !copy {
+        return Err("This video can't be copied as it is for a preview; it downloads first instead.".into());
+    }
     // Behind a bot check FFmpeg can't get in, so it reads the stream through the page window.
     let through_page = crate::signin::bot_checked(&spec.url);
     if through_page {
@@ -173,10 +181,11 @@ mod tests {
     #[test]
     fn records_picture_and_sound_from_separate_inputs() {
         let headers = BTreeMap::from([("Referer".to_string(), "https://shop.example/".to_string()), ("Bad".to_string(), "a\r\nX: y".to_string())]);
-        let args = record_args(&[("https://v.example/v.m3u8".into(), headers), ("https://v.example/a.m3u8".into(), BTreeMap::new())], false);
+        let inputs = [("https://v.example/v.m3u8".into(), headers), ("https://v.example/a.m3u8".into(), BTreeMap::new())];
+        let args = record_args(&inputs, false);
         let joined = args.join(" ");
         assert!(joined.contains("-headers Referer: https://shop.example/\r\n -i https://v.example/v.m3u8 -i https://v.example/a.m3u8"));
         assert!(!joined.contains("X: y"));
-        assert!(joined.contains("-map 0:v:0? -map 1:a:0?"));
+        assert!(joined.contains("-map 0:v:0? -map 1:a:0? -c copy -f hls"));
     }
 }

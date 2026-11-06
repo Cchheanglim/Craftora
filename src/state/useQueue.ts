@@ -23,6 +23,9 @@ type Action =
   | { type: "tick"; now: number };
 
 const isRunning = (j: Job) => j.status === "downloading" || j.status === "encoding";
+/** Downloads of a whole link go on where they stopped (jobs.rs keeps their parts); exports and cuts start again. */
+export const resumable = (j: Job) =>
+  Boolean(j.prefetch || (j.spec && !j.spec.local && j.spec.start <= 0.05 && j.spec.end >= j.spec.duration - 0.05));
 const update = (jobs: Job[], id: string, patch: Partial<Job>) =>
   jobs.map((j) => (j.id === id ? { ...j, ...patch } : j));
 
@@ -138,10 +141,17 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
   const jobsRef = useRef(jobs);
   jobsRef.current = jobs;
 
-  const paused = real ? JSON.stringify(jobs.filter((j) => j.prefetch && j.status === "paused")) : "";
+  // Downloads paused, waiting, or stopped by closing Craftora come back next time; stopped ones go on by themselves.
+  const kept = real
+    ? JSON.stringify(
+        jobs
+          .filter((j) => resumable(j) && (j.status === "paused" || j.status === "waiting" || isRunning(j)))
+          .map((j) => ({ ...j, status: j.status === "paused" ? "paused" : "waiting", speedBps: undefined, etaSeconds: undefined })),
+      )
+    : "";
   useEffect(() => {
-    if (real) savePausedDownloads(JSON.parse(paused));
-  }, [real, paused]);
+    if (real) savePausedDownloads(JSON.parse(kept));
+  }, [real, kept]);
 
   // Real mode: follow the engine's progress events.
   useEffect(() => {
@@ -183,8 +193,8 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
     (id: string) => {
       const job = jobsRef.current.find((j) => j.id === id);
       if (real) void cancelJob(id);
-      // A paused download isn't running: its saved parts are removed here.
-      if (real && job?.prefetch && job.status === "paused") void discardDownload(id).catch(() => {});
+      // A download that isn't running may still have saved parts: they're removed here.
+      if (real && job && resumable(job) && !isRunning(job)) void discardDownload(id).catch(() => {});
       dispatch({ type: "remove", id });
     },
     [real],
@@ -204,7 +214,7 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
 
   return {
     jobs,
-    /** Everything but live recordings. Downloads go on from where they were; exports start again. */
+    /** Everything but live recordings. Downloads go on from where they were (`resumable`); exports start again. */
     canPauseJob: useCallback((job: Job) => !job.record, []),
     add: useCallback((job: Job) => dispatch({ type: "add", job }), []),
     cancel,

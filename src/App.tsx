@@ -20,7 +20,7 @@ import {
   loadCaptions,
   makeCaptions,
   onSpeechProgress,
-  onSpeechLine,
+  onSpeechLines,
   detectSilences,
   openLocal,
   renameDownload,
@@ -29,6 +29,7 @@ import {
   probeLocal,
   recordLive,
   recordingUrl,
+  RECORDINGS,
   allowLocal,
   pickFolder,
   saveSnapshot,
@@ -68,7 +69,7 @@ import {
   type LibraryEntry,
 } from "./lib/storage";
 import { captureFrame, captureThumbnail, coverFrame } from "./lib/thumbnail";
-import { MAX_RUNNING, useQueue } from "./state/useQueue";
+import { MAX_RUNNING, resumable, useQueue } from "./state/useQueue";
 import { storeEdition, useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
 import { applyTheme, saveTheme, savedTheme, type Theme } from "./lib/theme";
@@ -579,7 +580,7 @@ export default function App() {
     for (const m of project.media) {
       const s = m.source;
       // A recording in progress isn't probed: it keeps growing, and its playlist plays as it is.
-      if (!s.local || s.image || s.live || peaksTried.current.has(m.id)) continue;
+      if (!s.local || s.image || s.live || s.previewUrl.startsWith(RECORDINGS) || peaksTried.current.has(m.id)) continue;
       peaksTried.current.add(m.id);
       // Wait until the video is already open in the editor before running background ffprobe/ffmpeg tasks.
       window.setTimeout(() => {
@@ -615,13 +616,13 @@ export default function App() {
       if (s.thumbnail?.startsWith("data:") || thumbTried.current.has(m.id)) continue;
       // A link with the site's picture: a small copy of it is kept (fetched once, with the page as Referer).
       const sitePicture = inDesktopApp && !s.local && s.thumbnail?.startsWith("http") ? s.thumbnail : undefined;
-      // Otherwise (or if that fails) a frame of the video. Stream playlists (HLS) can't be drawn by a plain video element.
-      const canDraw = (m.hasVideo || s.image) && (s.local || !(s.previewHls || s.live || !s.previewUrl)) && (inDesktopApp || !(s.previewProxy || !s.previewUrl));
+      // Otherwise (or if that fails) a frame of the video.
+      const canDraw = (m.hasVideo || s.image) && (s.local || !(s.live || !s.previewUrl)) && (inDesktopApp || !(s.previewProxy || !s.previewUrl));
       if (!sitePicture && !canDraw) continue;
       thumbTried.current.add(m.id);
       const kept = sitePicture ? keptThumbnail([sitePicture, ...(s.thumbnails ?? [])], s.url).then((t) => (t.startsWith("data:") ? t : undefined)) : Promise.resolve(undefined);
       const task = kept
-        .then((thumb) => thumb ?? (canDraw && s.previewUrl ? captureThumbnail(s.previewUrl, s.image) : undefined))
+        .then((thumb) => thumb ?? (canDraw && s.previewUrl ? captureThumbnail(s.previewUrl, s.image, s.previewHls) : undefined))
         .then((thumb) => thumb ?? (inDesktopApp && s.local ? localThumbnail(s.url, Boolean(s.image)).catch(() => undefined) : undefined));
       void task.then((thumbnail) => {
         const current = projectRef.current.media.find((x) => x.id === m.id);
@@ -657,9 +658,9 @@ export default function App() {
   /** Media id → how making its captions is going, for the Media list. */
   const [captioning, setCaptioning] = useState<Record<string, string>>({});
 
-  // Closing stops everything still running (engine.rs `tie`), so ask first. Paused downloads are kept.
+  // Closing stops everything still running (engine.rs `tie`), so ask first. Downloads are kept and go on next time.
   const running =
-    queue.jobs.filter((j) => j.status === "waiting" || j.status === "downloading" || j.status === "encoding" || (j.status === "paused" && !j.prefetch)).length +
+    queue.jobs.filter((j) => !resumable(j) && (j.status === "waiting" || j.status === "downloading" || j.status === "encoding" || j.status === "paused")).length +
     Object.values(captioning).filter((text) => text !== "couldn't make captions").length;
   const runningRef = useRef(running);
   runningRef.current = running;
@@ -673,8 +674,8 @@ export default function App() {
       event.preventDefault();
       const ok = await askClose({
         title: "Close Craftora?",
-        message: `${count === 1 ? "1 download, export or caption is" : `${count} downloads, exports or captions are`} not finished. Closing stops ${count === 1 ? "it" : "them"} and what ${count === 1 ? "it has" : "they have"} done so far is lost.`,
-        note: "Paused downloads are kept and wait in the queue next time.",
+        message: `${count === 1 ? "1 export or caption is" : `${count} exports or captions are`} not finished. Closing stops ${count === 1 ? "it" : "them"} and what ${count === 1 ? "it has" : "they have"} done so far is lost.`,
+        note: "Downloads are kept and go on where they stopped next time.",
         confirmLabel: "Stop and close",
         danger: true,
       });
@@ -698,14 +699,15 @@ export default function App() {
   useEffect(() => {
     const before = lastStatus.current;
     lastStatus.current = new Map(queue.jobs.map((j) => [j.id, j.status]));
+    // A download made only for an export says nothing when it ends: the export does.
     const ended = queue.jobs.filter((j) => {
       const was = before.get(j.id);
-      return (was === "downloading" || was === "encoding") && (j.status === "finished" || j.status === "failed");
+      return (was === "downloading" || was === "encoding") && (j.status === "finished" || j.status === "failed") && !j.prefetch?.forExport;
     });
-    if (preference("finishSound") && ended.some((j) => j.status === "finished" && !j.record)) void new Audio("/mixkitvideogametreasure_edit.mp3").play().catch(() => {});
+    if (preference("finishSound") && ended.some((j) => j.status === "finished" && !j.record?.live)) void new Audio("/mixkitvideogametreasure_edit.mp3").play().catch(() => {});
     if (!inDesktopApp || document.hasFocus()) return;
     for (const j of ended) {
-      const what = j.record ? "Recording" : j.prefetch ? "Download" : "Export";
+      const what = j.record?.live ? "Recording" : j.prefetch || j.record ? "Download" : "Export";
       const page: View = j.prefetch || j.record ? "downloads" : "library";
       const open = `Click to open ${page === "downloads" ? "Downloads" : "Exports"}.`;
       const saved = j.prefetch ? "Ready to edit" : `Saved as ${j.outputPath?.split(/[\\/]/).pop() ?? j.fileName}`;
@@ -733,15 +735,15 @@ export default function App() {
     const unlisten = onSpeechProgress(({ id, stage, percent }) =>
       setCaptioning((all) => ({
         ...all,
-        [id]: stage === "model" ? `getting the speech model, ${Math.floor(percent)}%` : stage === "sound" ? "getting the sound for captions…" : `making captions, ${Math.floor(percent)}%`,
+        [id]: stage === "model" ? `getting ready for captions, ${Math.floor(percent)}%` : stage === "sound" ? "getting the sound for captions…" : `making captions, ${Math.floor(percent)}%`,
       })),
     );
-    // Lines show up while the rest is still being made.
-    const unlines = onSpeechLine((id, line) => {
+    // Each finished piece (about 5 minutes) shows while the rest is still being made.
+    const unlines = onSpeechLines((id, lines) => {
       const current = projectRef.current.media.find((m) => m.id === id);
       if (!current) return;
-      const lines = current.captions?.partial ? [...current.captions.lines, line] : [line];
-      api.refreshMedia(id, { captions: { label: SPOKEN, lines, partial: true, fitted: true } });
+      const before = current.captions?.partial ? current.captions.lines : [];
+      api.refreshMedia(id, { captions: { label: SPOKEN, lines: [...before, ...lines], partial: true } });
     });
     return () => {
       void unlisten.then((stop) => stop());
@@ -749,11 +751,11 @@ export default function App() {
     };
   }, [api]);
   // Media that captions can be made for from its sound: none yet, unfinished, or made before lines
-  // were fitted to their words. Not while it's being done (a failed try can be tried again).
+  // were timed by their words. Not while it's being done (a failed try can be tried again).
   const uncaptioned = inDesktopApp
     ? project.media.filter((m) => {
         const s = m.source;
-        const made = m.captions && !m.captions.partial && (m.captions.fitted || m.captions.label !== SPOKEN);
+        const made = m.captions && !m.captions.partial && (m.captions.wordTimed || m.captions.label !== SPOKEN);
         const going = captioning[m.id] && captioning[m.id] !== "couldn't make captions";
         return !made && !going && !s.captions && m.hasAudio && !s.image && !s.live && !m.missing;
       })
@@ -770,11 +772,11 @@ export default function App() {
         });
       speechTurn.current = speechTurn.current.then(async () => {
         while (!idle.current) await new Promise((r) => window.setTimeout(r, 3_000));
-        return makeCaptions(m.id, s.url, Boolean(s.local))
+        return makeCaptions(m.id, s.url, Boolean(s.local), preference("captionsOnGpu"))
           .then((lines) => {
             done();
             // The finished file replaces the lines shown along the way.
-            if (lines.length) api.refreshMedia(m.id, { captions: { label: SPOKEN, lines, fitted: true } });
+            if (lines.length) api.refreshMedia(m.id, { captions: { label: SPOKEN, lines, wordTimed: true } });
           })
           .catch(() => done("couldn't make captions"));
       });
@@ -798,8 +800,11 @@ export default function App() {
       });
   };
 
-  /** Queues a whole link to download, so it edits like a file on this PC. Returns the queue job's id. */
-  const downloadForEditing = (item: MediaItem) => {
+  /**
+   * Queues a whole link to download, so it edits like a file on this PC. Returns the queue job's id.
+   * `forExport`: only an export needs it, so it's kept out of the Downloads folder (jobs.rs `sources_dir`).
+   */
+  const downloadForEditing = (item: MediaItem, forExport = false) => {
     if (!inDesktopApp || item.source.local) return;
     // Meanwhile, fill the preview's cache from the start, so scrubbing what's done is instant. Not
     // through the page window (bot-checked sites): that would fetch the whole video twice.
@@ -810,7 +815,7 @@ export default function App() {
     queue.add({
       id,
       title: item.name,
-      summary: `Download for editing · ${formatClock(item.source.duration)} · ${stream?.label ?? "best quality"}`,
+      summary: `${forExport ? "Video for your export" : "Download for editing"} · ${formatClock(item.source.duration)} · ${stream?.label ?? "best quality"}`,
       kind: item.hasVideo ? "video" : "audio",
       status: "waiting",
       progress: 0,
@@ -819,39 +824,45 @@ export default function App() {
       fileName: item.name,
       command: `yt-dlp -f "${format}" ${item.hasVideo ? "--merge-output-format mp4" : "-x --audio-format m4a"} "${item.source.url}"`,
       thumbnail: item.source.thumbnail,
-      prefetch: { mediaId: item.id, url: item.source.url, format, title: item.name, audioOnly: !item.hasVideo },
+      prefetch: { mediaId: item.id, url: item.source.url, format, title: item.name, audioOnly: !item.hasVideo, forExport },
     });
     return id;
   };
 
-  /** A live link is recorded while it plays, so it can be edited before the stream ends. */
+  /** A live link (or a link with no playable preview) is recorded into HLS while it plays, then joined into one MP4. */
   const recordForEditing = (item: MediaItem) => {
     const id = crypto.randomUUID();
+    const isLive = Boolean(item.source.live);
+    const stream = item.source.streams.find((s) => s.id === item.videoFormat);
     queue.add({
       id,
       title: item.name,
-      summary: "Live stream · edit what's recorded while it plays",
+      summary: isLive
+        ? "Live stream · edit what's recorded while it plays"
+        : `Download for editing · ${formatClock(item.source.duration)} · ${stream?.label ?? "best quality"}`,
       kind: "video",
       status: "downloading",
       phase: "recording",
       progress: null,
       needsEncode: false,
-      sizeMb: 0,
+      sizeMb: stream?.sizeMb ?? 0,
       fileName: item.name,
-      command: `ffmpeg -i <live stream of "${item.source.url}"> -c copy -f hls index.m3u8`,
+      command: `ffmpeg -i <${isLive ? "live stream" : "stream"} of "${item.source.url}"> -f hls index.m3u8`,
       thumbnail: item.source.thumbnail,
-      record: { mediaId: item.id },
+      // Not live: a link the player can't play, copied while it's fetched so it plays at once (live.rs).
+      record: { mediaId: item.id, live: isLive },
     });
-    recordLive({ id, url: item.source.url, title: item.name })
+    recordLive({ id, url: item.source.url, title: item.name, format: isLive ? undefined : item.videoFormat })
       .then((path) => recordings.current.set(id, { mediaId: item.id, path }))
       .catch((err) => {
         queue.remove(id);
-        setError(`Couldn't record the live stream: ${errorText(err)}`);
+        if (!isLive) downloadForEditing(item);
+        else setError(`Couldn't record the live stream: ${errorText(err)}`);
       });
   };
 
-  // Live recordings: every few seconds the media's length catches up with the parts saved so far.
-  // From the first part on, the preview plays the recording and exports read it like a local file.
+  // Recordings in progress: every second or so the preview switches to the HLS playlist once the
+  // first part is ready, and a live or unknown-length video's length catches up with the parts saved.
   const recordings = useRef(new Map<string, { mediaId: string; path: string }>());
   const recordingIds = queue.jobs.filter((j) => j.record && j.status === "downloading").map((j) => j.id).join();
   useEffect(() => {
@@ -860,19 +871,26 @@ export default function App() {
       for (const id of recordingIds.split(",")) {
         const rec = recordings.current.get(id);
         const item = rec && projectRef.current.media.find((m) => m.id === rec.mediaId);
-        if (!rec || !item?.source.live) continue;
+        if (!rec || !item) continue;
         const playlist = await fetch(recordingUrl(id)).then((r) => (r.ok ? r.text() : "")).catch(() => "");
         const seconds = [...playlist.matchAll(/#EXTINF:([\d.]+)/g)].reduce((sum, m) => sum + Number(m[1]), 0);
-        if (seconds <= item.source.duration) continue;
+        if (seconds <= 0 || (seconds <= item.source.duration && item.source.previewUrl === recordingUrl(id))) continue;
         if (!item.source.local) await allowLocal(rec.path).catch(() => {});
         const current = projectRef.current.media.find((m) => m.id === rec.mediaId);
         if (!current) continue;
         api.refreshMedia(current.id, {
-          source: { ...current.source, url: rec.path, local: true, previewUrl: recordingUrl(id), previewHls: true, duration: seconds },
+          source: {
+            ...current.source,
+            url: rec.path,
+            local: true,
+            previewUrl: recordingUrl(id),
+            previewHls: true,
+            duration: Math.max(current.source.duration, seconds),
+          },
         });
       }
     };
-    const timer = window.setInterval(() => void catchUp(), 3000);
+    const timer = window.setInterval(() => void catchUp(), 1000);
     return () => window.clearInterval(timer);
   }, [recordingIds, api]);
 
@@ -881,6 +899,15 @@ export default function App() {
   const swapped = useRef(new Set<string>());
   useEffect(() => {
     for (const job of queue.jobs) {
+      if (job.record && job.status === "failed" && !swapped.current.has(job.id)) {
+        const item = projectRef.current.media.find((m) => m.id === job.record!.mediaId);
+        if (item && !item.source.live && !item.source.local) {
+          swapped.current.add(job.id);
+          queue.remove(job.id);
+          downloadForEditing(item);
+          continue;
+        }
+      }
       const target = job.prefetch ?? job.record;
       if (!target || job.status !== "finished" || !job.outputPath || swapped.current.has(job.id)) continue;
       swapped.current.add(job.id);
@@ -935,7 +962,7 @@ export default function App() {
       // A live stream goes to Media only: drag in the parts you want as they're recorded. So does a
       // video with no known length yet (behind a site's bot check): it downloads first.
       const item = importSource(source, !source.live && source.duration > 0);
-      if (source.live && inDesktopApp) recordForEditing(item);
+      if ((source.live || (!source.previewUrl && !source.downloadFirst && item.hasVideo)) && inDesktopApp) recordForEditing(item);
       else if ((!source.previewUrl || source.downloadFirst) && inDesktopApp) downloadForEditing(item);
       // A bot-checked site's video plays and downloads through this window: keep it (minimized is fine).
       if (found)
@@ -1260,7 +1287,7 @@ export default function App() {
     // An edited video renders links from whole downloads, which go on where they were after a pause,
     // and then the editor plays the files instead of streaming the links.
     const links = plan.kind === "render" ? source.media.filter((m) => !m.source.local && !m.source.live && plan.spec.media.some((s) => s.id === m.id)) : [];
-    const after = links.flatMap((m) => queue.jobs.find((j) => j.prefetch?.mediaId === m.id && j.status !== "failed")?.id ?? downloadForEditing(m) ?? []);
+    const after = links.flatMap((m) => queue.jobs.find((j) => j.prefetch?.mediaId === m.id && j.status !== "failed")?.id ?? downloadForEditing(m, true) ?? []);
     const job: Job = {
       id,
       title: plan.title,
@@ -1559,7 +1586,7 @@ export default function App() {
             .filter((j) => j.status === "downloading" || j.status === "encoding")
             .map((j) => ({
               id: j.id,
-              label: j.record ? "Recording live" : j.prefetch ? "Downloading" : j.status === "downloading" ? "Getting video to export" : "Exporting",
+              label: j.record?.live ? "Recording live" : j.prefetch || j.record ? "Downloading" : j.status === "downloading" ? "Getting video to export" : "Exporting",
               detail: j.rename ?? j.title,
               percent: j.record ? null : j.progress,
             })),

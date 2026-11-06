@@ -65,6 +65,16 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
     return !clip || (middle >= clip.in && middle < clip.out);
   };
   const current = lines.findIndex((l) => time >= l.start && time < l.end);
+  /** Picked to cut wins; on the current line, marks the word at `time` and words still ahead. */
+  const wordClass = (line: number, word: number) => {
+    if (picked.has(keyOf(line, word))) return "is-picked";
+    if (line !== current) return undefined;
+    const w = words[line][word];
+    const start = timelineAt(line, w.start);
+    if (time < start) return "is-unsaid";
+    if (w.word && time < timelineAt(line, w.end)) return "is-said";
+    return undefined;
+  };
   // In braces: scrollIntoView returns a promise in WebView2, which React would take for a clean-up.
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: "nearest" });
@@ -138,14 +148,14 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
     return (
       <div className="transcript transcript--empty">
         <Icon name="captions" size={18} />
-        <p>{captionStatus ? `${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. The transcript fills in as it's heard.` : "Nothing said on the timeline yet."}</p>
+        <p>{captionStatus ? `${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. It fills in every few minutes of the video.` : "Nothing said on the timeline yet."}</p>
         <p className="transcript__muted">Videos that come with captions show what's said here, to edit by text.</p>
         {onMakeCaptions && (
           <>
             <MakeCaptions onMake={onMakeCaptions} />
             <p className="transcript__muted">
               Craftora listens to what's said and writes it down, on this PC: nothing is sent anywhere. The first time, it downloads a
-              148 MB speech model. A long video takes a few minutes and keeps the processor busy meanwhile.
+              speech model (148 MB, or 190 MB with a graphics card). A long video takes a few minutes and keeps the PC busy meanwhile.
             </p>
           </>
         )}
@@ -224,7 +234,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
                       <span
                         key={j}
                         data-word={w.word ? keyOf(i, j) : undefined}
-                        className={picked.has(keyOf(i, j)) ? "is-picked" : undefined}
+                        className={wordClass(i, j)}
                         onClick={() => {
                           if (!window.getSelection()?.isCollapsed) return;
                           seek(timelineAt(i, w.start));
@@ -251,7 +261,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
             </li>
           );
         })}
-        {captionStatus && <li className="transcript__line transcript__pending">{`${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. The rest fills in as it's heard.`}</li>}
+        {captionStatus && <li className="transcript__line transcript__pending">{`${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. The rest fills in as it's made.`}</li>}
       </ol>
 
       <div className="transcript__foot">

@@ -1,5 +1,39 @@
 # What's new in Craftora
 
+## Next version
+
+**New**
+
+- **Captions on the graphics card.** With a graphics card of its own (NVIDIA, AMD or Intel Arc),
+  Craftora makes captions there: a 12-minute film in about 25 s instead of 45 s, with fewer wrong
+  words. Settings → Preferences → **Make captions with** switches between the graphics card and the
+  processor. (The first time on a graphics card it downloads 190 MB once.)
+- **Captions fill in while they're made**: every few minutes of video shows as soon as it's done.
+- **The Transcript shows where you are**: the line being said is marked in red, and so is the word.
+- **Links the preview couldn't play now play within seconds** (videos sent in small pieces, MKV and
+  other files the player doesn't open): Craftora copies the video as it comes in and plays the copy,
+  at the original quality. It used to download the whole video first.
+
+**Fixed**
+
+- **Downloads started over after Pause or after closing Craftora** (#123). A whole link exported
+  as it is now goes on where it stopped, like Download for editing. Downloads still running when
+  Craftora closes carry on by themselves next time, so closing doesn't ask about them any more.
+  (While downloading, the parts are kept in Craftora's own folder and the file shows up in your
+  folder only when it's complete.)
+- **Exporting an edited video from a link also saved the original** (#124). The original is now
+  kept in Craftora's own folder for the project to edit from, so your folder gets only the edited
+  video.
+- **Captions made from the sound showed before the words, stayed too long, or landed in odd
+  places** (#126, #127). Each line is now timed by when its words are said, also under music
+  (measured: within 0.15 s of the speech starting, before up to 10 s early). Sound tags like
+  [Music], which the speech model also gave to cries and groans, are left out. Measured on a
+  12-minute film against its official subtitles: fewer wrong words (31% instead of 37% on the
+  graphics card, 27% on the processor) and less than half as many lines shown before the words.
+  Captions made earlier can be made again (Transcript → Make captions).
+- **Some links that played had no picture** in the media list (stream playlists): Craftora now
+  takes one from the video.
+
 ## 0.6.0 (November 2026)
 
 **New**

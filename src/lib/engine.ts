@@ -142,8 +142,8 @@ export const HLS_RELAY = "http://cmedia.localhost/hls";
 export const RECORDINGS = "http://cmedia.localhost/rec/";
 export const recordingUrl = (jobId: string) => `${RECORDINGS}${jobId}/index.m3u8`;
 
-/** Starts recording a live link as job `id`; resolves with the growing playlist's path. */
-export const recordLive = (spec: { id: string; url: string; title: string }) =>
+/** Starts recording a live link (or making an HLS preview for a link) as job `id`; resolves with the growing playlist's path. */
+export const recordLive = (spec: { id: string; url: string; title: string; format?: string }) =>
   invoke<string>("record_live", { spec }).catch((err) => Promise.reject(new Error(message(err))));
 /** Ends a recording and keeps it: the job finishes with the whole video as an MP4. */
 export const stopRecording = (id: string) => invoke<boolean>("stop_recording", { id });
@@ -411,8 +411,8 @@ export async function startRender(spec: RenderSpec): Promise<void> {
 
 export const cancelJob = (id: string) => invoke<boolean>("cancel_job", { id });
 
-/** Downloads a whole link into Videos\Craftora\Downloads; progress arrives as job events. */
-export async function downloadMedia(spec: { id: string; url: string; format: string; title: string; audioOnly: boolean }): Promise<void> {
+/** Downloads a whole link into the Downloads folder (Craftora's own with `forExport`); progress arrives as job events. */
+export async function downloadMedia(spec: { id: string; url: string; format: string; title: string; audioOnly: boolean; forExport?: boolean }): Promise<void> {
   try {
     await invoke("download_media", { spec });
   } catch (err) {
@@ -490,18 +490,18 @@ export const linkPeaks = (url: string) => invoke<number[]>("link_peaks", { url }
 /** A fetched video's captions (`MediaSource.captions.url`) as timed lines. */
 export const loadCaptions = (url: string, link: string) => invoke<Caption[]>("load_captions", { url, link });
 /** Captions made from what's said (whisper.cpp, on this PC); `source` is a file path or a link. */
-export const makeCaptions = (id: string, source: string, local: boolean) => invoke<Caption[]>("make_captions", { id, source, local });
+export const makeCaptions = (id: string, source: string, local: boolean, gpu: boolean) => invoke<Caption[]>("make_captions", { id, source, local, gpu });
 export interface SpeechProgress {
   id: string;
   /** "model": downloading the speech model (first time only); "sound": getting a link's sound. */
   stage: "model" | "sound" | "listening";
   percent: number;
 }
+/** Captions for each finished piece of the sound (about 5 minutes), before the whole video is done. */
+export const onSpeechLines = (handler: (id: string, lines: Caption[]) => void): Promise<UnlistenFn> =>
+  listen<{ id: string; lines: Caption[] }>("speech-lines", (e) => handler(e.payload.id, e.payload.lines));
 export const onSpeechProgress = (handler: (progress: SpeechProgress) => void): Promise<UnlistenFn> =>
   listen<SpeechProgress>("speech-progress", (e) => handler(e.payload));
-/** Each caption line as soon as whisper has it, before the whole video is done. */
-export const onSpeechLine = (handler: (id: string, line: Caption) => void): Promise<UnlistenFn> =>
-  listen<{ id: string; line: Caption }>("speech-line", (e) => handler(e.payload.id, e.payload.line));
 export const detectSilences = (path: string, start: number, end: number) => invoke<[number, number][]>("detect_silences", { path, start, end });
 export const saveSnapshot = (bytes: number[], title: string) => invoke<string>("save_snapshot", { bytes, title });
 

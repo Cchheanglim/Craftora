@@ -189,13 +189,13 @@ export interface Job {
   /** A timeline the real engines render. Absent (with `spec`) for simulated demo jobs. */
   render?: RenderSpec;
   /** A whole link downloaded so it can be edited like a file on this PC ("Download first"). */
-  prefetch?: { mediaId: string; url: string; format: string; title: string; audioOnly: boolean };
+  prefetch?: { mediaId: string; url: string; format: string; title: string; audioOnly: boolean; forExport?: boolean };
   /** The downloads (queue job ids) an export from links waits for; it then renders their files. */
   after?: string[];
   /** Downloads: the name the user gave it; the file takes it when the download finishes. */
   rename?: string;
   /** A live link being recorded into this media item; Stop keeps the recording. */
-  record?: { mediaId: string };
+  record?: { mediaId: string; live: boolean };
   /** "processing" while yt-dlp merges or converts after downloading. */
   phase?: "downloading" | "processing" | "cutting" | "smoothing" | "encoding" | "recording";
   downloadedBytes?: number;

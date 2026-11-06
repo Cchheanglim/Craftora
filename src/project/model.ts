@@ -85,8 +85,10 @@ export interface MediaItem {
     lines: Caption[];
     /** Still being made from the sound (redone if Craftora closed meanwhile). */
     partial?: boolean;
-    /** Made from the sound with each line fitted to its words; older ones are made again. */
+    /** Made from the sound with each line fitted to the sound around it (older; can be made again). */
     fitted?: boolean;
+    /** Made from the sound with each line timed by its words (speech.rs `from_whisper_json`); older ones can be made again. */
+    wordTimed?: boolean;
   };
 }
 

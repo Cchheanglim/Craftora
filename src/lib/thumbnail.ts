@@ -2,6 +2,8 @@
  * Small pictures for lists: a frame of a video file (or the image itself) drawn into a JPEG
  * data URL, so it still shows after a restart, when the file's preview link has expired.
  */
+import type Hls from "hls.js";
+
 // Also the preview's stand-in while a video loads or can't play, so not much smaller than the video.
 const WIDTH = 480;
 
@@ -18,10 +20,15 @@ function draw(source: HTMLVideoElement | HTMLImageElement, width: number, height
 }
 
 /** `previewUrl` must be playable here (a file on this PC). Resolves undefined when it can't be read. */
-export function captureThumbnail(previewUrl: string, image?: boolean): Promise<string | undefined> {
+export function captureThumbnail(previewUrl: string, image?: boolean, hls?: boolean): Promise<string | undefined> {
   return new Promise((resolve) => {
+    let player: Hls | undefined;
+    let gone = false;
     const done = (value?: string) => {
+      if (gone) return;
+      gone = true;
       window.clearTimeout(timer);
+      player?.destroy();
       resolve(value);
     };
     const timer = window.setTimeout(() => done(), 10_000);
@@ -45,6 +52,22 @@ export function captureThumbnail(previewUrl: string, image?: boolean): Promise<s
       video.load();
     };
     video.onerror = () => done();
+    if (hls) {
+      // Stream playlists play through hls.js, like the preview (SyncedMedia).
+      void import("hls.js").then(
+        ({ default: Hls }) => {
+          if (gone) return;
+          player = new Hls({ abrEwmaDefaultEstimate: 50_000_000 });
+          player.on(Hls.Events.ERROR, (_event, data) => {
+            if (data.fatal) done();
+          });
+          player.loadSource(previewUrl);
+          player.attachMedia(video);
+        },
+        () => done(),
+      );
+      return;
+    }
     video.src = previewUrl;
   });
 }

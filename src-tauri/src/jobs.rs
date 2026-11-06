@@ -73,6 +73,13 @@ pub struct JobSpec {
     local: bool,
 }
 
+impl JobSpec {
+    /// The whole link or file, not a part of it.
+    fn whole(&self) -> bool {
+        self.start <= 0.05 && self.end >= self.duration - 0.05
+    }
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "kind")]
 pub(crate) enum JobEvent {
@@ -281,8 +288,8 @@ pub fn cancel_job(jobs: State<'_, Jobs>, id: String) -> bool {
     jobs.cancel(&id)
 }
 
-/// Pauses a "download for editing"; starting it again with the same id continues it, even after
-/// Craftora was closed.
+/// Pauses a job; starting a download of a whole link again with the same id continues it, even
+/// after Craftora was closed.
 #[tauri::command]
 pub fn pause_job(jobs: State<'_, Jobs>, id: String) -> bool {
     jobs.pause(&id)
@@ -369,7 +376,8 @@ pub(crate) fn work_dir(app: &AppHandle, job_id: &str) -> Result<PathBuf, String>
 }
 
 const WORK_PREFIX: &str = ".craftora-";
-/// In a paused download's working folder: keep it at startup (`clean_work_dirs`).
+/// In a download's working folder until it finishes, fails or is cancelled: kept at startup
+/// (`clean_work_dirs`), so a download paused, or stopped by closing Craftora, goes on next time.
 const PAUSED_MARK: &str = "paused";
 
 /// Moves a finished file from the working folder into `dir` as `stem.ext`, or
@@ -513,6 +521,18 @@ pub struct MediaDownload {
     title: String,
     #[serde(default)]
     audio_only: bool,
+    /// Made only so an export can read the link: saved in Craftora's own folder, so the export
+    /// folder gets just the edited video. The project still edits from it.
+    #[serde(default)]
+    for_export: bool,
+}
+
+/// Where links downloaded only for an export are kept (`MediaDownload::for_export`).
+// shortcut: never removed, so they add up; delete them with their project if space becomes a problem.
+fn sources_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| format!("Couldn't find Craftora's data folder: {e}"))?.join("sources");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create a folder for the video: {e}"))?;
+    Ok(dir)
 }
 
 /// Downloads a whole link into the Downloads folder; the UI then opens it like a local file.
@@ -523,10 +543,10 @@ pub async fn download_media(app: AppHandle, spec: MediaDownload) -> Result<(), S
     }
     let task_app = app.clone();
     spawn_job(app, spec.id.clone(), async move {
-        let dir = downloads_dir(&task_app)?;
+        let dir = if spec.for_export { sources_dir(&task_app)? } else { downloads_dir(&task_app)? };
         // A paused download continues here: yt-dlp picks up the parts it already saved.
         let work = work_dir(&task_app, &spec.id)?;
-        let _ = std::fs::remove_file(work.join(PAUSED_MARK));
+        let _ = std::fs::write(work.join(PAUSED_MARK), b"");
         let request = Download {
             url: &spec.url,
             format: &spec.format,
@@ -560,9 +580,7 @@ pub async fn download_media(app: AppHandle, spec: MediaDownload) -> Result<(), S
             Err(e) if e.contains("401") => Err("This link has expired. Fetch its page again in Craftora to download it.".into()),
             Err(e) => Err(e),
         };
-        if task_app.state::<Jobs>().is_paused(&spec.id) {
-            let _ = std::fs::write(work.join(PAUSED_MARK), b"");
-        } else {
+        if !task_app.state::<Jobs>().is_paused(&spec.id) {
             let _ = std::fs::remove_dir_all(&work);
         }
         result
@@ -577,15 +595,22 @@ pub(crate) fn secs(t: f64) -> String {
 async fn run_simple(app: &AppHandle, spec: &JobSpec) -> Result<PathBuf, String> {
     let dir = output_dir(app)?;
     let work = work_dir(app, &spec.id)?;
+    // A whole link goes on where it stopped, like `download_media`; FFmpeg cuts a part from the start again.
+    let resumable = !spec.local && spec.whole();
+    if resumable {
+        let _ = std::fs::write(work.join(PAUSED_MARK), b"");
+    }
     let result = run_simple_in(app, spec, &dir, &work).await;
-    let _ = std::fs::remove_dir_all(&work);
+    if !(resumable && app.state::<Jobs>().is_paused(&spec.id)) {
+        let _ = std::fs::remove_dir_all(&work);
+    }
     result
 }
 
 async fn run_simple_in(app: &AppHandle, spec: &JobSpec, dir: &Path, work: &Path) -> Result<PathBuf, String> {
     let ext = spec.container.ext();
     let stem = safe_stem(&spec.file_name);
-    let whole = spec.start <= 0.05 && spec.end >= spec.duration - 0.05;
+    let whole = spec.whole();
 
     if spec.local {
         // Stream copy: instant and lossless; the start lands on a keyframe.

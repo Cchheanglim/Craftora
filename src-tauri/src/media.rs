@@ -53,7 +53,7 @@ struct Info {
     language: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Format {
     format_id: String,
     ext: Option<String>,
@@ -97,6 +97,13 @@ impl Format {
     fn plays_in_webview(&self) -> bool {
         let direct = matches!(self.protocol.as_deref(), None | Some("https") | Some("http"));
         direct && matches!(self.ext.as_deref(), Some("mp4") | Some("webm") | Some("m4a")) && self.url.is_some()
+    }
+    fn ffmpeg_url(&self) -> Option<&str> {
+        match self.protocol.as_deref() {
+            Some("mhtml") => None,
+            Some("http_dash_segments") => self.manifest_url.as_deref().or(self.url.as_deref()),
+            _ => self.url.as_deref(),
+        }
     }
 }
 
@@ -628,6 +635,11 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
     let hover_url = with_page(hover.unwrap_or_default());
     let captions = crate::captions::pick(&info.subtitles, &info.automatic_captions, info.language.as_deref());
     let thumbnails = other_pictures(&info);
+    if preview_url.is_empty() && !bot_checked {
+        let mut formats = info.formats;
+        stamp_referer(&mut formats, page.as_deref());
+        fetched_formats().lock().unwrap().insert(url.clone(), formats);
+    }
     Ok(MediaSource {
         url,
         title: info.title.unwrap_or_else(|| "Untitled".into()),
@@ -664,17 +676,47 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
     })
 }
 
-/// What to record from a live link: FFmpeg inputs (the best stream with picture and sound, or
-/// picture and sound as two inputs), each with the headers its server wants.
-pub(crate) async fn live_inputs(app: &AppHandle, url: &str) -> Result<Vec<(String, BTreeMap<String, String>)>, String> {
+fn fetched_formats() -> &'static std::sync::Mutex<std::collections::HashMap<String, Vec<Format>>> {
+    static FETCHED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, Vec<Format>>>> = std::sync::OnceLock::new();
+    FETCHED.get_or_init(Default::default)
+}
+
+fn stamp_referer(formats: &mut [Format], page: Option<&str>) {
+    let page = page.map(str::to_string).or_else(|| formats.iter().find_map(|f| f.http_headers.get("Referer").cloned()));
+    if let Some(page) = page {
+        for f in formats {
+            f.http_headers.entry("Referer".into()).or_insert_with(|| page.clone());
+        }
+    }
+}
+
+/// An FFmpeg input address and the headers its server wants.
+pub(crate) type StreamInput = (String, BTreeMap<String, String>);
+
+/// What FFmpeg reads to record a live link or make a preview for a link the WebView can't play:
+/// the inputs (each with the headers its server wants) and whether `-c copy` can be used as-is.
+pub(crate) async fn live_inputs(app: &AppHandle, url: &str, format: Option<&str>) -> Result<(Vec<StreamInput>, bool), String> {
+    if let Some(format_id) = format.filter(|f| !f.is_empty() && *f != "live") {
+        // Taken out first: the lock mustn't be held while `read_link` waits.
+        let cached = fetched_formats().lock().unwrap().remove(url);
+        let formats = match cached {
+            Some(formats) => formats,
+            None => {
+                let mut info = read_link(app, url).await?;
+                stamp_referer(&mut info.formats, crate::signin::split_referer(url).1);
+                info.formats
+            }
+        };
+        return pick_stream(&formats, format_id).ok_or_else(|| "No stream to record was found at this link.".into());
+    }
     let info = read_link(app, url).await?;
     if info.is_live != Some(true) {
         return Err("This stream isn't live any more. Fetch the link again to edit the saved video.".into());
     }
-    pick_live(&info.formats).ok_or_else(|| "No stream to record was found at this link.".into())
+    pick_live(&info.formats).map(|inputs| (inputs, true)).ok_or_else(|| "No stream to record was found at this link.".into())
 }
 
-fn pick_live(formats: &[Format]) -> Option<Vec<(String, BTreeMap<String, String>)>> {
+fn pick_live(formats: &[Format]) -> Option<Vec<StreamInput>> {
     let input = |f: &Format| Some((f.url.clone()?, f.http_headers.clone()));
     let quality = |f: &&Format| (f.height.unwrap_or(0), f.tbr.unwrap_or(0.0) as u64);
     let usable = || formats.iter().filter(|f| f.url.is_some() && f.protocol.as_deref() != Some("mhtml"));
@@ -690,9 +732,50 @@ fn pick_live(formats: &[Format]) -> Option<Vec<(String, BTreeMap<String, String>
     }
 }
 
+fn pick_stream(formats: &[Format], format_id: &str) -> Option<(Vec<StreamInput>, bool)> {
+    let input = |f: &Format| Some((f.ffmpeg_url()?.to_string(), f.http_headers.clone()));
+    let wanted = format_id.split('+').next().filter(|s| !s.is_empty());
+    let usable = || formats.iter().filter(|f| f.ffmpeg_url().is_some());
+    let video = wanted
+        .and_then(|id| usable().find(|f| f.format_id == id && f.has_video()))
+        .or_else(|| usable().filter(|f| f.has_video()).max_by_key(|f| (f.height.unwrap_or(0) <= 1080, f.height.unwrap_or(0), f.tbr.unwrap_or(0.0) as u64)))?;
+    let audio = if video.has_audio() {
+        None
+    } else {
+        usable()
+            .filter(|f| f.has_audio() && !f.has_video())
+            .max_by_key(|f| (codec_name(f.acodec.as_deref()) == "AAC", f.abr.or(f.tbr).unwrap_or(0.0) as u64))
+            .or_else(|| usable().filter(|f| f.has_audio()).max_by_key(|f| f.abr.or(f.tbr).unwrap_or(0.0) as u64))
+    };
+    let inputs = match audio {
+        Some(a) if a.ffmpeg_url() != video.ffmpeg_url() => vec![input(video)?, input(a)?],
+        _ => vec![input(video)?],
+    };
+    let is_dash = video.protocol.as_deref() == Some("http_dash_segments");
+    // A plain file often doesn't say what's in it (""): it's tried as it is, and if FFmpeg can't copy it the job
+    // fails and App.tsx downloads the link instead.
+    let copies = |codec: Option<&str>, wanted: &str| {
+        let name = codec_name(codec);
+        name.is_empty() || name == wanted
+    };
+    let v_h264 = if is_dash {
+        formats.iter().filter(|f| f.has_video()).all(|f| codec_name(f.vcodec.as_deref()) == "H.264" && f.height.unwrap_or(0) <= 720)
+    } else {
+        copies(video.vcodec.as_deref(), "H.264")
+    };
+    let a_aac = if is_dash {
+        formats.iter().filter(|f| f.has_audio()).all(|f| codec_name(f.acodec.as_deref()) == "AAC")
+    } else if video.has_audio() {
+        copies(video.acodec.as_deref(), "AAC")
+    } else {
+        audio.is_none_or(|a| copies(a.acodec.as_deref(), "AAC"))
+    };
+    Some((inputs, v_h264 && a_aac))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{first_served, is_bot_check, is_network_hiccup, other_pictures, parse_mpd_duration, preview_choices, Format, Info, MAX_PICTURES};
+    use super::{first_served, is_bot_check, is_network_hiccup, other_pictures, parse_mpd_duration, pick_stream, preview_choices, Format, Info, MAX_PICTURES};
 
     #[test]
     fn keeps_the_other_pictures_best_first() {
@@ -795,5 +878,38 @@ mod tests {
         let info: Info = serde_json::from_str(&json).unwrap();
         let served = first_served(&preview_choices(&info.formats, None), None).await;
         assert_eq!(served.map(|f| f.format_id.as_str()), Some("22"));
+    }
+
+    #[test]
+    fn picks_ffmpeg_inputs_and_copy_mode() {
+        let json = br#"{"title":"T","formats":[
+            {"format_id":"v1","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"url":"https://v/h264","protocol":"https"},
+            {"format_id":"v2","ext":"mp4","vcodec":"av01.0.08M","acodec":"none","height":1080,"url":"https://v/av1","protocol":"https"},
+            {"format_id":"a1","ext":"webm","vcodec":"none","acodec":"opus","abr":160,"url":"https://a/opus","protocol":"https"},
+            {"format_id":"a2","ext":"m4a","vcodec":"none","acodec":"mp4a.40.2","abr":128,"url":"https://a/aac","protocol":"https"}]}"#;
+        let info: Info = serde_json::from_slice(json).unwrap();
+        let (inputs, copy) = pick_stream(&info.formats, "v1+bestaudio/v1").unwrap();
+        assert_eq!(inputs.iter().map(|(u, _)| u.as_str()).collect::<Vec<_>>(), ["https://v/h264", "https://a/aac"]);
+        assert!(copy);
+
+        let (inputs, copy) = pick_stream(&info.formats, "v2+bestaudio/v2").unwrap();
+        assert_eq!(inputs.iter().map(|(u, _)| u.as_str()).collect::<Vec<_>>(), ["https://v/av1", "https://a/aac"]);
+        assert!(!copy);
+
+        let dash = br#"{"title":"D","formats":[
+            {"format_id":"dv","ext":"mp4","vcodec":"av01","acodec":"none","height":1080,"url":"https://d/init.mp4","manifest_url":"https://d/m.mpd","protocol":"http_dash_segments"},
+            {"format_id":"da","ext":"m4a","vcodec":"none","acodec":"mp4a","url":"https://d/a.m4a","manifest_url":"https://d/m.mpd","protocol":"http_dash_segments"}]}"#;
+        let dash_info: Info = serde_json::from_slice(dash).unwrap();
+        let (inputs, copy) = pick_stream(&dash_info.formats, "dv+bestaudio/dv").unwrap();
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(inputs[0].0, "https://d/m.mpd");
+        assert!(!copy);
+
+        // A plain .mkv that doesn't say what's in it: tried as it is.
+        let plain = br#"{"title":"P","formats":[{"format_id":"x-matroska","ext":"mkv","url":"https://p/v.mkv","protocol":"http"}]}"#;
+        let plain_info: Info = serde_json::from_slice(plain).unwrap();
+        let (inputs, copy) = pick_stream(&plain_info.formats, "x-matroska").unwrap();
+        assert_eq!(inputs.len(), 1);
+        assert!(copy);
     }
 }

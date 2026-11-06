@@ -1,11 +1,13 @@
 /** Settings → Preferences: small on/off choices, remembered on this PC. */
-export type Preference = "finishSound" | "importToTimeline";
+export type Preference = "finishSound" | "importToTimeline" | "captionsOnGpu";
 
 const DEFAULTS: Record<Preference, boolean> = {
   // Craftora's sound when a download or export finishes.
   finishSound: true,
   // Files imported from this PC go straight onto the timeline (else they wait under In this project).
   importToTimeline: false,
+  // whisper uses the graphics card when there is one (speech.rs); off: the processor only.
+  captionsOnGpu: true,
 };
 
 export function preference(name: Preference): boolean {
