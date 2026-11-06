@@ -1,7 +1,6 @@
 //! Captions made from the sound, for videos that come without any: whisper.cpp (bundled) listens
 //! to the audio with a speech model downloaded once (~148 MB). Everything runs on this PC.
 
-use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -10,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::process::CommandEvent;
 
-use crate::captions::{seconds, Caption};
+use crate::captions::Caption;
 use crate::engine::{ffmpeg_dir, last_error, run_to_end, FFMPEG, WHISPER, YT_DLP};
 use crate::local::{normalize, OpenedFiles};
 
@@ -22,27 +21,13 @@ const MODEL_BYTES: u64 = 147_951_465;
 #[derive(Serialize, Clone)]
 struct Progress<'a> {
     id: &'a str,
-    /// "model" (downloading it, first time only), "sound" (getting a link's audio) or "listening".
+    /// "model" (downloading it, first time only), "sound" (getting and reading the audio) or "listening".
     stage: &'static str,
     percent: f64,
 }
 
 fn report(app: &AppHandle, id: &str, stage: &'static str, percent: f64) {
     let _ = app.emit("speech-progress", Progress { id, stage, percent });
-}
-
-#[derive(Serialize, Clone)]
-struct Line<'a> {
-    id: &'a str,
-    line: Caption,
-}
-
-/// A line whisper prints as soon as it has it: "[00:00:04.640 --> 00:00:09.920]  It records…".
-fn printed_line(text: &str) -> Option<Caption> {
-    let (times, said) = text.strip_prefix('[')?.split_once(']')?;
-    let (from, to) = times.split_once("-->")?;
-    let text = said.trim().to_string();
-    (!text.is_empty()).then_some(Caption { start: seconds(from)?, end: seconds(to)?, text })
 }
 
 /// The speech model on disk, downloading it the first time.
@@ -161,21 +146,13 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, mo
         .map_err(|e| format!("Couldn't start whisper: {e}"))?;
     let _tied = crate::engine::tie(child.pid());
     let (mut last_line, mut code) = (String::new(), None);
-    // With `-dtw` whisper prints some lines several times, out of order: each goes to the editor once.
-    let mut printed = HashSet::new();
     while let Some(event) = rx.recv().await {
         match event {
             CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
-                for line in String::from_utf8_lossy(&bytes).lines().map(str::trim).filter(|l| !l.is_empty()) {
+                // Lines whisper prints as it goes ("[00:00:04.640 --> …] It records…") aren't shown any more:
+                // with `-dtw` it prints only some, repeated and out of order (3 of 56 in 7 minutes).
+                for line in String::from_utf8_lossy(&bytes).lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('[')) {
                     // "whisper_print_progress_callback: progress =  45%"
-                    // Each line goes to the editor right away: a long video's captions fill in as they're made.
-                    if let Some(mut caption) = printed_line(line) {
-                        if printed.insert(line.to_string()) {
-                            fit_to_speech(&mut caption, &silences);
-                            let _ = app.emit("speech-line", Line { id, line: caption });
-                        }
-                        continue;
-                    }
                     match line.split("progress =").nth(1).and_then(|p| p.trim().trim_end_matches('%').trim().parse::<f64>().ok()) {
                         Some(percent) => report(app, id, "listening", percent),
                         None => line.clone_into(&mut last_line),
@@ -382,13 +359,5 @@ mod tests {
         );
         assert!(from_whisper_json("not json").is_err());
         assert_eq!(without_sound_tags(" ♪ la la ♪  [Music] (sighs)  bye "), "la la bye");
-    }
-
-    #[test]
-    fn reads_lines_as_whisper_prints_them() {
-        let line = printed_line("[00:01:04.640 --> 00:01:09.920]   It records sharp video, even at night.").unwrap();
-        assert_eq!((line.start, line.end, line.text.as_str()), (64.64, 69.92, "It records sharp video, even at night."));
-        assert!(printed_line("whisper_print_progress_callback: progress =  45%").is_none());
-        assert!(printed_line("[00:00:01.000 --> 00:00:02.000]   ").is_none());
     }
 }

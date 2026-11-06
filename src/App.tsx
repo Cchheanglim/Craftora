@@ -20,7 +20,6 @@ import {
   loadCaptions,
   makeCaptions,
   onSpeechProgress,
-  onSpeechLine,
   detectSilences,
   openLocal,
   renameDownload,
@@ -737,24 +736,14 @@ export default function App() {
         [id]: stage === "model" ? `getting the speech model, ${Math.floor(percent)}%` : stage === "sound" ? "getting the sound for captions…" : `making captions, ${Math.floor(percent)}%`,
       })),
     );
-    // Lines show up while the rest is still being made.
-    const unlines = onSpeechLine((id, line) => {
-      const current = projectRef.current.media.find((m) => m.id === id);
-      if (!current) return;
-      const lines = current.captions?.partial ? [...current.captions.lines, line] : [line];
-      api.refreshMedia(id, { captions: { label: SPOKEN, lines, partial: true, fitted: true } });
-    });
-    return () => {
-      void unlisten.then((stop) => stop());
-      void unlines.then((stop) => stop());
-    };
-  }, [api]);
+    return () => void unlisten.then((stop) => stop());
+  }, []);
   // Media that captions can be made for from its sound: none yet, unfinished, or made before lines
-  // were fitted to their words. Not while it's being done (a failed try can be tried again).
+  // were timed by their words. Not while it's being done (a failed try can be tried again).
   const uncaptioned = inDesktopApp
     ? project.media.filter((m) => {
         const s = m.source;
-        const made = m.captions && !m.captions.partial && (m.captions.fitted || m.captions.label !== SPOKEN);
+        const made = m.captions && !m.captions.partial && (m.captions.wordTimed || m.captions.label !== SPOKEN);
         const going = captioning[m.id] && captioning[m.id] !== "couldn't make captions";
         return !made && !going && !s.captions && m.hasAudio && !s.image && !s.live && !m.missing;
       })
@@ -775,7 +764,7 @@ export default function App() {
           .then((lines) => {
             done();
             // The finished file replaces the lines shown along the way.
-            if (lines.length) api.refreshMedia(m.id, { captions: { label: SPOKEN, lines, fitted: true } });
+            if (lines.length) api.refreshMedia(m.id, { captions: { label: SPOKEN, lines, wordTimed: true } });
           })
           .catch(() => done("couldn't make captions"));
       });
