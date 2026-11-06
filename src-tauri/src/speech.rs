@@ -1,15 +1,16 @@
 //! Captions made from the sound, for videos that come without any: whisper.cpp (bundled) listens
 //! to the audio with a speech model downloaded once (~148 MB). Everything runs on this PC.
 
+use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::process::CommandEvent;
 
-use crate::captions::{parse_vtt, seconds, Caption};
+use crate::captions::{seconds, Caption};
 use crate::engine::{ffmpeg_dir, last_error, run_to_end, FFMPEG, WHISPER, YT_DLP};
 use crate::local::{normalize, OpenedFiles};
 
@@ -121,12 +122,11 @@ pub async fn make_captions(
 }
 
 async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, model: &Path, work: &Path) -> Result<Vec<Caption>, String> {
+    // Reading a long file's sound takes a while too, so it's said for files as well as links.
+    report(app, id, "sound", 0.0);
     let input = match file {
         Some(path) => path,
-        None => {
-            report(app, id, "sound", 0.0);
-            link_sound(app, link, work).await?
-        }
+        None => link_sound(app, link, work).await?,
     };
     // whisper reads 16 kHz mono WAV.
     let wav = work.join("sound.wav");
@@ -151,13 +151,18 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, mo
     // Half the processor: fetching, the preview and exports stay quick while captions are made.
     let threads = std::thread::available_parallelism().map_or(2, |n| (n.get() / 2).clamp(1, 8)).to_string();
     let (model, out) = (model.to_string_lossy().into_owned(), work.join("captions").to_string_lossy().into_owned());
-    let args = ["-m", &model, "-f", &wav_text, "-l", "auto", "-t", &threads, "-ovtt", "-of", &out, "-pp"];
+    // `-dtw` times each word (`from_whisper_json`; it needs flash attention off), measured 0.1–0.25 s from the
+    // speech even under music. `-mc 0`: no earlier text carried into the next 30 s, which made whisper repeat a
+    // line over what came after. Together ~10% slower than before.
+    let args = ["-m", &model, "-f", &wav_text, "-l", "auto", "-t", &threads, "-mc", "0", "-nfa", "-dtw", "base", "-ojf", "-of", &out, "-pp"];
     let (mut rx, child) = crate::engine::command(app, WHISPER)?
         .args(args)
         .spawn()
         .map_err(|e| format!("Couldn't start whisper: {e}"))?;
     let _tied = crate::engine::tie(child.pid());
     let (mut last_line, mut code) = (String::new(), None);
+    // With `-dtw` whisper prints some lines several times, out of order: each goes to the editor once.
+    let mut printed = HashSet::new();
     while let Some(event) = rx.recv().await {
         match event {
             CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
@@ -165,8 +170,10 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, mo
                     // "whisper_print_progress_callback: progress =  45%"
                     // Each line goes to the editor right away: a long video's captions fill in as they're made.
                     if let Some(mut caption) = printed_line(line) {
-                        fit_to_speech(&mut caption, &silences);
-                        let _ = app.emit("speech-line", Line { id, line: caption });
+                        if printed.insert(line.to_string()) {
+                            fit_to_speech(&mut caption, &silences);
+                            let _ = app.emit("speech-line", Line { id, line: caption });
+                        }
                         continue;
                     }
                     match line.split("progress =").nth(1).and_then(|p| p.trim().trim_end_matches('%').trim().parse::<f64>().ok()) {
@@ -182,18 +189,101 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, mo
     if code != Some(0) {
         return Err(format!("Making captions failed: {last_line}"));
     }
-    let vtt = std::fs::read_to_string(work.join("captions.vtt")).map_err(|_| "whisper finished but made no captions.".to_string())?;
-    let mut captions = parse_vtt(&vtt);
+    let json = std::fs::read_to_string(work.join("captions.json")).map_err(|_| "whisper finished but made no captions.".to_string())?;
+    let mut captions = from_whisper_json(&json)?;
     for caption in &mut captions {
         fit_to_speech(caption, &silences);
     }
     Ok(captions)
 }
 
+#[derive(Deserialize)]
+struct WhisperJson {
+    transcription: Vec<WhisperSegment>,
+}
+
+#[derive(Deserialize)]
+struct WhisperSegment {
+    /// Milliseconds.
+    offsets: WhisperOffsets,
+    text: String,
+    tokens: Vec<WhisperToken>,
+}
+
+#[derive(Deserialize)]
+struct WhisperOffsets {
+    from: i64,
+    to: i64,
+}
+
+#[derive(Deserialize)]
+struct WhisperToken {
+    text: String,
+    /// Hundredths of a second; -1 when it has none.
+    t_dtw: i64,
+}
+
+/// whisper's full JSON (`-ojf` with `-dtw`) as caption lines, each timed by when its words are said. Its own
+/// line times start where the last line ended: seconds before the words, under music most of all.
+fn from_whisper_json(json: &str) -> Result<Vec<Caption>, String> {
+    // Measured: a line's first word is timed 0.1–0.25 s late, its last one about when the line ends.
+    const LEAD: f64 = 0.2;
+    const TAIL: f64 = 0.4;
+    let parsed: WhisperJson = serde_json::from_str(json).map_err(|_| "whisper's captions couldn't be read.".to_string())?;
+    let mut lines = Vec::new();
+    for segment in parsed.transcription {
+        let text = without_sound_tags(&segment.text);
+        if !text.chars().any(char::is_alphanumeric) {
+            continue;
+        }
+        // Words only: punctuation is timed seconds late, special tokens ([_BEG_]) and sound tags not at all.
+        let mut tagged = false;
+        let times: Vec<f64> = segment
+            .tokens
+            .iter()
+            .filter(|t| !t.text.starts_with("[_"))
+            .filter_map(|t| {
+                let inside = tagged || t.text.contains(['[', '(']);
+                tagged = inside && !t.text.contains([']', ')']);
+                (!inside && t.t_dtw >= 0 && t.text.chars().any(char::is_alphanumeric)).then_some(t.t_dtw as f64 / 100.0)
+            })
+            .collect();
+        let (start, end) = match (times.first(), times.last()) {
+            (Some(first), Some(last)) => ((first - LEAD).max(0.0), last + TAIL),
+            _ => (segment.offsets.from as f64 / 1000.0, segment.offsets.to as f64 / 1000.0),
+        };
+        lines.push(Caption { start, end: end.max(start + 0.3), text });
+    }
+    lines.sort_by(|a, b| a.start.total_cmp(&b.start));
+    for i in 1..lines.len() {
+        let next = lines[i].start;
+        lines[i - 1].end = lines[i - 1].end.min(next);
+    }
+    lines.retain(|c| c.end - c.start >= 0.05);
+    Ok(lines)
+}
+
+/// Text without whisper's sound tags ("[Music]", "(laughs)", "♪"): the small model calls cries and groans music.
+fn without_sound_tags(text: &str) -> String {
+    let mut kept = String::new();
+    let mut close = None;
+    for c in text.chars() {
+        match close {
+            Some(end) if c == end => close = None,
+            Some(_) => {}
+            None if c == '[' => close = Some(']'),
+            None if c == '(' => close = Some(')'),
+            None if !matches!(c, '♪' | '♫' | '♬' | '♩') => kept.push(c),
+            None => {}
+        }
+    }
+    kept.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Trims a line to the sound inside it. whisper starts a line where the last one ended and ends it
 /// where the next one begins, so lines showed seconds before their words and stayed through the
 /// silence after (measured: speech at 3.1–6.1 s was captioned 0–11 s). Under music nothing is quiet,
-/// and the line keeps whisper's times.
+/// and the line keeps its words' times (`from_whisper_json`).
 fn fit_to_speech(caption: &mut Caption, silences: &[(f64, f64)]) {
     // Sound shorter than this at a line's edge is the neighbouring line's word, not this one's.
     const SHORTEST: f64 = 0.3;
@@ -260,6 +350,38 @@ mod tests {
         let mut c = Caption { start: 1.0, end: 2.0, text: "x".into() };
         fit_to_speech(&mut c, &[(0.0, 5.0)]);
         assert_eq!((c.start, c.end), (1.0, 2.0));
+    }
+
+    #[test]
+    fn times_lines_by_their_words() {
+        // Real output under music (trimmed): whisper said 14.56–22.76 and 22.76–32.18 s; the words were at 17.8–20.3 and 22.7–25.1.
+        let tok = |text: &str, t_dtw: i64| format!(r#"{{"text":{text:?},"t_dtw":{t_dtw}}}"#);
+        let seg = |from: i64, to: i64, text: &str, tokens: &[String]| format!(r#"{{"offsets":{{"from":{from},"to":{to}}},"text":{text:?},"tokens":[{}]}}"#, tokens.join(","));
+        let json = format!(
+            r#"{{"transcription":[{},{},{},{},{}]}}"#,
+            seg(14560, 22760, " No, no, no.", &[tok(" No", 1796), tok(",", 1974), tok(" no", 2022), tok(" no", 2132), tok(".", 2138), tok("[_TT_1138]", -1)]),
+            seg(22760, 32180, " He served short to the forehand and won the point.", &[tok("[_BEG_]", -1), tok(" He", 2284), tok(" point", 2510), tok(".", 2924)]),
+            seg(32180, 33000, " [Music]", &[tok(" [", 3300), tok("Music", 3310), tok("]", 3320)]),
+            seg(33000, 36000, " (laughs) Okay.", &[tok(" (", 3310), tok("laugh", 3320), tok(")", 3330), tok(" Okay", 3400)]),
+            seg(36000, 37500, " Again", &[tok(" Again", -1)]),
+        );
+        let lines: Vec<(f64, f64, String)> = from_whisper_json(&json)
+            .unwrap()
+            .into_iter()
+            .map(|c| ((c.start * 100.0).round() / 100.0, (c.end * 100.0).round() / 100.0, c.text))
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                (17.76, 21.72, "No, no, no.".to_string()),
+                (22.64, 25.5, "He served short to the forehand and won the point.".to_string()),
+                // The tag's words don't time the line; one without word times keeps whisper's own.
+                (33.8, 34.4, "Okay.".to_string()),
+                (36.0, 37.5, "Again".to_string()),
+            ]
+        );
+        assert!(from_whisper_json("not json").is_err());
+        assert_eq!(without_sound_tags(" ♪ la la ♪  [Music] (sighs)  bye "), "la la bye");
     }
 
     #[test]
