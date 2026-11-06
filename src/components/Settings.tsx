@@ -130,7 +130,7 @@ function Preferences() {
   const rows: [Preference, string, string, [string, string]][] = [
     ["finishSound", "Sound when a download or export finishes", "Plays whether Craftora is in front or not.", ["On", "Off"]],
     ["importToTimeline", "Files imported from this PC", "Just import: they wait under In this project. Links you fetch always go onto the timeline.", ["Add to timeline", "Just import"]],
-    ["captionsOnGpu", "Make captions with", "The graphics card is much faster. A PC without a usable one uses the processor anyway.", ["Graphics card", "Processor"]],
+    ["captionsOnGpu", "Make captions with", "Graphics card: faster, with a more accurate speech model (190 MB, downloaded once). A PC without a graphics card of its own uses the processor.", ["Graphics card", "Processor"]],
   ];
   return (
     <div className="library__group">

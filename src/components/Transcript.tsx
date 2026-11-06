@@ -145,7 +145,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
             <MakeCaptions onMake={onMakeCaptions} />
             <p className="transcript__muted">
               Craftora listens to what's said and writes it down, on this PC: nothing is sent anywhere. The first time, it downloads a
-              148 MB speech model. A long video takes a few minutes and keeps the processor busy meanwhile.
+              speech model (148 MB, or 190 MB with a graphics card). A long video takes a few minutes and keeps the PC busy meanwhile.
             </p>
           </>
         )}

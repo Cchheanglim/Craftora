@@ -70,7 +70,22 @@ jobs:
       - name: Install packages
         run: bun install --frozen-lockfile
 
-      - name: Fetch yt-dlp and FFmpeg
+      # fetch-sidecars.ps1 builds whisper.cpp with graphics-card support (Vulkan) when the SDK is there.
+      - name: Install the Vulkan SDK
+        shell: pwsh
+        run: |
+          $version = "1.4.363.1"
+          $installer = Join-Path $env:RUNNER_TEMP "vulkan-sdk.exe"
+          curl.exe -fL --retry 3 -o $installer "https://sdk.lunarg.com/sdk/download/$version/windows/vulkan-sdk.exe"
+          $sha = (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLower()
+          if ($sha -ne "c02932bd9a968b22d404536108adaacac908c081cd6b0113f5bfefc523dd0a6a") { throw "Vulkan SDK installer checksum mismatch: $sha" }
+          $root = "C:\VulkanSDK\$version"
+          $p = Start-Process -FilePath $installer -ArgumentList "--root", $root, "--accept-licenses", "--default-answer", "--confirm-command", "install" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "The Vulkan SDK didn't install (exit $($p.ExitCode))" }
+          "VULKAN_SDK=$root" >> $env:GITHUB_ENV
+          "$root\Bin" >> $env:GITHUB_PATH
+
+      - name: Fetch yt-dlp, FFmpeg, Deno and whisper.cpp
         shell: pwsh
         run: ./scripts/fetch-sidecars.ps1
 

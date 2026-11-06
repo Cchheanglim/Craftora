@@ -690,9 +690,12 @@ fn stamp_referer(formats: &mut [Format], page: Option<&str>) {
     }
 }
 
+/// An FFmpeg input address and the headers its server wants.
+pub(crate) type StreamInput = (String, BTreeMap<String, String>);
+
 /// What FFmpeg reads to record a live link or make a preview for a link the WebView can't play:
 /// the inputs (each with the headers its server wants) and whether `-c copy` can be used as-is.
-pub(crate) async fn live_inputs(app: &AppHandle, url: &str, format: Option<&str>) -> Result<(Vec<(String, BTreeMap<String, String>)>, bool), String> {
+pub(crate) async fn live_inputs(app: &AppHandle, url: &str, format: Option<&str>) -> Result<(Vec<StreamInput>, bool), String> {
     if let Some(format_id) = format.filter(|f| !f.is_empty() && *f != "live") {
         // Taken out first: the lock mustn't be held while `read_link` waits.
         let cached = fetched_formats().lock().unwrap().remove(url);
@@ -713,7 +716,7 @@ pub(crate) async fn live_inputs(app: &AppHandle, url: &str, format: Option<&str>
     pick_live(&info.formats).map(|inputs| (inputs, true)).ok_or_else(|| "No stream to record was found at this link.".into())
 }
 
-fn pick_live(formats: &[Format]) -> Option<Vec<(String, BTreeMap<String, String>)>> {
+fn pick_live(formats: &[Format]) -> Option<Vec<StreamInput>> {
     let input = |f: &Format| Some((f.url.clone()?, f.http_headers.clone()));
     let quality = |f: &&Format| (f.height.unwrap_or(0), f.tbr.unwrap_or(0.0) as u64);
     let usable = || formats.iter().filter(|f| f.url.is_some() && f.protocol.as_deref() != Some("mhtml"));
@@ -729,7 +732,7 @@ fn pick_live(formats: &[Format]) -> Option<Vec<(String, BTreeMap<String, String>
     }
 }
 
-fn pick_stream(formats: &[Format], format_id: &str) -> Option<(Vec<(String, BTreeMap<String, String>)>, bool)> {
+fn pick_stream(formats: &[Format], format_id: &str) -> Option<(Vec<StreamInput>, bool)> {
     let input = |f: &Format| Some((f.ffmpeg_url()?.to_string(), f.http_headers.clone()));
     let wanted = format_id.split('+').next().filter(|s| !s.is_empty());
     let usable = || formats.iter().filter(|f| f.ffmpeg_url().is_some());

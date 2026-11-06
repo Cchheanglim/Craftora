@@ -115,28 +115,57 @@ if ($Force -or -not (Test-Path $denoTarget)) {
 }
 
 # --- whisper.cpp (speech to text, for captions made from the sound) --------------
-# Pinned: its releases publish no checksum file, so the SHA-256 of this exact build lives here.
-# The speech model (ggml-base.bin, ~148 MB) isn't bundled: Craftora downloads it on first use.
+# Release b5454. With the Vulkan SDK installed (release.yml installs it), built from its source with graphics-card
+# support (Vulkan: NVIDIA, AMD and Intel), which its releases don't offer for Windows: the official CUDA build
+# needs 1.1 GB of NVIDIA libraries, the Vulkan part adds ~5 MB to the installer. Without the SDK, the official
+# processor-only build. Pinned: the source by commit; the zip by SHA-256 (its releases publish no checksum file).
+# The speech models (148 MB, or 190 MB on a graphics card) aren't bundled: Craftora downloads one on first use.
 $whisperRelease = "b5454"
+$whisperCommit = "d1be6fde11ac6e0407606b4e42fe72d34add8037"
 $whisperSha256 = "6ba69e3482d7826214f90a6a9c84ca07782aec1e1d0c6a7c30c994fd5d816ccb"
 $whisperDir = Join-Path $binDir "whisper"
 $whisperTarget = Join-Path $whisperDir "whisper-cli.exe"
 if ($Force -or -not (Test-Path $whisperTarget)) {
-  Write-Host "whisper.cpp ($whisperRelease)"
-  $zip = Join-Path $tmp "whisper-bin-x64.zip"
-  Get-File "https://github.com/ggml-org/whisper.cpp/releases/download/$whisperRelease/whisper-bin-x64.zip" $zip
-  $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
-  if ($actual -ne $whisperSha256) { throw "Checksum mismatch for whisper-bin-x64.zip (expected $whisperSha256, got $actual)" }
-  Write-Host "  checksum OK: whisper-bin-x64.zip"
-  $unzipped = Join-Path $tmp "whisper"
-  if (Test-Path $unzipped) { Remove-Item -Recurse -Force $unzipped }
-  Expand-Archive -Path $zip -DestinationPath $unzipped
+  if ($env:VULKAN_SDK -and (Test-Path $env:VULKAN_SDK)) {
+    Write-Host "whisper.cpp ($whisperRelease, built with Vulkan)"
+    # A short folder: Visual Studio's build stops on paths over 260 characters.
+    $src = Join-Path $tmp "w"
+    if (Test-Path $src) { Remove-Item -Recurse -Force $src }
+    & git -c core.longpaths=true clone --quiet --depth 1 --branch $whisperRelease https://github.com/ggml-org/whisper.cpp $src
+    if ($LASTEXITCODE -ne 0) { throw "Couldn't download the whisper.cpp source" }
+    $head = (& git -C $src rev-parse HEAD).Trim()
+    if ($head -ne $whisperCommit) { throw "whisper.cpp $whisperRelease is commit $head, expected $whisperCommit" }
+    $cmake = (Get-Command cmake -ErrorAction SilentlyContinue).Source
+    if (-not $cmake) {
+      $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+      $cmake = & $vswhere -latest -products * -find "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" | Select-Object -First 1
+    }
+    if (-not $cmake) { throw "CMake wasn't found: install Visual Studio's C++ build tools" }
+    $build = Join-Path $src "build"
+    # whisper.cpp's own Windows release options, plus Vulkan.
+    & $cmake -S $src -B $build -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON -DGGML_VULKAN=ON -DWHISPER_BUILD_TESTS=OFF
+    if ($LASTEXITCODE -ne 0) { throw "Couldn't set up the whisper.cpp build" }
+    & $cmake --build $build --config Release --parallel
+    if ($LASTEXITCODE -ne 0) { throw "Couldn't build whisper.cpp" }
+    $release = Join-Path $build "bin\Release"
+  } else {
+    Write-Host "whisper.cpp ($whisperRelease, processor only: install the Vulkan SDK for graphics-card captions)"
+    $zip = Join-Path $tmp "whisper-bin-x64.zip"
+    Get-File "https://github.com/ggml-org/whisper.cpp/releases/download/$whisperRelease/whisper-bin-x64.zip" $zip
+    $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+    if ($actual -ne $whisperSha256) { throw "Checksum mismatch for whisper-bin-x64.zip (expected $whisperSha256, got $actual)" }
+    Write-Host "  checksum OK: whisper-bin-x64.zip"
+    $unzipped = Join-Path $tmp "whisper"
+    if (Test-Path $unzipped) { Remove-Item -Recurse -Force $unzipped }
+    Expand-Archive -Path $zip -DestinationPath $unzipped
+    $release = Join-Path $unzipped "Release"
+  }
   if (Test-Path $whisperDir) { Remove-Item -Recurse -Force $whisperDir }
   New-Item -ItemType Directory -Force -Path $whisperDir | Out-Null
   # Only the command-line tool and the libraries it loads; the zip also has demos and tests.
-  Copy-Item (Join-Path $unzipped "Release\whisper-cli.exe") $whisperDir
+  Copy-Item (Join-Path $release "whisper-cli.exe") $whisperDir
   # Only what whisper-cli loads: not SDL2, llama or parakeet (3.3 MB).
-  Get-ChildItem (Join-Path $unzipped "Release\*.dll") | Where-Object { $_.Name -like "ggml*.dll" -or $_.Name -eq "whisper.dll" } | Copy-Item -Destination $whisperDir
+  Get-ChildItem (Join-Path $release "*.dll") | Where-Object { $_.Name -like "ggml*.dll" -or $_.Name -eq "whisper.dll" } | Copy-Item -Destination $whisperDir
 } else {
   Write-Host "whisper.cpp already present (use -Force to replace)"
 }

@@ -1,8 +1,10 @@
 //! Captions made from the sound, for videos that come without any: whisper.cpp (bundled) listens
-//! to the audio with a speech model downloaded once (~148 MB). Everything runs on this PC.
+//! to the audio with a speech model downloaded once (148 MB, or 190 MB on a graphics card). Everything runs on
+//! this PC.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -13,10 +15,20 @@ use crate::captions::Caption;
 use crate::engine::{ffmpeg_dir, last_error, run_to_end, FFMPEG, WHISPER, YT_DLP};
 use crate::local::{normalize, OpenedFiles};
 
-/// whisper.cpp's multilingual "base" model: quick on a laptop processor, and it finds the language.
-const MODEL_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin";
-// shortcut: checks the size, not the SHA-256 (60ed5bc3…2efe); add a hash check if a sha2 crate comes in.
-const MODEL_BYTES: u64 = 147_951_465;
+/// A whisper.cpp speech model (multilingual: it finds the language), downloaded once.
+struct SpeechModel {
+    file: &'static str,
+    // shortcut: checks the size, not the SHA-256 (base 60ed5bc3…2efe, small ae85e4a9…11bb); add a hash check if a sha2 crate comes in.
+    bytes: u64,
+    /// Its `-dtw` preset.
+    dtw: &'static str,
+}
+
+/// Quick on a laptop processor.
+const BASE: SpeechModel = SpeechModel { file: "ggml-base.bin", bytes: 147_951_465, dtw: "base" };
+/// On a graphics card (measured on a 12-minute film, RTX 3050): 33% words wrong instead of 36%, fewer lines
+/// before their words, and a 1h30 film in ~4.5 min instead of ~7.5. On the processor alone it takes twice as long.
+const SMALL: SpeechModel = SpeechModel { file: "ggml-small-q5_1.bin", bytes: 190_085_487, dtw: "small" };
 
 #[derive(Serialize, Clone)]
 struct Progress<'a> {
@@ -31,40 +43,40 @@ fn report(app: &AppHandle, id: &str, stage: &'static str, percent: f64) {
 }
 
 /// The speech model on disk, downloading it the first time.
-async fn model(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
+async fn model(app: &AppHandle, id: &str, model: &SpeechModel) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("speech");
-    let path = dir.join("ggml-base.bin");
-    if std::fs::metadata(&path).is_ok_and(|m| m.len() == MODEL_BYTES) {
+    let path = dir.join(model.file);
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() == model.bytes) {
         return Ok(path);
     }
     std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't make a folder for the speech model: {e}"))?;
-    // No overall time limit (the shared client has one): 148 MB can take minutes.
+    // No overall time limit (the shared client has one): 150–190 MB can take minutes.
     let client = crate::privacy::client_builder()
         .connect_timeout(Duration::from_secs(20))
         .build()
         .map_err(|e| e.to_string())?;
     let mut response = client
-        .get(MODEL_URL)
+        .get(format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}", model.file))
         .send()
         .await
         .map_err(|e| format!("Couldn't download the speech model: {e}"))?;
     if !response.status().is_success() {
         return Err(format!("Couldn't download the speech model: its server answered {}.", response.status()));
     }
-    let part = dir.join("ggml-base.bin.part");
+    let part = dir.join(format!("{}.part", model.file));
     let mut file = std::fs::File::create(&part).map_err(|e| format!("Couldn't save the speech model: {e}"))?;
     let (mut done, mut shown) = (0u64, -1.0);
     while let Some(chunk) = response.chunk().await.map_err(|e| format!("The speech model stopped downloading: {e}"))? {
         file.write_all(&chunk).map_err(|e| format!("Couldn't save the speech model: {e}"))?;
         done += chunk.len() as u64;
-        let percent = (done as f64 / MODEL_BYTES as f64 * 100.0).floor();
+        let percent = (done as f64 / model.bytes as f64 * 100.0).floor();
         if percent != shown {
             shown = percent;
             report(app, id, "model", percent);
         }
     }
     drop(file);
-    if done != MODEL_BYTES {
+    if done != model.bytes {
         let _ = std::fs::remove_file(&part);
         return Err("The speech model didn't download completely. Try again.".into());
     }
@@ -97,17 +109,20 @@ pub async fn make_captions(
     } else {
         return Err("Not a web link.".into());
     };
-    let model = model(&app, &id).await?;
+    // Settings → Preferences → Make captions with: the processor gets exactly what it had before.
+    let card = if gpu { graphics_card(&app).await } else { None };
+    let chosen = if card.is_some() { &SMALL } else { &BASE };
+    let model = model(&app, &id, chosen).await?;
     let work = app.path().app_cache_dir().map_err(|e| e.to_string())?.join(format!("speech-{id}"));
     std::fs::create_dir_all(&work).map_err(|e| format!("Couldn't make a working folder: {e}"))?;
     let started = std::time::Instant::now();
-    let made = listen(&app, &id, file, &source, &model, &work, gpu).await;
+    let made = listen(&app, &id, file, &source, (&model, chosen.dtw), &work, card).await;
     crate::diag::note(format!("captions from the sound: {} in {:.0}s", if made.is_ok() { "made" } else { "failed" }, started.elapsed().as_secs_f64()));
     let _ = std::fs::remove_dir_all(&work);
     made
 }
 
-async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, model: &Path, work: &Path, gpu: bool) -> Result<Vec<Caption>, String> {
+async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, (model, dtw): (&Path, &str), work: &Path, card: Option<u32>) -> Result<Vec<Caption>, String> {
     // Reading a long file's sound takes a while too, so it's said for files as well as links.
     report(app, id, "sound", 0.0);
     let input = match file {
@@ -140,10 +155,11 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, mo
     // `-dtw` times each word (`from_whisper_json`; it needs flash attention off), measured 0.1–0.25 s from the
     // speech even under music. `-mc 0`: no earlier text carried into the next 30 s, which made whisper repeat a
     // line over what came after. Together ~10% slower than before.
-    let mut args = vec!["-m", &model, "-f", &wav_text, "-l", "auto", "-t", &threads, "-mc", "0", "-nfa", "-dtw", "base", "-ojf", "-of", &out, "-pp"];
-    // Settings → Preferences → Make captions with: Processor. Otherwise whisper takes the graphics card when it finds one.
-    if !gpu {
-        args.push("-ng");
+    let device = card.map(|n| n.to_string());
+    let mut args = vec!["-m", &model, "-f", &wav_text, "-l", "auto", "-t", &threads, "-mc", "0", "-nfa", "-dtw", dtw, "-ojf", "-of", &out, "-pp"];
+    match &device {
+        Some(n) => args.extend(["-dev", n]),
+        None => args.push("-ng"),
     }
     let (mut rx, child) = crate::engine::command(app, WHISPER)?
         .args(args)
@@ -289,6 +305,33 @@ fn fit_to_speech(caption: &mut Caption, silences: &[(f64, f64)]) {
     }
 }
 
+/// The graphics card whisper should use: the first with memory of its own (`uma: 0`); graphics built into the
+/// processor share its memory and weren't measured. Asked once: whisper lists the cards, then stops on a dummy model.
+async fn graphics_card(app: &AppHandle) -> Option<u32> {
+    static FOUND: Mutex<Option<Option<u32>>> = Mutex::new(None);
+    if let Some(found) = *FOUND.lock().unwrap() {
+        return found;
+    }
+    let dir = app.path().app_cache_dir().ok()?;
+    std::fs::create_dir_all(&dir).ok()?;
+    let dummy = dir.join("graphics-card-check.bin");
+    std::fs::write(&dummy, b"x").ok()?;
+    let dummy = dummy.to_string_lossy().into_owned();
+    let output = run_to_end(app, WHISPER, &["-m", &dummy, "-f", &dummy]).await.ok()?;
+    let found = card_in(&String::from_utf8_lossy(&output.stderr));
+    crate::diag::note(format!("captions: graphics card {found:?}"));
+    *FOUND.lock().unwrap() = Some(found);
+    found
+}
+
+/// The card's number in whisper's list: "ggml_vulkan: 0 = NVIDIA GeForce RTX 3050 Laptop GPU (NVIDIA) | uma: 0 | …".
+fn card_in(log: &str) -> Option<u32> {
+    log.lines().find_map(|line| {
+        let (number, rest) = line.trim().strip_prefix("ggml_vulkan: ")?.split_once(" = ")?;
+        if rest.contains("| uma: 0 |") { number.trim().parse().ok() } else { None }
+    })
+}
+
 /// Downloads just the sound of a fetched link (with its sign-in, Referer and bot-check settings).
 async fn link_sound(app: &AppHandle, link: &str, work: &Path) -> Result<PathBuf, String> {
     let (link_args, _cookies) = crate::signin::link_args(app, link).await;
@@ -332,6 +375,14 @@ mod tests {
         let mut c = Caption { start: 1.0, end: 2.0, text: "x".into() };
         fit_to_speech(&mut c, &[(0.0, 5.0)]);
         assert_eq!((c.start, c.end), (1.0, 2.0));
+    }
+
+    #[test]
+    fn finds_a_graphics_card_of_its_own() {
+        let log = "ggml_vulkan: Found 2 Vulkan devices:\nggml_vulkan: 0 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | fp16: 1\nggml_vulkan: 1 = NVIDIA GeForce RTX 3050 Laptop GPU (NVIDIA) | uma: 0 | fp16: 1\n";
+        assert_eq!(card_in(log), Some(1));
+        assert_eq!(card_in("ggml_vulkan: 0 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | fp16: 1"), None);
+        assert_eq!(card_in("whisper_init_with_params_no_state: failed to load model"), None);
     }
 
     #[test]
