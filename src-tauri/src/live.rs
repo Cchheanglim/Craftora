@@ -189,10 +189,15 @@ mod tests {
     #[test]
     fn records_picture_and_sound_from_separate_inputs() {
         let headers = BTreeMap::from([("Referer".to_string(), "https://shop.example/".to_string()), ("Bad".to_string(), "a\r\nX: y".to_string())]);
-        let args = record_args(&[("https://v.example/v.m3u8".into(), headers), ("https://v.example/a.m3u8".into(), BTreeMap::new())], false);
+        let inputs = [("https://v.example/v.m3u8".into(), headers), ("https://v.example/a.m3u8".into(), BTreeMap::new())];
+        let args = record_args(&inputs, false, None);
         let joined = args.join(" ");
         assert!(joined.contains("-headers Referer: https://shop.example/\r\n -i https://v.example/v.m3u8 -i https://v.example/a.m3u8"));
         assert!(!joined.contains("X: y"));
-        assert!(joined.contains("-map 0:v:0? -map 1:a:0?"));
+        assert!(joined.contains("-map 0:v:0? -map 1:a:0? -c copy -f hls"));
+
+        let reencoded = record_args(&inputs, false, Some(crate::encoders::Encoder::Software)).join(" ");
+        assert!(reencoded.contains("-vf scale=-2:'trunc(min(720,ih)/2)*2' -c:v libx264"));
+        assert!(reencoded.contains("-c:a aac -b:a 160k -ac 2 -f hls"));
     }
 }
