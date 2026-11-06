@@ -614,13 +614,13 @@ export default function App() {
       if (s.thumbnail?.startsWith("data:") || thumbTried.current.has(m.id)) continue;
       // A link with the site's picture: a small copy of it is kept (fetched once, with the page as Referer).
       const sitePicture = inDesktopApp && !s.local && s.thumbnail?.startsWith("http") ? s.thumbnail : undefined;
-      // Otherwise (or if that fails) a frame of the video. Stream playlists (HLS) can't be drawn by a plain video element.
-      const canDraw = (m.hasVideo || s.image) && (s.local || !(s.previewHls || s.live || !s.previewUrl)) && (inDesktopApp || !(s.previewProxy || !s.previewUrl));
+      // Otherwise (or if that fails) a frame of the video.
+      const canDraw = (m.hasVideo || s.image) && (s.local || !(s.live || !s.previewUrl)) && (inDesktopApp || !(s.previewProxy || !s.previewUrl));
       if (!sitePicture && !canDraw) continue;
       thumbTried.current.add(m.id);
       const kept = sitePicture ? keptThumbnail([sitePicture, ...(s.thumbnails ?? [])], s.url).then((t) => (t.startsWith("data:") ? t : undefined)) : Promise.resolve(undefined);
       const task = kept
-        .then((thumb) => thumb ?? (canDraw && s.previewUrl ? captureThumbnail(s.previewUrl, s.image) : undefined))
+        .then((thumb) => thumb ?? (canDraw && s.previewUrl ? captureThumbnail(s.previewUrl, s.image, s.previewHls) : undefined))
         .then((thumb) => thumb ?? (inDesktopApp && s.local ? localThumbnail(s.url, Boolean(s.image)).catch(() => undefined) : undefined));
       void task.then((thumbnail) => {
         const current = projectRef.current.media.find((x) => x.id === m.id);
