@@ -55,19 +55,25 @@ pub async fn record_live(app: AppHandle, recordings: State<'_, Recordings>, spec
     }
     let dir = downloads_dir(&app)?;
     let stem = safe_stem(&spec.title);
-    let short_id: String = safe_stem(&spec.id).chars().take(8).collect();
     // FFmpeg records in Craftora's own folder (`work_root`); the finished MP4 goes into Downloads.
-    let folder = work_root(&app)?.join(format!("{stem} (live recording {short_id})"));
+    let folder = work_root(&app)?.join(format!("{stem} {}", folder_mark(&spec.id)));
     std::fs::create_dir_all(&folder).map_err(|e| format!("Couldn't create the recording folder: {e}"))?;
     recordings.0.lock().unwrap().insert(spec.id.clone(), folder.clone());
 
-    let args = record_args(&inputs, through_page);
+    // A paused copy (not a live recording, which can't be caught up) goes on after the parts it kept.
+    let copied = std::fs::read_to_string(folder.join(PLAYLIST)).map(|t| playlist_seconds(&t)).unwrap_or(0.0);
+    let resume_at = (spec.format.is_some() && copied > 0.0).then_some(copied);
+    let args = record_args(&inputs, through_page, resume_at);
     let (task_app, id) = (app.clone(), spec.id.clone());
     let task_folder = folder.clone();
     let started = spawn_job(app.clone(), spec.id.clone(), async move {
         let _ = task_app.emit("job-event", progress_event(&id, "recording", None));
         // shortcut: no reconnect after a network drop; the parts saved so far are kept as the video.
         let recorded = run_streaming(&task_app, &id, FFMPEG, args, Some(&task_folder), |_| None).await;
+        // Paused: the parts wait for `record_live` to go on, and the preview keeps playing them.
+        if task_app.state::<Jobs>().is_paused(&id) {
+            return Err("Paused".into());
+        }
         let result = finish(&task_app, &id, &task_folder, &dir, &stem, recorded).await;
         task_app.state::<Recordings>().0.lock().unwrap().remove(&id);
         result
@@ -85,7 +91,27 @@ pub fn stop_recording(jobs: State<'_, Jobs>, id: String) -> bool {
     jobs.stop(&id)
 }
 
-fn record_args(inputs: &[(String, BTreeMap<String, String>)], through_page: bool) -> Vec<String> {
+/// The end of a recording folder's name; the job id tells a paused copy's folder apart.
+fn folder_mark(id: &str) -> String {
+    let short_id: String = safe_stem(id).chars().take(8).collect();
+    format!("(live recording {short_id})")
+}
+
+/// Throws away a paused copy's parts (cancelling it from the queue).
+pub(crate) fn discard(app: &AppHandle, id: &str) {
+    app.state::<Recordings>().0.lock().unwrap().remove(id);
+    let mark = folder_mark(id);
+    let Ok(entries) = work_root(app).and_then(|root| std::fs::read_dir(root).map_err(|e| e.to_string())) else { return };
+    for entry in entries.flatten() {
+        if entry.file_name().to_string_lossy().ends_with(&mark) && entry.file_type().is_ok_and(|t| t.is_dir()) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// `resume_at`: seconds already copied, continued after (a paused copy). The new parts are added to the
+/// same playlist, so the preview, the exports and `finish` see one video.
+fn record_args(inputs: &[(String, BTreeMap<String, String>)], through_page: bool, resume_at: Option<f64>) -> Vec<String> {
     let mut args: Vec<String> = ["-hide_banner", "-nostats", "-loglevel", "error"].map(String::from).to_vec();
     for (url, headers) in inputs {
         if through_page {
@@ -101,15 +127,25 @@ fn record_args(inputs: &[(String, BTreeMap<String, String>)], through_page: bool
         if !lines.is_empty() {
             args.extend(["-headers".into(), lines]);
         }
+        if let Some(seconds) = resume_at {
+            // Every part starts on a key frame, so the next one is at `seconds`. FFmpeg seeks ~0.13 s early
+            // when the video has B-frames, which landed a key frame back and repeated 2 s (measured);
+            // 0.2 s past it reaches that key frame: the joined copy matched the source frame for frame.
+            // shortcut: a separate sound input seeks to the same point (keeps sync) and so misses 0.2 s of sound
+            // at each join; give it -ss `seconds` and -itsoffset -0.2 if that's ever heard.
+            args.extend(["-ss".into(), format!("{:.3}", seconds + 0.2)]);
+        }
         args.extend(["-i".into(), url.clone()]);
     }
     let audio_input = inputs.len() - 1;
     args.extend(["-map".into(), "0:v:0?".into(), "-map".into(), format!("{audio_input}:a:0?")]);
     // 4-second parts; the playlist keeps every part ("event"), and a part only appears in it
     // once it's complete (temp_file), so the preview and exports never read half a part.
+    // append_list goes on numbering after the parts already listed, marking the join for players.
+    let flags = if resume_at.is_some() { "temp_file+append_list" } else { "temp_file" };
     for arg in [
         "-c", "copy", "-f", "hls", "-hls_time", "4", "-hls_list_size", "0", "-hls_playlist_type", "event",
-        "-hls_flags", "temp_file", "-hls_segment_filename", "part%05d.ts", PLAYLIST,
+        "-hls_flags", flags, "-hls_segment_filename", "part%05d.ts", PLAYLIST,
     ] {
         args.push(arg.into());
     }
@@ -182,10 +218,20 @@ mod tests {
     fn records_picture_and_sound_from_separate_inputs() {
         let headers = BTreeMap::from([("Referer".to_string(), "https://shop.example/".to_string()), ("Bad".to_string(), "a\r\nX: y".to_string())]);
         let inputs = [("https://v.example/v.m3u8".into(), headers), ("https://v.example/a.m3u8".into(), BTreeMap::new())];
-        let args = record_args(&inputs, false);
+        let args = record_args(&inputs, false, None);
         let joined = args.join(" ");
         assert!(joined.contains("-headers Referer: https://shop.example/\r\n -i https://v.example/v.m3u8 -i https://v.example/a.m3u8"));
         assert!(!joined.contains("X: y"));
         assert!(joined.contains("-map 0:v:0? -map 1:a:0? -c copy -f hls"));
+        assert!(joined.contains("-hls_flags temp_file -"));
+    }
+
+    #[test]
+    fn a_paused_copy_goes_on_after_its_parts() {
+        let inputs = [("https://v.example/v.mkv".into(), BTreeMap::new()), ("https://v.example/a.m4a".into(), BTreeMap::new())];
+        let joined = record_args(&inputs, false, Some(40.0)).join(" ");
+        // Both inputs seek, just past the last part's end.
+        assert!(joined.contains("-ss 40.200 -i https://v.example/v.mkv -ss 40.200 -i https://v.example/a.m4a"));
+        assert!(joined.contains("-hls_flags temp_file+append_list"));
     }
 }

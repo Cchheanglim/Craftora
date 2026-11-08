@@ -23,9 +23,9 @@ type Action =
   | { type: "tick"; now: number };
 
 const isRunning = (j: Job) => j.status === "downloading" || j.status === "encoding";
-/** Downloads of a whole link go on where they stopped (jobs.rs keeps their parts); exports and cuts start again. */
+/** Downloads of a whole link go on where they stopped (jobs.rs and live.rs keep their parts); exports and cuts start again. */
 export const resumable = (j: Job) =>
-  Boolean(j.prefetch || (j.spec && !j.spec.local && j.spec.start <= 0.05 && j.spec.end >= j.spec.duration - 0.05));
+  Boolean(j.prefetch || (j.record && !j.record.live) || (j.spec && !j.spec.local && j.spec.start <= 0.05 && j.spec.end >= j.spec.duration - 0.05));
 const update = (jobs: Job[], id: string, patch: Partial<Job>) =>
   jobs.map((j) => (j.id === id ? { ...j, ...patch } : j));
 
@@ -87,7 +87,7 @@ export function reducer(jobs: Job[], action: Action): Job[] {
       return jobs.map((j) => (j.id === action.id && j.status === "paused" ? { ...j, status: "waiting" } : j));
     case "pauseAll":
       // A live recording isn't paused: it has Stop instead.
-      return jobs.map((j) => ((isRunning(j) && !j.record) || j.status === "waiting" ? { ...j, status: "paused" } : j));
+      return jobs.map((j) => ((isRunning(j) && !j.record?.live) || j.status === "waiting" ? { ...j, status: "paused" } : j));
     case "resumeAll":
       return jobs.map((j) => (j.status === "paused" ? { ...j, status: "waiting" } : j));
     case "clearFinished":
@@ -244,15 +244,16 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
     [real],
   );
   const pauseAll = useCallback(() => {
-    if (real) for (const j of jobsRef.current) if (isRunning(j) && !j.record) void pauseJob(j.id);
+    if (real) for (const j of jobsRef.current) if (isRunning(j) && !j.record?.live) void pauseJob(j.id);
     dispatch({ type: "pauseAll" });
   }, [real]);
 
   return {
     jobs,
     /** Everything but live recordings. Downloads go on from where they were (`resumable`); exports start again. */
-    canPauseJob: useCallback((job: Job) => !job.record, []),
+    canPauseJob: useCallback((job: Job) => !job.record?.live, []),
     add: useCallback((job: Job) => dispatch({ type: "add", job }), []),
+    started: useCallback((id: string) => dispatch({ type: "started", id }), []),
     cancel,
     retry: useCallback((id: string) => dispatch({ type: "retry", id }), []),
     remove: useCallback((id: string) => dispatch({ type: "remove", id }), []),

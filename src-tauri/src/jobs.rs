@@ -295,9 +295,10 @@ pub fn pause_job(jobs: State<'_, Jobs>, id: String) -> bool {
     jobs.pause(&id)
 }
 
-/// Throws away what a paused download saved (cancelling it from the queue).
+/// Throws away what a paused download (or a paused copy of a link, live.rs) saved (cancelling it from the queue).
 #[tauri::command]
 pub fn discard_download(app: AppHandle, id: String) -> Result<(), String> {
+    crate::live::discard(&app, &id);
     let work = work_root(&app)?.join(format!("{WORK_PREFIX}{}", safe_stem(&id)));
     match std::fs::remove_dir_all(&work) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(format!("Couldn't remove the paused download: {e}")),

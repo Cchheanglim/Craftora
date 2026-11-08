@@ -36,10 +36,20 @@ test("an export renders a finished download's file and waits for the rest", () =
 test("downloads of a whole link go on where they stopped; cuts, files and exports start again", () => {
   const spec = { id: "s", url: "https://example.com/v", format: "b", output: "video", container: "mp4", start: 0, end: 60, duration: 60, cutMode: "fast", fileName: "v", local: false } as Job["spec"];
   expect(resumable(job("dl", { prefetch: { mediaId: "a", url: "https://example.com/a", format: "b", title: "a", audioOnly: false } }))).toBe(true);
+  expect(resumable(job("copy", { record: { mediaId: "a", live: false, url: "https://example.com/a", title: "a" } }))).toBe(true);
+  expect(resumable(job("live", { record: { mediaId: "a", live: true, url: "https://example.com/a", title: "a" } }))).toBe(false);
   expect(resumable(job("whole", { spec }))).toBe(true);
   expect(resumable(job("cut", { spec: { ...spec!, start: 10 } }))).toBe(false);
   expect(resumable(job("file", { spec: { ...spec!, local: true } }))).toBe(false);
   expect(resumable(job("export", { render }))).toBe(false);
+});
+
+test("pauseAll pauses a running copy but leaves a live recording running", () => {
+  const copy = job("copy", { status: "downloading", record: { mediaId: "a", live: false, url: "https://example.com/a", title: "a" } });
+  const live = job("live", { status: "downloading", record: { mediaId: "b", live: true, url: "https://example.com/b", title: "b" } });
+  const [pausedCopy, runningLive] = reducer([copy, live], { type: "pauseAll" });
+  expect(pausedCopy.status).toBe("paused");
+  expect(runningLive.status).toBe("downloading");
 });
 
 test("an export's own video download shows in the export's row, then goes when the export does", () => {

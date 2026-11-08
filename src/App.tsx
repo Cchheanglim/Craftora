@@ -829,11 +829,37 @@ export default function App() {
     return id;
   };
 
+  // Recordings in progress: every second or so the preview switches to the HLS playlist once the
+  // first part is ready, and a live or unknown-length video's length catches up with the parts saved.
+  const recordings = useRef(new Map<string, { mediaId: string; path: string }>());
+  const startingRecordings = useRef(new Set<string>());
+  const startRecording = (id: string, record: NonNullable<Job["record"]>, item?: MediaItem) => {
+    startingRecordings.current.add(id);
+    recordLive({ id, url: record.url, title: record.title, format: record.format })
+      .then((path) => recordings.current.set(id, { mediaId: record.mediaId, path }))
+      .catch((err) => {
+        queue.remove(id);
+        const media = item ?? projectRef.current.media.find((m) => m.id === record.mediaId);
+        if (!record.live) {
+          if (media) downloadForEditing(media);
+        } else {
+          setError(`Couldn't record the live stream: ${errorText(err)}`);
+        }
+      });
+  };
+
   /** A live link (or a link with no playable preview) is recorded into HLS while it plays, then joined into one MP4. */
   const recordForEditing = (item: MediaItem) => {
     const id = crypto.randomUUID();
     const isLive = Boolean(item.source.live);
     const stream = item.source.streams.find((s) => s.id === item.videoFormat);
+    const record = {
+      mediaId: item.id,
+      live: isLive,
+      url: item.source.url,
+      title: item.name,
+      format: isLive ? undefined : item.videoFormat,
+    };
     queue.add({
       id,
       title: item.name,
@@ -850,20 +876,25 @@ export default function App() {
       command: `ffmpeg -i <${isLive ? "live stream" : "stream"} of "${item.source.url}"> -f hls index.m3u8`,
       thumbnail: item.source.thumbnail,
       // Not live: a link the player can't play, copied while it's fetched so it plays at once (live.rs).
-      record: { mediaId: item.id, live: isLive },
+      record,
     });
-    recordLive({ id, url: item.source.url, title: item.name, format: isLive ? undefined : item.videoFormat })
-      .then((path) => recordings.current.set(id, { mediaId: item.id, path }))
-      .catch((err) => {
-        queue.remove(id);
-        if (!isLive) downloadForEditing(item);
-        else setError(`Couldn't record the live stream: ${errorText(err)}`);
-      });
+    startRecording(id, record, item);
   };
 
-  // Recordings in progress: every second or so the preview switches to the HLS playlist once the
-  // first part is ready, and a live or unknown-length video's length catches up with the parts saved.
-  const recordings = useRef(new Map<string, { mediaId: string; path: string }>());
+  // A paused copy (or one kept across a restart) comes back "waiting": start FFmpeg again where it stopped.
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    for (const id of startingRecordings.current) {
+      const job = queue.jobs.find((j) => j.id === id);
+      if (!job || (job.status !== "downloading" && job.status !== "waiting")) startingRecordings.current.delete(id);
+    }
+    for (const job of queue.jobs) {
+      if (!job.record || job.record.live || job.status !== "waiting" || startingRecordings.current.has(job.id)) continue;
+      queue.started(job.id);
+      startRecording(job.id, job.record);
+    }
+  }, [queue.jobs, queue.started]);
+
   const recordingIds = queue.jobs.filter((j) => j.record && j.status === "downloading").map((j) => j.id).join();
   useEffect(() => {
     if (!recordingIds) return;
@@ -919,7 +950,7 @@ export default function App() {
         .then(async (path) => {
           if (path !== job.outputPath) queue.edit(job.id, { outputPath: path });
           const local = await openLocal(path);
-          if (job.prefetch) queue.downloaded(job.id, mediaId, path);
+          if (job.prefetch || !job.record?.live) queue.downloaded(job.id, mediaId, path);
           const item = projectRef.current.media.find((m) => m.id === mediaId);
           if (!item) return;
           // Keep the link's length so clip times stay exactly where they were (a recording, or a
@@ -1284,10 +1315,20 @@ export default function App() {
   const queueExport = (plan: ExportPlan, source: Project) => {
     if (plan.kind === "empty") return;
     const id = crypto.randomUUID();
-    // An edited video renders links from whole downloads, which go on where they were after a pause,
-    // and then the editor plays the files instead of streaming the links.
-    const links = plan.kind === "render" ? source.media.filter((m) => !m.source.local && !m.source.live && plan.spec.media.some((s) => s.id === m.id)) : [];
-    const after = links.flatMap((m) => queue.jobs.find((j) => j.prefetch?.mediaId === m.id && j.status !== "failed")?.id ?? downloadForEditing(m, true) ?? []);
+    // An edited video renders links from whole downloads (or copies in progress), which go on where
+    // they were after a pause, and then the editor plays the files instead of streaming the links.
+    const copies =
+      plan.kind === "render"
+        ? queue.jobs.filter((j) => j.record && !j.record.live && j.status !== "finished" && j.status !== "failed" && plan.spec.media.some((s) => s.id === j.record!.mediaId))
+        : [];
+    const links =
+      plan.kind === "render"
+        ? source.media.filter((m) => !m.source.local && !m.source.live && !copies.some((j) => j.record!.mediaId === m.id) && plan.spec.media.some((s) => s.id === m.id))
+        : [];
+    const after = [
+      ...copies.map((j) => j.id),
+      ...links.flatMap((m) => queue.jobs.find((j) => j.prefetch?.mediaId === m.id && j.status !== "failed")?.id ?? downloadForEditing(m, true) ?? []),
+    ];
     const job: Job = {
       id,
       title: plan.title,
