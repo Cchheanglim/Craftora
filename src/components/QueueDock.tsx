@@ -351,8 +351,9 @@ function statusText(job: Job): string {
         const speed = job.speedBps ? ` · ${mb(job.speedBps)}/s` : "";
         return `Downloading · ${mb(job.downloadedBytes)}${of}${speed}`;
       }
-      if (job.spec) return "Downloading…";
-      if (job.record) return job.record.live ? "Recording live" : "Downloading…";
+      if (job.record?.live) return "Recording live";
+      // Not known yet, or never (a copy of a link, live.rs, doesn't count bytes).
+      if (job.spec || job.record || job.progress === null) return "Downloading…";
       return `Downloading · ${formatSize((job.sizeMb * (job.progress ?? 0)) / 100)} of ${formatSize(job.sizeMb)}`;
     }
     case "encoding":

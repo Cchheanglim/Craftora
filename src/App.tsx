@@ -838,6 +838,9 @@ export default function App() {
     recordLive({ id, url: record.url, title: record.title, format: record.format })
       .then((path) => recordings.current.set(id, { mediaId: record.mediaId, path }))
       .catch((err) => {
+        // A copy going on again keeps its row (and its parts) to retry: by now the media may be the
+        // copy itself, which a download wouldn't replace.
+        if (!item && !record.live) return queue.failed(id, errorText(err));
         queue.remove(id);
         const media = item ?? projectRef.current.media.find((m) => m.id === record.mediaId);
         if (!record.live) {

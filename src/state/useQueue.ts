@@ -254,6 +254,7 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
     canPauseJob: useCallback((job: Job) => !job.record?.live, []),
     add: useCallback((job: Job) => dispatch({ type: "add", job }), []),
     started: useCallback((id: string) => dispatch({ type: "started", id }), []),
+    failed: useCallback((id: string, message: string) => dispatch({ type: "failed", id, message }), []),
     cancel,
     retry: useCallback((id: string) => dispatch({ type: "retry", id }), []),
     remove: useCallback((id: string) => dispatch({ type: "remove", id }), []),
