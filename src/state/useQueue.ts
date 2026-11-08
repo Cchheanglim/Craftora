@@ -29,16 +29,21 @@ export const resumable = (j: Job) =>
 const update = (jobs: Job[], id: string, patch: Partial<Job>) =>
   jobs.map((j) => (j.id === id ? { ...j, ...patch } : j));
 
-/** An export's own video download ("Video for your export") has no row: its export's row shows it. */
+/**
+ * An export's own video download ("Video for your export") has no row while its export is queued: the export's row
+ * shows it. (Exports aren't kept after a restart; the download is, and then shows by itself.)
+ */
 export const folded = (j: Job, jobs: Job[]) =>
-  Boolean(j.prefetch?.forExport) && (j.status === "finished" || jobs.some((e) => e.after?.includes(j.id)));
+  Boolean(j.prefetch?.forExport) &&
+  jobs.some((e) => e.after?.includes(j.id) || (j.status === "finished" && e.render?.media.some((m) => m.id === j.prefetch!.mediaId)));
 
 /** An export waiting for its video shows that download as its first step: Downloading, then Encoding. */
 export function shownAs(job: Job, jobs: Job[]): Job {
   const video = jobs.find((j) => job.after?.includes(j.id) && j.status !== "finished" && j.status !== "failed");
-  if (!video || job.status !== "waiting") return job;
+  if (!video || (job.status !== "waiting" && job.status !== "paused")) return job;
   const { status, phase, progress, downloadedBytes, totalBytes, speedBps, etaSeconds } = video;
-  return { ...job, status, phase, progress, downloadedBytes, totalBytes, speedBps, etaSeconds };
+  // Pause all pauses the export too: it shows paused, with the download's progress so far.
+  return { ...job, status: job.status === "paused" ? "paused" : status, phase, progress, downloadedBytes, totalBytes, speedBps, etaSeconds };
 }
 
 export function reducer(jobs: Job[], action: Action): Job[] {
@@ -46,7 +51,10 @@ export function reducer(jobs: Job[], action: Action): Job[] {
     case "add":
       return [action.job, ...jobs];
     case "started":
-      return update(jobs, action.id, { status: "downloading", phase: "downloading", progress: null, error: undefined });
+      // An edited video's links are downloaded before it starts: it only encodes.
+      return jobs.map((j) =>
+        j.id === action.id ? { ...j, ...(j.render ? { status: "encoding", phase: "encoding" } : { status: "downloading", phase: "downloading" }), progress: null, error: undefined } : j,
+      );
     case "engine":
       return applyEngineEvent(jobs, action.event);
     case "failed":

@@ -33,6 +33,9 @@
   Captions made earlier can be made again (Transcript → Make captions).
 - **Some links that played had no picture** in the media list (stream playlists): Craftora now
   takes one from the video.
+- **Exporting an edited video from a link showed two rows in the Queue** (the export, waiting, and
+  its video downloading). It's one row now: Downloading, then Encoding. Pause, Cancel and Retry on
+  it reach the download too.
 
 ## 0.6.0 (November 2026)
 

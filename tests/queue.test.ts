@@ -55,10 +55,15 @@ test("an export's own video download shows in the export's row, then goes when t
   expect(folded(video, jobs)).toBe(true);
   expect(folded(exported, jobs)).toBe(false);
   expect(shownAs(exported, jobs)).toMatchObject({ id: "export", status: "downloading", progress: 40, totalBytes: 100e6, sizeMb: 700 });
+  // Pause all pauses the export too: still the download's progress, not 0%.
+  expect(shownAs({ ...exported, status: "paused" }, [exported, { ...video, status: "paused" }])).toMatchObject({ status: "paused", progress: 40 });
   // Once downloaded, the export shows its own encoding and the finished download stays out of sight.
   const done = { ...video, status: "finished" as const };
-  expect(folded(done, [done])).toBe(true);
-  expect(shownAs({ ...exported, status: "encoding" }, [exported, done]).status).toBe("encoding");
+  const encoding = { ...exported, status: "encoding" as const, after: [] };
+  expect(folded(done, [encoding, done])).toBe(true);
+  expect(shownAs(encoding, [encoding, done]).status).toBe("encoding");
+  // After a restart (exports aren't kept) the download shows by itself, finished too.
+  expect(folded(done, [done])).toBe(false);
   // A download the user asked for (not just for an export) keeps its own row.
   const own = { ...video, prefetch: { ...video.prefetch!, forExport: false } };
   expect(folded(own, [exported, own])).toBe(false);
