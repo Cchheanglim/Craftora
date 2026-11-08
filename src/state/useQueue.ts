@@ -29,6 +29,18 @@ export const resumable = (j: Job) =>
 const update = (jobs: Job[], id: string, patch: Partial<Job>) =>
   jobs.map((j) => (j.id === id ? { ...j, ...patch } : j));
 
+/** An export's own video download ("Video for your export") has no row: its export's row shows it. */
+export const folded = (j: Job, jobs: Job[]) =>
+  Boolean(j.prefetch?.forExport) && (j.status === "finished" || jobs.some((e) => e.after?.includes(j.id)));
+
+/** An export waiting for its video shows that download as its first step: Downloading, then Encoding. */
+export function shownAs(job: Job, jobs: Job[]): Job {
+  const video = jobs.find((j) => job.after?.includes(j.id) && j.status !== "finished" && j.status !== "failed");
+  if (!video || job.status !== "waiting") return job;
+  const { status, phase, progress, downloadedBytes, totalBytes, speedBps, etaSeconds } = video;
+  return { ...job, status, phase, progress, downloadedBytes, totalBytes, speedBps, etaSeconds };
+}
+
 export function reducer(jobs: Job[], action: Action): Job[] {
   switch (action.type) {
     case "add":
@@ -39,8 +51,13 @@ export function reducer(jobs: Job[], action: Action): Job[] {
       return applyEngineEvent(jobs, action.event);
     case "failed":
       return update(jobs, action.id, { status: "failed", error: action.message });
-    case "retry":
-      return update(jobs, action.id, { status: "waiting", progress: 0, error: undefined });
+    case "retry": {
+      // An export tries its failed video download again too (it goes on where it stopped).
+      const after = jobs.find((j) => j.id === action.id)?.after ?? [];
+      return jobs.map((j) =>
+        j.id === action.id || (after.includes(j.id) && j.status === "failed") ? { ...j, status: "waiting", progress: 0, error: undefined } : j,
+      );
+    }
     case "remove":
       return jobs.filter((j) => j.id !== action.id);
     case "edit":
@@ -169,9 +186,14 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
       if (free <= 0) break;
       if (job.status !== "waiting" || !(job.spec || job.render || job.prefetch)) continue;
       if (job.after?.length) {
-        // A download it waits for was cancelled or failed.
-        if (job.after.some((id) => !jobs.some((j) => j.id === id && j.status !== "failed")))
-          dispatch({ type: "failed", id: job.id, message: "The video it needs didn't download. Download it again, then add the export to the queue again." });
+        // A download it waits for was cancelled or failed: its own error says why.
+        const lost = job.after.find((id) => !jobs.some((j) => j.id === id && j.status !== "failed"));
+        if (lost)
+          dispatch({
+            type: "failed",
+            id: job.id,
+            message: jobs.find((j) => j.id === lost)?.error ?? "The video it needs didn't download. Download it again, then add the export to the queue again.",
+          });
         continue;
       }
       free--;
@@ -191,11 +213,17 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
 
   const cancel = useCallback(
     (id: string) => {
-      const job = jobsRef.current.find((j) => j.id === id);
-      if (real) void cancelJob(id);
-      // A download that isn't running may still have saved parts: they're removed here.
-      if (real && job && resumable(job) && !isRunning(job)) void discardDownload(id).catch(() => {});
-      dispatch({ type: "remove", id });
+      const all = jobsRef.current;
+      const job = all.find((j) => j.id === id);
+      // An export's own video download goes with it, unless another export waits for it too.
+      const own = all.filter((v) => v.prefetch?.forExport && job?.after?.includes(v.id) && !all.some((e) => e.id !== id && e.after?.includes(v.id)));
+      for (const target of [id, ...own.map((v) => v.id)]) {
+        const j = all.find((x) => x.id === target);
+        if (real) void cancelJob(target);
+        // A download that isn't running may still have saved parts: they're removed here.
+        if (real && j && resumable(j) && !isRunning(j)) void discardDownload(target).catch(() => {});
+        dispatch({ type: "remove", id: target });
+      }
     },
     [real],
   );

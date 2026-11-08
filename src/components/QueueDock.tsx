@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Job } from "../types";
-import { resumable, type Queue } from "../state/useQueue";
+import { folded, resumable, shownAs, type Queue } from "../state/useQueue";
 import { formatSize } from "../project/exportPlan";
 import { formatClock } from "../lib/timecode";
 import { playableFile, revealFile, stopRecording } from "../lib/engine";
@@ -27,7 +27,9 @@ function ago(ms: number): string {
 
 /** The Queue button at the top right (next to Import), with the list of downloads and exports under it. */
 export function QueueDock({ queue, freshId }: QueueDockProps) {
-  const { jobs } = queue;
+  // One row per export: its own video download shows in it.
+  const rows = queue.jobs.filter((j) => !folded(j, queue.jobs));
+  const jobs = rows.map((j) => shownAs(j, queue.jobs));
   const running = jobs.filter(isActive).length;
   const waiting = jobs.filter((j) => j.status === "waiting").length;
   const paused = jobs.filter((j) => j.status === "paused").length;
@@ -117,11 +119,11 @@ export function QueueDock({ queue, freshId }: QueueDockProps) {
             </div>
           </header>
           <div className="queue__list">
-            {jobs.length === 0 ? (
+            {rows.length === 0 ? (
               <p className="queue__empty">Nothing queued. Exports and downloads run here while you keep editing.</p>
             ) : (
               <ul>
-                {jobs.map((job) => (
+                {rows.map((job) => (
                   <QueueRow key={job.id} job={job} queue={queue} fresh={job.id === freshId} />
                 ))}
               </ul>
@@ -140,9 +142,12 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
   const canName = Boolean(job.prefetch) && job.status !== "finished" && job.status !== "failed";
   const shownTitle = job.rename ?? job.title;
   const { ask, dialog } = useConfirm();
+  // An export waiting for its video shows that download; pause and resume reach it too.
+  const shown = shownAs(job, queue.jobs);
+  const parts = [job, ...queue.jobs.filter((j) => job.after?.includes(j.id))];
   const cancel = async () => {
     // A job that hasn't started loses nothing; a running one (or a download that went on before) loses its progress.
-    const running = job.status === "downloading" || job.status === "encoding" || ((job.status === "paused" || job.status === "waiting") && resumable(job) && job.progress !== 0);
+    const running = parts.some((p) => isActive(p) || ((p.status === "paused" || p.status === "waiting") && resumable(p) && p.progress !== 0));
     const what = job.prefetch || job.record ? "download" : "export";
     const ok =
       !running ||
@@ -240,20 +245,20 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
         ) : (
           <>
             <span
-              className={`queue__bar${job.status === "paused" ? " is-paused" : ""}${
-                job.progress === null && job.status !== "waiting" ? " is-indeterminate" : ""
+              className={`queue__bar${shown.status === "paused" ? " is-paused" : ""}${
+                shown.progress === null && shown.status !== "waiting" ? " is-indeterminate" : ""
               }`}
               role="progressbar"
               aria-label={`${job.title} progress`}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-valuenow={job.progress === null ? undefined : Math.round(job.progress)}
+              aria-valuenow={shown.progress === null ? undefined : Math.round(shown.progress)}
             >
-              <span style={{ width: job.progress === null ? undefined : `${job.progress}%` }} />
+              <span style={{ width: shown.progress === null ? undefined : `${shown.progress}%` }} />
             </span>
             <span className="queue__status">
-              <span className="truncate">{statusText(job)}</span>
-              <span className="mono">{progressText(job)}</span>
+              <span className="truncate">{statusText(shown)}</span>
+              <span className="mono">{progressText(shown)}</span>
             </span>
           </>
         )}
@@ -267,13 +272,18 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
             <Icon name="pencil" size={14} />
           </button>
         )}
-        {queue.canPauseJob(job) && isActive(job) && (
-          <button type="button" className="btn btn--icon" aria-label={`Pause ${job.title}`} onClick={() => queue.pause(job.id)}>
+        {queue.canPauseJob(job) && isActive(shown) && (
+          <button type="button" className="btn btn--icon" aria-label={`Pause ${job.title}`} onClick={() => parts.filter(isActive).forEach((p) => queue.pause(p.id))}>
             <Icon name="pause" size={14} />
           </button>
         )}
-        {job.status === "paused" && (
-          <button type="button" className="btn btn--icon" aria-label={`Resume ${job.title}`} onClick={() => queue.resume(job.id)}>
+        {shown.status === "paused" && (
+          <button
+            type="button"
+            className="btn btn--icon"
+            aria-label={`Resume ${job.title}`}
+            onClick={() => parts.filter((p) => p.status === "paused").forEach((p) => queue.resume(p.id))}
+          >
             <Icon name="play" size={14} />
           </button>
         )}
@@ -301,7 +311,7 @@ export function QueueRow({ job, queue, fresh }: { job: Job; queue: Queue; fresh:
             <Icon name={copied ? "check" : "copy"} size={14} />
           </button>
         ) : failed ? (
-          <button type="button" className="btn btn--icon" aria-label={`Remove ${job.title}`} title="Remove" onClick={() => queue.remove(job.id)}>
+          <button type="button" className="btn btn--icon" aria-label={`Remove ${job.title}`} title="Remove" onClick={() => void cancel()}>
             <Icon name="x" size={14} />
           </button>
         ) : (
@@ -336,23 +346,22 @@ const mb = (bytes: number) => formatSize(bytes / 1_000_000);
 function statusText(job: Job): string {
   switch (job.status) {
     case "downloading": {
-      // An export from a link fetches its video first; it isn't a download, so it doesn't say so.
-      const verb = job.prefetch || job.record ? "Downloading" : "Getting the video";
       if (job.downloadedBytes !== undefined) {
         const of = job.totalBytes ? ` of ${mb(job.totalBytes)}` : "";
         const speed = job.speedBps ? ` · ${mb(job.speedBps)}/s` : "";
-        return `${verb} · ${mb(job.downloadedBytes)}${of}${speed}`;
+        return `Downloading · ${mb(job.downloadedBytes)}${of}${speed}`;
       }
-      if (job.spec) return `${verb}…`;
-      if (job.record) return job.record.live ? "Recording live" : `${verb}…`;
-      return `${verb} · ${formatSize((job.sizeMb * (job.progress ?? 0)) / 100)} of ${formatSize(job.sizeMb)}`;
+      if (job.spec) return "Downloading…";
+      if (job.record) return job.record.live ? "Recording live" : "Downloading…";
+      return `Downloading · ${formatSize((job.sizeMb * (job.progress ?? 0)) / 100)} of ${formatSize(job.sizeMb)}`;
     }
     case "encoding":
       if (job.phase === "smoothing") return "Making smooth slow-mo";
       return job.phase === "processing" ? "Finishing with FFmpeg" : job.phase === "cutting" ? "Cutting with FFmpeg" : "Encoding with FFmpeg";
     case "paused":
       // An export can't go on from the middle of a cut or an encode.
-      return !resumable(job) && (job.spec || job.render) ? "Paused · starts again when resumed" : "Paused";
+      // (Still downloading its video: that part goes on.)
+      return !resumable(job) && !job.after?.length && (job.spec || job.render) ? "Paused · starts again when resumed" : "Paused";
     default:
       return job.after?.length ? "Waiting for its video to download" : "Waiting";
   }

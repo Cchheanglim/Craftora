@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { reducer, resumable } from "../src/state/useQueue";
+import { folded, reducer, resumable, shownAs } from "../src/state/useQueue";
 import type { Job, RenderSpec } from "../src/types";
 
 const job = (id: string, extra: Partial<Job>): Job => ({
@@ -40,4 +40,34 @@ test("downloads of a whole link go on where they stopped; cuts, files and export
   expect(resumable(job("cut", { spec: { ...spec!, start: 10 } }))).toBe(false);
   expect(resumable(job("file", { spec: { ...spec!, local: true } }))).toBe(false);
   expect(resumable(job("export", { render }))).toBe(false);
+});
+
+test("an export's own video download shows in the export's row, then goes when the export does", () => {
+  const video = job("dl", {
+    status: "downloading",
+    progress: 40,
+    downloadedBytes: 40e6,
+    totalBytes: 100e6,
+    prefetch: { mediaId: "a", url: "https://example.com/a", format: "b", title: "a", audioOnly: false, forExport: true },
+  });
+  const exported = job("export", { render, after: ["dl"], sizeMb: 700 });
+  const jobs = [exported, video];
+  expect(folded(video, jobs)).toBe(true);
+  expect(folded(exported, jobs)).toBe(false);
+  expect(shownAs(exported, jobs)).toMatchObject({ id: "export", status: "downloading", progress: 40, totalBytes: 100e6, sizeMb: 700 });
+  // Once downloaded, the export shows its own encoding and the finished download stays out of sight.
+  const done = { ...video, status: "finished" as const };
+  expect(folded(done, [done])).toBe(true);
+  expect(shownAs({ ...exported, status: "encoding" }, [exported, done]).status).toBe("encoding");
+  // A download the user asked for (not just for an export) keeps its own row.
+  const own = { ...video, prefetch: { ...video.prefetch!, forExport: false } };
+  expect(folded(own, [exported, own])).toBe(false);
+});
+
+test("retrying an export retries its failed video download too", () => {
+  const jobs = [job("export", { status: "failed", render, after: ["dl"], error: "x" }), job("dl", { status: "failed", error: "x" }), job("other", { status: "failed" })];
+  const [exported, video, other] = reducer(jobs, { type: "retry", id: "export" });
+  expect(exported.status).toBe("waiting");
+  expect(video).toMatchObject({ status: "waiting", error: undefined });
+  expect(other.status).toBe("failed");
 });

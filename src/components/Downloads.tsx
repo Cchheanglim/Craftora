@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Job } from "../types";
-import type { Queue } from "../state/useQueue";
+import { folded, type Queue } from "../state/useQueue";
 import { deleteFile, errorText, listDownloads, revealFile, type DownloadedFile } from "../lib/engine";
 import { PlayFile } from "./PlayFile";
 import { formatSize } from "../project/exportPlan";
@@ -27,8 +27,10 @@ const isDownload = (j: Job) => Boolean(j.prefetch || j.record);
 const SOUND = /\.(mp3|m4a|wav|flac|opus|aac|ogg)$/i;
 
 export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: DownloadsProps) {
-  const active = queue.jobs.filter((j) => isDownload(j) && j.status !== "finished");
-  const finished = queue.jobs.filter((j) => isDownload(j) && j.status === "finished").length;
+  // An export's own video download shows with the export instead.
+  const downloads = queue.jobs.filter((j) => isDownload(j) && !folded(j, queue.jobs));
+  const active = downloads.filter((j) => j.status !== "finished");
+  const finished = downloads.filter((j) => j.status === "finished").length;
   const [folder, setFolder] = useState<{ folder: string; files: DownloadedFile[] } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);

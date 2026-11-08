@@ -69,7 +69,7 @@ import {
   type LibraryEntry,
 } from "./lib/storage";
 import { captureFrame, captureThumbnail, coverFrame } from "./lib/thumbnail";
-import { MAX_RUNNING, resumable, useQueue } from "./state/useQueue";
+import { MAX_RUNNING, folded, resumable, useQueue } from "./state/useQueue";
 import { storeEdition, useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
 import { applyTheme, saveTheme, savedTheme, type Theme } from "./lib/theme";
@@ -372,7 +372,7 @@ export default function App() {
   const queue = useQueue(inDesktopApp ? [] : DEMO_JOBS, inDesktopApp, maxRunning);
   /** Media being downloaded for editing. */
   const downloadingIds = new Set(queue.jobs.filter((j) => j.prefetch && j.status !== "finished" && j.status !== "failed").map((j) => j.prefetch!.mediaId));
-  const downloadsCount = queue.jobs.filter((j) => (j.prefetch || j.record) && j.status !== "finished" && j.status !== "failed").length;
+  const downloadsCount = queue.jobs.filter((j) => (j.prefetch || j.record) && !folded(j, queue.jobs) && j.status !== "finished" && j.status !== "failed").length;
 
   // Every file on this PC used in a project is remembered in the Media library, across projects.
   const [library, setLibrary] = useState<LibraryEntry[]>(loadMediaLibrary);
@@ -1586,7 +1586,7 @@ export default function App() {
             .filter((j) => j.status === "downloading" || j.status === "encoding")
             .map((j) => ({
               id: j.id,
-              label: j.record?.live ? "Recording live" : j.prefetch || j.record ? "Downloading" : j.status === "downloading" ? "Getting video to export" : "Exporting",
+              label: j.record?.live ? "Recording live" : j.prefetch || j.record || j.status === "downloading" ? "Downloading" : "Exporting",
               detail: j.rename ?? j.title,
               percent: j.record ? null : j.progress,
             })),
