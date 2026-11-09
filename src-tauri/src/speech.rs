@@ -1,6 +1,6 @@
 //! Captions made from the sound, for videos that come without any: whisper.cpp (bundled) listens
-//! to the audio with a speech model downloaded once (148 MB, or 190 MB on a graphics card). Everything runs on
-//! this PC.
+//! to the audio with a speech model downloaded once (148 MB, or 190 MB on a graphics card). A song's timed lyrics
+//! come from lrclib.net when found; listening runs on this PC.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -122,18 +122,21 @@ pub async fn make_captions(
     let work = app.path().app_cache_dir().map_err(|e| e.to_string())?.join(format!("speech-{id}"));
     std::fs::create_dir_all(&work).map_err(|e| format!("Couldn't make a working folder: {e}"))?;
     let started = std::time::Instant::now();
-    let made = listen(&app, &id, file, &source, (&model, chosen.dtw), &work, card).await;
+    let made = listen(&app, &id, (file, &source), (&model, chosen.dtw), &work, card).await;
     crate::diag::note(format!("captions from the sound: {} in {:.0}s", if made.is_ok() { "made" } else { "failed" }, started.elapsed().as_secs_f64()));
     let _ = std::fs::remove_dir_all(&work);
     made
 }
 
-async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, (model, dtw): (&Path, &str), work: &Path, card: Option<u32>) -> Result<Vec<Caption>, String> {
+async fn listen(app: &AppHandle, id: &str, (file, link): (Option<PathBuf>, &str), (model, dtw): (&Path, &str), work: &Path, card: Option<u32>) -> Result<Vec<Caption>, String> {
     // Reading a long file's sound takes a while too, so it's said for files as well as links.
     report(app, id, "sound", 0.0);
-    let input = match file {
-        Some(path) => path,
-        None => link_sound(app, link, work).await?,
+    let (input, title) = match file {
+        Some(path) => {
+            let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned());
+            (path, stem)
+        }
+        None => (link_sound(app, link, work).await?, std::fs::read_to_string(work.join("title.txt")).ok()),
     };
     // whisper reads 16 kHz mono WAV.
     let wav = work.join("sound.wav");
@@ -157,6 +160,14 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, (m
     report(app, id, "listening", 0.0);
     // whisper reads 16 kHz, 16-bit mono: 32,000 bytes a second after the 44-byte header.
     let length = std::fs::metadata(&wav).map_or(0.0, |m| m.len().saturating_sub(44) as f64 / 32_000.0);
+    if (30.0..=900.0).contains(&length)
+        && let Some(title) = title.as_deref().map(str::trim).filter(|t| !t.is_empty())
+        && let Some(lines) = song_lyrics(title, length).await.filter(|l| !l.is_empty())
+    {
+        crate::diag::note("captions: song lyrics found");
+        report(app, id, "listening", 100.0);
+        return Ok(lines);
+    }
     let mut captions: Vec<Caption> = Vec::new();
     let all = pieces(length, &silences);
     for (n, &(from, to)) in all.iter().enumerate() {
@@ -251,7 +262,6 @@ struct WhisperJson {
 struct WhisperSegment {
     /// Milliseconds.
     offsets: WhisperOffsets,
-    text: String,
     tokens: Vec<WhisperToken>,
 }
 
@@ -268,36 +278,66 @@ struct WhisperToken {
     t_dtw: i64,
 }
 
-/// whisper's full JSON (`-ojf` with `-dtw`) as caption lines, each timed by when its words are said. Its own
-/// line times start where the last line ended: seconds before the words, under music most of all.
+/// whisper's full JSON (`-ojf` with `-dtw`) as caption lines, each timed by when its own words are said. A whisper
+/// segment can hold several sentences (measured: up to 25 s); shown whole, the editor cut it by letter count and its
+/// later sentences showed seconds early. So a line ends at a sentence's end, a pause, or 80 letters.
 fn from_whisper_json(json: &str) -> Result<Vec<Caption>, String> {
-    // Measured: a line's first word is timed 0.1–0.25 s late, its last one about when the line ends.
+    // Measured: a word is timed 0.1–0.25 s after it starts; a drawn-out one ("Soooo") about halfway through.
     const LEAD: f64 = 0.2;
-    const TAIL: f64 = 0.4;
+    // After the last word's time: the rest of it, and a moment more (unless the next line starts).
+    const TAIL: f64 = 0.7;
+    // A new line when a word comes this long after the last one, or this long after a comma.
+    const PAUSE: f64 = 1.0;
+    const COMMA_PAUSE: f64 = 0.5;
+    // As much as the editor shows at once (model.ts CAPTION_CHARS).
+    const MOST: usize = 80;
     let parsed: WhisperJson = serde_json::from_str(json).map_err(|_| "whisper's captions couldn't be read.".to_string())?;
     let mut lines = Vec::new();
     for segment in parsed.transcription {
-        let text = without_sound_tags(&segment.text);
-        if !text.chars().any(char::is_alphanumeric) {
-            continue;
-        }
-        // Words only: punctuation is timed seconds late, special tokens ([_BEG_]) and sound tags not at all.
+        // Its words and punctuation, without special tokens ([_BEG_]) and sound tags. Only words are timed:
+        // punctuation is timed seconds late.
         let mut tagged = false;
-        let times: Vec<f64> = segment
-            .tokens
-            .iter()
-            .filter(|t| !t.text.starts_with("[_"))
-            .filter_map(|t| {
-                let inside = tagged || t.text.contains(['[', '(']);
-                tagged = inside && !t.text.contains([']', ')']);
-                (!inside && t.t_dtw >= 0 && t.text.chars().any(char::is_alphanumeric)).then_some(t.t_dtw as f64 / 100.0)
-            })
-            .collect();
-        let (start, end) = match (times.first(), times.last()) {
-            (Some(first), Some(last)) => ((first - LEAD).max(0.0), last + TAIL),
-            _ => (segment.offsets.from as f64 / 1000.0, segment.offsets.to as f64 / 1000.0),
-        };
-        lines.push(Caption { start, end: end.max(start + 0.3), text });
+        let mut groups: Vec<Vec<(&str, Option<f64>)>> = Vec::new();
+        let mut last_at: Option<f64> = None;
+        for token in segment.tokens.iter().filter(|t| !t.text.starts_with("[_")) {
+            let inside = tagged || token.text.contains(['[', '(']);
+            tagged = inside && !token.text.contains([']', ')']);
+            if inside {
+                continue;
+            }
+            let at = (token.t_dtw >= 0 && token.text.chars().any(char::is_alphanumeric)).then_some(token.t_dtw as f64 / 100.0);
+            let new_line = match (groups.last(), at) {
+                (None, _) => true,
+                (Some(line), Some(at)) if starts_word(&token.text) => {
+                    let so_far: String = line.iter().map(|p| p.0).collect();
+                    let so_far = so_far.trim();
+                    let gap = last_at.map_or(0.0, |last| at - last);
+                    so_far.ends_with(['.', '?', '!', '…', '。', '？', '！', '។'])
+                        || gap > PAUSE
+                        || (so_far.ends_with([',', '，', '、']) && gap >= COMMA_PAUSE)
+                        || so_far.chars().count() + token.text.chars().count() > MOST
+                }
+                _ => false,
+            };
+            if new_line {
+                groups.push(Vec::new());
+            }
+            groups.last_mut().expect("a line was just started").push((&token.text, at));
+            last_at = at.or(last_at);
+        }
+        for (i, line) in groups.iter().enumerate() {
+            let text = without_sound_tags(&line.iter().map(|p| p.0).collect::<String>());
+            if !text.chars().any(char::is_alphanumeric) {
+                continue;
+            }
+            let times: Vec<f64> = line.iter().filter_map(|p| p.1).collect();
+            let next = groups.get(i + 1).and_then(|g| g.iter().find_map(|p| p.1));
+            let (start, end) = match (times.first(), times.last()) {
+                (Some(first), Some(last)) => ((first - LEAD).max(0.0), next.map_or(last + TAIL, |n| (last + TAIL).min(n - LEAD))),
+                _ => (segment.offsets.from as f64 / 1000.0, segment.offsets.to as f64 / 1000.0),
+            };
+            lines.push(Caption { start, end: end.max(start + 0.3), text });
+        }
     }
     lines.sort_by(|a, b| a.start.total_cmp(&b.start));
     for i in 1..lines.len() {
@@ -306,6 +346,13 @@ fn from_whisper_json(json: &str) -> Result<Vec<Caption>, String> {
     }
     lines.retain(|c| c.end - c.start >= 0.05);
     Ok(lines)
+}
+
+/// Whether a caption line may start at this piece of whisper's text: a new word (after a space), or any letter of a
+/// script written without spaces (Thai, Myanmar, Khmer, Japanese, Chinese), never the middle of a word ("So" + "ooo").
+fn starts_word(text: &str) -> bool {
+    let unspaced = |c: char| matches!(c, '\u{0E00}'..='\u{0EFF}' | '\u{1000}'..='\u{109F}' | '\u{1780}'..='\u{17FF}' | '\u{3040}'..='\u{30FF}' | '\u{3400}'..='\u{4DBF}' | '\u{4E00}'..='\u{9FFF}' | '\u{F900}'..='\u{FAFF}');
+    (text.starts_with(char::is_whitespace) && text.chars().any(char::is_alphanumeric)) || text.chars().next().is_some_and(unspaced)
 }
 
 /// Text without whisper's sound tags ("[Music]", "(laughs)", "♪"): the small model calls cries and groans music.
@@ -383,10 +430,25 @@ fn card_in(log: &str) -> Option<u32> {
 async fn link_sound(app: &AppHandle, link: &str, work: &Path) -> Result<PathBuf, String> {
     let (link_args, _cookies) = crate::signin::link_args(app, link).await;
     let template = work.join("sound.%(ext)s").to_string_lossy().into_owned();
+    let title = work.join("title.txt").to_string_lossy().into_owned();
     let engines = ffmpeg_dir(app)?.to_string_lossy().into_owned();
-    let mut args: Vec<String> = ["--no-playlist", "--no-warnings", "--encoding", "utf-8", "--ffmpeg-location", &engines, "-f", "bestaudio/best", "-o", &template]
-        .map(String::from)
-        .to_vec();
+    let mut args: Vec<String> = [
+        "--no-playlist",
+        "--no-warnings",
+        "--encoding",
+        "utf-8",
+        "--ffmpeg-location",
+        &engines,
+        "-f",
+        "bestaudio/best",
+        "--print-to-file",
+        "%(title)s",
+        &title,
+        "-o",
+        &template,
+    ]
+    .map(String::from)
+    .to_vec();
     args.extend(link_args);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let output = run_to_end(app, YT_DLP, &args).await?;
@@ -399,6 +461,117 @@ async fn link_sound(app: &AppHandle, link: &str, work: &Path) -> Result<PathBuf,
         .map(|entry| entry.path())
         .find(|p| p.file_stem().is_some_and(|s| s == "sound") && p.extension().is_some_and(|e| e != "part" && e != "wav"))
         .ok_or_else(|| "yt-dlp finished but the sound file wasn't found.".into())
+}
+
+#[derive(Deserialize)]
+struct LrcHit {
+    #[serde(rename = "trackName")]
+    track: Option<String>,
+    #[serde(rename = "artistName")]
+    artist: Option<String>,
+    duration: Option<f64>,
+    instrumental: Option<bool>,
+    #[serde(rename = "syncedLyrics")]
+    synced: Option<String>,
+}
+
+/// Timed lyrics for a song from lrclib.net, when a hit matches both its name and its length (within 2 s).
+async fn song_lyrics(title: &str, length: f64) -> Option<Vec<Caption>> {
+    let mut kept = String::new();
+    let mut close = None;
+    for c in title.chars() {
+        match close {
+            Some(end) if c == end => close = None,
+            Some(_) => {}
+            None if c == '(' => close = Some(')'),
+            None if c == '[' => close = Some(']'),
+            None if c == '【' => close = Some('】'),
+            None => kept.push(c),
+        }
+    }
+    let cleaned = kept.split_whitespace().collect::<Vec<_>>().join(" ");
+    let query = if cleaned.is_empty() { title } else { &cleaned };
+    let hits: Vec<LrcHit> = crate::privacy::client_builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(8))
+        .build()
+        .ok()?
+        .get("https://lrclib.net/api/search")
+        .query(&[("q", query)])
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    let synced = hits.into_iter().find_map(|hit| {
+        if hit.instrumental.unwrap_or(false) || !hit.duration.is_some_and(|d| (d - length).abs() <= 2.0) || !same_song(query, &hit) {
+            return None;
+        }
+        hit.synced.filter(|s| !s.trim().is_empty())
+    })?;
+    Some(parse_lrc(&synced, length))
+}
+
+fn plain(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A vlog called "my trip home" mustn't match a song called "Home": unless the query is the song's name alone,
+/// it needs the singer's name too.
+fn same_song(query: &str, hit: &LrcHit) -> bool {
+    let q = plain(query);
+    let t = hit.track.as_deref().map(plain).unwrap_or_default();
+    let a = hit.artist.as_deref().map(plain).unwrap_or_default();
+    !t.is_empty() && (q == t || (!a.is_empty() && q.contains(&t) && q.contains(&a)))
+}
+
+// shortcut: lines end at the next line (LRC has no end times; the `lyricsfile` field has word times, not read); a video whose intro differs from the released song by up to 2 s gets lyrics that much early/late.
+fn parse_lrc(lrc: &str, length: f64) -> Vec<Caption> {
+    let mut entries: Vec<(f64, &str)> = Vec::new();
+    for line in lrc.lines() {
+        let mut rest = line.trim();
+        let mut times = Vec::new();
+        while let Some((tag, after)) = rest.strip_prefix('[').and_then(|s| s.split_once(']'))
+            && let Some(t) = lrc_time(tag)
+        {
+            times.push(t);
+            rest = after;
+        }
+        let text = rest.trim();
+        for t in times {
+            entries.push((t, text));
+        }
+    }
+    entries.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut lines = Vec::new();
+    for (i, &(start, text)) in entries.iter().enumerate() {
+        if text.is_empty() {
+            continue;
+        }
+        let next = entries.get(i + 1).map_or(length, |e| e.0);
+        let end = next.min(start + 10.0).min(length);
+        if end - start >= 0.3 {
+            lines.push(Caption { start, end, text: text.to_string() });
+        }
+    }
+    lines
+}
+
+fn lrc_time(tag: &str) -> Option<f64> {
+    let (mins, secs) = tag.split_once(':')?;
+    let mins: u32 = mins.parse().ok()?;
+    if !secs.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+        return None;
+    }
+    let secs: f64 = secs.parse().ok()?;
+    Some(f64::from(mins) * 60.0 + secs)
 }
 
 #[cfg(test)]
@@ -444,33 +617,87 @@ mod tests {
 
     #[test]
     fn times_lines_by_their_words() {
-        // Real output under music (trimmed): whisper said 14.56–22.76 and 22.76–32.18 s; the words were at 17.8–20.3 and 22.7–25.1.
         let tok = |text: &str, t_dtw: i64| format!(r#"{{"text":{text:?},"t_dtw":{t_dtw}}}"#);
         let seg = |from: i64, to: i64, text: &str, tokens: &[String]| format!(r#"{{"offsets":{{"from":{from},"to":{to}}},"text":{text:?},"tokens":[{}]}}"#, tokens.join(","));
+        // Real output under music: one segment for "I'll come with you, but only this once." and "Did you hear that noise
+        // just now?" (said at 30.75–34.55 and 34.90–36.53 s). Shown whole, the second sentence came seconds early.
+        let glued = [(" I", 3212), ("'ll", 3220), (" come", 3242), (" with", 3260), (" you", 3286), (",", 3332), (" but", 3350), (" only", 3380), (" this", 3406), (" once", 3436), (",", 3482), (" did", 3500), (" you", 3522), (" hear", 3540), (" that", 3558), (" noise", 3586), (" just", 3618), (" now", 3648), ("?", 3720), ("[_TT_617]", -1)];
         let json = format!(
-            r#"{{"transcription":[{},{},{},{},{}]}}"#,
-            seg(14560, 22760, " No, no, no.", &[tok(" No", 1796), tok(",", 1974), tok(" no", 2022), tok(" no", 2132), tok(".", 2138), tok("[_TT_1138]", -1)]),
-            seg(22760, 32180, " He served short to the forehand and won the point.", &[tok("[_BEG_]", -1), tok(" He", 2284), tok(" point", 2510), tok(".", 2924)]),
-            seg(32180, 33000, " [Music]", &[tok(" [", 3300), tok("Music", 3310), tok("]", 3320)]),
-            seg(33000, 36000, " (laughs) Okay.", &[tok(" (", 3310), tok("laugh", 3320), tok(")", 3330), tok(" Okay", 3400)]),
-            seg(36000, 37500, " Again", &[tok(" Again", -1)]),
+            r#"{{"transcription":[{},{},{},{},{},{}]}}"#,
+            seg(11440, 17320, " Sooo.", &[tok(" So", 1362), tok("ooo", 1380), tok(".", 1512)]),
+            seg(30700, 37820, " I'll come with you, but only this once, did you hear that noise just now?", &glued.map(|(t, d)| tok(t, d))),
+            seg(37820, 38500, " [Music]", &[tok(" [", 3800), tok("Music", 3810), tok("]", 3820)]),
+            seg(38500, 40800, " (laughs) Okay.", &[tok(" (", 3910), tok("laugh", 3920), tok(")", 3930), tok(" Okay", 4000), tok(".", 4040)]),
+            seg(41000, 42500, " Again", &[tok(" Again", -1)]),
+            seg(42500, 47000, "你好，我们走吧。他来了", &[tok("你好", 4300), tok("，", 4340), tok("我们", 4400), tok("走", 4420), tok("吧", 4440), tok("。", 4460), tok("他", 4600), tok("来了", 4620)]),
         );
         let lines: Vec<(f64, f64, String)> = from_whisper_json(&json)
             .unwrap()
             .into_iter()
             .map(|c| ((c.start * 100.0).round() / 100.0, (c.end * 100.0).round() / 100.0, c.text))
             .collect();
+        let expected = [
+            // A drawn-out word stays one word, and is still being said after its time.
+            (13.42, 14.5, "Soooo."),
+            // Cut at the pauses after its commas, each part from its own first word.
+            (31.92, 33.3, "I'll come with you,"),
+            (33.3, 34.8, "but only this once,"),
+            (34.8, 37.18, "did you hear that noise just now?"),
+            // The tag's words don't time the line; one without word times keeps whisper's own.
+            (39.8, 40.7, "Okay."),
+            (41.0, 42.5, "Again"),
+            // No spaces: cut between characters, at a pause after a comma and at a sentence's end, timed by its last one.
+            (42.8, 43.7, "你好，"),
+            (43.8, 45.1, "我们走吧。"),
+            (45.8, 46.9, "他来了"),
+        ];
+        assert_eq!(lines, expected.map(|(a, b, t)| (a, b, t.to_string())));
+        assert!(from_whisper_json("not json").is_err());
+        assert_eq!(without_sound_tags(" ♪ la la ♪  [Music] (sighs)  bye "), "la la bye");
+    }
+
+    #[test]
+    fn reads_timed_song_lyrics() {
+        let lrc = "\
+[ar:Joji]
+[00:15.20] (Ooh)
+[00:18.50]
+[00:22.125]She'd take the world off my shoulders
+[00:40.00][01:10.00]Cause sometimes I look in her eyes
+[00:43.00]
+";
+        let lines: Vec<(f64, f64, String)> = parse_lrc(lrc, 120.0).into_iter().map(|c| (c.start, c.end, c.text)).collect();
         assert_eq!(
             lines,
             [
-                (17.76, 21.72, "No, no, no.".to_string()),
-                (22.64, 25.5, "He served short to the forehand and won the point.".to_string()),
-                // The tag's words don't time the line; one without word times keeps whisper's own.
-                (33.8, 34.4, "Okay.".to_string()),
-                (36.0, 37.5, "Again".to_string()),
+                (15.2, 18.5, "(Ooh)".into()),
+                // Over 10 s before the 00:40 line: capped at 10 s.
+                (22.125, 32.125, "She'd take the world off my shoulders".into()),
+                // Two time tags: same line at 00:40 (ended by the empty 00:43 line) and at 01:10 (capped at 10 s).
+                (40.0, 43.0, "Cause sometimes I look in her eyes".into()),
+                (70.0, 80.0, "Cause sometimes I look in her eyes".into()),
             ]
         );
-        assert!(from_whisper_json("not json").is_err());
-        assert_eq!(without_sound_tags(" ♪ la la ♪  [Music] (sighs)  bye "), "la la bye");
+        let hit = |track: &str, artist: &str| LrcHit {
+            track: Some(track.into()),
+            artist: Some(artist.into()),
+            duration: Some(234.0),
+            instrumental: Some(false),
+            synced: None,
+        };
+        assert!(same_song("Joji - Glimpse of Us", &hit("Glimpse of Us", "Joji")));
+        assert!(!same_song("my trip home", &hit("Home", "X")));
+        assert!(same_song("Glimpse of Us", &hit("Glimpse of Us", "Joji")));
+    }
+
+    /// Against lrclib.net: `cargo test --lib -- --ignored --nocapture finds_a_songs`.
+    #[tokio::test]
+    #[ignore]
+    async fn finds_a_songs_lyrics() {
+        let lines = song_lyrics("Joji - Glimpse of Us (Official Video)", 234.03).await.expect("found");
+        for c in &lines {
+            println!("{:.2}	{:.2}	{}", c.start, c.end, c.text);
+        }
+        assert!(lines.len() > 20 && lines[0].text.starts_with("She'd take the world"));
     }
 }

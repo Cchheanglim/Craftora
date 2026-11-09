@@ -87,8 +87,10 @@ export interface MediaItem {
     partial?: boolean;
     /** Made from the sound with each line fitted to the sound around it (older; can be made again). */
     fitted?: boolean;
-    /** Made from the sound with each line timed by its words (speech.rs `from_whisper_json`); older ones can be made again. */
+    /** Made from the sound with each line timed by its words (older; can be made again). */
     wordTimed?: boolean;
+    /** Made from the sound with a line per sentence or pause, each timed by its own words (speech.rs `from_whisper_json`). */
+    bySentence?: boolean;
   };
 }
 
