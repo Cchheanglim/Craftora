@@ -1,5 +1,5 @@
 /** Settings → Preferences: small on/off choices, remembered on this PC. */
-export type Preference = "finishSound" | "importToTimeline" | "captionsOnGpu" | "songLyrics";
+export type Preference = "finishSound" | "importToTimeline" | "captionsOnGpu";
 
 const DEFAULTS: Record<Preference, boolean> = {
   // Craftora's sound when a download or export finishes.
@@ -8,8 +8,6 @@ const DEFAULTS: Record<Preference, boolean> = {
   importToTimeline: false,
   // whisper uses the graphics card when there is one (speech.rs); off: the processor only.
   captionsOnGpu: true,
-  // Captions for a song use its timed lyrics from lrclib.net when found.
-  songLyrics: true,
 };
 
 export function preference(name: Preference): boolean {

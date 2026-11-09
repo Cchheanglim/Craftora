@@ -122,7 +122,6 @@ function Preferences() {
     finishSound: preference("finishSound"),
     importToTimeline: preference("importToTimeline"),
     captionsOnGpu: preference("captionsOnGpu"),
-    songLyrics: preference("songLyrics"),
   }));
   const choose = (name: Preference, on: boolean) => {
     setPreference(name, on);
@@ -132,7 +131,6 @@ function Preferences() {
     ["finishSound", "Sound when a download or export finishes", "Plays whether Craftora is in front or not.", ["On", "Off"]],
     ["importToTimeline", "Files imported from this PC", "Just import: they wait under In this project. Links you fetch always go onto the timeline.", ["Add to timeline", "Just import"]],
     ["captionsOnGpu", "Make captions with", "Graphics card: faster, with a more accurate speech model (190 MB, downloaded once). A PC without a graphics card of its own uses the processor.", ["Graphics card", "Processor"]],
-    ["songLyrics", "Song lyrics", "Captions for a song use its timed lyrics from lrclib.net when it's found there (sends the video's name, not its sound).", ["Look up online", "Only listen"]],
   ];
   return (
     <div className="library__group">

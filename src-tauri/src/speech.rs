@@ -100,7 +100,6 @@ pub async fn make_captions(
     source: String,
     local: bool,
     gpu: bool,
-    lyrics: bool,
 ) -> Result<Vec<Caption>, String> {
     if id.is_empty() || id.len() > 64 || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return Err("Not a media id.".into());
@@ -123,13 +122,13 @@ pub async fn make_captions(
     let work = app.path().app_cache_dir().map_err(|e| e.to_string())?.join(format!("speech-{id}"));
     std::fs::create_dir_all(&work).map_err(|e| format!("Couldn't make a working folder: {e}"))?;
     let started = std::time::Instant::now();
-    let made = listen(&app, &id, (file, &source), (&model, chosen.dtw), &work, card, lyrics).await;
+    let made = listen(&app, &id, (file, &source), (&model, chosen.dtw), &work, card).await;
     crate::diag::note(format!("captions from the sound: {} in {:.0}s", if made.is_ok() { "made" } else { "failed" }, started.elapsed().as_secs_f64()));
     let _ = std::fs::remove_dir_all(&work);
     made
 }
 
-async fn listen(app: &AppHandle, id: &str, (file, link): (Option<PathBuf>, &str), (model, dtw): (&Path, &str), work: &Path, card: Option<u32>, lyrics: bool) -> Result<Vec<Caption>, String> {
+async fn listen(app: &AppHandle, id: &str, (file, link): (Option<PathBuf>, &str), (model, dtw): (&Path, &str), work: &Path, card: Option<u32>) -> Result<Vec<Caption>, String> {
     // Reading a long file's sound takes a while too, so it's said for files as well as links.
     report(app, id, "sound", 0.0);
     let (input, title) = match file {
@@ -161,8 +160,7 @@ async fn listen(app: &AppHandle, id: &str, (file, link): (Option<PathBuf>, &str)
     report(app, id, "listening", 0.0);
     // whisper reads 16 kHz, 16-bit mono: 32,000 bytes a second after the 44-byte header.
     let length = std::fs::metadata(&wav).map_or(0.0, |m| m.len().saturating_sub(44) as f64 / 32_000.0);
-    if lyrics
-        && (30.0..=900.0).contains(&length)
+    if (30.0..=900.0).contains(&length)
         && let Some(title) = title.as_deref().map(str::trim).filter(|t| !t.is_empty())
         && let Some(lines) = song_lyrics(title, length).await.filter(|l| !l.is_empty())
     {

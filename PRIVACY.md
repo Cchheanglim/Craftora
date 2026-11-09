@@ -29,7 +29,7 @@ These are the only times Craftora goes online:
 - **Captions made from the sound.** Craftora listens to a video's sound and writes captions on
   your PC; the sound isn't sent anywhere. Before listening to a sound 30 s to 15 min long,
   Craftora asks `lrclib.net` whether it's a song with timed lyrics, sending only the video's name
-  (its title or file name); you can turn this off in Settings → Preferences → Song lyrics, and
+  (its title or file name), and listens when the song isn't found;
   lrclib.net's own terms apply. The first time Craftora listens to a sound, it downloads the speech model
   (`ggml-base.bin`, 148 MB) from Hugging Face.
 - **Updating yt-dlp.** The **Update yt-dlp** button (Settings → Links) downloads the newest yt-dlp
