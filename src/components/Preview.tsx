@@ -135,6 +135,25 @@ function textFont(clip: Clip): CSSProperties {
 
 export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload }: PreviewProps) {
   const [muted, setMuted] = useState(false);
+  // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
+  const [level, setLevel] = useState(1);
+  const [levelShown, setLevelShown] = useState(false);
+  useEffect(() => {
+    let hide = 0;
+    const onVolume = (e: Event) => {
+      const step = (e as CustomEvent<number>).detail;
+      setMuted(false);
+      setLevel((v) => Math.min(1, Math.max(0, Math.round((v + step) * 10) / 10)));
+      setLevelShown(true);
+      window.clearTimeout(hide);
+      hide = window.setTimeout(() => setLevelShown(false), 1000);
+    };
+    window.addEventListener("craftora:volume", onVolume);
+    return () => {
+      window.removeEventListener("craftora:volume", onVolume);
+      window.clearTimeout(hide);
+    };
+  }, []);
   // Exactly the captions the export adds (see `withShownCaptions`), unless they're on the timeline.
   const shownCaptions = useMemo(
     () => (showCaptions ? withShownCaptions(project).clips.filter((c) => c.trackId.startsWith(SHOWN_CAPTIONS)) : []),
@@ -439,7 +458,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         time={t}
                         cue={cueOf(clip)}
                         playing={running}
-                        volume={clip.volume * mix(clip).sound}
+                        volume={clip.volume * mix(clip).sound * level}
                         muted={muted || trackMuted(clip) || separateSound}
                         rate={rate}
                         reverse={clip.reverse}
@@ -458,7 +477,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         time={t}
                         cue={cueOf(clip)}
                         playing={running}
-                        volume={clip.volume * mix(clip).sound}
+                        volume={clip.volume * mix(clip).sound * level}
                         muted={muted || trackMuted(clip)}
                         rate={rate}
                         reverse={clip.reverse}
@@ -487,7 +506,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 time={mediaTime(clip)}
                 cue={cueOf(clip)}
                 playing={running}
-                volume={clip.volume * mix(clip).sound}
+                volume={clip.volume * mix(clip).sound * level}
                 muted={muted || trackMuted(clip)}
                 rate={playback.speed * clip.speed}
                 reverse={clip.reverse}
@@ -541,6 +560,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           ))}
         </div>
         {nothingHere && duration > 0 && <p className="preview__note">Nothing on the timeline here</p>}
+        {levelShown && <p className="preview__level mono">Volume {Math.round(level * 100)}%</p>}
         {/* While a link stays slow, the message stays between its short waits. */}
         {playing && (playback.waiting || playback.slow) && (
           <p className="preview__waiting">
@@ -686,7 +706,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             </>
           )}
           <button type="button" className="btn btn--icon" aria-label={muted ? "Unmute" : "Mute"} aria-pressed={muted} onClick={() => setMuted((m) => !m)}>
-            <Icon name={muted ? "volumeOff" : "volume"} />
+            <Icon name={muted || level === 0 ? "volumeOff" : "volume"} />
           </button>
           <button
             type="button"

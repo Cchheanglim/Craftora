@@ -16,6 +16,12 @@
 - **Pause works for every link.** Those copies can be paused too, and go on where they stopped,
   also after closing Craftora (checked frame by frame: the finished video is the same as the
   original). Live streams keep Stop instead.
+- **Faster exports on NVIDIA graphics cards.** An edit of one video (mirrored, turned, sped up or
+  not) is now made entirely on the graphics card, so a busy processor no longer slows it down:
+  about twice as fast while you keep working (measured: 5.4× → 11× real time), the same picture.
+  Edits with text, effects or several clips are made the usual way.
+- **Arrow keys like a video player**: ← / → jump 5 seconds back or forward (Shift + ← / → still
+  steps one frame), ↑ / ↓ turn the preview's volume up or down.
 
 **Fixed**
 
