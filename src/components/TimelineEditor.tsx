@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, mediaTimeAt, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
-import { blockLabel, type FxItem } from "../project/effects";
+import { LOOKS, PICTURE_EFFECTS, blockLabel, type FxItem } from "../project/effects";
 import { packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -752,11 +752,17 @@ export function TimelineEditor({
                           {label}
                           {media && <span className="tl__length mono">{formatTimecode(length)}</span>}
                         </span>
-                        {(clip.speed !== 1 || clip.reverse) && (
+                        {(clip.speed !== 1 || clip.reverse || (clip.mediaId && (clip.look || clip.effect))) && (
                           <span className="tl__tag mono" aria-hidden="true">
                             {clip.reverse ? "◀ " : ""}
                             {clip.speed !== 1 ? `${clip.speed}×` : ""}
                             {clip.smooth && clip.speed < 1 ? " smooth" : ""}
+                            {/* A filter and an effect carried inside the clip (dropped on it). */}
+                            {clip.mediaId &&
+                              [LOOKS.find((l) => l.id === clip.look)?.label, PICTURE_EFFECTS.find((f) => f.id === clip.effect)?.label]
+                                .filter(Boolean)
+                                .map((name) => ` ✦ ${name}`)
+                                .join("")}
                           </span>
                         )}
                         <span className="tl__trim is-end" title="Drag to change duration" onPointerDown={beginDrag(clip, "end")} aria-hidden="true" />

@@ -6,7 +6,7 @@
  * - Time effects (slow motion, speed up, reverse) change the clip (or piece) they're dropped on.
  * - Transitions go on the join between two clips.
  */
-import { MIN_CLIP, TRANSITION_KINDS, clipEnd, clipLength, isStill, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
+import { MIN_CLIP, TRANSITION_KINDS, clipEnd, isStill, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
 import type { ClipPatch, EditAction } from "./actions";
 import type { ShapeId } from "./shapes";
 
@@ -118,10 +118,15 @@ export function dropEdits(
   const clipAt = (clips: Clip[]) => clips.find((c) => time >= c.start && time < clipEnd(c));
   if (item.kind === "filter" || item.kind === "effect") {
     const block = item.kind === "filter" ? { look: item.id } : { effect: item.id };
+    // Dropped on a video or picture: it goes inside that clip (one filter and one effect each; a new one replaces it).
     const clip = clipAt(mediaOn(dropped?.id).filter((c) => showsPicture(p, c)));
-    const defaultLength = item.id === "punch" ? 0.6 : item.id === "shake" ? 1 : BLOCK_LENGTH;
-    const [at, length] = clip ? [clip.start, clipLength(clip)] : [time, defaultLength];
-    return { edits: [{ type: "addBlock", clipId: newIds[0], at, length, trackId: dropped?.id, ...block }], select: newIds[0] };
+    if (clip) {
+      const patch = item.kind === "filter" ? { look: item.id, lookAmount: 1 } : { effect: item.id };
+      return { edits: [{ type: "updateClip", clipId: clip.id, patch }], select: clip.id };
+    }
+    // On an empty spot: a block of its own, to stretch over several clips.
+    const length = item.id === "punch" ? 0.6 : item.id === "shake" ? 1 : BLOCK_LENGTH;
+    return { edits: [{ type: "addBlock", clipId: newIds[0], at: time, length, trackId: dropped?.id, ...block }], select: newIds[0] };
   }
   if (item.kind === "shape") {
     return { edits: [{ type: "addShape", clipId: newIds[0], shape: item.id, at: time, length: BLOCK_LENGTH, trackId: dropped?.id }], select: newIds[0] };

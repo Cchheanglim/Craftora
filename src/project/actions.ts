@@ -38,6 +38,7 @@ export type ClipPatch = Partial<
     | "smooth"
     | "look"
     | "lookAmount"
+    | "effect"
     | "shape"
     | "opacity"
     | "outline"
