@@ -232,8 +232,9 @@ export function TimelineEditor({
     contentRef.current ? timeAt(clientX) : g.originEdge + (clientX - g.originX) / pps;
 
   /** Snaps to the playhead and to other clips' edges when within a few pixels. */
-  const snap = (t: number, ignore: string) => {
-    const targets = [0, playback.time];
+  // `playhead`: also the playhead itself (not when it's the playhead being dragged: it would stick to itself).
+  const snap = (t: number, ignore: string, playhead = true) => {
+    const targets = playhead ? [0, playback.time] : [0];
     for (const c of project.clips) if (c.id !== ignore) targets.push(c.start, clipEnd(c));
     let best = t;
     let bestPx = SNAP_PX;
@@ -275,7 +276,8 @@ export function TimelineEditor({
     if (!g) return;
     if (g.kind === "scrub") {
       scrollAtEdge(e.clientX);
-      playback.seek(timeAt(e.clientX));
+      // The playhead snaps to cuts and clip edges, so it lands exactly on a join.
+      playback.seek(snap(timeAt(e.clientX), "", false));
       return;
     }
     const dx = e.clientX - g.originX;
@@ -360,7 +362,7 @@ export function TimelineEditor({
     e.stopPropagation();
     e.preventDefault();
     playback.pause();
-    playback.seek(timeAt(e.clientX));
+    playback.seek(snap(timeAt(e.clientX), "", false));
     setScrubbing(true);
     startGesture({ kind: "scrub" });
   };

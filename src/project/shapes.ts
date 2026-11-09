@@ -6,7 +6,7 @@
 import { BLOCK_LENGTH } from "./effects";
 import { NO_CROP, type Clip } from "./model";
 
-export const SHAPES = [
+const SHAPE_LIST = [
   { id: "rect", label: "Rectangle", path: "M 0 0 H 100 V 100 H 0 Z" },
   {
     id: "rounded-rect",
@@ -76,7 +76,9 @@ export const SHAPES = [
   { id: "arrow-line", label: "Arrow line", path: "M 0 50 L 96 50 M 72 22 L 98 50 L 72 78", line: true },
 ] as const satisfies readonly { id: string; label: string; path: string; line?: boolean }[];
 
-export type ShapeId = (typeof SHAPES)[number]["id"];
+export type ShapeId = (typeof SHAPE_LIST)[number]["id"];
+/** Every shape; typed loosely so `line` reads as optional on each (only the line shapes set it). */
+export const SHAPES: readonly { id: ShapeId; label: string; path: string; line?: boolean }[] = SHAPE_LIST;
 
 export const shapeLabel = (id?: string) => SHAPES.find((s) => s.id === id)?.label ?? "Shape";
 

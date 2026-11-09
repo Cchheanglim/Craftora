@@ -653,11 +653,28 @@
   right: 0;
 }
 
-.tl__clip:hover .tl__trim {
+/* The grab area stays 8 px wide; only a thin line of it shows. */
+.tl__trim::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+
+.tl__trim.is-start::after {
+  left: 0;
+}
+
+.tl__trim.is-end::after {
+  right: 0;
+}
+
+.tl__clip:hover .tl__trim::after {
   background: rgb(255 255 255 / 0.35);
 }
 
-.tl__clip.is-selected .tl__trim {
+.tl__clip.is-selected .tl__trim::after {
   background: rgb(255 255 255 / 0.85);
 }
 

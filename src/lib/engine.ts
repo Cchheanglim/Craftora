@@ -8,6 +8,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { Caption, JobSpec, MediaSource, RenderSpec } from "../types";
+import { shapePng } from "../project/shapes";
 import { captureThumbnail } from "./thumbnail";
 
 export const inDesktopApp = "__TAURI_INTERNALS__" in window;
@@ -412,7 +413,12 @@ export async function startJob(spec: JobSpec): Promise<void> {
 /** Renders a whole timeline in one FFmpeg pass. */
 export async function startRender(spec: RenderSpec): Promise<void> {
   try {
-    await invoke("start_render", { spec });
+    // Shapes are drawn here, at the export's size, with the preview's own drawing (shapes.ts), so both look the same.
+    const clips = await Promise.all(
+      spec.clips.map(async (c) => (c.role === "shape" && c.shape ? { ...c, picture: await shapePng(c.shape, spec.width, spec.height) } : c)),
+    );
+    if (clips.some((c) => c.role === "shape" && !c.picture)) throw new Error("A shape couldn't be drawn for the export.");
+    await invoke("start_render", { spec: { ...spec, clips } });
   } catch (err) {
     throw new Error(message(err));
   }

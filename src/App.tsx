@@ -1829,14 +1829,14 @@ export default function App() {
               Assistant
             </button>
           </div>
-          <div className="segmented app__tabs is-second" role="group" aria-label="Filters, effects and transitions">
-            {(["filters", "effects", "transitions"] as const).map((tab) => (
+          <div className="segmented app__tabs is-second" role="group" aria-label="Filters, effects, transitions and shapes">
+            {(["filters", "effects", "transitions", "shapes"] as const).map((tab) => (
               <button key={tab} type="button" aria-pressed={rightTab === tab} onClick={() => setRightTab(tab)}>
-                {tab === "filters" ? "Filters" : tab === "effects" ? "Effects" : "Transitions"}
+                {tab[0].toUpperCase() + tab.slice(1)}
               </button>
             ))}
           </div>
-          {rightTab === "filters" || rightTab === "effects" || rightTab === "transitions" ? (
+          {rightTab === "filters" || rightTab === "effects" || rightTab === "transitions" || rightTab === "shapes" ? (
             <FxPanel
               tab={rightTab}
               project={project}
