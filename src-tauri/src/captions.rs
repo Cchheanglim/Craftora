@@ -145,6 +145,47 @@ pub fn save_srt(path: String, lines: Vec<Caption>) -> Result<(), String> {
     std::fs::write(&path, srt(&lines)).map_err(|e| format!("Couldn't save the captions: {e}"))
 }
 
+/// Opens a caption or lyrics file (.srt, .vtt or .lrc) from this PC as timed lines.
+#[tauri::command]
+pub fn open_captions(path: String) -> Result<Vec<Caption>, String> {
+    let ext = std::path::Path::new(&path).extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+    let Some(ext @ ("srt" | "vtt" | "lrc")) = ext.as_deref() else {
+        return Err("Craftora opens captions from .srt, .vtt and .lrc files.".into());
+    };
+    let meta = std::fs::metadata(&path).map_err(|e| format!("Couldn't open the captions: {e}"))?;
+    if meta.len() > MAX_BYTES as u64 {
+        return Err("The caption file is too big.".into());
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("Couldn't open the captions: {e}"))?;
+    if bytes.len() > MAX_BYTES {
+        return Err("The caption file is too big.".into());
+    }
+    let text = caption_text(&bytes);
+    // `parse_vtt` also reads .srt (cue blocks with "-->" and comma times); it drops a cue that repeats
+    // the line just before it (made for scrolling automatic captions).
+    let lines = if ext == "lrc" { crate::speech::parse_lrc(&text, f64::MAX) } else { parse_vtt(&text) };
+    if lines.is_empty() {
+        return Err("No timed captions were found in this file.".into());
+    }
+    Ok(lines)
+}
+
+/// Subtitle files from Windows tools sometimes come as UTF-16 or start with a byte-order mark.
+fn caption_text(bytes: &[u8]) -> String {
+    let text = match bytes {
+        [0xFF, 0xFE, rest @ ..] => {
+            let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|&c| u16::from_le_bytes(c)).collect();
+            String::from_utf16_lossy(&units)
+        }
+        [0xFE, 0xFF, rest @ ..] => {
+            let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|&c| u16::from_be_bytes(c)).collect();
+            String::from_utf16_lossy(&units)
+        }
+        _ => String::from_utf8_lossy(bytes).into_owned(),
+    };
+    text.trim_start_matches('\u{feff}').to_owned()
+}
+
 /// SubRip text: numbered blocks of "start --> end" and the words, a blank line between them.
 fn srt(lines: &[Caption]) -> String {
     let time = |s: f64| {
@@ -211,5 +252,45 @@ mod tests {
         manual.insert("en-US".to_string(), vtt("mine"));
         assert_eq!(pick(&manual, &automatic, Some("en")).unwrap().url, "mine");
         assert!(pick(&BTreeMap::new(), &BTreeMap::new(), None).is_none());
+    }
+
+    #[test]
+    fn reads_srt_utf16_and_lrc_files() {
+        let srt = "\u{feff}1\r\n00:00:01,250 --> 00:00:04,000\r\n<i>First line</i>\r\nand second\r\n\r\n2\r\n00:01:00,000 --> 00:01:02,500\r\nBye\r\n";
+        assert_eq!(
+            parse_vtt(&caption_text(srt.as_bytes())),
+            vec![
+                Caption { start: 1.25, end: 4.0, text: "First line and second".into() },
+                Caption { start: 60.0, end: 62.5, text: "Bye".into() },
+            ]
+        );
+
+        let utf16: Vec<u8> = [0xFF, 0xFE]
+            .into_iter()
+            .chain("1\r\n00:00:02,000 --> 00:00:05,000\r\nHello\r\n".encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        assert_eq!(parse_vtt(&caption_text(&utf16)), vec![Caption { start: 2.0, end: 5.0, text: "Hello".into() }]);
+
+        let lrc = "\u{feff}[00:10.50]First verse\r\n[00:14.00]Second verse\r\n";
+        assert_eq!(
+            crate::speech::parse_lrc(&caption_text(lrc.as_bytes()), f64::MAX),
+            vec![
+                Caption { start: 10.5, end: 14.0, text: "First verse".into() },
+                Caption { start: 14.0, end: 24.0, text: "Second verse".into() },
+            ]
+        );
+
+        let dir = std::env::temp_dir().join(format!("craftora-captions-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let txt = dir.join("notes.txt");
+        std::fs::write(&txt, srt).unwrap();
+        assert_eq!(open_captions(txt.to_string_lossy().into_owned()), Err("Craftora opens captions from .srt, .vtt and .lrc files.".into()));
+        let empty = dir.join("empty.srt");
+        std::fs::write(&empty, "nothing timed").unwrap();
+        assert_eq!(open_captions(empty.to_string_lossy().into_owned()), Err("No timed captions were found in this file.".into()));
+        let big = dir.join("big.SRT");
+        std::fs::File::create(&big).unwrap().set_len(MAX_BYTES as u64 + 1).unwrap();
+        assert_eq!(open_captions(big.to_string_lossy().into_owned()), Err("The caption file is too big.".into()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

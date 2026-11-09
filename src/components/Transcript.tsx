@@ -17,6 +17,8 @@ interface TranscriptProps {
   onMakeCaptions?: () => void;
   /** Saves the captions as an .srt file; absent in the browser preview. */
   onSaveSrt?: () => void;
+  /** Opens an .srt, .vtt or .lrc caption file from this PC; absent in the browser preview. */
+  onOpenCaptions?: () => void;
 }
 
 /** Captions are made only when asked: whisper keeps the processor busy for minutes. */
@@ -29,6 +31,15 @@ function MakeCaptions({ onMake }: { onMake: () => void }) {
   );
 }
 
+function OpenCaptions({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button type="button" className="btn btn--secondary" onClick={onOpen} title="Use an .srt, .vtt or .lrc caption file from this PC">
+      <Icon name="upload" size={14} />
+      Open captions file
+    </button>
+  );
+}
+
 /** A word's key: line index and word index. */
 const keyOf = (line: number, word: number) => `${line}:${word}`;
 
@@ -36,7 +47,7 @@ const keyOf = (line: number, word: number) => `${line}:${word}`;
  * What's said on the timeline, to edit by text: click a sentence or word to jump there, select words
  * and press Delete (or the button) to cut them out of the video.
  */
-export function Transcript({ project, api, time, seek, captionStatus, onMakeCaptions, onSaveSrt }: TranscriptProps) {
+export function Transcript({ project, api, time, seek, captionStatus, onMakeCaptions, onSaveSrt, onOpenCaptions }: TranscriptProps) {
   const lines = useMemo(() => transcript(project), [project]);
   const words = useMemo(() => lines.map(wordsOf), [lines]);
   const [query, setQuery] = useState("");
@@ -150,14 +161,17 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
         <Icon name="captions" size={18} />
         <p>{captionStatus ? `${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. It fills in every few minutes of the video.` : "Nothing said on the timeline yet."}</p>
         <p className="transcript__muted">Videos that come with captions show what's said here, to edit by text.</p>
+        {(onMakeCaptions || onOpenCaptions) && (
+          <div className="transcript__actions">
+            {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
+            {onOpenCaptions && <OpenCaptions onOpen={onOpenCaptions} />}
+          </div>
+        )}
         {onMakeCaptions && (
-          <>
-            <MakeCaptions onMake={onMakeCaptions} />
-            <p className="transcript__muted">
-              Craftora listens to what's said and writes it down, on this PC: nothing is sent anywhere. The first time, it downloads a
-              speech model (148 MB, or 190 MB with a graphics card). A long video takes a few minutes and keeps the PC busy meanwhile.
-            </p>
-          </>
+          <p className="transcript__muted">
+            Craftora listens to what's said and writes it down, on this PC: nothing is sent anywhere. The first time, it downloads a
+            speech model (148 MB, or 190 MB with a graphics card). A long video takes a few minutes and keeps the PC busy meanwhile.
+          </p>
         )}
       </div>
     );
@@ -195,11 +209,16 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
           </form>
         )}
         {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
-        {onSaveSrt && (
-          <button type="button" className="btn btn--secondary" onClick={onSaveSrt} title="For YouTube and video players: the captions as a file next to the video">
-            <Icon name="download" size={14} />
-            Save as .srt
-          </button>
+        {(onSaveSrt || onOpenCaptions) && (
+          <div className="transcript__actions">
+            {onSaveSrt && (
+              <button type="button" className="btn btn--secondary" onClick={onSaveSrt} title="For YouTube and video players: the captions as a file next to the video">
+                <Icon name="download" size={14} />
+                Save as .srt
+              </button>
+            )}
+            {onOpenCaptions && <OpenCaptions onOpen={onOpenCaptions} />}
+          </div>
         )}
       </div>
 

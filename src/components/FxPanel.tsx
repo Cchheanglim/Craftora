@@ -1,16 +1,85 @@
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { inDesktopApp } from "../lib/engine";
+import { captureThumbnail } from "../lib/thumbnail";
 import { LOOKS, PICTURE_EFFECTS, TIME_EFFECTS, lookFilter, type FxItem } from "../project/effects";
-import { TRANSITION_KINDS } from "../project/model";
+import { TRANSITION_KINDS, clipEnd, mediaTimeAt, showsPicture, type Project } from "../project/model";
 import { beginFxDrag } from "./TimelineEditor";
 import "./FxPanel.css";
 
 export type FxTab = "filters" | "effects" | "transitions";
 
+const TILE_WIDTH = 160;
+const SETTLE_MS = 400;
+
+/** The top visible picture under the playhead, if it can be read here. */
+function pictureAt(project: Project | undefined, time: number): { url: string; image?: boolean; hls?: boolean; mediaTime: number } | null {
+  if (!inDesktopApp || !project) return null;
+  const order = project.tracks.filter((t) => !t.hidden).map((t) => t.id);
+  const clip = project.clips
+    .filter((c) => order.includes(c.trackId) && showsPicture(project, c) && time >= c.start && time < clipEnd(c))
+    .sort((a, b) => order.indexOf(a.trackId) - order.indexOf(b.trackId) || b.start - a.start)[0];
+  const media = clip ? project.media.find((m) => m.id === clip.mediaId) : undefined;
+  if (!clip || !media?.source.previewUrl || media.source.live) return null;
+  return {
+    url: media.source.previewUrl,
+    image: media.source.image,
+    hls: media.source.previewHls,
+    mediaTime: media.source.image ? 0 : mediaTimeAt(clip, time),
+  };
+}
+
 /**
- * A tab of tiles (Craftora's cat doing each one on a loop) to drag onto the timeline; clicking a
- * tile (or Enter) puts it at the playhead instead.
+ * A tab of tiles to drag onto the timeline; clicking a tile (or Enter) puts it at the playhead instead.
+ * Filters show the current frame at the playhead with each filter's CSS; effects and transitions loop on Craftora's cat.
  */
-export function FxPanel({ tab, onPick }: { tab: FxTab; onPick: (item: FxItem) => void }) {
+export function FxPanel({
+  tab,
+  project,
+  time = 0,
+  playing = false,
+  onPick,
+}: {
+  tab: FxTab;
+  project?: Project;
+  time?: number;
+  playing?: boolean;
+  onPick: (item: FxItem) => void;
+}) {
+  const [frame, setFrame] = useState<string>();
+  const shownRef = useRef(false);
+  const capturedKey = useRef("");
+
+  // Grab one small frame when Filters is opened and when the playhead settles; never while playing.
+  useEffect(() => {
+    if (tab !== "filters") {
+      shownRef.current = false;
+      return;
+    }
+    if (playing) return;
+    let cancelled = false;
+    const delay = shownRef.current ? SETTLE_MS : 0;
+    const timer = window.setTimeout(() => {
+      shownRef.current = true;
+      const pic = pictureAt(project, time);
+      if (!pic) {
+        capturedKey.current = "";
+        setFrame(undefined);
+        return;
+      }
+      const key = `${pic.url}|${pic.image ? "img" : pic.mediaTime.toFixed(2)}`;
+      if (key === capturedKey.current) return;
+      void captureThumbnail(pic.url, pic.image, pic.hls, pic.mediaTime, TILE_WIDTH).then((url) => {
+        if (cancelled) return;
+        capturedKey.current = url ? key : "";
+        setFrame(url);
+      });
+    }, delay);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [tab, playing, time, project]);
+
   const tile = (item: FxItem, label: string, look?: string) => (
     <button
       key={`${item.kind}-${item.id}`}
@@ -23,7 +92,14 @@ export function FxPanel({ tab, onPick }: { tab: FxTab; onPick: (item: FxItem) =>
       onClick={() => onPick(item)}
     >
       <span className="fx-tile__stage">
-        <img src="/craftora.svg" alt="" draggable={false} style={look ? ({ "--look": look } as CSSProperties) : undefined} />
+        <img
+          // Craftora's cat until a frame of the video is ready (or when nothing is under the playhead).
+          src={(item.kind === "filter" && frame) || "/craftora.svg"}
+          className={item.kind === "filter" && frame ? "is-frame" : undefined}
+          alt=""
+          draggable={false}
+          style={look ? { filter: look } : undefined}
+        />
         {item.kind === "transition" && <img className="is-next" src="/craftora.svg" alt="" draggable={false} />}
       </span>
       <span className="fx-tile__name">{label}</span>

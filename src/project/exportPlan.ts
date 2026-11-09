@@ -170,7 +170,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       reverse: c.reverse,
       rotate: c.rotate ?? 0,
       smooth: Boolean(c.smooth && c.speed < 1),
-      look: lookSteps(c.look),
+      look: lookSteps(c.look, c.lookAmount),
       effect: c.effect ?? "",
       fadeIn: c.fadeIn,
       fadeOut: c.fadeOut,

@@ -90,7 +90,8 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
   **resize them from a corner** (all captions together), or pick **Top / Middle / Bottom**. Long
   lines wrap to fit the picture. **Add captions** puts them on a track as text you can edit.
 - **Style captions:** click them on the preview to pick the font, colour, size and a shadow,
-  outline or dark box. **Save as .srt** for YouTube or any player.
+  outline or dark box. **Open captions file** brings in your own .srt, .vtt or .lrc; **Save as .srt**
+  saves them for YouTube or any player.
 - The **Transcript** tab shows what's said: click a word to jump there, select words and press
   **Delete** to cut them out of the video, or **Cut every "um"** in one click. **Replace all**
   fixes a wrong word or name in every caption at once.

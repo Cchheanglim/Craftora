@@ -138,6 +138,20 @@ export function Inspector({
         </p>
       )}
 
+      {clip.look && (
+        <Slider
+          id="insp-strength"
+          label="Strength"
+          min={0}
+          max={1}
+          step={0.05}
+          value={clip.lookAmount ?? 1}
+          format={pct}
+          onCheckpoint={onCheckpoint}
+          onChange={(lookAmount) => onChange({ lookAmount }, true)}
+        />
+      )}
+
       {onDuration && (
         <div className="insp__slider">
           <label htmlFor="insp-duration">Duration</label>
@@ -449,6 +463,7 @@ export function CaptionStyle({
   onChange,
   onCheckpoint,
   onSaveSrt,
+  onOpenCaptions,
 }: {
   layout: CaptionLayout;
   /** `live` skips the undo step (use after `onCheckpoint`). */
@@ -456,6 +471,7 @@ export function CaptionStyle({
   onCheckpoint: () => void;
   /** Absent in the browser preview. */
   onSaveSrt?: () => void;
+  onOpenCaptions?: () => void;
 }) {
   return (
     <section className="insp" aria-labelledby="captions-title">
@@ -470,6 +486,12 @@ export function CaptionStyle({
         <button type="button" className="btn btn--secondary" onClick={onSaveSrt} title="For YouTube and video players: the captions as a file next to the video">
           <Icon name="download" size={14} />
           Save as .srt
+        </button>
+      )}
+      {onOpenCaptions && (
+        <button type="button" className="btn btn--secondary" onClick={onOpenCaptions} title="Use an .srt, .vtt or .lrc caption file from this PC">
+          <Icon name="upload" size={14} />
+          Open captions file
         </button>
       )}
     </section>

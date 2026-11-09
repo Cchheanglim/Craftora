@@ -142,6 +142,8 @@ export interface Clip {
   smooth?: boolean;
   /** A filter block: its colour look, effects.ts `LOOKS`. */
   look?: LookId;
+  /** A filter block: its strength, 0–1 (1 when absent). */
+  lookAmount?: number;
   /** An effect block: effects.ts `PICTURE_EFFECTS`. */
   effect?: PictureEffectId;
   /** Seconds of fade from black/silence at the start and to black/silence at the end. */

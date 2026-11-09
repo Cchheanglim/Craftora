@@ -107,6 +107,16 @@ export function Toolbar({
               setVerdict(null);
               onUrlChange(e.target.value);
             }}
+            onPaste={(e) => {
+              // A whole link pasted in place of the box's text is fetched at once: no Fetch click to wait for.
+              const box = e.currentTarget;
+              const link = e.clipboardData.getData("text").trim();
+              const replacesAll = box.selectionStart === 0 && box.selectionEnd === box.value.length;
+              if (fetching || !replacesAll || !/^https?:\/\/\S+$/i.test(link)) return;
+              e.preventDefault();
+              setVerdict(null);
+              onFetch(link);
+            }}
             placeholder="Paste a video or audio link"
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? "media-url-error" : undefined}
