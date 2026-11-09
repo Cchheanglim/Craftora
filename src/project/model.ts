@@ -6,6 +6,7 @@
 import type { Caption, MediaSource } from "../types";
 import type { LibraryEntry } from "../lib/storage";
 import type { LookId, PictureEffectId } from "./effects";
+import type { ShapeId } from "./shapes";
 
 /**
  * A row on the timeline. Every track works the same way: it holds videos, pictures, sound, text
@@ -136,7 +137,7 @@ export interface Clip {
   volume: number;
   mirror: boolean;
   reverse: boolean;
-  /** Pictures: turned clockwise by this many degrees (90, 180 or 270); upright when absent. */
+  /** Pictures: turned clockwise by this many degrees (90, 180 or 270); shapes: any angle about the box centre; upright when absent. */
   rotate?: number;
   /** Slowed down with in-between frames made in the export (Smooth slow-mo), not each frame shown longer. */
   smooth?: boolean;
@@ -146,6 +147,14 @@ export interface Clip {
   lookAmount?: number;
   /** An effect block: effects.ts `PICTURE_EFFECTS`. */
   effect?: PictureEffectId;
+  /** A shape clip: shapes.ts `SHAPES`. */
+  shape?: ShapeId;
+  /** Shape clips: 0–1 (1 when absent). */
+  opacity?: number;
+  /** Shape clips: 0 or absent = filled; > 0 = outline only, its thickness as a share of the frame height. */
+  outline?: number;
+  /** Shape clips: box height / box width in frame pixels (1 when absent). */
+  aspect?: number;
   /** Seconds of fade from black/silence at the start and to black/silence at the end. */
   fadeIn: number;
   fadeOut: number;
@@ -154,7 +163,7 @@ export interface Clip {
   transition?: Transition;
   /**
    * Video: scale of the picture, where 1 fills the frame as far as its shape allows (like
-   * "fit"). Text: letter height as a fraction of the frame.
+   * "fit"). Text: letter height as a fraction of the frame. Shapes: box width as a share of the frame width.
    */
   size: number;
   /** Video: cover the frame (cropping what spills over) instead of fitting inside it. */
@@ -163,7 +172,7 @@ export interface Clip {
   x: number;
   y: number;
   text?: string;
-  /** Text color, #rrggbb. */
+  /** Text or shape colour, #rrggbb. */
   color?: string;
   /** Text font (`TEXT_FONTS`); Segoe UI when absent. */
   font?: TextFont;
@@ -348,6 +357,12 @@ export const isStill = (p: Project, c: Clip) => !c.mediaId || Boolean(mediaOf(p,
 
 /** A filter or effect block, rather than text. */
 export const isBlock = (c: Clip) => Boolean(c.look || c.effect);
+
+/** A shape clip (`shapes.ts`). */
+export const isShape = (c: Clip) => Boolean(c.shape);
+
+/** A text clip (not media, a shape or a filter/effect block). */
+export const isText = (c: Clip) => !c.mediaId && !c.shape && !isBlock(c);
 
 /** A name for the project list: the first thing imported. */
 export const projectName = (p: Project) => p.media[0]?.name.replace(/\.[a-z0-9]{2,4}$/i, "") ?? "Untitled project";

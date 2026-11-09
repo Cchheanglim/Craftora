@@ -9,7 +9,6 @@ import { blocksStyle } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
 import { SyncedMedia } from "./SyncedMedia";
-import { CopyReport } from "./CopyReport";
 import "./Preview.css";
 
 const FRAME = 1 / 30;
@@ -412,7 +411,6 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               <span className="preview__failed">
                 This video can't play in the preview you have to download it first.{" "}
                 {downloadHere ?? "Download it with ⬇ under In this project to watch and edit it."}
-                <CopyReport />
               </span>
             </span>
           )}

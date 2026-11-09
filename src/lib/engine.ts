@@ -447,8 +447,6 @@ export interface DownloadedFile {
 /** The Downloads folder and the finished downloads in it, newest first. */
 export const listDownloads = () => invoke<{ folder: string; files: DownloadedFile[] }>("list_downloads");
 
-/** What fetching and previewing did, web addresses hidden (src-tauri/src/diag.rs). */
-export const copyReport = async () => navigator.clipboard.writeText(await invoke<string>("diagnostics"));
 /** Adds a step the editor saw to that report. */
 export const noteDiagnostic = (text: string) => void invoke("note_diagnostic", { text }).catch(() => {});
 
