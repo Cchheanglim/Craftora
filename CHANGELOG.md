@@ -16,6 +16,12 @@
 - **Pause works for every link.** Those copies can be paused too, and go on where they stopped,
   also after closing Craftora (checked frame by frame: the finished video is the same as the
   original). Live streams keep Stop instead.
+- **Faster exports on NVIDIA graphics cards.** An edit of one video (mirrored, turned, sped up or
+  not) is now made entirely on the graphics card, so a busy processor no longer slows it down:
+  about twice as fast while you keep working (measured: 5.4× → 11× real time), the same picture.
+  Edits with text, effects or several clips are made the usual way.
+- **Arrow keys like a video player**: ← / → jump 5 seconds back or forward (Shift + ← / → still
+  steps one frame), ↑ / ↓ turn the preview's volume up or down.
 
 **Fixed**
 
@@ -39,6 +45,8 @@
 - **Exporting an edited video from a link showed two rows in the Queue** (the export, waiting, and
   its video downloading). It's one row now: Downloading, then Encoding. Pause, Cancel and Retry on
   it reach the download too.
+- **A narrow right panel cut off the Transcript's buttons and its tab name.** The buttons now stack
+  when there isn't room for both side by side.
 - **An edited video exported while its link was still being copied could use the unfinished copy.**
   The export now waits for the copy to finish.
 

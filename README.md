@@ -200,7 +200,8 @@ times and settings, never the media) to that service. The assistant can't watch 
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `I` / `O` | Trim the selected clip's start / end to the playhead |
 | `T` | Add text at the playhead |
-| `←` / `→` | Step one frame (`Shift`: one second) |
+| `←` / `→` | Back / forward 5 seconds (`Shift`: one frame) |
+| `↑` / `↓` | Preview volume up / down |
 | `Home` / `End` | Go to the start / end |
 | `F` | Full-screen preview (`Esc` to leave) |
 | `Ctrl+O` | Import files |

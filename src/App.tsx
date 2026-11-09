@@ -1495,6 +1495,8 @@ export default function App() {
     if (ctrl && key === "x" && selected) return (e.preventDefault(), clipCommand("cut", selected, playback.time));
     if (ctrl && key === "v" && clipboard.current) return (e.preventDefault(), pasteClip());
     if (ctrl || e.altKey) return;
+    // Already used where it was pressed: arrows in a menu, or on a panel edge being resized.
+    if (e.defaultPrevented) return;
     const target = e.target as HTMLElement;
     const onButton = target.tagName === "BUTTON" || target.getAttribute("role") === "button";
     const t = playback.time;
@@ -1505,8 +1507,11 @@ export default function App() {
       backspace: remove,
       t: addText,
       f: () => window.dispatchEvent(new Event("craftora:toggle-fullscreen")),
-      arrowleft: () => playback.seek(t - (e.shiftKey ? 1 : 1 / 30)),
-      arrowright: () => playback.seek(t + (e.shiftKey ? 1 : 1 / 30)),
+      // As in video players: 5 s; Shift steps one frame for exact edits.
+      arrowleft: () => playback.seek(t - (e.shiftKey ? 1 / 30 : 5)),
+      arrowright: () => playback.seek(t + (e.shiftKey ? 1 / 30 : 5)),
+      arrowup: () => window.dispatchEvent(new CustomEvent("craftora:volume", { detail: 0.1 })),
+      arrowdown: () => window.dispatchEvent(new CustomEvent("craftora:volume", { detail: -0.1 })),
       home: () => playback.seek(0),
       end: () => playback.seek(duration),
       i: () => selectedId && api.edit({ type: "trimClip", clipId: selectedId, edge: "start", time: t }),
