@@ -26,9 +26,34 @@ import {
   type Track,
   type Transition,
 } from "./model";
+import { newShapeClip, type ShapeId } from "./shapes";
 
 export type ClipPatch = Partial<
-  Pick<Clip, "volume" | "mirror" | "reverse" | "rotate" | "smooth" | "look" | "lookAmount" | "size" | "fill" | "x" | "y" | "text" | "color" | "font" | "edge" | "fadeIn" | "fadeOut" | "crop">
+  Pick<
+    Clip,
+    | "volume"
+    | "mirror"
+    | "reverse"
+    | "rotate"
+    | "smooth"
+    | "look"
+    | "lookAmount"
+    | "shape"
+    | "opacity"
+    | "outline"
+    | "aspect"
+    | "size"
+    | "fill"
+    | "x"
+    | "y"
+    | "text"
+    | "color"
+    | "font"
+    | "edge"
+    | "fadeIn"
+    | "fadeOut"
+    | "crop"
+  >
 >;
 
 export type EditAction =
@@ -49,6 +74,8 @@ export type EditAction =
   | { type: "replaceClipMedia"; clipId: string; mediaId: string }
   /** A filter (`look`) or effect block on track `trackId` (or another one free at `at`). */
   | { type: "addBlock"; clipId: string; at: number; length: number; trackId?: string; look?: Clip["look"]; effect?: Clip["effect"] }
+  /** A shape clip (`shapes.ts`) on track `trackId` (or another one free at `at`). */
+  | { type: "addShape"; clipId: string; shape: ShapeId; at: number; length?: number; trackId?: string }
   /** The media's captions as text clips on a new "Captions" track, lined up with each of its clips. */
   | { type: "addCaptions"; mediaId: string; trackId: string }
   /** Moves or resizes every caption at once: the ones shown from the media and every clip on a "Captions" track. */
@@ -332,6 +359,12 @@ export function applyEdit(p: Project, action: EditAction): Project {
       return place(p, p.tracks.find((t) => t.id === action.trackId), clip, action.at);
     }
 
+    case "addShape": {
+      const length = round(Math.max(MIN_CLIP, action.length ?? DEFAULT_TEXT_LENGTH));
+      const clip = newShapeClip(action.clipId, action.shape, 0, length);
+      return place(p, p.tracks.find((t) => t.id === action.trackId), clip, action.at);
+    }
+
     case "addText": {
       const bottom = POSITIONS.bottom;
       const clip = newClip({
@@ -536,6 +569,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
       if (patch.x !== undefined) patch.x = clamp(patch.x, 0, 1);
       if (patch.y !== undefined) patch.y = clamp(patch.y, 0, 1);
       if (patch.lookAmount !== undefined) patch.lookAmount = clamp(patch.lookAmount, 0, 1);
+      if (patch.opacity !== undefined) patch.opacity = clamp(patch.opacity, 0, 1);
+      if (patch.outline !== undefined) patch.outline = Math.max(0, patch.outline);
       return { ...p, clips: p.clips.map((c) => (c.id === action.clipId ? fitFades({ ...c, ...patch }) : c)) };
     }
 
@@ -584,7 +619,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
     case "layoutCaptions": {
       const layout = { ...(p.captionLayout ?? CAPTIONS), ...action.patch };
       const captions = new Set(p.tracks.filter((t) => t.name === "Captions").map((t) => t.id));
-      return { ...p, captionLayout: layout, clips: p.clips.map((c) => (captions.has(c.trackId) ? { ...c, ...layout } : c)) };
+      return { ...p, captionLayout: layout, clips: p.clips.map((c) => (captions.has(c.trackId) && !c.shape ? { ...c, ...layout } : c)) };
     }
 
     case "editCaptions": {

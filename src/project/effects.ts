@@ -8,6 +8,7 @@
  */
 import { MIN_CLIP, TRANSITION_KINDS, clipEnd, clipLength, isStill, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
 import type { ClipPatch, EditAction } from "./actions";
+import type { ShapeId } from "./shapes";
 
 /**
  * One colour step of a filter: a CSS filter function and its amount (degrees for hue-rotate). The
@@ -87,7 +88,8 @@ export type FxItem =
   | { kind: "filter"; id: LookId }
   | { kind: "effect"; id: PictureEffectId }
   | { kind: "time"; id: string }
-  | { kind: "transition"; id: Transition["kind"] };
+  | { kind: "transition"; id: Transition["kind"] }
+  | { kind: "shape"; id: ShapeId };
 
 /** A new filter or effect block off any clip lasts this long; drag its edges to change it. */
 export const BLOCK_LENGTH = 3;
@@ -120,6 +122,9 @@ export function dropEdits(
     const defaultLength = item.id === "punch" ? 0.6 : item.id === "shake" ? 1 : BLOCK_LENGTH;
     const [at, length] = clip ? [clip.start, clipLength(clip)] : [time, defaultLength];
     return { edits: [{ type: "addBlock", clipId: newIds[0], at, length, trackId: dropped?.id, ...block }], select: newIds[0] };
+  }
+  if (item.kind === "shape") {
+    return { edits: [{ type: "addShape", clipId: newIds[0], shape: item.id, at: time, length: BLOCK_LENGTH, trackId: dropped?.id }], select: newIds[0] };
   }
   const track = dropped ?? mainTrack(p);
   if (!track || track.locked) return null;

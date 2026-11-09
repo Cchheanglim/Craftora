@@ -55,10 +55,17 @@
 }
 
 /* Both cats sit in the middle; transitions show two of them, one after the other. */
-.fx-tile__stage img {
+.fx-tile__stage img,
+.fx-tile__stage svg {
   grid-area: 1 / 1;
   width: 72%;
   height: 72%;
+}
+
+.fx-tile__stage svg {
+  width: 62%;
+  height: 62%;
+  overflow: visible;
 }
 
 /* The second "clip" of a transition: the same cat in other colours. */

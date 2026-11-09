@@ -3,10 +3,11 @@ import { inDesktopApp } from "../lib/engine";
 import { captureThumbnail, draw } from "../lib/thumbnail";
 import { LOOKS, PICTURE_EFFECTS, TIME_EFFECTS, lookFilter, type FxItem } from "../project/effects";
 import { TRANSITION_KINDS, clipEnd, mediaTimeAt, showsPicture, type Project } from "../project/model";
+import { SHAPES } from "../project/shapes";
 import { beginFxDrag } from "./TimelineEditor";
 import "./FxPanel.css";
 
-export type FxTab = "filters" | "effects" | "transitions";
+export type FxTab = "filters" | "effects" | "transitions" | "shapes";
 
 const TILE_WIDTH = 160;
 // Short: the frame usually comes straight from the preview's player, which is cheap.
@@ -95,11 +96,11 @@ export function FxPanel({
     };
   }, [tab, playing, time, project]);
 
-  const tile = (item: FxItem, label: string, look?: string) => (
+  const tile = (item: FxItem, label: string, look?: string, shape?: (typeof SHAPES)[number]) => (
     <button
       key={`${item.kind}-${item.id}`}
       type="button"
-      className={`fx-tile is-${item.kind === "filter" ? "filter" : item.id}`}
+      className={`fx-tile is-${item.kind === "filter" ? "filter" : item.kind === "shape" ? "shape" : item.id}`}
       title={`Drag onto the timeline, or click to add at the playhead`}
       onPointerDown={(e: ReactPointerEvent) => {
         if (e.button === 0) beginFxDrag(item, e);
@@ -107,22 +108,38 @@ export function FxPanel({
       onClick={() => onPick(item)}
     >
       <span className="fx-tile__stage">
-        <img
-          // Craftora's cat until a frame of the video is ready (or when nothing is under the playhead).
-          src={(item.kind === "filter" && frame) || "/craftora.svg"}
-          className={item.kind === "filter" && frame ? "is-frame" : undefined}
-          alt=""
-          draggable={false}
-          style={look ? { filter: look } : undefined}
-        />
-        {item.kind === "transition" && <img className="is-next" src="/craftora.svg" alt="" draggable={false} />}
+        {shape ? (
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <path
+              d={shape.path}
+              fill={shape.line ? "none" : "#ffffff"}
+              fillRule="evenodd"
+              stroke={shape.line ? "#ffffff" : undefined}
+              strokeWidth={shape.line ? 8 : undefined}
+              strokeLinecap={shape.line ? "round" : undefined}
+              strokeLinejoin={shape.line ? "round" : undefined}
+            />
+          </svg>
+        ) : (
+          <>
+            <img
+              // Craftora's cat until a frame of the video is ready (or when nothing is under the playhead).
+              src={(item.kind === "filter" && frame) || "/craftora.svg"}
+              className={item.kind === "filter" && frame ? "is-frame" : undefined}
+              alt=""
+              draggable={false}
+              style={look ? { filter: look } : undefined}
+            />
+            {item.kind === "transition" && <img className="is-next" src="/craftora.svg" alt="" draggable={false} />}
+          </>
+        )}
       </span>
       <span className="fx-tile__name">{label}</span>
     </button>
   );
 
   return (
-    <section className="fx-panel" aria-label={tab === "filters" ? "Filters" : tab === "effects" ? "Effects" : "Transitions"}>
+    <section className="fx-panel" aria-label={tab === "filters" ? "Filters" : tab === "effects" ? "Effects" : tab === "transitions" ? "Transitions" : "Shapes"}>
       {tab === "filters" && (
         <>
           <p className="fx-panel__hint">Drag a filter onto a clip to colour all of it (split the clip first for just a part), or onto an empty spot and stretch it. It colours every picture under it, not text.</p>
@@ -145,6 +162,14 @@ export function FxPanel({
         <>
           <p className="fx-panel__hint">Click the + where two clips meet, then pick a transition here; or drag one onto that join.</p>
           <div className="fx__grid">{TRANSITION_KINDS.map((t) => tile({ kind: "transition", id: t.kind }, t.label))}</div>
+        </>
+      )}
+      {tab === "shapes" && (
+        <>
+          <p className="fx-panel__hint">
+            Drag a shape onto the timeline; select it to change its colour, outline, see-through and angle; drag it in the preview to move or resize it.
+          </p>
+          <div className="fx__grid">{SHAPES.map((shape) => tile({ kind: "shape", id: shape.id }, shape.label, undefined, shape))}</div>
         </>
       )}
     </section>
