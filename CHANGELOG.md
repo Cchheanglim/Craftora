@@ -45,6 +45,12 @@
 - **Exporting an edited video from a link showed two rows in the Queue** (the export, waiting, and
   its video downloading). It's one row now: Downloading, then Encoding. Pause, Cancel and Retry on
   it reach the download too.
+- **Captions made from the sound showed up before or after the words, a second or more off.** The
+  speech engine often wrote several sentences as one line, and the editor split long lines by their
+  number of letters. Each sentence (or part after a pause) is now its own line, timed by when its own
+  words are said; a drawn-out word ("Soooo") stays on screen while it's said. Measured: lines shown
+  more than half a second early went from about half to under 10%. Make captions again
+  (Transcript → Make captions) to re-time captions made before.
 - **A narrow right panel cut off the Transcript's buttons and its tab name.** The buttons now stack
   when there isn't room for both side by side.
 - **An edited video exported while its link was still being copied could use the unfinished copy.**

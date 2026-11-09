@@ -750,12 +750,12 @@ export default function App() {
       void unlines.then((stop) => stop());
     };
   }, [api]);
-  // Media that captions can be made for from its sound: none yet, unfinished, or made before lines
-  // were timed by their words. Not while it's being done (a failed try can be tried again).
+  // Media that captions can be made for from its sound: none yet, unfinished, or made before each
+  // sentence got its own line. Not while it's being done (a failed try can be tried again).
   const uncaptioned = inDesktopApp
     ? project.media.filter((m) => {
         const s = m.source;
-        const made = m.captions && !m.captions.partial && (m.captions.wordTimed || m.captions.label !== SPOKEN);
+        const made = m.captions && !m.captions.partial && (m.captions.bySentence || m.captions.label !== SPOKEN);
         const going = captioning[m.id] && captioning[m.id] !== "couldn't make captions";
         return !made && !going && !s.captions && m.hasAudio && !s.image && !s.live && !m.missing;
       })
@@ -776,7 +776,7 @@ export default function App() {
           .then((lines) => {
             done();
             // The finished file replaces the lines shown along the way.
-            if (lines.length) api.refreshMedia(m.id, { captions: { label: SPOKEN, lines, wordTimed: true } });
+            if (lines.length) api.refreshMedia(m.id, { captions: { label: SPOKEN, lines, bySentence: true } });
           })
           .catch(() => done("couldn't make captions"));
       });

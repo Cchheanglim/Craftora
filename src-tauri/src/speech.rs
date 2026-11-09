@@ -251,7 +251,6 @@ struct WhisperJson {
 struct WhisperSegment {
     /// Milliseconds.
     offsets: WhisperOffsets,
-    text: String,
     tokens: Vec<WhisperToken>,
 }
 
@@ -481,32 +480,41 @@ mod tests {
 
     #[test]
     fn times_lines_by_their_words() {
-        // Real output under music (trimmed): whisper said 14.56–22.76 and 22.76–32.18 s; the words were at 17.8–20.3 and 22.7–25.1.
         let tok = |text: &str, t_dtw: i64| format!(r#"{{"text":{text:?},"t_dtw":{t_dtw}}}"#);
         let seg = |from: i64, to: i64, text: &str, tokens: &[String]| format!(r#"{{"offsets":{{"from":{from},"to":{to}}},"text":{text:?},"tokens":[{}]}}"#, tokens.join(","));
+        // Real output under music: one segment for "I'll come with you, but only this once." and "Did you hear that noise
+        // just now?" (said at 30.75–34.55 and 34.90–36.53 s). Shown whole, the second sentence came seconds early.
+        let glued = [(" I", 3212), ("'ll", 3220), (" come", 3242), (" with", 3260), (" you", 3286), (",", 3332), (" but", 3350), (" only", 3380), (" this", 3406), (" once", 3436), (",", 3482), (" did", 3500), (" you", 3522), (" hear", 3540), (" that", 3558), (" noise", 3586), (" just", 3618), (" now", 3648), ("?", 3720), ("[_TT_617]", -1)];
         let json = format!(
-            r#"{{"transcription":[{},{},{},{},{}]}}"#,
-            seg(14560, 22760, " No, no, no.", &[tok(" No", 1796), tok(",", 1974), tok(" no", 2022), tok(" no", 2132), tok(".", 2138), tok("[_TT_1138]", -1)]),
-            seg(22760, 32180, " He served short to the forehand and won the point.", &[tok("[_BEG_]", -1), tok(" He", 2284), tok(" point", 2510), tok(".", 2924)]),
-            seg(32180, 33000, " [Music]", &[tok(" [", 3300), tok("Music", 3310), tok("]", 3320)]),
-            seg(33000, 36000, " (laughs) Okay.", &[tok(" (", 3310), tok("laugh", 3320), tok(")", 3330), tok(" Okay", 3400)]),
-            seg(36000, 37500, " Again", &[tok(" Again", -1)]),
+            r#"{{"transcription":[{},{},{},{},{},{}]}}"#,
+            seg(11440, 17320, " Sooo.", &[tok(" So", 1362), tok("ooo", 1380), tok(".", 1512)]),
+            seg(30700, 37820, " I'll come with you, but only this once, did you hear that noise just now?", &glued.map(|(t, d)| tok(t, d))),
+            seg(37820, 38500, " [Music]", &[tok(" [", 3800), tok("Music", 3810), tok("]", 3820)]),
+            seg(38500, 40800, " (laughs) Okay.", &[tok(" (", 3910), tok("laugh", 3920), tok(")", 3930), tok(" Okay", 4000), tok(".", 4040)]),
+            seg(41000, 42500, " Again", &[tok(" Again", -1)]),
+            seg(42500, 47000, "你好，我们走吧。他来了", &[tok("你好", 4300), tok("，", 4340), tok("我们", 4400), tok("走", 4420), tok("吧", 4440), tok("。", 4460), tok("他", 4600), tok("来了", 4620)]),
         );
         let lines: Vec<(f64, f64, String)> = from_whisper_json(&json)
             .unwrap()
             .into_iter()
             .map(|c| ((c.start * 100.0).round() / 100.0, (c.end * 100.0).round() / 100.0, c.text))
             .collect();
-        assert_eq!(
-            lines,
-            [
-                (17.76, 21.72, "No, no, no.".to_string()),
-                (22.64, 25.5, "He served short to the forehand and won the point.".to_string()),
-                // The tag's words don't time the line; one without word times keeps whisper's own.
-                (33.8, 34.4, "Okay.".to_string()),
-                (36.0, 37.5, "Again".to_string()),
-            ]
-        );
+        let expected = [
+            // A drawn-out word stays one word, and is still being said after its time.
+            (13.42, 14.5, "Soooo."),
+            // Cut at the pauses after its commas, each part from its own first word.
+            (31.92, 33.3, "I'll come with you,"),
+            (33.3, 34.8, "but only this once,"),
+            (34.8, 37.18, "did you hear that noise just now?"),
+            // The tag's words don't time the line; one without word times keeps whisper's own.
+            (39.8, 40.7, "Okay."),
+            (41.0, 42.5, "Again"),
+            // No spaces: cut between characters, at a pause after a comma and at a sentence's end, timed by its last one.
+            (42.8, 43.7, "你好，"),
+            (43.8, 45.1, "我们走吧。"),
+            (45.8, 46.9, "他来了"),
+        ];
+        assert_eq!(lines, expected.map(|(a, b, t)| (a, b, t.to_string())));
         assert!(from_whisper_json("not json").is_err());
         assert_eq!(without_sound_tags(" ♪ la la ♪  [Music] (sighs)  bye "), "la la bye");
     }
