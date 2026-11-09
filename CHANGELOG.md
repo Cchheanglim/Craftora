@@ -4,7 +4,8 @@
 
 **New**
 
-- **Song lyrics for captions**: songs get their real lyrics as captions, timed to the song (from lrclib.net, when the song is found there).
+- **Open captions file**: bring your own .srt, .vtt or .lrc subtitles or song lyrics (Transcript or Captions → Open captions file).
+- **Song lyrics for captions**: songs get their real lyrics as captions, timed to the song (from lrclib.net, when the song is found there), without downloading the speech model first.
 - **Captions on the graphics card.** With a graphics card of its own (NVIDIA, AMD or Intel Arc),
   Craftora makes captions there: a 12-minute film in about 25 s instead of 45 s, with fewer wrong
   words. Settings → Preferences → **Make captions with** switches between the graphics card and the
@@ -56,6 +57,7 @@
   when there isn't room for both side by side.
 - **An edited video exported while its link was still being copied could use the unfinished copy.**
   The export now waits for the copy to finish.
+- **Old video files downloaded only for exports** are cleaned up when no project or export uses them.
 
 ## 0.6.0 (November 2026)
 

@@ -66,7 +66,10 @@ pub fn run() {
         .setup(|app| {
             // Exports interrupted by closing the app leave working folders behind.
             let handle = app.handle().clone();
-            std::thread::spawn(move || jobs::clean_work_dirs(&handle));
+            std::thread::spawn(move || {
+                jobs::clean_work_dirs(&handle);
+                jobs::clean_sources(&handle);
+            });
             // Find the fastest encoder now, so the first export doesn't wait for it.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -150,6 +153,7 @@ pub fn run() {
             jobs::rename_download,
             captions::load_captions,
             captions::save_srt,
+            captions::open_captions,
             notify::notify,
             speech::make_captions,
             store::save_snapshot,

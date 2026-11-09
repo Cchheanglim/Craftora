@@ -529,11 +529,36 @@ pub struct MediaDownload {
 }
 
 /// Where links downloaded only for an export are kept (`MediaDownload::for_export`).
-// shortcut: never removed, so they add up; delete them with their project if space becomes a problem.
+/// `clean_sources` removes ones older than a day that no saved project or export uses.
 fn sources_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_local_data_dir().map_err(|e| format!("Couldn't find Craftora's data folder: {e}"))?.join("sources");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create a folder for the video: {e}"))?;
     Ok(dir)
+}
+
+/// Deletes files in `sources` that are over 24 hours old and no longer used by any saved project or export.
+pub(crate) fn clean_sources(app: &AppHandle) {
+    let Ok(dir) = app.path().app_local_data_dir().map(|d| d.join("sources")) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Some(texts) = crate::store::project_texts(app) else { return };
+    for entry in entries.flatten() {
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > std::time::Duration::from_secs(24 * 3600));
+        let name = entry.file_name();
+        if entry.file_type().is_ok_and(|t| t.is_file()) && old && !still_used(&name.to_string_lossy(), &texts) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+fn still_used(name: &str, texts: &[String]) -> bool {
+    let Ok(json) = serde_json::to_string(name) else { return true };
+    let escaped = &json[1..json.len() - 1];
+    escaped.is_empty() || texts.iter().any(|t| t.contains(escaped))
 }
 
 /// Downloads a whole link into the Downloads folder; the UI then opens it like a local file.
@@ -909,5 +934,16 @@ mod tests {
         }
         assert_eq!(std::fs::read(dir.join("clip.mp4")).unwrap(), b"earlier export");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn keeps_sources_named_in_projects_or_history() {
+        let texts = [
+            r#"{"media":[{"source":{"url":"C:\\Users\\me\\AppData\\Local\\com.cchheanglim.craftora\\sources\\song (2).mp4"}}]}"#.to_string(),
+            r#"[{"title":"A \"quoted\" \\ clip.mp4"}]"#.to_string(),
+        ];
+        assert!(still_used("song (2).mp4", &texts));
+        assert!(still_used(r#"A "quoted" \ clip.mp4"#, &texts));
+        assert!(!still_used("old-export.mp4", &texts));
     }
 }

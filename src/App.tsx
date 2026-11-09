@@ -34,6 +34,7 @@ import {
   pickFolder,
   saveSnapshot,
   saveSrt,
+  openCaptionsFile,
   pickMediaFiles,
   pickMediaFile,
   revealFile,
@@ -1274,6 +1275,25 @@ export default function App() {
       setError(errorText(err));
     }
   };
+  /** Brings in an .srt, .vtt or .lrc file (timed in the media's own seconds) for the selected clip, or the only video/sound on the timeline. */
+  const openCaptions = async () => {
+    const canCaption = (m?: MediaItem) => Boolean(m && (m.hasAudio || m.hasVideo) && !m.source.image);
+    const selectedMedia = selected?.mediaId ? project.media.find((m) => m.id === selected.mediaId) : undefined;
+    const onTimeline = project.media.filter((m) => canCaption(m) && project.clips.some((c) => c.mediaId === m.id));
+    const target = canCaption(selectedMedia) ? selectedMedia : onTimeline.length === 1 ? onTimeline[0] : undefined;
+    if (!target) {
+      setError("Select the clip these captions belong to.");
+      return;
+    }
+    setError(null);
+    try {
+      const opened = await openCaptionsFile();
+      if (!opened) return;
+      api.refreshMedia(target.id, { captions: { label: opened.name, lines: opened.lines } });
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
   const takeSnapshot = async (bytes: Uint8Array) => {
     setError(null);
     try {
@@ -1830,6 +1850,7 @@ export default function App() {
               captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
               onMakeCaptions={uncaptioned.length ? makeSpokenCaptions : undefined}
               onSaveSrt={inDesktopApp ? () => void saveCaptionsFile() : undefined}
+              onOpenCaptions={inDesktopApp ? () => void openCaptions() : undefined}
             />
           ) : rightTab === "assistant" ? (
             <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} />
@@ -1865,6 +1886,7 @@ export default function App() {
                   onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "layoutCaptions", patch })}
                   onCheckpoint={api.checkpoint}
                   onSaveSrt={inDesktopApp ? () => void saveCaptionsFile() : undefined}
+                  onOpenCaptions={inDesktopApp ? () => void openCaptions() : undefined}
                 />
               )}
               {selected && selectedTrack && (

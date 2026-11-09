@@ -210,6 +210,15 @@ export async function saveSrt(lines: Caption[], name: string): Promise<boolean> 
   return true;
 }
 
+/** Asks for a caption file (.srt, .vtt or .lrc) and reads its timed lines; null when the dialog was closed. */
+export async function openCaptionsFile(): Promise<{ name: string; lines: Caption[] } | null> {
+  const path = await open({ multiple: false, directory: false, title: "Open captions", filters: [{ name: "Captions", extensions: ["srt", "vtt", "lrc"] }] });
+  if (typeof path !== "string") return null;
+  const lines = await invoke<Caption[]>("open_captions", { path });
+  const name = (path.split(/[\\/]/).pop() ?? "").replace(/\.[^.]+$/, "") || "Captions";
+  return { name, lines };
+}
+
 /** Fills a link's preview cache from start to end in the background ("Download first"). */
 export const prefetchPreview = (id: string) => invoke("prefetch_media", { id });
 

@@ -118,17 +118,16 @@ pub async fn make_captions(
     // Settings → Preferences → Make captions with: the processor gets exactly what it had before.
     let card = if gpu { graphics_card(&app).await } else { None };
     let chosen = if card.is_some() { &SMALL } else { &BASE };
-    let model = model(&app, &id, chosen).await?;
     let work = app.path().app_cache_dir().map_err(|e| e.to_string())?.join(format!("speech-{id}"));
     std::fs::create_dir_all(&work).map_err(|e| format!("Couldn't make a working folder: {e}"))?;
     let started = std::time::Instant::now();
-    let made = listen(&app, &id, (file, &source), (&model, chosen.dtw), &work, card).await;
+    let made = listen(&app, &id, (file, &source), chosen, &work, card).await;
     crate::diag::note(format!("captions from the sound: {} in {:.0}s", if made.is_ok() { "made" } else { "failed" }, started.elapsed().as_secs_f64()));
     let _ = std::fs::remove_dir_all(&work);
     made
 }
 
-async fn listen(app: &AppHandle, id: &str, (file, link): (Option<PathBuf>, &str), (model, dtw): (&Path, &str), work: &Path, card: Option<u32>) -> Result<Vec<Caption>, String> {
+async fn listen(app: &AppHandle, id: &str, (file, link): (Option<PathBuf>, &str), chosen: &SpeechModel, work: &Path, card: Option<u32>) -> Result<Vec<Caption>, String> {
     // Reading a long file's sound takes a while too, so it's said for files as well as links.
     report(app, id, "sound", 0.0);
     let (input, title) = match file {
@@ -168,11 +167,12 @@ async fn listen(app: &AppHandle, id: &str, (file, link): (Option<PathBuf>, &str)
         report(app, id, "listening", 100.0);
         return Ok(lines);
     }
+    let model = model(app, id, chosen).await?;
     let mut captions: Vec<Caption> = Vec::new();
     let all = pieces(length, &silences);
     for (n, &(from, to)) in all.iter().enumerate() {
         let out = work.join(format!("captions-{n}"));
-        whisper_piece(app, id, (model, dtw), &wav_text, &out, card, (from, to, length)).await?;
+        whisper_piece(app, id, (&model, chosen.dtw), &wav_text, &out, card, (from, to, length)).await?;
         let json = std::fs::read_to_string(out.with_extension("json")).map_err(|_| "whisper finished but made no captions.".to_string())?;
         let mut lines = from_whisper_json(&json)?;
         for line in &mut lines {
@@ -533,7 +533,7 @@ fn same_song(query: &str, hit: &LrcHit) -> bool {
 }
 
 // shortcut: lines end at the next line (LRC has no end times; the `lyricsfile` field has word times, not read); a video whose intro differs from the released song by up to 2 s gets lyrics that much early/late.
-fn parse_lrc(lrc: &str, length: f64) -> Vec<Caption> {
+pub(crate) fn parse_lrc(lrc: &str, length: f64) -> Vec<Caption> {
     let mut entries: Vec<(f64, &str)> = Vec::new();
     for line in lrc.lines() {
         let mut rest = line.trim();

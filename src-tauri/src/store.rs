@@ -119,6 +119,22 @@ pub fn save_history(app: AppHandle, contents: String) -> Result<(), String> {
     write_json(&data_dir(&app)?.join("history.json"), &contents)
 }
 
+/// Every saved project file (and `history.json`), to check which files in `sources` are still used;
+/// `None` if the folder or any file in it couldn't be read, so nothing is deleted on a guess.
+pub(crate) fn project_texts(app: &AppHandle) -> Option<Vec<String>> {
+    let mut texts = Vec::new();
+    for entry in std::fs::read_dir(projects_dir(app).ok()?).ok()? {
+        let entry = entry.ok()?;
+        if entry.file_type().ok()?.is_file() {
+            texts.push(std::fs::read_to_string(entry.path()).ok()?);
+        }
+    }
+    if let Some(history) = read_text(&data_dir(app).ok()?.join("history.json")).ok()? {
+        texts.push(history);
+    }
+    Some(texts)
+}
+
 #[derive(Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct Settings {
