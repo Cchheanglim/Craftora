@@ -70,6 +70,8 @@ enum Role {
     Text,
     /// A filter or effect block (effects.ts): changes the pictures under it while it lasts.
     Effect,
+    /// A shape (shapes.ts): the editor sends it drawn on a whole-frame PNG (`picture`), laid over the pictures.
+    Shape,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Default)]
@@ -121,6 +123,9 @@ struct ClipSpec {
     /// Effect blocks: effects.ts `PICTURE_EFFECTS` id.
     #[serde(default)]
     effect: String,
+    /// Shapes: the whole frame as a PNG data URL with the shape drawn on it.
+    #[serde(default)]
+    picture: String,
     /// Cover size × the frame (what spills over is cut off by the frame) instead of fitting inside.
     #[serde(default)]
     fill: bool,
@@ -384,6 +389,11 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             return Err("A clip on the timeline has an invalid setting.".into());
         }
         match clip.role {
+            Role::Shape => {
+                if shape_bytes(&clip.picture).is_none() {
+                    return Err("A shape on the timeline couldn't be read.".into());
+                }
+            }
             Role::Text => {
                 if clip.text.trim().is_empty() || clip.text.chars().count() > MAX_TEXT {
                     return Err("A text clip is empty or too long.".into());
@@ -629,14 +639,26 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         }
     }
 
+    // Shapes: each one's picture, read once (`loop` repeats it in the graph).
+    let mut shape_of: HashMap<usize, usize> = HashMap::new();
+    for (i, clip) in spec.clips.iter().enumerate().filter(|(_, c)| is_video && c.role == Role::Shape) {
+        let bytes = shape_bytes(&clip.picture).ok_or("A shape couldn't be read. Try the export again.")?;
+        let path = work.join(format!("shape{i}.png"));
+        std::fs::write(&path, bytes).map_err(|e| format!("Couldn't prepare a shape: {e}"))?;
+        inputs.extend(["-i".into(), path.to_string_lossy().into_owned()]);
+        shape_of.insert(i, next_input);
+        next_input += 1;
+    }
+
     // 3. The filter graph.
     let mut graph: Vec<String> = Vec::new();
     if is_video {
         graph.push(format!("color=black:s={w}x{h}:r={fps}:d={},format=yuv420p[base]", secs(total)));
         let mut picture = String::from("base");
         let mut layered: Vec<(usize, &ClipSpec)> = spec.clips.iter().enumerate().filter(|(_, c)| c.role != Role::Audio).collect();
-        // Pictures first, then the filter and effect blocks over them, then text on top (as the preview shows them).
-        layered.sort_by_key(|(_, c)| (matches!(c.role, Role::Effect) as u8 + 2 * matches!(c.role, Role::Text) as u8, c.layer));
+        // Pictures first, then the filter and effect blocks over them, then text and shapes on top by track (as the
+        // preview shows them).
+        layered.sort_by_key(|(_, c)| (matches!(c.role, Role::Effect) as u8 + 2 * matches!(c.role, Role::Text | Role::Shape) as u8, c.layer));
         for (i, clip) in layered {
             let (start, end) = (secs(clip.start), secs(clip.end()));
             match clip.role {
@@ -658,6 +680,17 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                         x = clip.x,
                         y = clip.y
                     ));
+                    picture = format!("p{i}");
+                }
+                Role::Shape => {
+                    let Some(&k) = shape_of.get(&i) else { continue };
+                    // One frame repeated for the clip's time, faded like a picture, then moved to where the clip starts.
+                    let frames = (clip.length() * f64::from(fps)).ceil() as u64;
+                    graph.push(format!(
+                        "[{k}:v]format=rgba,loop=loop={frames}:size=1:start=0,setpts=N/{fps}/TB{},setpts=PTS+{start}/TB[s{i}]",
+                        clip.picture_fades()
+                    ));
+                    graph.push(format!("[{picture}][s{i}]overlay=0:0:eof_action=pass:repeatlast=0:enable='between(t,{start},{end})'[p{i}]"));
                     picture = format!("p{i}");
                 }
                 Role::Text => {
@@ -900,6 +933,13 @@ fn cover_file(data_url: &str, work: &Path) -> Result<Option<PathBuf>, String> {
     let path = work.join("cover.jpg");
     std::fs::write(&path, bytes).map_err(|e| format!("Couldn't prepare the cover: {e}"))?;
     Ok(Some(path))
+}
+
+/// A PNG data URL's picture, if it really is a PNG and not too big for a whole frame with a shape on it.
+fn shape_bytes(data_url: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data_url.strip_prefix("data:image/png;base64,")?).ok()?;
+    (bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) && bytes.len() <= 16_000_000).then_some(bytes)
 }
 
 /// A JPEG data URL's picture, if it really is a JPEG and not too big for a cover.

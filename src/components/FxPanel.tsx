@@ -56,6 +56,9 @@ export function FxPanel({
   onPick: (item: FxItem) => void;
 }) {
   const [frame, setFrame] = useState<string>();
+  const [shapeQuery, setShapeQuery] = useState("");
+  const query = shapeQuery.trim().toLowerCase();
+  const shapes = SHAPES.filter((s) => !query || s.label.toLowerCase().includes(query) || s.id.includes(query));
   const shownRef = useRef(false);
   const capturedKey = useRef("");
 
@@ -112,9 +115,9 @@ export function FxPanel({
           <svg viewBox="0 0 100 100" aria-hidden="true">
             <path
               d={shape.path}
-              fill={shape.line ? "none" : "#ffffff"}
+              fill={shape.line ? "none" : "currentColor"}
               fillRule="evenodd"
-              stroke={shape.line ? "#ffffff" : undefined}
+              stroke={shape.line ? "currentColor" : undefined}
               strokeWidth={shape.line ? 8 : undefined}
               strokeLinecap={shape.line ? "round" : undefined}
               strokeLinejoin={shape.line ? "round" : undefined}
@@ -169,7 +172,19 @@ export function FxPanel({
           <p className="fx-panel__hint">
             Drag a shape onto the timeline; select it to change its colour, outline, see-through and angle; drag it in the preview to move or resize it.
           </p>
-          <div className="fx__grid">{SHAPES.map((shape) => tile({ kind: "shape", id: shape.id }, shape.label, undefined, shape))}</div>
+          <input
+            type="search"
+            className="field fx-panel__search"
+            placeholder="Search shapes"
+            aria-label="Search shapes"
+            value={shapeQuery}
+            onChange={(e) => setShapeQuery(e.target.value)}
+          />
+          {shapes.length ? (
+            <div className="fx__grid is-shapes">{shapes.map((shape) => tile({ kind: "shape", id: shape.id }, shape.label, undefined, shape))}</div>
+          ) : (
+            <p className="fx-panel__hint">No shape called “{shapeQuery.trim()}”.</p>
+          )}
         </>
       )}
     </section>

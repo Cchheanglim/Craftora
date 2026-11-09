@@ -4,6 +4,9 @@
 
 **New**
 
+- **Shapes** tab: 30 shapes (rectangles, circles, stars, hearts, arrows, speech bubbles, lines…) with search; drag one onto
+  the timeline, then change its colour, filled or outline, see-through and angle, and move or resize it in the preview.
+- **The playhead snaps to cuts**: dragging it near a split or a clip's edge lands exactly on it.
 - **Filters**: a Strength slider (select a filter block) makes any look subtle; the filter tiles show your own frame.
 - **New effects**: Zoom in, Zoom out, Zoom punch, Shake and Cinema bars, the same in the preview and the export.
 - **Fetch on paste**: pasting a link into the link box fetches it at once, no Fetch click needed.
@@ -30,6 +33,7 @@
 
 **Fixed**
 
+- The trim handles at a selected clip's ends are a thin line now (same area to grab); the "Copy report" buttons are gone.
 - Playing on in the background after leaving the editor (Settings, Projects…): leaving it now pauses.
 - **Downloads started over after Pause or after closing Craftora** (#123). A whole link exported
   as it is now goes on where it stopped, like Download for editing. Downloads still running when

@@ -23,6 +23,26 @@
   gap: var(--space-2);
 }
 
+/* 30 shapes: smaller tiles, three or more across. */
+.fx__grid.is-shapes {
+  grid-template-columns: repeat(auto-fill, minmax(min(72px, calc(33% - var(--space-2))), 1fr));
+}
+
+.fx-panel__search {
+  width: 100%;
+  margin-bottom: var(--space-2);
+}
+
+/* Shapes sit on the tile itself in the panel's text colour (white on hover), not on a black stage. */
+.fx-tile.is-shape .fx-tile__stage {
+  background: transparent;
+}
+
+.fx-tile.is-shape .fx-tile__stage svg {
+  width: 48%;
+  height: 48%;
+}
+
 .fx-tile {
   display: flex;
   flex-direction: column;

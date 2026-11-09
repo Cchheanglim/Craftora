@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { isBlock, showsPicture, clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
+import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
+import { shapeBox, shapeSvg } from "../project/shapes";
 import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -18,6 +19,8 @@ const SNAP_PX = 6;
 const MIN_PICTURE = 0.1;
 const MIN_TEXT = 0.02;
 const MAX_TEXT = 0.3;
+const MIN_SHAPE = 0.02;
+const MAX_SHAPE = 2;
 
 interface PreviewProps {
   project: Project;
@@ -98,7 +101,7 @@ async function captureStagePng(stage: HTMLElement, width: number, height: number
 
 type Corner = "nw" | "ne" | "sw" | "se";
 
-/** A picture-in-picture or text being moved or resized on the preview. */
+/** A picture-in-picture, shape or text being moved or resized on the preview. */
 interface Gesture {
   clipId: string;
   mode: "move" | Corner;
@@ -108,6 +111,7 @@ interface Gesture {
   box: DOMRect;
   size: number;
   isText: boolean;
+  isShape: boolean;
   /** A caption: moves and resizes every caption together. */
   captions: boolean;
   moved: boolean;
@@ -222,7 +226,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   };
   // Sound files (pictures play their own sound).
   const sounds = project.clips.filter((c) => c.mediaId && !showsPicture(project, c));
-  const texts = project.clips.filter((c) => !c.mediaId && !isBlock(c) && !trackHidden(c)).sort(byLayer);
+  const texts = project.clips.filter((c) => isText(c) && !trackHidden(c)).sort(byLayer);
+  const shapes = project.clips.filter((c) => isShape(c) && !trackHidden(c)).sort(byLayer);
+  const overlays = [...texts, ...shapes].sort(byLayer);
   // Filter and effect blocks showing now change the pictures (not text), lowest track first.
   const blocks = blocksStyle(
     project.clips.filter((c) => isBlock(c) && active(c) && !trackHidden(c)).sort(byLayer),
@@ -339,7 +345,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const fromLeft = g.mode === "nw" || g.mode === "sw";
     const fromTop = g.mode === "nw" || g.mode === "ne";
     const scale = (box.width + (fromLeft ? -dx : dx)) / box.width;
-    const size = g.isText ? clamp(g.size * scale, MIN_TEXT, MAX_TEXT) : clamp(g.size * scale, MIN_PICTURE, 1);
+    const size = g.isShape
+      ? clamp(g.size * scale, MIN_SHAPE, MAX_SHAPE)
+      : g.isText
+        ? clamp(g.size * scale, MIN_TEXT, MAX_TEXT)
+        : clamp(g.size * scale, MIN_PICTURE, 1);
     const ratio = size / g.size;
     const width = box.width * ratio;
     const height = box.height * ratio;
@@ -356,16 +366,26 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const captions = isCaption(clip);
     // Captions not on the timeline aren't clips: they're picked as a whole.
     onSelect(clip.trackId.startsWith(SHOWN_CAPTIONS) ? SHOWN_CAPTIONS : clip.id);
-    const box = (mode === "move" ? e.currentTarget : e.currentTarget.parentElement!).getBoundingClientRect();
+    const stage = stageRef.current.getBoundingClientRect();
+    const elBox = (mode === "move" ? e.currentTarget : e.currentTarget.parentElement!).getBoundingClientRect();
+    // A rotated shape's DOM bounding rect is its wider axis-aligned envelope; keep the unrotated box for drag maths.
+    const box =
+      isShape(clip) && clip.rotate && stage.width > 0 && stage.height > 0
+        ? (() => {
+            const b = shapeBox(clip, stage.width, stage.height);
+            return new DOMRect(stage.left + b.left, stage.top + b.top, b.width, b.height);
+          })()
+        : elBox;
     gestureRef.current = {
       clipId: clip.id,
       mode,
       originX: e.clientX,
       originY: e.clientY,
-      stage: stageRef.current.getBoundingClientRect(),
+      stage,
       box,
       size: clip.size,
-      isText: !clip.mediaId,
+      isText: isText(clip),
+      isShape: isShape(clip),
       captions,
       moved: false,
     };
@@ -527,8 +547,21 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               />
             );
           })}
-          {texts.filter(active).map((clip) => {
+          {overlays.filter(active).map((clip) => {
             const isSelected = clip.id === selectedId;
+            if (isShape(clip)) {
+              return (
+                <ShapeLayer
+                  key={clip.id}
+                  clip={clip}
+                  frame={frame}
+                  opacity={fadeAt(clip, time)}
+                  selected={isSelected}
+                  onPointerDown={beginGesture(clip, "move")}
+                  handles={isSelected ? handles(clip) : null}
+                />
+              );
+            }
             return (
               <div
                 key={clip.id}
@@ -826,5 +859,42 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, poster, o
       {visible && !ready && !poster && <span className="preview__loading">Loading video…</span>}
       {handles}
     </div>
+  );
+}
+
+interface ShapeLayerProps {
+  clip: Clip;
+  frame: Frame;
+  opacity: number;
+  selected: boolean;
+  onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
+  handles: ReactNode;
+}
+
+/** One shape on the stage: a full-frame SVG picture with a hit box over its bounding box. */
+function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles }: ShapeLayerProps) {
+  const src = useMemo(
+    () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(shapeSvg(clip, frame.width, frame.height))}`,
+    [clip.shape, clip.color, clip.size, clip.aspect, clip.x, clip.y, clip.opacity, clip.outline, clip.rotate, frame.width, frame.height],
+  );
+  const box = shapeBox(clip, frame.width, frame.height);
+  return (
+    <>
+      <img className="preview__shape" src={src} alt="" draggable={false} style={{ opacity }} />
+      <div
+        className={selected ? "preview__shape-box is-selected" : "preview__shape-box"}
+        style={{
+          left: `${(box.left / frame.width) * 100}%`,
+          top: `${(box.top / frame.height) * 100}%`,
+          width: `${(box.width / frame.width) * 100}%`,
+          height: `${(box.height / frame.height) * 100}%`,
+          transform: clip.rotate ? `rotate(${clip.rotate}deg)` : undefined,
+        }}
+        onPointerDown={onPointerDown}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {handles}
+      </div>
+    </>
   );
 }

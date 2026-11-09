@@ -10,6 +10,8 @@ import {
   clipLength,
   isBlock as blockClip,
   isCropped,
+  isShape as shapeClip,
+  isText as textClip,
   presetAt,
   type CaptionLayout,
   type Clip,
@@ -25,6 +27,7 @@ import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
 import { blockLabel } from "../project/effects";
+import { SHAPES, shapeLabel } from "../project/shapes";
 import "./Inspector.css";
 
 const TEXT_COLORS = [
@@ -96,7 +99,10 @@ export function Inspector({
 }: InspectorProps) {
   // A filter or effect block: only its timing is set here.
   const isBlock = blockClip(clip);
-  const isText = !clip.mediaId && !isBlock;
+  const isShape = shapeClip(clip);
+  const isText = textClip(clip);
+  const isLine = Boolean(isShape && SHAPES.find((s) => s.id === clip.shape)?.line);
+  const outlined = Boolean((clip.outline && clip.outline > 0) || isLine);
   const isImage = Boolean(media?.source.image);
   const isPicture = Boolean(media?.hasVideo);
   const hasSound = Boolean(media?.hasAudio);
@@ -109,9 +115,9 @@ export function Inspector({
   return (
     <section className="insp" aria-labelledby="insp-title">
       <header className="insp__head">
-        <Icon name={isBlock ? "sparkle" : isText ? "text" : isImage ? "image" : isPicture ? "film" : "music"} size={14} />
+        <Icon name={isBlock ? "sparkle" : isShape ? "star" : isText ? "text" : isImage ? "image" : isPicture ? "film" : "music"} size={14} />
         <h2 id="insp-title" className="truncate">
-          {isBlock ? `${clip.look ? "Filter" : "Effect"}: ${blockLabel(clip)}` : isText ? "Text" : (media?.name ?? "Clip")}
+          {isBlock ? `${clip.look ? "Filter" : "Effect"}: ${blockLabel(clip)}` : isShape ? `Shape: ${shapeLabel(clip.shape)}` : isText ? "Text" : (media?.name ?? "Clip")}
         </h2>
       </header>
       <p className="insp__meta">
@@ -182,6 +188,86 @@ export function Inspector({
             <span>s</span>
           </label>
         </div>
+      )}
+
+      {isShape && (
+        <>
+          <ColorField color={clip.color} onChange={(color) => onChange({ color })} />
+          {!isLine && (
+            <fieldset className="insp__field">
+              <legend>Style</legend>
+              <div className="segmented" role="group" aria-label="Style">
+                <button type="button" aria-pressed={!outlined} onClick={() => onChange({ outline: 0 })}>
+                  Filled
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={outlined}
+                  onClick={() => onChange({ outline: clip.outline && clip.outline > 0 ? clip.outline : 0.01 })}
+                >
+                  Outline
+                </button>
+              </div>
+            </fieldset>
+          )}
+          {outlined && (
+            <Slider
+              id="insp-outline"
+              label="Thickness"
+              min={0.002}
+              max={0.05}
+              step={0.002}
+              value={clip.outline && clip.outline > 0 ? clip.outline : 0.01}
+              format={(v) => `${Math.round(v * 500)}`}
+              onCheckpoint={onCheckpoint}
+              onChange={(outline) => onChange({ outline }, true)}
+            />
+          )}
+          <Slider
+            id="insp-opacity"
+            label="Opacity"
+            min={0}
+            max={1}
+            step={0.05}
+            value={clip.opacity ?? 1}
+            format={pct}
+            onCheckpoint={onCheckpoint}
+            onChange={(opacity) => onChange({ opacity }, true)}
+          />
+          <Slider
+            id="insp-rotate"
+            label="Angle"
+            min={-180}
+            max={180}
+            step={1}
+            value={clip.rotate ?? 0}
+            format={(v) => `${Math.round(v)}°`}
+            onCheckpoint={onCheckpoint}
+            onChange={(rotate) => onChange({ rotate }, true)}
+          />
+          <Slider
+            id="insp-width"
+            label="Width"
+            min={0.02}
+            max={2}
+            step={0.01}
+            value={clip.size}
+            format={pct}
+            onCheckpoint={onCheckpoint}
+            onChange={(size) => onChange({ size }, true)}
+          />
+          <Slider
+            id="insp-height"
+            label="Height"
+            min={0.05}
+            max={5}
+            step={0.01}
+            value={clip.aspect ?? 1}
+            format={pct}
+            onCheckpoint={onCheckpoint}
+            onChange={(aspect) => onChange({ aspect }, true)}
+          />
+        </>
       )}
 
       {isText && (
@@ -261,7 +347,7 @@ export function Inspector({
         </div>
       )}
 
-      {!isText && !isImage && !isBlock && (
+      {!isText && !isShape && !isImage && !isBlock && (
         <div className="insp__field">
           <label htmlFor="insp-speed">Speed</label>
           <select id="insp-speed" className="field" value={clip.speed} onChange={(e) => onSpeed(Number(e.target.value))}>
@@ -274,7 +360,7 @@ export function Inspector({
         </div>
       )}
 
-      {!isText && !isBlock && !track.magnetic && (
+      {!isText && !isShape && !isBlock && !track.magnetic && (
         <p className="insp__hint">To add a transition, put this clip right after another one and click the + where they meet.</p>
       )}
 
@@ -325,6 +411,7 @@ export function Inspector({
       )}
 
       {!isText &&
+        !isShape &&
         !isImage &&
         !isBlock &&
         (hasSound ? (
@@ -412,6 +499,27 @@ export function Inspector({
 /** A labelled range with its value; one undo step per drag. */
 type Look = { color?: string; font?: TextFont; edge?: TextEdge };
 
+function ColorField({ color, onChange }: { color?: string; onChange: (color: string) => void }) {
+  return (
+    <fieldset className="insp__field">
+      <legend>Color</legend>
+      <div className="insp__swatches">
+        {TEXT_COLORS.map((c) => (
+          <button
+            key={c.value}
+            type="button"
+            className="insp__swatch"
+            style={{ background: c.value }}
+            aria-label={c.label}
+            aria-pressed={(color ?? "#ffffff") === c.value}
+            onClick={() => onChange(c.value)}
+          />
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 /** Font, colour and edge of text: a text clip's own, or every caption's. */
 function TextLook({ id, look, onChange }: { id: string; look: Look; onChange: (patch: Look) => void }) {
   return (
@@ -427,22 +535,7 @@ function TextLook({ id, look, onChange }: { id: string; look: Look; onChange: (p
           ))}
         </select>
       </div>
-      <fieldset className="insp__field">
-        <legend>Color</legend>
-        <div className="insp__swatches">
-          {TEXT_COLORS.map((c) => (
-            <button
-              key={c.value}
-              type="button"
-              className="insp__swatch"
-              style={{ background: c.value }}
-              aria-label={c.label}
-              aria-pressed={(look.color ?? "#ffffff") === c.value}
-              onClick={() => onChange({ color: c.value })}
-            />
-          ))}
-        </div>
-      </fieldset>
+      <ColorField color={look.color} onChange={(color) => onChange({ color })} />
       <fieldset className="insp__field">
         <legend>Edge</legend>
         <div className="segmented" role="group" aria-label="Edge">

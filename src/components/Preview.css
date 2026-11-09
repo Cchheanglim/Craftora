@@ -63,10 +63,19 @@
 }
 
 /* One picture: a box placed like the export, with the crop as a window onto the video. */
-.preview__picture {
+.preview__picture,
+.preview__shape-box {
   position: absolute;
   cursor: move;
   touch-action: none;
+}
+
+.preview__shape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .preview__crop {
@@ -137,6 +146,7 @@
   box-shadow: 0 0 0 0.2em rgb(0 0 0 / 0.6);
 }
 
+.preview__shape-box.is-selected,
 .preview__text.is-selected {
   outline: 1.5px solid var(--text);
   outline-offset: -1px;

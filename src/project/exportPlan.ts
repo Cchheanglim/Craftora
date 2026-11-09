@@ -180,7 +180,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       transitionInKind: c.transition?.kind ?? "crossfade",
       transitionOut: next ? transitionLength(c, next) : 0,
       transitionOutKind: next?.transition?.kind ?? "crossfade",
-      size: c.size,
+      // A shape's size is drawn into its picture; it may be wider than the frame, which the export's check refuses.
+      size: c.shape ? 1 : c.size,
       fill: Boolean(c.fill),
       x: c.x,
       y: c.y,
