@@ -1228,6 +1228,7 @@ export default function App() {
    * A filter, effect or transition from the right panel, dropped on track `trackId` at `time` (or
    * clicked: at the playhead, on the selected clip's track). One undo step.
    */
+  /** Puts a dropped tile on the timeline; the clip it made (and selected), if any. */
   const applyFx = (item: FxItem, trackId: string | undefined, time: number) => {
     const done = dropEdits(project, item, trackId, time, [crypto.randomUUID(), crypto.randomUUID()]);
     if (!done) {
@@ -1238,6 +1239,7 @@ export default function App() {
     api.checkpoint();
     for (const edit of done.edits) api.editLive(edit);
     if (done.select) setSelectedId(done.select);
+    return done.select;
   };
   const duplicate = () => {
     if (!selectedId) return;
@@ -1762,6 +1764,11 @@ export default function App() {
               selectedId={selectedId}
               onSelect={setSelectedId}
               onSnapshot={takeSnapshot}
+              onDropShape={(item, x, y) => {
+                // At the playhead, where it was let go (same undo step as adding it).
+                const id = applyFx(item, undefined, playback.time);
+                if (id) api.editLive({ type: "updateClip", clipId: id, patch: { x, y } });
+              }}
               captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
               showCaptions={showCaptions}
               onToggleCaptions={toggleCaptions}

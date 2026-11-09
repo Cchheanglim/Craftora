@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
 import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
-import { shapeBox, shapeSvg } from "../project/shapes";
+import { newShapeClip, shapeBox, shapeSvg } from "../project/shapes";
+import type { FxItem } from "../project/effects";
+import { fxDrag } from "./TimelineEditor";
 import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -21,6 +23,9 @@ const MIN_TEXT = 0.02;
 const MAX_TEXT = 0.3;
 const MIN_SHAPE = 0.02;
 const MAX_SHAPE = 2;
+// A shape's height as a share of its width, as the Inspector allows.
+const MIN_ASPECT = 0.05;
+const MAX_ASPECT = 5;
 
 interface PreviewProps {
   project: Project;
@@ -32,6 +37,8 @@ interface PreviewProps {
   onSelect: (id: string | null) => void;
   /** Saves a PNG snapshot of the current preview frame and imports it into Media. */
   onSnapshot?: (bytes: Uint8Array) => Promise<void>;
+  /** A shape tile let go over the preview, with where its box goes (x/y like a clip's). */
+  onDropShape?: (item: FxItem, x: number, y: number) => void;
   /** How making captions from the sound is going ("making captions, 40%"), while it is. */
   captionStatus?: string;
   /** Captions on (CC): shown here and exported. */
@@ -100,11 +107,13 @@ async function captureStagePng(stage: HTMLElement, width: number, height: number
 }
 
 type Corner = "nw" | "ne" | "sw" | "se";
+/** Shapes also stretch from the middle of a side. */
+type Edge = "n" | "s" | "e" | "w";
 
 /** A picture-in-picture, shape or text being moved or resized on the preview. */
 interface Gesture {
   clipId: string;
-  mode: "move" | Corner;
+  mode: "move" | Corner | Edge;
   originX: number;
   originY: number;
   stage: DOMRect;
@@ -136,7 +145,7 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : {};
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape }: PreviewProps) {
   const [muted, setMuted] = useState(false);
   // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
   const [level, setLevel] = useState(1);
@@ -335,10 +344,27 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const { stage, box } = g;
     const left0 = box.left - stage.left;
     const top0 = box.top - stage.top;
-    const change = (patch: { x: number; y: number; size?: number }) =>
+    const change = (patch: { x: number; y: number; size?: number; aspect?: number }) =>
       api.editLive(g.captions ? { type: "layoutCaptions", patch } : { type: "updateClip", clipId: g.clipId, patch });
     if (g.mode === "move") {
       change({ x: placeAlong(left0 + dx, stage.width - box.width), y: placeAlong(top0 + dy, stage.height - box.height) });
+      return;
+    }
+    const free = (total: number, used: number, offset: number) => (total - used <= 0 ? 0.5 : clamp(offset / (total - used), 0, 1));
+    if (g.isShape) {
+      // Shapes stretch freely: a side handle moves that side, a corner both (Shift keeps the shape); the opposite stays.
+      const has = (side: string) => g.mode.includes(side);
+      let width = box.width + (has("w") ? -dx : has("e") ? dx : 0);
+      let height = box.height + (has("n") ? -dy : has("s") ? dy : 0);
+      if (e.shiftKey && g.mode.length === 2) {
+        const k = Math.max(width / box.width, height / box.height);
+        [width, height] = [box.width * k, box.height * k];
+      }
+      width = clamp(width, MIN_SHAPE * stage.width, MAX_SHAPE * stage.width);
+      height = clamp(height, width * MIN_ASPECT, width * MAX_ASPECT);
+      const left = has("w") ? left0 + box.width - width : left0;
+      const top = has("n") ? top0 + box.height - height : top0;
+      change({ size: width / stage.width, aspect: height / width, x: free(stage.width, width, left), y: free(stage.height, height, top) });
       return;
     }
     // Resize from a corner, keeping the shape and the opposite corner where it is.
@@ -355,7 +381,6 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const height = box.height * ratio;
     const left = fromLeft ? left0 + box.width - width : left0;
     const top = fromTop ? top0 + box.height - height : top0;
-    const free = (total: number, used: number, offset: number) => (total - used <= 0 ? 0.5 : clamp(offset / (total - used), 0, 1));
     change({ size, x: free(stage.width, width, left), y: free(stage.height, height, top) });
   };
 
@@ -406,8 +431,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   };
 
   const handles = (clip: Clip) =>
-    (["nw", "ne", "sw", "se"] as Corner[]).map((corner) => (
-      <span key={corner} className={`preview__handle is-${corner}`} onPointerDown={beginGesture(clip, corner)} aria-hidden="true" />
+    (isShape(clip) ? ["nw", "ne", "sw", "se", "n", "s", "e", "w"] : ["nw", "ne", "sw", "se"]).map((corner) => (
+      <span key={corner} className={`preview__handle is-${corner}`} onPointerDown={beginGesture(clip, corner as Corner | Edge)} aria-hidden="true" />
     ));
 
   return (
@@ -421,7 +446,22 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           else playback.toggle();
         }}
       >
-        <div ref={stageRef} className="preview__stage" style={{ "--aspect": stageAspect } as CSSProperties}>
+        <div
+          ref={stageRef}
+          className="preview__stage"
+          style={{ "--aspect": stageAspect } as CSSProperties}
+          onPointerUp={(e) => {
+            // A shape tile dragged from the right panel and let go here lands centred where the pointer is.
+            const item = fxDrag.current;
+            if (item?.kind !== "shape" || !onDropShape || !stageRef.current) return;
+            const r = stageRef.current.getBoundingClientRect();
+            const shape = newShapeClip("", item.id);
+            const w = shape.size;
+            const h = (shape.size * (shape.aspect ?? 1) * frame.width) / frame.height;
+            const along = (at: number, used: number) => (used >= 1 ? 0.5 : clamp((at - used / 2) / (1 - used), 0, 1));
+            onDropShape(item, along((e.clientX - r.left) / r.width, w), along((e.clientY - r.top) / r.height, h));
+          }}
+        >
           {pictures.some((c) => {
             // A link with nothing playable, or whose preview failed, would otherwise just be black.
             const source = mediaOf(c)?.source;

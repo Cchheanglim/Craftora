@@ -186,6 +186,35 @@
   cursor: nwse-resize;
 }
 
+/* Shapes: the middle of each side stretches just that side. */
+.preview__handle.is-n,
+.preview__handle.is-s {
+  left: calc(50% - 5.5px);
+  cursor: ns-resize;
+}
+
+.preview__handle.is-n {
+  top: 0;
+}
+
+.preview__handle.is-s {
+  bottom: 0;
+}
+
+.preview__handle.is-e,
+.preview__handle.is-w {
+  top: calc(50% - 5.5px);
+  cursor: ew-resize;
+}
+
+.preview__handle.is-e {
+  right: 0;
+}
+
+.preview__handle.is-w {
+  left: 0;
+}
+
 /* Shown while the clock waits for a clip to load after a jump. */
 /* In the loading message, which otherwise lets clicks through to the preview. */
 .preview__download {
