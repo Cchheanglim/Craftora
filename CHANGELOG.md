@@ -45,6 +45,8 @@
 - **Exporting an edited video from a link showed two rows in the Queue** (the export, waiting, and
   its video downloading). It's one row now: Downloading, then Encoding. Pause, Cancel and Retry on
   it reach the download too.
+- **A narrow right panel cut off the Transcript's buttons and its tab name.** The buttons now stack
+  when there isn't room for both side by side.
 - **An edited video exported while its link was still being copied could use the unfinished copy.**
   The export now waits for the copy to finish.
 

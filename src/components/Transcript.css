@@ -195,13 +195,15 @@
   color: var(--text);
 }
 
+/* A narrow panel puts the second button on its own row instead of past the edge. */
 .transcript__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
-.transcript__actions .btn--primary {
-  flex: 1;
+.transcript__actions .btn {
+  flex: 1 1 auto;
 }
 
 .transcript__actions .btn--primary kbd {

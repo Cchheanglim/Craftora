@@ -180,6 +180,8 @@ select.field {
 
 .segmented button {
   height: 26px;
+  /* Centred anyway: the browser's side padding cut "Transcript" in the narrowest right panel. */
+  padding: 0 2px;
   /* One line: a narrow panel cuts a label rather than doubling the button. */
   white-space: nowrap;
   overflow: hidden;
