@@ -363,6 +363,11 @@ export default function App() {
   const { project } = api;
   const duration = projectDuration(project);
   const playback = usePlayback(duration);
+  // The editor's players go away with its page, but the clock wouldn't: leaving the editor pauses.
+  const { pause } = playback;
+  useEffect(() => {
+    if (view !== "editor") pause();
+  }, [view, pause]);
   // The assistant reads these at the moment it needs them, between network calls.
   const projectRef = useRef(project);
   projectRef.current = project;

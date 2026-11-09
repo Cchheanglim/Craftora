@@ -4,6 +4,7 @@
 
 **New**
 
+- **Fetch on paste**: pasting a link into the link box fetches it at once, no Fetch click needed.
 - **Open captions file**: bring your own .srt, .vtt or .lrc subtitles or song lyrics (Transcript or Captions → Open captions file).
 - **Song lyrics for captions**: songs get their real lyrics as captions, timed to the song (from lrclib.net, when the song is found there), without downloading the speech model first.
 - **Captions on the graphics card.** With a graphics card of its own (NVIDIA, AMD or Intel Arc),
