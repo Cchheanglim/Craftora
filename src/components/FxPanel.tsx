@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { inDesktopApp } from "../lib/engine";
-import { captureThumbnail } from "../lib/thumbnail";
+import { captureThumbnail, draw } from "../lib/thumbnail";
 import { LOOKS, PICTURE_EFFECTS, TIME_EFFECTS, lookFilter, type FxItem } from "../project/effects";
 import { TRANSITION_KINDS, clipEnd, mediaTimeAt, showsPicture, type Project } from "../project/model";
 import { beginFxDrag } from "./TimelineEditor";
@@ -9,7 +9,16 @@ import "./FxPanel.css";
 export type FxTab = "filters" | "effects" | "transitions";
 
 const TILE_WIDTH = 160;
-const SETTLE_MS = 400;
+// Short: the frame usually comes straight from the preview's player, which is cheap.
+const SETTLE_MS = 150;
+
+/** The frame the preview's player shows right now, if it's that picture and can be read: instant, unlike opening the video again. */
+function shownFrame(url: string, mediaTime: number): string | undefined {
+  const video = [...document.querySelectorAll<HTMLVideoElement>(".preview__pictures video")].find(
+    (v) => v.getAttribute("src") === url && v.readyState >= 2 && Math.abs(v.currentTime - mediaTime) < 0.25,
+  );
+  return video?.videoWidth ? draw(video, video.videoWidth, video.videoHeight, TILE_WIDTH) : undefined;
+}
 
 /** The top visible picture under the playhead, if it can be read here. */
 function pictureAt(project: Project | undefined, time: number): { url: string; image?: boolean; hls?: boolean; mediaTime: number } | null {
@@ -68,6 +77,12 @@ export function FxPanel({
       }
       const key = `${pic.url}|${pic.image ? "img" : pic.mediaTime.toFixed(2)}`;
       if (key === capturedKey.current) return;
+      const shown = pic.image ? undefined : shownFrame(pic.url, pic.mediaTime);
+      if (shown) {
+        capturedKey.current = key;
+        setFrame(shown);
+        return;
+      }
       void captureThumbnail(pic.url, pic.image, pic.hls, pic.mediaTime, TILE_WIDTH).then((url) => {
         if (cancelled) return;
         capturedKey.current = url ? key : "";

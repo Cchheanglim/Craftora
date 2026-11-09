@@ -7,7 +7,7 @@ import type Hls from "hls.js";
 // Also the preview's stand-in while a video loads or can't play, so not much smaller than the video.
 const WIDTH = 480;
 
-function draw(source: HTMLVideoElement | HTMLImageElement, width: number, height: number, targetWidth = WIDTH): string | undefined {
+export function draw(source: HTMLVideoElement | HTMLImageElement, width: number, height: number, targetWidth = WIDTH): string | undefined {
   try {
     const canvas = document.createElement("canvas");
     canvas.width = targetWidth;
