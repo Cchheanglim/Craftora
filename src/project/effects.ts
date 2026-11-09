@@ -33,13 +33,23 @@ export const LOOKS = [
 ] as const satisfies readonly { id: string; label: string; steps: readonly LookStep[] }[];
 export type LookId = (typeof LOOKS)[number]["id"];
 
-/** A filter's steps, for the export; none for no filter (or one this version doesn't know). */
-export const lookSteps = (id?: string): LookStep[] => [...(LOOKS.find((l) => l.id === id)?.steps ?? [])];
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const round4 = (v: number) => Math.round(v * 10_000) / 10_000;
+const ease = (x: number) => 0.5 - 0.5 * Math.cos(Math.PI * x);
+
+/** A filter's steps, scaled by `amount` (0 = no change, 1 = full), for the export; none for no filter. */
+export function lookSteps(id?: string, amount = 1): LookStep[] {
+  const k = clamp(amount, 0, 1);
+  return (LOOKS.find((l) => l.id === id)?.steps ?? []).map(([op, a]) => [
+    op,
+    round4(op === "saturate" || op === "brightness" || op === "contrast" ? 1 + (a - 1) * k : a * k),
+  ]);
+}
 
 /** A filter's CSS, for the preview; undefined for none. */
-export function lookFilter(id?: string): string | undefined {
-  const steps = lookSteps(id);
-  return steps.length ? steps.map(([op, amount]) => `${op}(${op === "hue-rotate" ? `${amount}deg` : amount})`).join(" ") : undefined;
+export function lookFilter(id?: string, amount = 1): string | undefined {
+  const steps = lookSteps(id, amount);
+  return steps.length ? steps.map(([op, a]) => `${op}(${op === "hue-rotate" ? `${a}deg` : a})`).join(" ") : undefined;
 }
 
 /** Picture effects: blocks like filters (project.rs `effect_filter` draws them in the export). */
@@ -49,6 +59,11 @@ export const PICTURE_EFFECTS = [
   { id: "flash", label: "Flash" },
   { id: "blur", label: "Blur" },
   { id: "mirror", label: "Mirror" },
+  { id: "zoom-in", label: "Zoom in" },
+  { id: "zoom-out", label: "Zoom out" },
+  { id: "punch", label: "Zoom punch" },
+  { id: "shake", label: "Shake" },
+  { id: "bars", label: "Cinema bars" },
 ] as const;
 export type PictureEffectId = (typeof PICTURE_EFFECTS)[number]["id"];
 
@@ -102,7 +117,8 @@ export function dropEdits(
   if (item.kind === "filter" || item.kind === "effect") {
     const block = item.kind === "filter" ? { look: item.id } : { effect: item.id };
     const clip = clipAt(mediaOn(dropped?.id).filter((c) => showsPicture(p, c)));
-    const [at, length] = clip ? [clip.start, clipLength(clip)] : [time, BLOCK_LENGTH];
+    const defaultLength = item.id === "punch" ? 0.6 : item.id === "shake" ? 1 : BLOCK_LENGTH;
+    const [at, length] = clip ? [clip.start, clipLength(clip)] : [time, defaultLength];
     return { edits: [{ type: "addBlock", clipId: newIds[0], at, length, trackId: dropped?.id, ...block }], select: newIds[0] };
   }
   const track = dropped ?? mainTrack(p);
@@ -156,24 +172,54 @@ export function effectEdits(
 }
 
 /**
- * How the preview draws the blocks showing at `time` (lowest track first): a CSS filter and flip for
- * the pictures, and colour layers over them for fades and flashes. `width`: the preview's width in
- * pixels, so blur matches the export's.
+ * How the preview draws the blocks showing at `time` (lowest track first): a CSS filter, transform
+ * and flip for the pictures, cinema bars, and colour layers over them for fades and flashes.
+ * `width`, `height`: the preview's size in pixels, so blur and cinema bars match the export's.
  */
-export function blocksStyle(blocks: Clip[], time: number, width: number): { filter?: string; mirror: boolean; layers: { color: string; opacity: number }[] } {
+export function blocksStyle(
+  blocks: Clip[],
+  time: number,
+  width: number,
+  height = (width * 9) / 16,
+): { filter?: string; mirror: boolean; transform?: string; bars: number; layers: { color: string; opacity: number }[] } {
   const filters: string[] = [];
+  const transforms: string[] = [];
   const layers: { color: string; opacity: number }[] = [];
   let mirror = false;
+  let bars = 0;
   for (const b of blocks) {
-    const look = lookFilter(b.look);
+    const look = lookFilter(b.look, b.lookAmount);
     if (look) filters.push(look);
+    const u = Math.max(0, time - b.start);
+    const d = Math.max(0.001, clipEnd(b) - b.start);
     // How far through the block: 0 at its start, 1 at its end.
-    const through = Math.min(1, Math.max(0, (time - b.start) / Math.max(0.001, clipEnd(b) - b.start)));
+    const through = clamp(u / d, 0, 1);
     if (b.effect === "blur") filters.push(`blur(${(BLUR_SHARE * width).toFixed(2)}px)`);
     else if (b.effect === "mirror") mirror = !mirror;
     else if (b.effect === "fade-in") layers.push({ color: "#000", opacity: 1 - through });
     else if (b.effect === "fade-out") layers.push({ color: "#000", opacity: through });
     else if (b.effect === "flash") layers.push({ color: "#fff", opacity: 1 - through });
+    else if (b.effect === "zoom-in") transforms.unshift(`translate(0%, 0%) scale(${round4(1 + 0.3 * ease(through))})`);
+    else if (b.effect === "zoom-out") transforms.unshift(`translate(0%, 0%) scale(${round4(1.3 - 0.3 * ease(through))})`);
+    else if (b.effect === "punch") {
+      const k = u < 0.1 ? ease(clamp(u / 0.1, 0, 1)) : 1 - ease(clamp((u - 0.1) / 0.4, 0, 1));
+      transforms.unshift(`translate(0%, 0%) scale(${round4(1 + 0.2 * k)})`);
+    } else if (b.effect === "shake") {
+      const a = (1 - through) * (1 - through);
+      const x = (2 * a * (Math.sin(2 * Math.PI * 7.3 * u) + 0.5 * Math.sin(2 * Math.PI * 13.1 * u))) / 1.5;
+      const y = (2 * a * (Math.sin(2 * Math.PI * 9.1 * u + 1) + 0.5 * Math.sin(2 * Math.PI * 5.7 * u + 2))) / 1.5;
+      transforms.unshift(`translate(${round4(x)}%, ${round4(y)}%) scale(1.06)`);
+    } else if (b.effect === "bars") {
+      const share = width > height ? Math.max(0, (1 - width / height / 2.39) / 2) : 0.1;
+      const slide = ease(clamp(Math.min(u / 0.3, (d - u) / 0.3), 0, 1));
+      bars = Math.max(bars, share * slide);
+    }
   }
-  return { filter: filters.length ? filters.join(" ") : undefined, mirror, layers };
+  return {
+    filter: filters.length ? filters.join(" ") : undefined,
+    mirror,
+    transform: transforms.length ? transforms.join(" ") : undefined,
+    bars,
+    layers,
+  };
 }
