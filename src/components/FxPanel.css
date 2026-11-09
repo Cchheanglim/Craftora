@@ -72,12 +72,16 @@
   text-overflow: ellipsis;
 }
 
-/* Filter tiles show the current video frame (or sample picture) filling the stage. */
+/* Filter tiles show the current video frame filling the stage; until it's ready, the whole cat. */
 .fx-tile.is-filter .fx-tile__stage {
   aspect-ratio: 16 / 9;
 }
 
 .fx-tile.is-filter img {
+  object-fit: contain;
+}
+
+.fx-tile.is-filter img.is-frame {
   width: 100%;
   height: 100%;
   object-fit: cover;

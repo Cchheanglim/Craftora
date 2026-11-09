@@ -940,14 +940,13 @@ fn effect_filter(effect: &str, start: f64, length: f64, (w, h, fps): (u32, u32, 
             let fall = format!("pow(1-clip({u}/{d},0,1),2)");
             let dx = format!("(0.02*W*{fall}*(sin(2*PI*7.3*{u})+0.5*sin(2*PI*13.1*{u}))/1.5)");
             let dy = format!("(0.02*H*{fall}*(sin(2*PI*9.1*{u}+1)+0.5*sin(2*PI*5.7*{u}+2))/1.5)");
-            warp("1.06", &dx, &dy)
+            warp(&format!("(1+0.06*{fall})"), &dx, &dy)
         }
         "bars" => {
-            // 2.39:1 on a landscape frame; a tenth of the height each on a tall one. They slide in and out over 0.3 s.
+            // 2.39:1 on a landscape frame; a tenth of the height each on a tall one. On for the whole block: drawbox has
+            // no clock (its `t` is the line thickness), so they can't slide.
             let share = if w > h { (1.0 - f64::from(w) / f64::from(h) / 2.39).max(0.0) / 2.0 } else { 0.1 };
-            let slide = ease(&format!("clip(min((t-{st})/0.3,({d}-(t-{st}))/0.3),0,1)"));
-            // drawbox reads a height of 0 as the whole picture: never under a pixel.
-            let bar = format!("max(1,ih*{share:.4}*{slide})");
+            let bar = format!("max(1,ih*{share:.4})");
             // The caller times only the last filter; the first gets the same window here.
             let on = format!("between(t,{st},{})", secs(start + length));
             format!("drawbox=x=0:y=0:w=iw:h='{bar}':color=black:t=fill:enable='{on}',drawbox=x=0:y='ih-{bar}':w=iw:h='{bar}':color=black:t=fill")
@@ -1119,8 +1118,8 @@ mod tests {
         assert!(zoom.ends_with(":eval=frame"));
         // Bars: 2.39:1 on 16:9 (12.81% each), both boxes timed.
         let bars = effect_filter("bars", 1.0, 2.0, (1920, 1080, 30)).unwrap();
-        assert!(bars.contains("ih*0.1281*") && bars.contains(":enable='between(t,1.000,3.000)',drawbox"), "{bars}");
-        assert!(effect_filter("bars", 1.0, 2.0, (1080, 1920, 30)).unwrap().contains("ih*0.1000*"));
+        assert!(bars.contains("ih*0.1281)") && bars.contains(":enable='between(t,1.000,3.000)',drawbox"), "{bars}");
+        assert!(effect_filter("bars", 1.0, 2.0, (1080, 1920, 30)).unwrap().contains("ih*0.1000)"));
         let on = "enable='between(t,1.000,2.000)'";
         assert_eq!(timed("hflip", on), "hflip=enable='between(t,1.000,2.000)'");
         assert_eq!(timed("gblur=sigma=6.00", on), "gblur=sigma=6.00:enable='between(t,1.000,2.000)'");

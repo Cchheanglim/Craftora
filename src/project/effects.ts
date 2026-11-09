@@ -208,11 +208,11 @@ export function blocksStyle(
       const a = (1 - through) * (1 - through);
       const x = (2 * a * (Math.sin(2 * Math.PI * 7.3 * u) + 0.5 * Math.sin(2 * Math.PI * 13.1 * u))) / 1.5;
       const y = (2 * a * (Math.sin(2 * Math.PI * 9.1 * u + 1) + 0.5 * Math.sin(2 * Math.PI * 5.7 * u + 2))) / 1.5;
-      transforms.unshift(`translate(${round4(x)}%, ${round4(y)}%) scale(1.06)`);
+      // The zoom that hides the edges dies away with the shake, so it ends without a jump.
+      transforms.unshift(`translate(${round4(x)}%, ${round4(y)}%) scale(${round4(1 + 0.06 * a)})`);
     } else if (b.effect === "bars") {
-      const share = width > height ? Math.max(0, (1 - width / height / 2.39) / 2) : 0.1;
-      const slide = ease(clamp(Math.min(u / 0.3, (d - u) / 0.3), 0, 1));
-      bars = Math.max(bars, share * slide);
+      // On for the whole block, no slide: the export's drawbox has no clock to animate them with.
+      bars = Math.max(bars, width > height ? Math.max(0, (1 - width / height / 2.39) / 2) : 0.1);
     }
   }
   return {

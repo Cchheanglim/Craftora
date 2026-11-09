@@ -95,6 +95,7 @@ export function FxPanel({
         <img
           // Craftora's cat until a frame of the video is ready (or when nothing is under the playhead).
           src={(item.kind === "filter" && frame) || "/craftora.svg"}
+          className={item.kind === "filter" && frame ? "is-frame" : undefined}
           alt=""
           draggable={false}
           style={look ? { filter: look } : undefined}
