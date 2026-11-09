@@ -268,36 +268,66 @@ struct WhisperToken {
     t_dtw: i64,
 }
 
-/// whisper's full JSON (`-ojf` with `-dtw`) as caption lines, each timed by when its words are said. Its own
-/// line times start where the last line ended: seconds before the words, under music most of all.
+/// whisper's full JSON (`-ojf` with `-dtw`) as caption lines, each timed by when its own words are said. A whisper
+/// segment can hold several sentences (measured: up to 25 s); shown whole, the editor cut it by letter count and its
+/// later sentences showed seconds early. So a line ends at a sentence's end, a pause, or 80 letters.
 fn from_whisper_json(json: &str) -> Result<Vec<Caption>, String> {
-    // Measured: a line's first word is timed 0.1–0.25 s late, its last one about when the line ends.
+    // Measured: a word is timed 0.1–0.25 s after it starts; a drawn-out one ("Soooo") about halfway through.
     const LEAD: f64 = 0.2;
-    const TAIL: f64 = 0.4;
+    // After the last word's time: the rest of it, and a moment more (unless the next line starts).
+    const TAIL: f64 = 0.7;
+    // A new line when a word comes this long after the last one, or this long after a comma.
+    const PAUSE: f64 = 1.0;
+    const COMMA_PAUSE: f64 = 0.5;
+    // As much as the editor shows at once (model.ts CAPTION_CHARS).
+    const MOST: usize = 80;
     let parsed: WhisperJson = serde_json::from_str(json).map_err(|_| "whisper's captions couldn't be read.".to_string())?;
     let mut lines = Vec::new();
     for segment in parsed.transcription {
-        let text = without_sound_tags(&segment.text);
-        if !text.chars().any(char::is_alphanumeric) {
-            continue;
-        }
-        // Words only: punctuation is timed seconds late, special tokens ([_BEG_]) and sound tags not at all.
+        // Its words and punctuation, without special tokens ([_BEG_]) and sound tags. Only words are timed:
+        // punctuation is timed seconds late.
         let mut tagged = false;
-        let times: Vec<f64> = segment
-            .tokens
-            .iter()
-            .filter(|t| !t.text.starts_with("[_"))
-            .filter_map(|t| {
-                let inside = tagged || t.text.contains(['[', '(']);
-                tagged = inside && !t.text.contains([']', ')']);
-                (!inside && t.t_dtw >= 0 && t.text.chars().any(char::is_alphanumeric)).then_some(t.t_dtw as f64 / 100.0)
-            })
-            .collect();
-        let (start, end) = match (times.first(), times.last()) {
-            (Some(first), Some(last)) => ((first - LEAD).max(0.0), last + TAIL),
-            _ => (segment.offsets.from as f64 / 1000.0, segment.offsets.to as f64 / 1000.0),
-        };
-        lines.push(Caption { start, end: end.max(start + 0.3), text });
+        let mut groups: Vec<Vec<(&str, Option<f64>)>> = Vec::new();
+        let mut last_at: Option<f64> = None;
+        for token in segment.tokens.iter().filter(|t| !t.text.starts_with("[_")) {
+            let inside = tagged || token.text.contains(['[', '(']);
+            tagged = inside && !token.text.contains([']', ')']);
+            if inside {
+                continue;
+            }
+            let at = (token.t_dtw >= 0 && token.text.chars().any(char::is_alphanumeric)).then_some(token.t_dtw as f64 / 100.0);
+            let new_line = match (groups.last(), at) {
+                (None, _) => true,
+                (Some(line), Some(at)) if starts_word(&token.text) => {
+                    let so_far: String = line.iter().map(|p| p.0).collect();
+                    let so_far = so_far.trim();
+                    let gap = last_at.map_or(0.0, |last| at - last);
+                    so_far.ends_with(['.', '?', '!', '…', '。', '？', '！', '។'])
+                        || gap > PAUSE
+                        || (so_far.ends_with([',', '，', '、']) && gap >= COMMA_PAUSE)
+                        || so_far.chars().count() + token.text.chars().count() > MOST
+                }
+                _ => false,
+            };
+            if new_line {
+                groups.push(Vec::new());
+            }
+            groups.last_mut().expect("a line was just started").push((&token.text, at));
+            last_at = at.or(last_at);
+        }
+        for (i, line) in groups.iter().enumerate() {
+            let text = without_sound_tags(&line.iter().map(|p| p.0).collect::<String>());
+            if !text.chars().any(char::is_alphanumeric) {
+                continue;
+            }
+            let times: Vec<f64> = line.iter().filter_map(|p| p.1).collect();
+            let next = groups.get(i + 1).and_then(|g| g.iter().find_map(|p| p.1));
+            let (start, end) = match (times.first(), times.last()) {
+                (Some(first), Some(last)) => ((first - LEAD).max(0.0), next.map_or(last + TAIL, |n| (last + TAIL).min(n - LEAD))),
+                _ => (segment.offsets.from as f64 / 1000.0, segment.offsets.to as f64 / 1000.0),
+            };
+            lines.push(Caption { start, end: end.max(start + 0.3), text });
+        }
     }
     lines.sort_by(|a, b| a.start.total_cmp(&b.start));
     for i in 1..lines.len() {
@@ -306,6 +336,13 @@ fn from_whisper_json(json: &str) -> Result<Vec<Caption>, String> {
     }
     lines.retain(|c| c.end - c.start >= 0.05);
     Ok(lines)
+}
+
+/// Whether a caption line may start at this piece of whisper's text: a new word (after a space), or any letter of a
+/// script written without spaces (Thai, Myanmar, Khmer, Japanese, Chinese), never the middle of a word ("So" + "ooo").
+fn starts_word(text: &str) -> bool {
+    let unspaced = |c: char| matches!(c, '\u{0E00}'..='\u{0EFF}' | '\u{1000}'..='\u{109F}' | '\u{1780}'..='\u{17FF}' | '\u{3040}'..='\u{30FF}' | '\u{3400}'..='\u{4DBF}' | '\u{4E00}'..='\u{9FFF}' | '\u{F900}'..='\u{FAFF}');
+    (text.starts_with(char::is_whitespace) && text.chars().any(char::is_alphanumeric)) || text.chars().next().is_some_and(unspaced)
 }
 
 /// Text without whisper's sound tags ("[Music]", "(laughs)", "♪"): the small model calls cries and groans music.
