@@ -772,7 +772,7 @@ export default function App() {
         });
       speechTurn.current = speechTurn.current.then(async () => {
         while (!idle.current) await new Promise((r) => window.setTimeout(r, 3_000));
-        return makeCaptions(m.id, s.url, Boolean(s.local), preference("captionsOnGpu"))
+        return makeCaptions(m.id, s.url, Boolean(s.local), preference("captionsOnGpu"), preference("songLyrics"))
           .then((lines) => {
             done();
             // The finished file replaces the lines shown along the way.

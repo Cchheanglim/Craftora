@@ -1,6 +1,6 @@
 //! Captions made from the sound, for videos that come without any: whisper.cpp (bundled) listens
-//! to the audio with a speech model downloaded once (148 MB, or 190 MB on a graphics card). Everything runs on
-//! this PC.
+//! to the audio with a speech model downloaded once (148 MB, or 190 MB on a graphics card). A song's timed lyrics
+//! come from lrclib.net when found; listening runs on this PC.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -100,6 +100,7 @@ pub async fn make_captions(
     source: String,
     local: bool,
     gpu: bool,
+    lyrics: bool,
 ) -> Result<Vec<Caption>, String> {
     if id.is_empty() || id.len() > 64 || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return Err("Not a media id.".into());
@@ -122,18 +123,21 @@ pub async fn make_captions(
     let work = app.path().app_cache_dir().map_err(|e| e.to_string())?.join(format!("speech-{id}"));
     std::fs::create_dir_all(&work).map_err(|e| format!("Couldn't make a working folder: {e}"))?;
     let started = std::time::Instant::now();
-    let made = listen(&app, &id, file, &source, (&model, chosen.dtw), &work, card).await;
+    let made = listen(&app, &id, file, &source, (&model, chosen.dtw), &work, card, lyrics).await;
     crate::diag::note(format!("captions from the sound: {} in {:.0}s", if made.is_ok() { "made" } else { "failed" }, started.elapsed().as_secs_f64()));
     let _ = std::fs::remove_dir_all(&work);
     made
 }
 
-async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, (model, dtw): (&Path, &str), work: &Path, card: Option<u32>) -> Result<Vec<Caption>, String> {
+async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, (model, dtw): (&Path, &str), work: &Path, card: Option<u32>, lyrics: bool) -> Result<Vec<Caption>, String> {
     // Reading a long file's sound takes a while too, so it's said for files as well as links.
     report(app, id, "sound", 0.0);
-    let input = match file {
-        Some(path) => path,
-        None => link_sound(app, link, work).await?,
+    let (input, title) = match file {
+        Some(path) => {
+            let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned());
+            (path, stem)
+        }
+        None => (link_sound(app, link, work).await?, std::fs::read_to_string(work.join("title.txt")).ok()),
     };
     // whisper reads 16 kHz mono WAV.
     let wav = work.join("sound.wav");
@@ -157,6 +161,15 @@ async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, (m
     report(app, id, "listening", 0.0);
     // whisper reads 16 kHz, 16-bit mono: 32,000 bytes a second after the 44-byte header.
     let length = std::fs::metadata(&wav).map_or(0.0, |m| m.len().saturating_sub(44) as f64 / 32_000.0);
+    if lyrics
+        && (30.0..=900.0).contains(&length)
+        && let Some(title) = title.as_deref().map(str::trim).filter(|t| !t.is_empty())
+        && let Some(lines) = song_lyrics(title, length).await.filter(|l| !l.is_empty())
+    {
+        crate::diag::note("captions: song lyrics found");
+        report(app, id, "listening", 100.0);
+        return Ok(lines);
+    }
     let mut captions: Vec<Caption> = Vec::new();
     let all = pieces(length, &silences);
     for (n, &(from, to)) in all.iter().enumerate() {
@@ -419,10 +432,25 @@ fn card_in(log: &str) -> Option<u32> {
 async fn link_sound(app: &AppHandle, link: &str, work: &Path) -> Result<PathBuf, String> {
     let (link_args, _cookies) = crate::signin::link_args(app, link).await;
     let template = work.join("sound.%(ext)s").to_string_lossy().into_owned();
+    let title = work.join("title.txt").to_string_lossy().into_owned();
     let engines = ffmpeg_dir(app)?.to_string_lossy().into_owned();
-    let mut args: Vec<String> = ["--no-playlist", "--no-warnings", "--encoding", "utf-8", "--ffmpeg-location", &engines, "-f", "bestaudio/best", "-o", &template]
-        .map(String::from)
-        .to_vec();
+    let mut args: Vec<String> = [
+        "--no-playlist",
+        "--no-warnings",
+        "--encoding",
+        "utf-8",
+        "--ffmpeg-location",
+        &engines,
+        "-f",
+        "bestaudio/best",
+        "--print-to-file",
+        "%(title)s",
+        &title,
+        "-o",
+        &template,
+    ]
+    .map(String::from)
+    .to_vec();
     args.extend(link_args);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let output = run_to_end(app, YT_DLP, &args).await?;
@@ -435,6 +463,117 @@ async fn link_sound(app: &AppHandle, link: &str, work: &Path) -> Result<PathBuf,
         .map(|entry| entry.path())
         .find(|p| p.file_stem().is_some_and(|s| s == "sound") && p.extension().is_some_and(|e| e != "part" && e != "wav"))
         .ok_or_else(|| "yt-dlp finished but the sound file wasn't found.".into())
+}
+
+#[derive(Deserialize)]
+struct LrcHit {
+    #[serde(rename = "trackName")]
+    track: Option<String>,
+    #[serde(rename = "artistName")]
+    artist: Option<String>,
+    duration: Option<f64>,
+    instrumental: Option<bool>,
+    #[serde(rename = "syncedLyrics")]
+    synced: Option<String>,
+}
+
+/// Timed lyrics for a song from lrclib.net, when a hit matches both its name and its length (within 2 s).
+async fn song_lyrics(title: &str, length: f64) -> Option<Vec<Caption>> {
+    let mut kept = String::new();
+    let mut close = None;
+    for c in title.chars() {
+        match close {
+            Some(end) if c == end => close = None,
+            Some(_) => {}
+            None if c == '(' => close = Some(')'),
+            None if c == '[' => close = Some(']'),
+            None if c == '【' => close = Some('】'),
+            None => kept.push(c),
+        }
+    }
+    let cleaned = kept.split_whitespace().collect::<Vec<_>>().join(" ");
+    let query = if cleaned.is_empty() { title } else { &cleaned };
+    let hits: Vec<LrcHit> = crate::privacy::client_builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(8))
+        .build()
+        .ok()?
+        .get("https://lrclib.net/api/search")
+        .query(&[("q", query)])
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    let synced = hits.into_iter().find_map(|hit| {
+        if hit.instrumental.unwrap_or(false) || !hit.duration.is_some_and(|d| (d - length).abs() <= 2.0) || !same_song(query, &hit) {
+            return None;
+        }
+        hit.synced.filter(|s| !s.trim().is_empty())
+    })?;
+    Some(parse_lrc(&synced, length))
+}
+
+fn plain(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A vlog called "my trip home" mustn't match a song called "Home": unless the query is the song's name alone,
+/// it needs the singer's name too.
+fn same_song(query: &str, hit: &LrcHit) -> bool {
+    let q = plain(query);
+    let t = hit.track.as_deref().map(plain).unwrap_or_default();
+    let a = hit.artist.as_deref().map(plain).unwrap_or_default();
+    !t.is_empty() && (q == t || (!a.is_empty() && q.contains(&t) && q.contains(&a)))
+}
+
+// shortcut: lines end at the next line (LRC has no end times; the `lyricsfile` field has word times, not read); a video whose intro differs from the released song by up to 2 s gets lyrics that much early/late.
+fn parse_lrc(lrc: &str, length: f64) -> Vec<Caption> {
+    let mut entries: Vec<(f64, &str)> = Vec::new();
+    for line in lrc.lines() {
+        let mut rest = line.trim();
+        let mut times = Vec::new();
+        while let Some((tag, after)) = rest.strip_prefix('[').and_then(|s| s.split_once(']'))
+            && let Some(t) = lrc_time(tag)
+        {
+            times.push(t);
+            rest = after;
+        }
+        let text = rest.trim();
+        for t in times {
+            entries.push((t, text));
+        }
+    }
+    entries.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut lines = Vec::new();
+    for (i, &(start, text)) in entries.iter().enumerate() {
+        if text.is_empty() {
+            continue;
+        }
+        let next = entries.get(i + 1).map_or(length, |e| e.0);
+        let end = next.min(start + 10.0).min(length);
+        if end - start >= 0.3 {
+            lines.push(Caption { start, end, text: text.to_string() });
+        }
+    }
+    lines
+}
+
+fn lrc_time(tag: &str) -> Option<f64> {
+    let (mins, secs) = tag.split_once(':')?;
+    let mins: u32 = mins.parse().ok()?;
+    if !secs.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+        return None;
+    }
+    let secs: f64 = secs.parse().ok()?;
+    Some(f64::from(mins) * 60.0 + secs)
 }
 
 #[cfg(test)]
@@ -517,5 +656,39 @@ mod tests {
         assert_eq!(lines, expected.map(|(a, b, t)| (a, b, t.to_string())));
         assert!(from_whisper_json("not json").is_err());
         assert_eq!(without_sound_tags(" ♪ la la ♪  [Music] (sighs)  bye "), "la la bye");
+    }
+
+    #[test]
+    fn reads_timed_song_lyrics() {
+        let lrc = "\
+[ar:Joji]
+[00:15.20] (Ooh)
+[00:18.50]
+[00:22.125]She'd take the world off my shoulders
+[00:40.00][01:10.00]Cause sometimes I look in her eyes
+[00:43.00]
+";
+        let lines: Vec<(f64, f64, String)> = parse_lrc(lrc, 120.0).into_iter().map(|c| (c.start, c.end, c.text)).collect();
+        assert_eq!(
+            lines,
+            [
+                (15.2, 18.5, "(Ooh)".into()),
+                // Over 10 s before the 00:40 line: capped at 10 s.
+                (22.125, 32.125, "She'd take the world off my shoulders".into()),
+                // Two time tags: same line at 00:40 (ended by the empty 00:43 line) and at 01:10 (capped at 10 s).
+                (40.0, 43.0, "Cause sometimes I look in her eyes".into()),
+                (70.0, 80.0, "Cause sometimes I look in her eyes".into()),
+            ]
+        );
+        let hit = |track: &str, artist: &str| LrcHit {
+            track: Some(track.into()),
+            artist: Some(artist.into()),
+            duration: Some(234.0),
+            instrumental: Some(false),
+            synced: None,
+        };
+        assert!(same_song("Joji - Glimpse of Us", &hit("Glimpse of Us", "Joji")));
+        assert!(!same_song("my trip home", &hit("Home", "X")));
+        assert!(same_song("Glimpse of Us", &hit("Glimpse of Us", "Joji")));
     }
 }
