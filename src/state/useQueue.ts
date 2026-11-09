@@ -23,24 +23,49 @@ type Action =
   | { type: "tick"; now: number };
 
 const isRunning = (j: Job) => j.status === "downloading" || j.status === "encoding";
-/** Downloads of a whole link go on where they stopped (jobs.rs keeps their parts); exports and cuts start again. */
+/** Downloads of a whole link go on where they stopped (jobs.rs and live.rs keep their parts); exports and cuts start again. */
 export const resumable = (j: Job) =>
-  Boolean(j.prefetch || (j.spec && !j.spec.local && j.spec.start <= 0.05 && j.spec.end >= j.spec.duration - 0.05));
+  Boolean(j.prefetch || (j.record && !j.record.live) || (j.spec && !j.spec.local && j.spec.start <= 0.05 && j.spec.end >= j.spec.duration - 0.05));
 const update = (jobs: Job[], id: string, patch: Partial<Job>) =>
   jobs.map((j) => (j.id === id ? { ...j, ...patch } : j));
+
+/**
+ * An export's own video download ("Video for your export") has no row while its export is queued: the export's row
+ * shows it. (Exports aren't kept after a restart; the download is, and then shows by itself.)
+ */
+export const folded = (j: Job, jobs: Job[]) =>
+  Boolean(j.prefetch?.forExport) &&
+  jobs.some((e) => e.after?.includes(j.id) || (j.status === "finished" && e.render?.media.some((m) => m.id === j.prefetch!.mediaId)));
+
+/** An export waiting for its video shows that download as its first step: Downloading, then Encoding. */
+export function shownAs(job: Job, jobs: Job[]): Job {
+  const video = jobs.find((j) => job.after?.includes(j.id) && j.status !== "finished" && j.status !== "failed");
+  if (!video || (job.status !== "waiting" && job.status !== "paused")) return job;
+  const { status, phase, progress, downloadedBytes, totalBytes, speedBps, etaSeconds } = video;
+  // Pause all pauses the export too: it shows paused, with the download's progress so far.
+  return { ...job, status: job.status === "paused" ? "paused" : status, phase, progress, downloadedBytes, totalBytes, speedBps, etaSeconds };
+}
 
 export function reducer(jobs: Job[], action: Action): Job[] {
   switch (action.type) {
     case "add":
       return [action.job, ...jobs];
     case "started":
-      return update(jobs, action.id, { status: "downloading", phase: "downloading", progress: null, error: undefined });
+      // An edited video's links are downloaded before it starts: it only encodes.
+      return jobs.map((j) =>
+        j.id === action.id ? { ...j, ...(j.render ? { status: "encoding", phase: "encoding" } : { status: "downloading", phase: "downloading" }), progress: null, error: undefined } : j,
+      );
     case "engine":
       return applyEngineEvent(jobs, action.event);
     case "failed":
       return update(jobs, action.id, { status: "failed", error: action.message });
-    case "retry":
-      return update(jobs, action.id, { status: "waiting", progress: 0, error: undefined });
+    case "retry": {
+      // An export tries its failed video download again too (it goes on where it stopped).
+      const after = jobs.find((j) => j.id === action.id)?.after ?? [];
+      return jobs.map((j) =>
+        j.id === action.id || (after.includes(j.id) && j.status === "failed") ? { ...j, status: "waiting", progress: 0, error: undefined } : j,
+      );
+    }
     case "remove":
       return jobs.filter((j) => j.id !== action.id);
     case "edit":
@@ -62,7 +87,7 @@ export function reducer(jobs: Job[], action: Action): Job[] {
       return jobs.map((j) => (j.id === action.id && j.status === "paused" ? { ...j, status: "waiting" } : j));
     case "pauseAll":
       // A live recording isn't paused: it has Stop instead.
-      return jobs.map((j) => ((isRunning(j) && !j.record) || j.status === "waiting" ? { ...j, status: "paused" } : j));
+      return jobs.map((j) => ((isRunning(j) && !j.record?.live) || j.status === "waiting" ? { ...j, status: "paused" } : j));
     case "resumeAll":
       return jobs.map((j) => (j.status === "paused" ? { ...j, status: "waiting" } : j));
     case "clearFinished":
@@ -169,9 +194,14 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
       if (free <= 0) break;
       if (job.status !== "waiting" || !(job.spec || job.render || job.prefetch)) continue;
       if (job.after?.length) {
-        // A download it waits for was cancelled or failed.
-        if (job.after.some((id) => !jobs.some((j) => j.id === id && j.status !== "failed")))
-          dispatch({ type: "failed", id: job.id, message: "The video it needs didn't download. Download it again, then add the export to the queue again." });
+        // A download it waits for was cancelled or failed: its own error says why.
+        const lost = job.after.find((id) => !jobs.some((j) => j.id === id && j.status !== "failed"));
+        if (lost)
+          dispatch({
+            type: "failed",
+            id: job.id,
+            message: jobs.find((j) => j.id === lost)?.error ?? "The video it needs didn't download. Download it again, then add the export to the queue again.",
+          });
         continue;
       }
       free--;
@@ -191,11 +221,17 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
 
   const cancel = useCallback(
     (id: string) => {
-      const job = jobsRef.current.find((j) => j.id === id);
-      if (real) void cancelJob(id);
-      // A download that isn't running may still have saved parts: they're removed here.
-      if (real && job && resumable(job) && !isRunning(job)) void discardDownload(id).catch(() => {});
-      dispatch({ type: "remove", id });
+      const all = jobsRef.current;
+      const job = all.find((j) => j.id === id);
+      // An export's own video download goes with it, unless another export waits for it too.
+      const own = all.filter((v) => v.prefetch?.forExport && job?.after?.includes(v.id) && !all.some((e) => e.id !== id && e.after?.includes(v.id)));
+      for (const target of [id, ...own.map((v) => v.id)]) {
+        const j = all.find((x) => x.id === target);
+        if (real) void cancelJob(target);
+        // A download that isn't running may still have saved parts: they're removed here.
+        if (real && j && resumable(j) && !isRunning(j)) void discardDownload(target).catch(() => {});
+        dispatch({ type: "remove", id: target });
+      }
     },
     [real],
   );
@@ -208,15 +244,17 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
     [real],
   );
   const pauseAll = useCallback(() => {
-    if (real) for (const j of jobsRef.current) if (isRunning(j) && !j.record) void pauseJob(j.id);
+    if (real) for (const j of jobsRef.current) if (isRunning(j) && !j.record?.live) void pauseJob(j.id);
     dispatch({ type: "pauseAll" });
   }, [real]);
 
   return {
     jobs,
     /** Everything but live recordings. Downloads go on from where they were (`resumable`); exports start again. */
-    canPauseJob: useCallback((job: Job) => !job.record, []),
+    canPauseJob: useCallback((job: Job) => !job.record?.live, []),
     add: useCallback((job: Job) => dispatch({ type: "add", job }), []),
+    started: useCallback((id: string) => dispatch({ type: "started", id }), []),
+    failed: useCallback((id: string, message: string) => dispatch({ type: "failed", id, message }), []),
     cancel,
     retry: useCallback((id: string) => dispatch({ type: "retry", id }), []),
     remove: useCallback((id: string) => dispatch({ type: "remove", id }), []),

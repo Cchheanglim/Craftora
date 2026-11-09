@@ -52,12 +52,20 @@ struct ProbeStream {
     avg_frame_rate: Option<String>,
     bit_rate: Option<String>,
     disposition: Option<Disposition>,
+    #[serde(default)]
+    side_data_list: Vec<SideData>,
 }
 
 #[derive(Deserialize)]
 struct Disposition {
     #[serde(default)]
     attached_pic: u8,
+}
+
+/// A phone video's "turn me" mark (a display matrix) carries the turn in degrees.
+#[derive(Deserialize)]
+struct SideData {
+    rotation: Option<f64>,
 }
 
 /// Absolute path without Windows' `\\?\` verbatim prefix (which breaks preview URLs).
@@ -109,6 +117,9 @@ pub struct ProbeInfo {
     pub has_audio: bool,
     /// Frames a second of the video, when known (Smooth slow-mo cuts its pieces on real frames).
     pub fps: Option<f64>,
+    /// The video is stored on its side and marked to be turned when played (phones do this). FFmpeg turns it on the
+    /// processor only, so such a video isn't exported on the graphics card (project.rs `gpu_picture`).
+    pub turned: bool,
 }
 
 pub async fn probe(app: &AppHandle, path: &Path) -> Result<ProbeInfo, String> {
@@ -118,6 +129,7 @@ pub async fn probe(app: &AppHandle, path: &Path) -> Result<ProbeInfo, String> {
         has_video: video.is_some(),
         has_audio: probe.streams.iter().any(|s| s.is_audio()),
         fps: video.and_then(|v| v.avg_frame_rate.as_deref()).and_then(frame_rate),
+        turned: video.is_some_and(|v| v.side_data_list.iter().any(|s| s.rotation.is_some_and(|r| r.rem_euclid(360.0) != 0.0))),
     })
 }
 

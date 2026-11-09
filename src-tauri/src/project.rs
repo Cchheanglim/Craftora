@@ -605,10 +605,13 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
     let total = spec.clips.iter().map(ClipSpec::end).fold(0.0, f64::max);
     let mut inputs: Vec<String> = Vec::new();
     let mut input_of: HashMap<usize, (usize, &Source)> = HashMap::new();
+    // Where each clip's input options start in `inputs` (the graphics-card export adds its own there).
+    let mut input_at: HashMap<usize, usize> = HashMap::new();
     let mut smooth_of: HashMap<usize, usize> = HashMap::new();
     let mut next_input = 0usize;
     for (i, clip) in spec.clips.iter().enumerate() {
         let Some(source) = clip.media_id.as_deref().and_then(|id| sources.get(id)) else { continue };
+        input_at.insert(i, inputs.len());
         if source.image {
             // One picture, repeated at the frame rate for as long as the clip lasts.
             inputs.extend(["-loop".into(), "1".into(), "-framerate".into(), fps.to_string(), "-t".into(), secs(clip.length())]);
@@ -697,6 +700,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         }
         graph.push(format!("[{picture}]format=yuv420p[outv]"));
     }
+    let sound_from = graph.len();
 
     // Every sound, placed at its clip's start.
     let mut sounds: Vec<String> = Vec::new();
@@ -737,13 +741,35 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
     // From a file: hundreds of text clips (captions) would pass Windows' 32,767-character command limit.
     let graph_file = work.join("graph.txt");
     std::fs::write(&graph_file, graph.join(";")).map_err(|e| format!("Couldn't prepare the export: {e}"))?;
-    let command = |encoder: Encoder| -> Vec<String> {
+    // The same export with its picture drawn on the graphics card too, when it can be (`gpu_picture`).
+    let gpu = if encoder == Encoder::Nvenc && smoothed.is_empty() { gpu_picture(spec, &input_of, total) } else { None };
+    let gpu_file = work.join("graph-gpu.txt");
+    if let Some((_, chain)) = &gpu {
+        let lines: Vec<&str> = std::iter::once(chain.as_str()).chain(graph[sound_from..].iter().map(String::as_str)).collect();
+        std::fs::write(&gpu_file, lines.join(";")).map_err(|e| format!("Couldn't prepare the export: {e}"))?;
+    }
+    let command = |encoder: Encoder, on_gpu: bool| -> Vec<String> {
         let mut args: Vec<String> = ["-y", "-hide_banner", "-nostats", "-progress", "pipe:1"].map(String::from).to_vec();
-        args.extend(inputs.iter().cloned());
-        args.extend(["-/filter_complex".into(), graph_file.to_string_lossy().into_owned()]);
+        match gpu.as_ref().filter(|_| on_gpu) {
+            // The clip's frames stay on the graphics card from decoding to encoding.
+            Some((i, _)) => {
+                let at = input_at[i];
+                args.extend(inputs[..at].iter().cloned());
+                args.extend(["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"].map(String::from));
+                args.extend(inputs[at..].iter().cloned());
+            }
+            None => args.extend(inputs.iter().cloned()),
+        }
+        let graph = if on_gpu { &gpu_file } else { &graph_file };
+        args.extend(["-/filter_complex".into(), graph.to_string_lossy().into_owned()]);
         if is_video {
             args.extend(["-map".into(), "[outv]".into()]);
-            args.extend(encoder.args(spec.quality));
+            let mut codec = encoder.args(spec.quality);
+            // Already that format on the graphics card; asking for it again would add a step on the processor, which fails.
+            if on_gpu && let Some(at) = codec.iter().position(|a| a == "-pix_fmt") {
+                codec.drain(at..at + 2);
+            }
+            args.extend(codec);
             args.extend(["-r".into(), fps.to_string()]);
             if let Some(index) = cover_input {
                 args.extend(["-map".into(), format!("{index}:v"), "-c:v:1".into(), "copy".into(), "-disposition:v:1".into(), "attached_pic".into()]);
@@ -769,12 +795,67 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         args.push(output.to_string_lossy().into_owned());
         args
     };
-    match run_ffmpeg(app, &spec.id, command(encoder), total, "encoding", Some(work)).await {
-        Err(e) if encoder.is_hardware() && e != "Cancelled" => {
-            run_ffmpeg(app, &spec.id, command(Encoder::Software), total, "encoding", Some(work)).await
+    // All on the graphics card if it can; if that fails, drawn on the processor; if its encoder fails too, all on the processor.
+    let attempts = [gpu.is_some().then_some((encoder, true)), Some((encoder, false)), encoder.is_hardware().then_some((Encoder::Software, false))];
+    let mut result = Err("Nothing to export.".to_string());
+    for (encoder, on_gpu) in attempts.into_iter().flatten() {
+        result = run_ffmpeg(app, &spec.id, command(encoder, on_gpu), total, "encoding", Some(work)).await;
+        match &result {
+            Ok(()) => break,
+            Err(e) if e == "Cancelled" => break,
+            Err(e) if on_gpu && !app.state::<Jobs>().is_paused(&spec.id) => {
+                crate::diag::note(format!("export on the graphics card failed, drawing it on the processor: {e}"));
+            }
+            Err(_) => {}
         }
-        result => result,
     }
+    result
+}
+
+/// One video clip that fills the whole export, with nothing drawn over it, can be drawn entirely on an NVIDIA
+/// graphics card: decoded, mirrored or turned, resized and encoded there. Measured on the owner's laptop with the
+/// processor half busy (as while editing): 5.4x → 11x real time, the same picture (46 dB). Returns that clip's
+/// index and its filter chain; None for anything else, which is drawn on the processor as before.
+fn gpu_picture(spec: &RenderSpec, input_of: &HashMap<usize, (usize, &Source)>, total: f64) -> Option<(usize, String)> {
+    let mut pictures = spec.clips.iter().enumerate().filter(|(_, c)| c.role != Role::Audio);
+    let (i, clip) = pictures.next()?;
+    let &(k, source) = input_of.get(&i)?;
+    let plain = clip.role == Role::Video
+        && pictures.next().is_none()
+        && source.info.has_video
+        && !source.image
+        // Phone videos marked to be turned: FFmpeg turns them on the processor only (they came out sideways).
+        && !source.info.turned
+        && !clip.reverse
+        && !clip.smooth
+        && !clip.fill
+        && clip.size == 1.0
+        && clip.crop == [0.0; 4]
+        && clip.picture_fades().is_empty()
+        // No black before or after it (that's drawn on the processor).
+        && clip.start <= 0.001
+        && clip.end() >= total - 0.001;
+    if !plain {
+        return None;
+    }
+    // As `picture_edits` and `picture_chain` do on the processor: mirror, then turn, then speed, then fit inside the frame.
+    let turn = match clip.rotate {
+        90 => ",transpose_cuda=dir=clock",
+        180 => ",transpose_cuda=dir=reversal",
+        270 => ",transpose_cuda=dir=cclock",
+        _ => "",
+    };
+    let (w, h, fps) = (spec.width, spec.height, spec.fps);
+    Some((
+        i,
+        format!(
+            "[{k}:v]setpts=PTS-STARTPTS{mirror}{turn}{speed},scale_cuda=w={w}:h={h}:force_original_aspect_ratio=decrease:force_divisible_by=2:format=yuv420p,pad_cuda=w={w}:h={h}:x='{x}*(ow-iw)':y='{y}*(oh-ih)',setsar=1,fps={fps}[outv]",
+            mirror = if clip.mirror { ",transpose_cuda=dir=hflip" } else { "" },
+            speed = if clip.speed == 1.0 { String::new() } else { format!(",setpts=PTS/{:.4}", clip.speed) },
+            x = clip.x,
+            y = clip.y,
+        ),
+    ))
 }
 
 /// The chosen font (`font`, model.ts `TEXT_FONTS`), or a bold Windows font, that has the text's
@@ -915,7 +996,29 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cover_bytes, effect_filter, frame_step, look_filter, piece_frames, pieces, timed, ClipSpec};
+    use super::{cover_bytes, effect_filter, frame_step, gpu_picture, look_filter, piece_frames, pieces, timed, ClipSpec, RenderSpec, Source};
+    use crate::local::ProbeInfo;
+    use std::collections::HashMap;
+
+    #[test]
+    fn draws_only_a_plain_full_clip_on_the_graphics_card() {
+        let spec = |clips: &str| -> RenderSpec {
+            serde_json::from_str(&format!(r#"{{"id":"t","media":[],"clips":[{clips}],"width":1920,"height":1080,"fps":30,"output":"video","container":"mp4","fileName":"x"}}"#)).unwrap()
+        };
+        let source = |turned| Source { path: "a.mp4".into(), image: false, offset: 0.0, info: ProbeInfo { has_video: true, has_audio: true, fps: Some(25.0), turned } };
+        let (plain, phone) = (source(false), source(true));
+        let video = r#"{"role":"video","layer":0,"mediaId":"a","start":0,"in":0,"out":10,"mirror":true}"#;
+        let one = HashMap::from([(0, (0, &plain))]);
+        let (i, chain) = gpu_picture(&spec(video), &one, 10.0).unwrap();
+        assert_eq!(i, 0);
+        assert!(chain.starts_with("[0:v]setpts=PTS-STARTPTS,transpose_cuda=dir=hflip,scale_cuda=w=1920:h=1080:"));
+        assert!(chain.ends_with(",fps=30[outv]"));
+        // Turned phone video, black after it, or text over it: drawn on the processor.
+        assert!(gpu_picture(&spec(video), &HashMap::from([(0, (0, &phone))]), 10.0).is_none());
+        assert!(gpu_picture(&spec(video), &one, 12.0).is_none());
+        let text = r#"{"role":"text","layer":1,"start":0,"in":0,"out":2,"text":"hi"}"#;
+        assert!(gpu_picture(&spec(&format!("{video},{text}")), &one, 10.0).is_none());
+    }
 
     #[test]
     fn picks_how_many_smooth_pieces_fit() {

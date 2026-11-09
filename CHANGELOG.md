@@ -13,6 +13,9 @@
 - **Links the preview couldn't play now play within seconds** (videos sent in small pieces, MKV and
   other files the player doesn't open): Craftora copies the video as it comes in and plays the copy,
   at the original quality. It used to download the whole video first.
+- **Pause works for every link.** Those copies can be paused too, and go on where they stopped,
+  also after closing Craftora (checked frame by frame: the finished video is the same as the
+  original). Live streams keep Stop instead.
 
 **Fixed**
 
@@ -33,6 +36,11 @@
   Captions made earlier can be made again (Transcript → Make captions).
 - **Some links that played had no picture** in the media list (stream playlists): Craftora now
   takes one from the video.
+- **Exporting an edited video from a link showed two rows in the Queue** (the export, waiting, and
+  its video downloading). It's one row now: Downloading, then Encoding. Pause, Cancel and Retry on
+  it reach the download too.
+- **An edited video exported while its link was still being copied could use the unfinished copy.**
+  The export now waits for the copy to finish.
 
 ## 0.6.0 (November 2026)
 
