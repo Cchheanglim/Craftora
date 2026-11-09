@@ -28,10 +28,27 @@
 
 .preview__pictures {
   background: #000;
+  transform-origin: 50% 50%;
 }
 
-.preview__fx-layer {
+.preview__fx-layer,
+.preview__bar {
   pointer-events: none;
+}
+
+.preview__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: #000;
+}
+
+.preview__bar.is-top {
+  top: 0;
+}
+
+.preview__bar.is-bottom {
+  bottom: 0;
 }
 
 .preview__stage {

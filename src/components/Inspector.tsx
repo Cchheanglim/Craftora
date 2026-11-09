@@ -138,6 +138,20 @@ export function Inspector({
         </p>
       )}
 
+      {clip.look && (
+        <Slider
+          id="insp-strength"
+          label="Strength"
+          min={0}
+          max={1}
+          step={0.05}
+          value={clip.lookAmount ?? 1}
+          format={pct}
+          onCheckpoint={onCheckpoint}
+          onChange={(lookAmount) => onChange({ lookAmount }, true)}
+        />
+      )}
+
       {onDuration && (
         <div className="insp__slider">
           <label htmlFor="insp-duration">Duration</label>

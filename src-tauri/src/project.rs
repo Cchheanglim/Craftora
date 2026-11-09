@@ -395,7 +395,7 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             }
             // A filter (colour steps, checked above) or one known effect, never both.
             Role::Effect => {
-                if clip.look.is_empty() == clip.effect.is_empty() || (!clip.effect.is_empty() && effect_filter(&clip.effect, clip.start, clip.length(), 1920).is_none()) {
+                if clip.look.is_empty() == clip.effect.is_empty() || (!clip.effect.is_empty() && effect_filter(&clip.effect, clip.start, clip.length(), (1920, 1080, 30)).is_none()) {
                     return Err("An effect on the timeline isn't one Craftora knows.".into());
                 }
             }
@@ -687,7 +687,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                     let filters: Vec<String> = if clip.effect.is_empty() {
                         clip.look.iter().filter_map(|(op, amount)| look_filter(op, *amount)).map(|f| timed(f.trim_start_matches(','), &on)).collect()
                     } else {
-                        effect_filter(&clip.effect, clip.start, clip.length(), w).map(|f| timed(&f, &on)).into_iter().collect()
+                        effect_filter(&clip.effect, clip.start, clip.length(), (w, h, fps)).map(|f| timed(&f, &on)).into_iter().collect()
                     };
                     if filters.is_empty() {
                         continue;
@@ -917,17 +917,51 @@ const BLUR_SHARE: f64 = 0.006;
 
 /// An effect block from `start` for `length` seconds, as the preview draws it (effects.ts
 /// `blocksStyle`); without its time range (the caller adds it). None for an effect the catalog
-/// doesn't have.
-fn effect_filter(effect: &str, start: f64, length: f64, width: u32) -> Option<String> {
+/// doesn't have. `size`: the export's width, height and frame rate.
+fn effect_filter(effect: &str, start: f64, length: f64, (w, h, fps): (u32, u32, u32)) -> Option<String> {
     let (st, d) = (secs(start), secs(length));
+    let ease = |x: &str| format!("(0.5-0.5*cos(PI*{x}))");
+    // Seconds into the block, from the frame count: perspective has no clock, and the picture runs at `fps` from 0.
+    let u = format!("(in/{fps}-{st})");
+    let through = ease(&format!("clip({u}/{d},0,1)"));
     Some(match effect {
         "fade-in" => format!("fade=t=in:st={st}:d={d}:color=black"),
         "fade-out" => format!("fade=t=out:st={st}:d={d}:color=black"),
         "flash" => format!("fade=t=in:st={st}:d={d}:color=white"),
-        "blur" => format!("gblur=sigma={:.2}", BLUR_SHARE * f64::from(width)),
+        "blur" => format!("gblur=sigma={:.2}", BLUR_SHARE * f64::from(w)),
         "mirror" => "hflip".into(),
+        "zoom-in" => warp(&format!("(1+0.3*{through})"), "0", "0"),
+        "zoom-out" => warp(&format!("(1.3-0.3*{through})"), "0", "0"),
+        "punch" => {
+            let hit = format!("if(lt({u},0.1),{},1-{})", ease(&format!("clip({u}/0.1,0,1)")), ease(&format!("clip(({u}-0.1)/0.4,0,1)")));
+            warp(&format!("(1+0.2*{hit})"), "0", "0")
+        }
+        "shake" => {
+            let fall = format!("pow(1-clip({u}/{d},0,1),2)");
+            let dx = format!("(0.02*W*{fall}*(sin(2*PI*7.3*{u})+0.5*sin(2*PI*13.1*{u}))/1.5)");
+            let dy = format!("(0.02*H*{fall}*(sin(2*PI*9.1*{u}+1)+0.5*sin(2*PI*5.7*{u}+2))/1.5)");
+            warp("1.06", &dx, &dy)
+        }
+        "bars" => {
+            // 2.39:1 on a landscape frame; a tenth of the height each on a tall one. They slide in and out over 0.3 s.
+            let share = if w > h { (1.0 - f64::from(w) / f64::from(h) / 2.39).max(0.0) / 2.0 } else { 0.1 };
+            let slide = ease(&format!("clip(min((t-{st})/0.3,({d}-(t-{st}))/0.3),0,1)"));
+            // drawbox reads a height of 0 as the whole picture: never under a pixel.
+            let bar = format!("max(1,ih*{share:.4}*{slide})");
+            // The caller times only the last filter; the first gets the same window here.
+            let on = format!("between(t,{st},{})", secs(start + length));
+            format!("drawbox=x=0:y=0:w=iw:h='{bar}':color=black:t=fill:enable='{on}',drawbox=x=0:y='ih-{bar}':w=iw:h='{bar}':color=black:t=fill")
+        }
         _ => return None,
     })
+}
+
+/// The picture scaled by `z` about its centre, then moved by (`dx`, `dy`) pixels (FFmpeg expressions), as the preview's
+/// CSS `translate(…) scale(z)`: each output corner shows the source point the inverse of that lands on.
+fn warp(z: &str, dx: &str, dy: &str) -> String {
+    let (left, right) = (format!("W/2-(W/2+{dx})/{z}"), format!("W/2+(W/2-{dx})/{z}"));
+    let (top, bottom) = (format!("H/2-(H/2+{dy})/{z}"), format!("H/2+(H/2-{dy})/{z}"));
+    format!("perspective=x0='{left}':y0='{top}':x1='{right}':y1='{top}':x2='{left}':y2='{bottom}':x3='{right}':y3='{bottom}':eval=frame")
 }
 
 /// A filter limited to `on` (its time range). A filter without options (hflip) takes it after
@@ -1074,11 +1108,19 @@ mod tests {
 
     #[test]
     fn draws_each_effect_block() {
-        assert_eq!(effect_filter("fade-in", 2.0, 3.0, 1920).unwrap(), "fade=t=in:st=2.000:d=3.000:color=black");
-        assert_eq!(effect_filter("flash", 0.0, 1.0, 1920).unwrap(), "fade=t=in:st=0.000:d=1.000:color=white");
-        assert_eq!(effect_filter("blur", 0.0, 1.0, 1000).unwrap(), "gblur=sigma=6.00");
-        assert_eq!(effect_filter("mirror", 0.0, 1.0, 1920).unwrap(), "hflip");
-        assert!(effect_filter("explode", 0.0, 1.0, 1920).is_none());
+        assert_eq!(effect_filter("fade-in", 2.0, 3.0, (1920, 1080, 30)).unwrap(), "fade=t=in:st=2.000:d=3.000:color=black");
+        assert_eq!(effect_filter("flash", 0.0, 1.0, (1920, 1080, 30)).unwrap(), "fade=t=in:st=0.000:d=1.000:color=white");
+        assert_eq!(effect_filter("blur", 0.0, 1.0, (1000, 562, 30)).unwrap(), "gblur=sigma=6.00");
+        assert_eq!(effect_filter("mirror", 0.0, 1.0, (1920, 1080, 30)).unwrap(), "hflip");
+        assert!(effect_filter("explode", 0.0, 1.0, (1920, 1080, 30)).is_none());
+        // Zoom: 1 to 1.3 eased over the block, timed by frame count at the export's rate.
+        let zoom = effect_filter("zoom-in", 2.0, 3.0, (1920, 1080, 30)).unwrap();
+        assert!(zoom.starts_with("perspective=x0='W/2-(W/2+0)/(1+0.3*(0.5-0.5*cos(PI*clip((in/30-2.000)/3.000,0,1))))'"), "{zoom}");
+        assert!(zoom.ends_with(":eval=frame"));
+        // Bars: 2.39:1 on 16:9 (12.81% each), both boxes timed.
+        let bars = effect_filter("bars", 1.0, 2.0, (1920, 1080, 30)).unwrap();
+        assert!(bars.contains("ih*0.1281*") && bars.contains(":enable='between(t,1.000,3.000)',drawbox"), "{bars}");
+        assert!(effect_filter("bars", 1.0, 2.0, (1080, 1920, 30)).unwrap().contains("ih*0.1000*"));
         let on = "enable='between(t,1.000,2.000)'";
         assert_eq!(timed("hflip", on), "hflip=enable='between(t,1.000,2.000)'");
         assert_eq!(timed("gblur=sigma=6.00", on), "gblur=sigma=6.00:enable='between(t,1.000,2.000)'");

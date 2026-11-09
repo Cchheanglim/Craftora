@@ -7,11 +7,11 @@ import type Hls from "hls.js";
 // Also the preview's stand-in while a video loads or can't play, so not much smaller than the video.
 const WIDTH = 480;
 
-function draw(source: HTMLVideoElement | HTMLImageElement, width: number, height: number): string | undefined {
+function draw(source: HTMLVideoElement | HTMLImageElement, width: number, height: number, targetWidth = WIDTH): string | undefined {
   try {
     const canvas = document.createElement("canvas");
-    canvas.width = WIDTH;
-    canvas.height = Math.max(1, Math.round((WIDTH * height) / width));
+    canvas.width = targetWidth;
+    canvas.height = Math.max(1, Math.round((targetWidth * height) / width));
     canvas.getContext("2d")!.drawImage(source, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL("image/jpeg", 0.75);
   } catch {
@@ -19,8 +19,8 @@ function draw(source: HTMLVideoElement | HTMLImageElement, width: number, height
   }
 }
 
-/** `previewUrl` must be playable here (a file on this PC). Resolves undefined when it can't be read. */
-export function captureThumbnail(previewUrl: string, image?: boolean, hls?: boolean): Promise<string | undefined> {
+/** `previewUrl` must be playable here (a file on this PC, or a cached preview). Resolves undefined when it can't be read. */
+export function captureThumbnail(previewUrl: string, image?: boolean, hls?: boolean, time?: number, width = WIDTH): Promise<string | undefined> {
   return new Promise((resolve) => {
     let player: Hls | undefined;
     let gone = false;
@@ -35,7 +35,7 @@ export function captureThumbnail(previewUrl: string, image?: boolean, hls?: bool
     if (image) {
       const img = new Image();
       img.crossOrigin = "anonymous";
-      img.onload = () => done(draw(img, img.naturalWidth, img.naturalHeight));
+      img.onload = () => done(draw(img, img.naturalWidth, img.naturalHeight, width));
       img.onerror = () => done();
       img.src = previewUrl;
       return;
@@ -43,11 +43,13 @@ export function captureThumbnail(previewUrl: string, image?: boolean, hls?: bool
     const video = document.createElement("video");
     video.crossOrigin = "anonymous";
     video.muted = true;
-    video.preload = "metadata";
-    // One second in skips the black first frame most videos start with.
-    video.onloadedmetadata = () => (video.currentTime = Math.min(1, video.duration / 2 || 0));
+    video.preload = time === undefined ? "metadata" : "auto";
+    // One second in skips the black first frame most videos start with, unless a time is asked for.
+    video.onloadedmetadata = () =>
+      (video.currentTime =
+        time === undefined ? Math.min(1, video.duration / 2 || 0) : Math.min(Math.max(0, time), Math.max(0, video.duration - 0.05)));
     video.onseeked = () => {
-      done(video.videoWidth ? draw(video, video.videoWidth, video.videoHeight) : undefined);
+      done(video.videoWidth ? draw(video, video.videoWidth, video.videoHeight, width) : undefined);
       video.removeAttribute("src");
       video.load();
     };

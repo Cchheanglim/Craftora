@@ -1839,6 +1839,9 @@ export default function App() {
           {rightTab === "filters" || rightTab === "effects" || rightTab === "transitions" ? (
             <FxPanel
               tab={rightTab}
+              project={project}
+              time={playback.time}
+              playing={playback.playing}
               onPick={(item) => {
                 // On the selected clip (a transition on the join before it), else at the playhead.
                 if (!selected) return applyFx(item, undefined, playback.time);

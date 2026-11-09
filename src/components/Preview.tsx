@@ -225,7 +225,12 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const sounds = project.clips.filter((c) => c.mediaId && !showsPicture(project, c));
   const texts = project.clips.filter((c) => !c.mediaId && !isBlock(c) && !trackHidden(c)).sort(byLayer);
   // Filter and effect blocks showing now change the pictures (not text), lowest track first.
-  const blocks = blocksStyle(project.clips.filter((c) => isBlock(c) && active(c) && !trackHidden(c)).sort(byLayer), time, stageRef.current?.clientWidth ?? frame.width);
+  const blocks = blocksStyle(
+    project.clips.filter((c) => isBlock(c) && active(c) && !trackHidden(c)).sort(byLayer),
+    time,
+    stageRef.current?.clientWidth ?? frame.width,
+    stageRef.current?.clientHeight ?? frame.height,
+  );
   const captionTracks = new Set(project.tracks.filter((t) => t.name === "Captions").map((t) => t.id));
   const hasCaptions = project.media.some((m) => m.captions) || captionTracks.size > 0;
   const isCaption = (c: Clip) => c.trackId.startsWith(SHOWN_CAPTIONS) || captionTracks.has(c.trackId);
@@ -411,7 +416,10 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               </span>
             </span>
           )}
-          <div className="preview__pictures" style={{ filter: blocks.filter, transform: blocks.mirror ? "scaleX(-1)" : undefined }}>
+          <div
+            className="preview__pictures"
+            style={{ filter: blocks.filter, transform: [blocks.transform, blocks.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined }}
+          >
           {pictures.map((clip) => {
             const media = mediaOf(clip);
             const canPlay = Boolean(media?.source.previewUrl && !failed.has(media.source.previewUrl));
@@ -494,6 +502,12 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             <span key={i} className="preview__fx-layer" style={{ background: layer.color, opacity: layer.opacity }} aria-hidden="true" />
           ))}
           </div>
+          {blocks.bars > 0 && (
+            <>
+              <span className="preview__bar is-top" style={{ height: `${blocks.bars * 100}%` }} aria-hidden="true" />
+              <span className="preview__bar is-bottom" style={{ height: `${blocks.bars * 100}%` }} aria-hidden="true" />
+            </>
+          )}
           {sounds.map((clip) => {
             const media = mediaOf(clip);
             const src = media?.source.previewAudioUrl || media?.source.previewUrl;

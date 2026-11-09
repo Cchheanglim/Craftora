@@ -29,6 +29,26 @@ test("a filter is the same CSS filter steps the export gets", () => {
   expect(lookFilter("alien")).toBe("hue-rotate(180deg)");
   expect(lookFilter(undefined)).toBeUndefined();
   expect(lookSteps("not-a-look")).toEqual([]);
+  // Strength scales each step between no change (0) and the full look (1).
+  expect(lookSteps("noir", 0)).toEqual([
+    ["grayscale", 0],
+    ["contrast", 1],
+    ["brightness", 1],
+  ]);
+  expect(lookSteps("warm", 0)).toEqual([
+    ["sepia", 0],
+    ["saturate", 1],
+  ]);
+  expect(lookSteps("noir", 0.5)).toEqual([
+    ["grayscale", 0.5],
+    ["contrast", 1.25],
+    ["brightness", 0.95],
+  ]);
+  expect(lookSteps("noir", 1)).toEqual([
+    ["grayscale", 1],
+    ["contrast", 1.5],
+    ["brightness", 0.9],
+  ]);
 });
 
 test("a filter dropped on a clip covers that clip, on a track above it", () => {
@@ -101,6 +121,14 @@ test("the preview draws blocks the way the export does", () => {
   expect(style.mirror).toBe(true);
   // Halfway through a 3 s fade from black: half black.
   expect(style.layers).toEqual([{ color: "#000", opacity: 0.5 }]);
+
+  // Zoom punch peaks at u = 0.1 s (scale 1.2); cinema bars on 16:9 cover ~12.8% top and bottom mid-block.
+  p = run(p, dropEdits(p, { kind: "effect", id: "punch" }, undefined, 0, ["p", "x"])!.edits);
+  p = run(p, dropEdits(p, { kind: "effect", id: "bars" }, undefined, 0, ["b", "x"])!.edits);
+  const punch = p.clips.find((c) => c.id === "p")!;
+  const bars = p.clips.find((c) => c.id === "b")!;
+  expect(blocksStyle([punch], 0.1, 1920, 1080).transform).toBe("translate(0%, 0%) scale(1.2)");
+  expect(blocksStyle([bars], 1.5, 1920, 1080).bars).toBeCloseTo(0.128, 3);
 });
 
 test("tracks are called Track 1, Track 2… from the top", () => {
