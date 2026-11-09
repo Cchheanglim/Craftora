@@ -81,6 +81,8 @@ enum TransitionKind {
     Crossfade,
     /// Fade to black, then up from black.
     Dip,
+    /// The same through white (a flash).
+    Flash,
 }
 
 fn one() -> f64 {
@@ -170,6 +172,8 @@ struct ClipSpec {
 /// A fade over the clip's own time: `fade_in` from `start` for `length`, or out.
 struct Ramp {
     fade_in: bool,
+    /// Through white (a flash transition) instead of see-through.
+    white: bool,
     start: f64,
     length: f64,
 }
@@ -190,24 +194,34 @@ impl ClipSpec {
         let length = self.length();
         let mut ramps = Vec::new();
         if self.fade_in > 0.0 {
-            ramps.push(Ramp { fade_in: true, start: 0.0, length: self.fade_in });
+            ramps.push(Ramp { white: false, fade_in: true, start: 0.0, length: self.fade_in });
         }
         if self.fade_out > 0.0 {
-            ramps.push(Ramp { fade_in: false, start: length - self.fade_out, length: self.fade_out });
+            ramps.push(Ramp { white: false, fade_in: false, start: length - self.fade_out, length: self.fade_out });
         }
         if self.transition_in > 0.0 {
             ramps.push(match self.transition_in_kind {
-                TransitionKind::Crossfade => Ramp { fade_in: true, start: 0.0, length: self.transition_in },
-                TransitionKind::Dip => Ramp { fade_in: true, start: self.transition_in / 2.0, length: self.transition_in / 2.0 },
+                TransitionKind::Crossfade => Ramp { white: false, fade_in: true, start: 0.0, length: self.transition_in },
+                TransitionKind::Dip | TransitionKind::Flash => Ramp {
+                    white: self.transition_in_kind == TransitionKind::Flash,
+                    fade_in: true,
+                    start: self.transition_in / 2.0,
+                    length: self.transition_in / 2.0,
+                },
             });
         }
         if self.transition_out > 0.0 {
             let begins = length - self.transition_out;
             match self.transition_out_kind {
                 // The picture stays under the incoming one; only the sound fades.
-                TransitionKind::Crossfade if sound => ramps.push(Ramp { fade_in: false, start: begins, length: self.transition_out }),
+                TransitionKind::Crossfade if sound => ramps.push(Ramp { white: false, fade_in: false, start: begins, length: self.transition_out }),
                 TransitionKind::Crossfade => {}
-                TransitionKind::Dip => ramps.push(Ramp { fade_in: false, start: begins, length: self.transition_out / 2.0 }),
+                TransitionKind::Dip | TransitionKind::Flash => ramps.push(Ramp {
+                    white: self.transition_out_kind == TransitionKind::Flash,
+                    fade_in: false,
+                    start: begins,
+                    length: self.transition_out / 2.0,
+                }),
             }
         }
         ramps
@@ -265,7 +279,8 @@ impl ClipSpec {
     fn picture_fades(&self) -> String {
         self.ramps(false)
             .iter()
-            .map(|r| format!(",fade=t={}:st={}:d={}:alpha=1", if r.fade_in { "in" } else { "out" }, secs(r.start.max(0.0)), secs(r.length)))
+            // A flash fades the picture itself to white (each clip is fully white at the join, the later one on top).
+            .map(|r| format!(",fade=t={}:st={}:d={}:{}", if r.fade_in { "in" } else { "out" }, secs(r.start.max(0.0)), secs(r.length), if r.white { "color=white" } else { "alpha=1" }))
             .collect()
     }
 
@@ -389,6 +404,9 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             return Err("A clip on the timeline has an invalid setting.".into());
         }
         match clip.role {
+            Role::Video if !clip.effect.is_empty() && effect_filter(&clip.effect, 0.0, clip.length(), (1920, 1080, 30)).is_none() => {
+                return Err("An effect on a clip isn't one Craftora knows.".into());
+            }
             Role::Shape => {
                 if shape_bytes(&clip.picture).is_none() {
                     return Err("A shape on the timeline couldn't be read.".into());
@@ -671,8 +689,15 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                         Some(&s) => format!("[{s}:v]setpts=PTS-STARTPTS"),
                         None => format!("[{k}:v]{}", clip.picture_chain(w, h, fps)),
                     };
+                    // A filter and an effect dropped on this clip draw on its own picture, timed from its first frame.
+                    let own: String = clip
+                        .look
+                        .iter()
+                        .filter_map(|(op, amount)| look_filter(op, *amount))
+                        .chain(effect_filter(&clip.effect, 0.0, clip.length(), (w, h, fps)).map(|f| format!(",{f}")))
+                        .collect();
                     graph.push(format!(
-                        "{chain},fps={fps},format=yuva420p{},setpts=PTS+{start}/TB[v{i}]",
+                        "{chain},fps={fps}{own},format=yuva420p{},setpts=PTS+{start}/TB[v{i}]",
                         clip.picture_fades()
                     ));
                     graph.push(format!(
@@ -861,6 +886,9 @@ fn gpu_picture(spec: &RenderSpec, input_of: &HashMap<usize, (usize, &Source)>, t
         && !source.info.turned
         && !clip.reverse
         && !clip.smooth
+        // A filter or effect inside the clip is drawn on the processor.
+        && clip.look.is_empty()
+        && clip.effect.is_empty()
         && !clip.fill
         && clip.size == 1.0
         && clip.crop == [0.0; 4]

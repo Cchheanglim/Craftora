@@ -26,7 +26,7 @@ import {
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
-import { blockLabel } from "../project/effects";
+import { LOOKS, PICTURE_EFFECTS, blockLabel } from "../project/effects";
 import { SHAPES, shapeLabel } from "../project/shapes";
 import "./Inspector.css";
 
@@ -143,6 +143,23 @@ export function Inspector({
           somewhere else.
         </p>
       )}
+
+      {/* A filter or effect dropped on this video clip: named, with a way to take it off. */}
+      {clip.mediaId &&
+        ([
+          ["look", "Filter", LOOKS.find((l) => l.id === clip.look)?.label],
+          ["effect", "Effect", PICTURE_EFFECTS.find((f) => f.id === clip.effect)?.label],
+        ] as const).map(
+          ([field, kind, name]) =>
+            name && (
+              <p key={field} className="insp__hint">
+                {kind}: {name}{" "}
+                <button type="button" className="btn btn--ghost" onClick={() => onChange(field === "look" ? { look: undefined, lookAmount: undefined } : { effect: undefined })}>
+                  Remove
+                </button>
+              </p>
+            ),
+        )}
 
       {clip.look && (
         <Slider
