@@ -123,13 +123,13 @@ pub async fn make_captions(
     let work = app.path().app_cache_dir().map_err(|e| e.to_string())?.join(format!("speech-{id}"));
     std::fs::create_dir_all(&work).map_err(|e| format!("Couldn't make a working folder: {e}"))?;
     let started = std::time::Instant::now();
-    let made = listen(&app, &id, file, &source, (&model, chosen.dtw), &work, card, lyrics).await;
+    let made = listen(&app, &id, (file, &source), (&model, chosen.dtw), &work, card, lyrics).await;
     crate::diag::note(format!("captions from the sound: {} in {:.0}s", if made.is_ok() { "made" } else { "failed" }, started.elapsed().as_secs_f64()));
     let _ = std::fs::remove_dir_all(&work);
     made
 }
 
-async fn listen(app: &AppHandle, id: &str, file: Option<PathBuf>, link: &str, (model, dtw): (&Path, &str), work: &Path, card: Option<u32>, lyrics: bool) -> Result<Vec<Caption>, String> {
+async fn listen(app: &AppHandle, id: &str, (file, link): (Option<PathBuf>, &str), (model, dtw): (&Path, &str), work: &Path, card: Option<u32>, lyrics: bool) -> Result<Vec<Caption>, String> {
     // Reading a long file's sound takes a while too, so it's said for files as well as links.
     report(app, id, "sound", 0.0);
     let (input, title) = match file {
@@ -690,5 +690,16 @@ mod tests {
         assert!(same_song("Joji - Glimpse of Us", &hit("Glimpse of Us", "Joji")));
         assert!(!same_song("my trip home", &hit("Home", "X")));
         assert!(same_song("Glimpse of Us", &hit("Glimpse of Us", "Joji")));
+    }
+
+    /// Against lrclib.net: `cargo test --lib -- --ignored --nocapture finds_a_songs`.
+    #[tokio::test]
+    #[ignore]
+    async fn finds_a_songs_lyrics() {
+        let lines = song_lyrics("Joji - Glimpse of Us (Official Video)", 234.03).await.expect("found");
+        for c in &lines {
+            println!("{:.2}	{:.2}	{}", c.start, c.end, c.text);
+        }
+        assert!(lines.len() > 20 && lines[0].text.starts_with("She'd take the world"));
     }
 }
