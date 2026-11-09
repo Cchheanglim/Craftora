@@ -11,19 +11,6 @@ export type FxTab = "filters" | "effects" | "transitions";
 const TILE_WIDTH = 160;
 const SETTLE_MS = 400;
 
-/** Built-in sample picture (sky blue, skin tone, green and grey) when there's no frame under the playhead. */
-const SAMPLE_FRAME =
-  "data:image/svg+xml;utf8," +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90">' +
-      '<rect width="160" height="54" fill="#5da9dd"/>' +
-      '<path d="M0 54 Q45 36 95 54 T160 48 V90 H0 Z" fill="#4f9d5d"/>' +
-      '<rect x="104" y="54" width="56" height="36" fill="#7c828a"/>' +
-      '<circle cx="52" cy="36" r="16" fill="#dfa684"/>' +
-      '<path d="M28 90 C28 66 76 66 76 90 Z" fill="#c98e6b"/>' +
-      "</svg>",
-  );
-
 /** The top visible picture under the playhead, if it can be read here. */
 function pictureAt(project: Project | undefined, time: number): { url: string; image?: boolean; hls?: boolean; mediaTime: number } | null {
   if (!inDesktopApp || !project) return null;
@@ -106,7 +93,8 @@ export function FxPanel({
     >
       <span className="fx-tile__stage">
         <img
-          src={item.kind === "filter" ? (frame ?? SAMPLE_FRAME) : "/craftora.svg"}
+          // Craftora's cat until a frame of the video is ready (or when nothing is under the playhead).
+          src={(item.kind === "filter" && frame) || "/craftora.svg"}
           alt=""
           draggable={false}
           style={look ? { filter: look } : undefined}
