@@ -111,8 +111,8 @@ const SIZES: { size: TrackSize; label: string }[] = [
   { size: "l", label: "Large" },
 ];
 const ROW_PX: Record<TrackSize, number> = { s: 30, m: 48, l: 62 };
-/** A track's row size: as set in its menu, else large for the main track and medium for the others. */
-const rowSize = (t: Track, main: boolean): TrackSize => t.height ?? (main ? "l" : "m");
+/** A track's row size: as set in its menu, else large for the main track and the tracks over it (as tall as each other), medium for the sound below. */
+const rowSize = (t: Track, large: boolean): TrackSize => t.height ?? (large ? "l" : "m");
 /** Share of a video clip's row its sound-wave band takes, by the track's Waveform size. */
 const WAVE_SHARE: Record<TrackSize, number> = { s: 0.1, m: 0.17, l: 0.28 };
 /** The name bar along the top of a video or sound clip. */
@@ -170,6 +170,8 @@ export function TimelineEditor({
   const [clipMenu, setClipMenu] = useState<{ clipId: string; x: number; y: number; time: number } | null>(null);
   const [coverMenu, setCoverMenu] = useState<{ x: number; y: number } | null>(null);
   const main = mainTrack(project);
+  /** The main track or one above it (pictures, text, effects). */
+  const overMain = (t: Track) => !main || project.tracks.indexOf(t) <= project.tracks.indexOf(main);
   /** The track whose … menu is open, and where to draw it. */
   const [menu, setMenu] = useState<{ trackId: string; x: number; y: number; up: boolean } | null>(null);
   // The menus sit at a fixed place on screen: they close when the timeline moves under them
@@ -582,7 +584,7 @@ export function TimelineEditor({
             const name = trackLabel(project, track);
             const menuOpen = menu?.trackId === track.id;
             return (
-              <div key={track.id} className={track.id === main?.id ? "tl__head is-main" : "tl__head"} style={{ height: ROW_PX[rowSize(track, track.id === main?.id)] }} role="group" aria-label={name}>
+              <div key={track.id} className={track.id === main?.id ? "tl__head is-main" : "tl__head"} style={{ height: ROW_PX[rowSize(track, overMain(track))] }} role="group" aria-label={name}>
                 {track.id === main?.id ? (
                   <button
                     type="button"
@@ -670,8 +672,8 @@ export function TimelineEditor({
                             key={size}
                             type="button"
                             role="menuitemradio"
-                            aria-checked={rowSize(track, track.id === main?.id) === size}
-                            autoFocus={rowSize(track, track.id === main?.id) === size}
+                            aria-checked={rowSize(track, overMain(track)) === size}
+                            autoFocus={rowSize(track, overMain(track)) === size}
                             onClick={() => api.edit({ type: "updateTrack", trackId: track.id, patch: { height: size } })}
                           >
                             {label}
@@ -762,7 +764,7 @@ export function TimelineEditor({
                   else laneRefs.current.delete(track.id);
                 }}
                 className={["tl__lane", track.id === main?.id && "is-main", track.locked && "is-locked", track.hidden && "is-hidden"].filter(Boolean).join(" ")}
-                style={{ height: ROW_PX[rowSize(track, track.id === main?.id)] }}
+                style={{ height: ROW_PX[rowSize(track, overMain(track))] }}
                 onPointerUp={onMediaDrop(track)}
               >
                 {project.clips
@@ -780,7 +782,7 @@ export function TimelineEditor({
                     const picture = media?.hasVideo ? (media.source.image ? media.source.previewUrl : media.source.thumbnail) : undefined;
                     const strip = media?.hasVideo ? (strips[media.source.previewUrl] ?? (picture ? { url: picture, frames: 1 } : undefined)) : undefined;
                     // Video clips: a name bar, the frames, then a band for the sound wave.
-                    const rowPx = ROW_PX[rowSize(track, track.id === main?.id)];
+                    const rowPx = ROW_PX[rowSize(track, overMain(track))];
                     const waveBand = media?.hasAudio && !media.source.image ? Math.max(6, Math.round(rowPx * WAVE_SHARE[track.wave ?? "m"])) : 0;
                     const classes = [
                       "tl__clip",

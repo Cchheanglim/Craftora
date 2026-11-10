@@ -176,6 +176,9 @@ export interface Clip {
   adjust?: Adjust;
   /** An effect block: effects.ts `PICTURE_EFFECTS`. */
   effect?: PictureEffectId;
+  /** Its Strength (0–100, 50 when absent) and Speed (0.5–3×, 1 when absent), for the effects that have them (`EFFECT_SETTINGS`). */
+  effectStrength?: number;
+  effectSpeed?: number;
   /** A shape clip: shapes.ts `SHAPES`. */
   shape?: ShapeId;
   /** Shape clips: 0–1 (1 when absent). */

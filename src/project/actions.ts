@@ -39,6 +39,8 @@ export type ClipPatch = Partial<
     | "look"
     | "lookAmount"
     | "adjust"
+    | "effectStrength"
+    | "effectSpeed"
     | "effect"
     | "shape"
     | "opacity"
@@ -584,6 +586,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
       if (patch.x !== undefined) patch.x = clamp(patch.x, 0, 1);
       if (patch.y !== undefined) patch.y = clamp(patch.y, 0, 1);
       if (patch.lookAmount !== undefined) patch.lookAmount = clamp(patch.lookAmount, 0, 1);
+      if (patch.effectStrength !== undefined) patch.effectStrength = clamp(patch.effectStrength, 0, 100);
+      if (patch.effectSpeed !== undefined) patch.effectSpeed = clamp(patch.effectSpeed, 0.5, 3);
       if (patch.adjust) patch.adjust = Object.fromEntries(Object.entries(patch.adjust).map(([k, v]) => [k, Math.round(clamp(v ?? 0, -100, 100))]));
       if (patch.opacity !== undefined) patch.opacity = clamp(patch.opacity, 0, 1);
       if (patch.outline !== undefined) patch.outline = Math.max(0, patch.outline);

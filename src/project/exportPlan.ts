@@ -5,7 +5,7 @@
  */
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
-import { adjustSteps, lookSteps } from "./effects";
+import { adjustSteps, effectSpeed, effectStrength, lookSteps } from "./effects";
 import { isBlock, clipLength, isCropped, meets, projectDuration, trackOrder, trackSilent, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
@@ -178,6 +178,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       // An effect block takes no colour steps (the export refuses both on one block).
       look: !c.mediaId && c.effect ? [] : [...lookSteps(c.look, c.lookAmount), ...adjustSteps(c.adjust)],
       effect: c.effect ?? "",
+      effectStrength: effectStrength(c),
+      effectSpeed: effectSpeed(c),
       fadeIn: c.fadeIn,
       fadeOut: c.fadeOut,
       soundFadeIn: c.soundFadeIn ?? 0,
