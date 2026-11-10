@@ -110,7 +110,21 @@ export const MAX_CROP = 0.45;
 /** How a clip on a magnetic track takes over from the one before it. Both overlap for `duration`. */
 export interface Transition {
   /** "flash": like a dip, through white instead of black. */
-  kind: "crossfade" | "dip" | "flash" | "slide" | "zoom" | "wipe";
+  kind:
+    | "crossfade"
+    | "dip"
+    | "flash"
+    | "slide"
+    | "slide-right"
+    | "slide-up"
+    | "slide-down"
+    | "zoom"
+    | "wipe"
+    | "wipe-left"
+    | "wipe-up"
+    | "wipe-down"
+    | "circle"
+    | "spin";
   /** Seconds, as set; the real overlap may be shorter for short clips (see `transitionLength`). */
   duration: number;
 }
@@ -119,9 +133,17 @@ export const TRANSITION_KINDS: { kind: Transition["kind"]; label: string }[] = [
   { kind: "crossfade", label: "Crossfade" },
   { kind: "dip", label: "Dip to black" },
   { kind: "flash", label: "Flash" },
-  { kind: "slide", label: "Slide" },
+  { kind: "slide", label: "Slide left" },
+  { kind: "slide-right", label: "Slide right" },
+  { kind: "slide-up", label: "Slide up" },
+  { kind: "slide-down", label: "Slide down" },
   { kind: "zoom", label: "Zoom" },
-  { kind: "wipe", label: "Wipe" },
+  { kind: "wipe", label: "Wipe right" },
+  { kind: "wipe-left", label: "Wipe left" },
+  { kind: "wipe-up", label: "Wipe up" },
+  { kind: "wipe-down", label: "Wipe down" },
+  { kind: "circle", label: "Circle" },
+  { kind: "spin", label: "Spin" },
 ];
 
 export const isCropped = (c: Crop) => c.left > 0 || c.top > 0 || c.right > 0 || c.bottom > 0;
@@ -296,23 +318,25 @@ export function transitionLength(prev: Clip | undefined, cur: Clip): number {
 
 /**
  * Transitions at time `t` for a clip on a magnetic track (`order` is that track's clips), matching the export:
- * how visible (`picture`) and loud (`sound`) it is (0–1), how white (`white`, for a flash), how far moved right in
- * frame widths (`shift`), how scaled about its box centre (`zoom`), and how much of its right side is hidden (`wipe`).
- * The incoming clip is drawn above the outgoing one.
+ * how visible (`picture`) and loud (`sound`) it is (0–1), how white (`white`, for a flash), how far moved right (`shift`)
+ * and down (`lift`) in frame widths/heights, how scaled (`zoom`) and turned clockwise in degrees (`turn`) about its box
+ * centre, and its CSS `clip-path` (`reveal`, "" when none). The incoming clip is drawn above the outgoing one.
  */
 export function transitionMix(
   order: Clip[],
   clip: Clip,
   t: number
-): { picture: number; sound: number; white: number; shift: number; zoom: number; wipe: number } {
+): { picture: number; sound: number; white: number; shift: number; lift: number; zoom: number; turn: number; reveal: string } {
   const i = order.findIndex((c) => c.id === clip.id);
-  if (i === -1) return { picture: 1, sound: 1, white: 0, shift: 0, zoom: 1, wipe: 0 };
+  if (i === -1) return { picture: 1, sound: 1, white: 0, shift: 0, lift: 0, zoom: 1, turn: 0, reveal: "" };
   let picture = 1;
   let sound = 1;
   let white = 0;
   let shift = 0;
+  let lift = 0;
   let zoom = 1;
-  let wipe = 0;
+  let turn = 0;
+  let reveal = "";
   const e = (p: number) => 0.5 - 0.5 * Math.cos(Math.PI * p);
   const incoming = meets(order[i - 1], clip) ? transitionLength(order[i - 1], clip) : 0;
   if (incoming > 0 && t < clip.start + incoming) {
@@ -324,11 +348,31 @@ export function transitionMix(
       picture = p < 0.5 ? 0 : 1;
       white = 1 - Math.max(0, 2 * p - 1);
     } else if (kind === "slide") shift = 1 - e(p);
+    else if (kind === "slide-right") shift = -(1 - e(p));
+    else if (kind === "slide-up") lift = 1 - e(p);
+    else if (kind === "slide-down") lift = -(1 - e(p));
     else if (kind === "zoom") {
       picture = p;
       zoom = 1.5 - 0.5 * e(p);
-    } else if (kind === "wipe") wipe = 1 - p;
-    else picture = p;
+    } else if (kind === "spin") {
+      picture = p;
+      zoom = 1.5 - 0.5 * e(p);
+      turn = -90 * (1 - e(p));
+    } else if (kind.startsWith("wipe")) {
+      const h = (1 - p) * 100;
+      if (h > 0) {
+        reveal =
+          kind === "wipe"
+            ? `inset(0 ${h}% 0 0)`
+            : kind === "wipe-left"
+              ? `inset(0 0 0 ${h}%)`
+              : kind === "wipe-up"
+                ? `inset(${h}% 0 0 0)`
+                : `inset(0 0 ${h}% 0)`;
+      }
+    } else if (kind === "circle") {
+      if (p < 1) reveal = `circle(${70.711 * p}% at 50% 50%)`;
+    } else picture = p;
     sound = kind === "dip" || kind === "flash" ? Math.max(0, 2 * p - 1) : p;
   }
   const next = order[i + 1];
@@ -336,14 +380,21 @@ export function transitionMix(
   if (next && outgoing > 0 && t >= next.start) {
     const p = Math.min(1, (t - next.start) / outgoing);
     const kind = next.transition!.kind;
-    // Crossfade, zoom and wipe keep the outgoing picture underneath; dip fades it to black, flash to white.
+    // Crossfade, zoom, wipe and circle keep the outgoing picture underneath; dip fades it to black, flash to white.
     if (kind === "dip") picture = Math.min(picture, Math.max(0, 1 - 2 * p));
     else if (kind === "flash") white = Math.max(white, Math.min(1, 2 * p));
     else if (kind === "slide") shift = -e(p);
+    else if (kind === "slide-right") shift = e(p);
+    else if (kind === "slide-up") lift = -e(p);
+    else if (kind === "slide-down") lift = e(p);
     else if (kind === "zoom") zoom = 1 + 0.5 * e(p);
+    else if (kind === "spin") {
+      zoom = 1 + 0.5 * e(p);
+      turn = 90 * e(p);
+    }
     sound = Math.min(sound, kind === "dip" || kind === "flash" ? Math.max(0, 1 - 2 * p) : 1 - p);
   }
-  return { picture, sound, white, shift, zoom, wipe };
+  return { picture, sound, white, shift, lift, zoom, turn, reveal };
 }
 
 export function projectDuration(p: Project): number {
