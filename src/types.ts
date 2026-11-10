@@ -123,7 +123,7 @@ export interface RenderSpec {
   quality: RenderQuality;
 }
 
-export type TransitionKind = "crossfade" | "dip" | "flash";
+export type TransitionKind = "crossfade" | "dip" | "flash" | "slide" | "zoom" | "wipe";
 
 export interface RenderClip {
   /** "effect": a filter or effect block, which changes the pictures under it while it lasts. "shape": a drawn shape. */

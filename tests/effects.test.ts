@@ -107,10 +107,24 @@ test("a transition goes on the join nearest to where it was dropped", () => {
   let p = withClip();
   p = applyEdit(p, { type: "splitClip", clipId: "c", newClipId: "b", at: 6 });
   expect(dropEdits(p, { kind: "transition", id: "dip" }, mainTrack(p), 0.5, ["x", "y"])?.select).toBe("b");
-  p = run(p, dropEdits(p, { kind: "transition", id: "dip" }, mainTrack(p), 5, ["x", "y"])!.edits);
+  p = run(p, dropEdits(p, { kind: "transition", id: "dip" }, mainTrack(p), 5.6, ["x", "y"])!.edits);
   expect(p.clips.find((c) => c.id === "b")?.transition).toEqual({ kind: "dip", duration: 1 });
-  // A track with one clip has no join.
-  expect(dropEdits(withClip(), { kind: "transition", id: "crossfade" }, undefined, 1, ["x", "y"])).toBeNull();
+  // Nothing under it and no join: nowhere to go.
+  expect(dropEdits(withClip(), { kind: "transition", id: "crossfade" }, undefined, 12, ["x", "y"])).toBeNull();
+});
+
+test("a transition in the middle of a clip cuts it there, with no splitting by hand", () => {
+  let p = withClip();
+  const done = dropEdits(p, { kind: "transition", id: "dip" }, undefined, 4, ["x", "y"])!;
+  p = run(p, done.edits);
+  expect(done.select).toBe("x");
+  expect(p.clips.map((c) => [c.id, c.start, c.in, c.out])).toEqual([
+    ["c", 0, 0, 4],
+    ["x", 3, 4, 10], // overlapping the piece before it for the transition's second
+  ]);
+  expect(p.clips.find((c) => c.id === "x")?.transition).toEqual({ kind: "dip", duration: 1 });
+  // Near a join it goes on that join; no new cut.
+  expect(dropEdits(p, { kind: "transition", id: "crossfade" }, mainTrack(p), 4.3, ["y", "z"])?.edits.some((e) => e.type === "splitClip")).toBe(false);
 });
 
 test("a fade dropped on a clip fades its start or end; off any clip it does nothing", () => {

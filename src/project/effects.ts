@@ -96,6 +96,9 @@ export type FxItem =
 /** A new filter or effect block off any clip lasts this long; drag its edges to change it. */
 export const BLOCK_LENGTH = 3;
 
+/** A transition this close to a join (seconds) goes on that join; further into a clip, it cuts the clip there. */
+const JOIN_REACH = 0.5;
+
 /** A filter or effect block's name on the timeline and in Edit. */
 export function blockLabel(c: Clip): string {
   return LOOKS.find((l) => l.id === c.look)?.label ?? PICTURE_EFFECTS.find((e) => e.id === c.effect)?.label ?? "Effect";
@@ -150,12 +153,23 @@ export function dropEdits(
     const { edits, target } = effectEdits(clip, effect.change, undefined, newIds);
     return { edits, select: target };
   }
-  // A transition: on the join nearest to where it was dropped.
+  const kind = TRANSITION_KINDS.find((t) => t.kind === item.id)?.kind ?? "crossfade";
+  const edits: EditAction[] = [];
+  // Over the middle of a clip: cut it there and put the transition on the cut (no splitting by hand first).
+  const under = order.filter((c) => time >= c.start && time < clipEnd(c));
+  const nearJoin = order.some((c) => Math.abs(time - c.start) <= JOIN_REACH || Math.abs(time - clipEnd(c)) <= JOIN_REACH);
+  // One clip only: inside a transition two clips overlap, and that one is changed on its join instead.
+  const inside = under.length === 1 && !nearJoin ? under[0] : undefined;
+  if (inside) {
+    edits.push({ type: "splitClip", clipId: inside.id, newClipId: newIds[0], at: time });
+    if (!track.magnetic) edits.push({ type: "setMagnetic", trackId: track.id, magnetic: true });
+    edits.push({ type: "setTransition", clipId: newIds[0], transition: { kind, duration: 1 } });
+    return { edits, select: newIds[0] };
+  }
+  // Near a join (or between clips): on the join nearest to where it was dropped.
   const joins = order.slice(1);
   if (joins.length === 0) return null;
   const clip = joins.reduce((best, c) => (Math.abs(c.start - time) < Math.abs(best.start - time) ? c : best));
-  const kind = TRANSITION_KINDS.find((t) => t.kind === item.id)?.kind ?? "crossfade";
-  const edits: EditAction[] = [];
   // Transitions need clips back to back: the magnet does that.
   if (!track.magnetic) edits.push({ type: "setMagnetic", trackId: track.id, magnetic: true });
   edits.push({ type: "setTransition", clipId: clip.id, transition: { kind, duration: 1 } });
