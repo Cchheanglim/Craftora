@@ -4,6 +4,10 @@
 
 **New**
 
+- **Filters and effects inside a clip**: dropped on a video clip they belong to it (no extra track; its label shows them,
+  the side panel removes them); dropped on an empty spot they're a block over several clips, as before.
+- **Catalog regrouped**: Effects by Camera / Style / Speed and direction; Transitions "Between clips" (Crossfade, Dip to
+  black, the new **Flash** through white) and "In & out" (Fade in / Fade out on a clip). Old fade and flash blocks still work.
 - **Shapes** tab: 30 shapes (rectangles, circles, stars, hearts, arrows, speech bubbles, lines…) with search; drag one onto
   the timeline, then change its colour, filled or outline, see-through and angle, and move or resize it in the preview.
 - **The playhead snaps to cuts**: dragging it near a split or a clip's edge lands exactly on it.

@@ -103,7 +103,7 @@ export function FxPanel({
     <button
       key={`${item.kind}-${item.id}`}
       type="button"
-      className={`fx-tile is-${item.kind === "filter" ? "filter" : item.kind === "shape" ? "shape" : item.id}`}
+      className={`fx-tile is-${item.kind === "filter" ? "filter" : item.kind === "shape" ? "shape" : item.kind === "fade" ? `fade-${item.id}` : item.id}`}
       title={`Drag onto the timeline, or click to add at the playhead`}
       onPointerDown={(e: ReactPointerEvent) => {
         if (e.button === 0) beginFxDrag(item, e);
@@ -152,7 +152,14 @@ export function FxPanel({
       {tab === "effects" && (
         <>
           <p className="fx-panel__hint">Drag an effect onto a clip to cover all of it, or onto an empty spot and stretch it. It changes every picture under it.</p>
-          <div className="fx__grid">{PICTURE_EFFECTS.map((effect) => tile({ kind: "effect", id: effect.id }, effect.label))}</div>
+          <h3 className="section-label">Camera</h3>
+          <div className="fx__grid">
+            {PICTURE_EFFECTS.filter((e) => e.category === "camera").map((effect) => tile({ kind: "effect", id: effect.id }, effect.label))}
+          </div>
+          <h3 className="section-label">Style</h3>
+          <div className="fx__grid">
+            {PICTURE_EFFECTS.filter((e) => e.category === "style").map((effect) => tile({ kind: "effect", id: effect.id }, effect.label))}
+          </div>
           <h3 className="section-label">Speed and direction</h3>
           <p className="fx-panel__hint">
             Drop one on a clip: it plays slower, faster or backwards. Split the clip first to change just a part. Smooth slow-mo makes in-between
@@ -163,8 +170,15 @@ export function FxPanel({
       )}
       {tab === "transitions" && (
         <>
+          <h3 className="section-label">Between clips</h3>
           <p className="fx-panel__hint">Click the + where two clips meet, then pick a transition here; or drag one onto that join.</p>
           <div className="fx__grid">{TRANSITION_KINDS.map((t) => tile({ kind: "transition", id: t.kind }, t.label))}</div>
+          <h3 className="section-label">In & out</h3>
+          <p className="fx-panel__hint">Drop on a clip: it fades in from black at its start, or out at its end.</p>
+          <div className="fx__grid">
+            {tile({ kind: "fade", id: "in" }, "Fade in")}
+            {tile({ kind: "fade", id: "out" }, "Fade out")}
+          </div>
         </>
       )}
       {tab === "shapes" && (

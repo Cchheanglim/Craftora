@@ -113,6 +113,19 @@ test("a transition goes on the join nearest to where it was dropped", () => {
   expect(dropEdits(withClip(), { kind: "transition", id: "crossfade" }, undefined, 1, ["x", "y"])).toBeNull();
 });
 
+test("a fade dropped on a clip fades its start or end; off any clip it does nothing", () => {
+  let p = withClip();
+  const doneIn = dropEdits(p, { kind: "fade", id: "in" }, mainTrack(p), 2, ["x", "y"])!;
+  p = run(p, doneIn.edits);
+  expect(doneIn.select).toBe("c");
+  expect(p.clips.length).toBe(1);
+  expect(p.clips[0]).toMatchObject({ id: "c", fadeIn: 1, fadeOut: 0 });
+  p = run(p, dropEdits(p, { kind: "fade", id: "out" }, mainTrack(p), 2, ["x", "y"])!.edits);
+  expect(p.clips.length).toBe(1);
+  expect(p.clips[0]).toMatchObject({ id: "c", fadeIn: 1, fadeOut: 1 });
+  expect(dropEdits(p, { kind: "fade", id: "in" }, mainTrack(p), 20, ["x", "y"])).toBeNull();
+});
+
 test("the preview draws blocks the way the export does", () => {
   let p = withClip();
   p = run(p, dropEdits(p, { kind: "filter", id: "sepia" }, undefined, 0, ["f", "x"])!.edits);

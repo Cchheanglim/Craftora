@@ -1232,7 +1232,13 @@ export default function App() {
   const applyFx = (item: FxItem, trackId: string | undefined, time: number) => {
     const done = dropEdits(project, item, trackId, time, [crypto.randomUUID(), crypto.randomUUID()]);
     if (!done) {
-      setError(item.kind === "transition" ? "Drop a transition on the join between two clips, or click the + there." : "Drop it on a video or sound clip (pictures have no speed).");
+      setError(
+        item.kind === "transition"
+          ? "Drop a transition on the join between two clips, or click the + there."
+          : item.kind === "fade"
+            ? "Drop a fade on a clip: it fades that clip's start or end."
+            : "Drop it on a video or sound clip (pictures have no speed).",
+      );
       return;
     }
     setError(null);
