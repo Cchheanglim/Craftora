@@ -130,7 +130,7 @@ export type FxItem =
   | { kind: "transition"; id: Transition["kind"] }
   | { kind: "shape"; id: ShapeId };
 
-/** A new filter, effect, Adjust layer or shape block lasts this long; drag its edges to change it. */
+/** A new filter, effect, Adjust layer or shape block lasts this long (Zoom punch hits in its first half second); drag its edges to change it. */
 export const BLOCK_LENGTH = 5;
 
 /** A transition this close to a join (seconds) goes on that join; further into a clip, it cuts the clip there. */
@@ -176,8 +176,7 @@ export function dropEdits(
       return { edits: [{ type: "updateClip", clipId: clip.id, patch }], select: clip.id };
     }
     // On an empty spot: a block of its own, to stretch over several clips.
-    const length = item.id === "punch" ? 0.6 : item.id === "shake" ? 1 : BLOCK_LENGTH;
-    return { edits: [...ownTrack, { type: "addBlock", clipId: newIds[0], at: time, length, trackId: ownTrack.length ? trackId : dropped?.id, ...block }], select: newIds[0] };
+    return { edits: [...ownTrack, { type: "addBlock", clipId: newIds[0], at: time, length: BLOCK_LENGTH, trackId: ownTrack.length ? trackId : dropped?.id, ...block }], select: newIds[0] };
   }
   if (item.kind === "shape") {
     return { edits: [...ownTrack, { type: "addShape", clipId: newIds[0], shape: item.id, at: time, length: BLOCK_LENGTH, trackId: ownTrack.length ? trackId : dropped?.id }], select: newIds[0] };

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEdit, type EditAction } from "../src/project/actions";
-import { adjustSteps, blocksStyle, dropEdits, lookFilter, lookSteps, stepsFilter, warmthMatrix } from "../src/project/effects";
+import { adjustSteps, blockLabel, blocksStyle, dropEdits, lookFilter, lookSteps, stepsFilter, warmthMatrix } from "../src/project/effects";
 import { clipEnd, emptyProject, isBlock, mediaFromSource, trackLabel, type Project } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
@@ -122,6 +122,29 @@ test("slow motion dropped on a piece of a split clip slows that piece, and its e
   expect(pieces()[1].slice(0, 4)).toEqual(["middle", 1, 1, 6]);
 });
 
+test("an Adjust layer is a 5 s block of its own, even dropped on a clip, and only reaches the export once it changes something", async () => {
+  const { planExport } = await import("../src/project/exportPlan");
+  let p = withClip();
+  p = run(p, dropEdits(p, { kind: "adjust", id: "layer" }, mainTrack(p), 2, ["L", "x"])!.edits);
+  const layer = () => p.clips.find((c) => c.id === "L")!;
+  expect([layer().start, clipEnd(layer()), isBlock(layer()), blockLabel(layer())]).toEqual([2, 7, true, "Adjust layer"]);
+  // Not inside the clip: on a free track of its own.
+  expect(layer().trackId).not.toBe(mainTrack(p));
+  expect(p.clips.find((c) => c.id === "c")!.adjust).toBeUndefined();
+  const settings = { output: "video", videoContainer: "mp4", audioContainer: "mp3", cutMode: "fast", frameId: "1080p", quality: "fast" } as const;
+  const roles = () => {
+    const plan = planExport(p, settings);
+    return plan.kind === "render" ? plan.spec.clips.map((c) => [c.role, c.look]) : plan.kind;
+  };
+  expect(roles()).toEqual([["video", []]]);
+  p = applyEdit(p, { type: "updateClip", clipId: "L", patch: { adjust: { warmth: 50 } } });
+  expect(roles()).toEqual([["video", []], ["effect", [["warmth", 0.5]]]]);
+  expect(blocksStyle([layer()], 3, 1000).filter).toBe("url(#warmth-50)");
+  // Reset keeps it a layer.
+  p = applyEdit(p, { type: "updateClip", clipId: "L", patch: { adjust: {} } });
+  expect(isBlock(layer())).toBe(true);
+});
+
 test("a transition goes on the join nearest to where it was dropped", () => {
   let p = withClip();
   p = applyEdit(p, { type: "splitClip", clipId: "c", newClipId: "b", at: 6 });
@@ -138,6 +161,8 @@ test("an effect dropped in the empty space around the tracks gets a track of its
   p = run(p, done.edits);
   expect(p.tracks.map((t) => t.id)[0]).toBe("y");
   expect(p.clips.find((c) => c.id === "x")).toMatchObject({ trackId: "y", effect: "shake", start: 2 });
+  // Every dragged effect lasts 5 s, Shake too (it used to be 1 s).
+  expect(clipEnd(p.clips.find((c) => c.id === "x")!)).toBe(7);
   // The video keeps its own picture: nothing went inside it.
   expect(p.clips.find((c) => c.id === "c")?.effect).toBeUndefined();
 });
