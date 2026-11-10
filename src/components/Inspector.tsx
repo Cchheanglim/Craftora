@@ -108,7 +108,8 @@ export function Inspector({
   const hasSound = Boolean(media?.hasAudio);
   const streams = media && !media.source.local ? media.source.streams.filter((s) => s.kind === (isPicture ? "video" : "audio")) : [];
   const length = clipLength(clip);
-  const maxFade = Math.min(MAX_FADE, Math.floor(length * 10) / 10);
+  const maxSoundFade = Math.floor(length * 10) / 10;
+  const maxFade = Math.min(MAX_FADE, maxSoundFade);
   const pct = (v: number) => `${Math.round(v * 100)}%`;
   const sec = (v: number) => `${v.toFixed(1)} s`;
 
@@ -377,7 +378,7 @@ export function Inspector({
         </div>
       )}
 
-      {!isText && !isShape && !isBlock && !track.magnetic && (
+      {!isText && !isShape && !isBlock && !onTransition && (
         <p className="insp__hint">To add a transition, put this clip right after another one and click the + where they meet.</p>
       )}
 
@@ -432,17 +433,44 @@ export function Inspector({
         !isImage &&
         !isBlock &&
         (hasSound ? (
-          <Slider
-            id="insp-volume"
-            label="Volume"
-            min={0}
-            max={1}
-            step={0.05}
-            value={clip.volume}
-            format={pct}
-            onCheckpoint={onCheckpoint}
-            onChange={(volume) => onChange({ volume }, true)}
-          />
+          <>
+            <Slider
+              id="insp-volume"
+              label="Volume"
+              min={0}
+              max={1}
+              step={0.05}
+              value={clip.volume}
+              format={pct}
+              onCheckpoint={onCheckpoint}
+              onChange={(volume) => onChange({ volume }, true)}
+            />
+            <fieldset className="insp__group">
+              <legend>Sound fade</legend>
+              <Slider
+                id="insp-sound-fade-in"
+                label="In"
+                min={0}
+                max={maxSoundFade}
+                step={0.1}
+                value={clip.soundFadeIn ?? 0}
+                format={sec}
+                onCheckpoint={onCheckpoint}
+                onChange={(soundFadeIn) => onChange({ soundFadeIn }, true)}
+              />
+              <Slider
+                id="insp-sound-fade-out"
+                label="Out"
+                min={0}
+                max={maxSoundFade}
+                step={0.1}
+                value={clip.soundFadeOut ?? 0}
+                format={sec}
+                onCheckpoint={onCheckpoint}
+                onChange={(soundFadeOut) => onChange({ soundFadeOut }, true)}
+              />
+            </fieldset>
+          </>
         ) : (
           <p className="insp__note">This file has no sound.</p>
         ))}

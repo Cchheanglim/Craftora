@@ -110,7 +110,7 @@ export const MAX_CROP = 0.45;
 /** How a clip on a magnetic track takes over from the one before it. Both overlap for `duration`. */
 export interface Transition {
   /** "flash": like a dip, through white instead of black. */
-  kind: "crossfade" | "dip" | "flash";
+  kind: "crossfade" | "dip" | "flash" | "slide" | "zoom" | "wipe";
   /** Seconds, as set; the real overlap may be shorter for short clips (see `transitionLength`). */
   duration: number;
 }
@@ -119,6 +119,9 @@ export const TRANSITION_KINDS: { kind: Transition["kind"]; label: string }[] = [
   { kind: "crossfade", label: "Crossfade" },
   { kind: "dip", label: "Dip to black" },
   { kind: "flash", label: "Flash" },
+  { kind: "slide", label: "Slide" },
+  { kind: "zoom", label: "Zoom" },
+  { kind: "wipe", label: "Wipe" },
 ];
 
 export const isCropped = (c: Crop) => c.left > 0 || c.top > 0 || c.right > 0 || c.bottom > 0;
@@ -160,6 +163,9 @@ export interface Clip {
   /** Seconds of fade from black/silence at the start and to black/silence at the end. */
   fadeIn: number;
   fadeOut: number;
+  /** Seconds of sound-only fade in and out (picture stays; 0 when absent). */
+  soundFadeIn?: number;
+  soundFadeOut?: number;
   crop: Crop;
   /** Magnetic tracks only: the transition from the previous clip into this one. */
   transition?: Transition;
@@ -249,14 +255,34 @@ export function fadeAt(c: Clip, t: number): number {
   return Math.min(1, Math.max(0, f));
 }
 
+/** 0–1: how far faded in/out the clip's sound is at timeline time `t`. */
+export function soundFadeAt(c: Clip, t: number): number {
+  const into = t - c.start;
+  const left = clipEnd(c) - t;
+  const fadeIn = c.soundFadeIn ?? 0;
+  const fadeOut = c.soundFadeOut ?? 0;
+  let f = 1;
+  if (fadeIn > 0) f = Math.min(f, into / fadeIn);
+  if (fadeOut > 0) f = Math.min(f, left / fadeOut);
+  return Math.min(1, Math.max(0, f));
+}
+
 /** A track's clips in play order. */
 export const trackOrder = (p: Project, trackId: string) => p.clips.filter((c) => c.trackId === trackId).sort((a, b) => a.start - b.start);
 
 /** Where a clip's transition into it overlaps: the clip before it on a magnetic track. */
 export function previousOnTrack(p: Project, c: Clip): Clip | undefined {
-  if (!p.tracks.find((t) => t.id === c.trackId)?.magnetic) return undefined;
   const order = trackOrder(p, c.trackId);
-  return order[order.findIndex((o) => o.id === c.id) - 1];
+  const prev = order[order.findIndex((o) => o.id === c.id) - 1];
+  return meets(prev, c) ? prev : undefined;
+}
+
+/**
+ * Whether `cur` meets the clip before it on its track (touching, or overlapping for a transition): only then can a
+ * transition join them. On a magnetic track they always do; on a free one, clips set apart have none.
+ */
+export function meets(prev: Clip | undefined, cur: Clip): prev is Clip {
+  return prev !== undefined && cur.start <= clipEnd(prev) + 0.05;
 }
 
 /**
@@ -269,40 +295,55 @@ export function transitionLength(prev: Clip | undefined, cur: Clip): number {
 }
 
 /**
- * Transitions at time `t` for a clip on a magnetic track (`order` is that track's clips):
- * how visible (`picture`) and how loud (`sound`) the clip is, 0–1. The incoming clip is
- * drawn above the outgoing one.
+ * Transitions at time `t` for a clip on a magnetic track (`order` is that track's clips), matching the export:
+ * how visible (`picture`) and loud (`sound`) it is (0–1), how white (`white`, for a flash), how far moved right in
+ * frame widths (`shift`), how scaled about its box centre (`zoom`), and how much of its right side is hidden (`wipe`).
+ * The incoming clip is drawn above the outgoing one.
  */
-/**
- * How visible and loud a clip is during its transitions, and how white (a flash): the outgoing clip whitens over the first
- * half, the incoming one (on top, white until then) comes back from white over the second half, as the export draws it.
- */
-export function transitionMix(order: Clip[], clip: Clip, t: number): { picture: number; sound: number; white: number } {
+export function transitionMix(
+  order: Clip[],
+  clip: Clip,
+  t: number
+): { picture: number; sound: number; white: number; shift: number; zoom: number; wipe: number } {
   const i = order.findIndex((c) => c.id === clip.id);
-  if (i === -1) return { picture: 1, sound: 1, white: 0 };
+  if (i === -1) return { picture: 1, sound: 1, white: 0, shift: 0, zoom: 1, wipe: 0 };
   let picture = 1;
   let sound = 1;
   let white = 0;
-  const incoming = transitionLength(order[i - 1], clip);
+  let shift = 0;
+  let zoom = 1;
+  let wipe = 0;
+  const e = (p: number) => 0.5 - 0.5 * Math.cos(Math.PI * p);
+  const incoming = meets(order[i - 1], clip) ? transitionLength(order[i - 1], clip) : 0;
   if (incoming > 0 && t < clip.start + incoming) {
     const p = Math.max(0, (t - clip.start) / incoming);
     const kind = clip.transition!.kind;
     // A flash's incoming clip is hidden until the outgoing one is all white (as the export does).
-    picture = kind === "dip" ? Math.max(0, 2 * p - 1) : kind === "flash" ? (p < 0.5 ? 0 : 1) : p;
-    sound = kind === "crossfade" ? p : Math.max(0, 2 * p - 1);
-    if (kind === "flash") white = 1 - Math.max(0, 2 * p - 1);
+    if (kind === "dip") picture = Math.max(0, 2 * p - 1);
+    else if (kind === "flash") {
+      picture = p < 0.5 ? 0 : 1;
+      white = 1 - Math.max(0, 2 * p - 1);
+    } else if (kind === "slide") shift = 1 - e(p);
+    else if (kind === "zoom") {
+      picture = p;
+      zoom = 1.5 - 0.5 * e(p);
+    } else if (kind === "wipe") wipe = 1 - p;
+    else picture = p;
+    sound = kind === "dip" || kind === "flash" ? Math.max(0, 2 * p - 1) : p;
   }
   const next = order[i + 1];
-  const outgoing = next ? transitionLength(clip, next) : 0;
+  const outgoing = next && meets(clip, next) ? transitionLength(clip, next) : 0;
   if (next && outgoing > 0 && t >= next.start) {
     const p = Math.min(1, (t - next.start) / outgoing);
     const kind = next.transition!.kind;
-    // A crossfade keeps the outgoing picture underneath; a dip fades it to black first, a flash to white.
+    // Crossfade, zoom and wipe keep the outgoing picture underneath; dip fades it to black, flash to white.
     if (kind === "dip") picture = Math.min(picture, Math.max(0, 1 - 2 * p));
-    if (kind === "flash") white = Math.max(white, Math.min(1, 2 * p));
-    sound = Math.min(sound, kind === "crossfade" ? 1 - p : Math.max(0, 1 - 2 * p));
+    else if (kind === "flash") white = Math.max(white, Math.min(1, 2 * p));
+    else if (kind === "slide") shift = -e(p);
+    else if (kind === "zoom") zoom = 1 + 0.5 * e(p);
+    sound = Math.min(sound, kind === "dip" || kind === "flash" ? Math.max(0, 1 - 2 * p) : 1 - p);
   }
-  return { picture, sound, white };
+  return { picture, sound, white, shift, zoom, wipe };
 }
 
 export function projectDuration(p: Project): number {
@@ -587,7 +628,8 @@ export function clipPeaks(clip: Clip, media: MediaItem | undefined, bars: number
   return Array.from({ length: bars }, (_, i) => {
     // Each bar: the loudest moment in the stretch of sound it stands for.
     const loud = peakBetween(full, total, at(i / bars), at((i + 1) / bars));
-    const fade = fadeAt(clip, clip.start + ((i + 0.5) / bars) * len);
+    const t = clip.start + ((i + 0.5) / bars) * len;
+    const fade = fadeAt(clip, t) * soundFadeAt(clip, t);
     return Math.max(4, Math.min(100, Math.round(loud * clip.volume * fade)));
   });
 }

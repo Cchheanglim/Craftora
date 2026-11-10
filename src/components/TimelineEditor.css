@@ -595,15 +595,22 @@
   pointer-events: none;
 }
 
-/* A transition: the part of a Video 1 clip that overlaps the clip before it. */
+/* A transition: the part of a clip that overlaps the clip before it; drag to change its length (below the 8 px trim handle). */
 .tl__trans {
   position: absolute;
   top: 0;
   bottom: 0;
   left: 0;
+  z-index: 2;
   background: rgb(255 255 255 / 0.14);
   border-right: 1px dashed rgb(255 255 255 / 0.5);
-  pointer-events: none;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.tl__clip.is-fading {
+  overflow: visible;
+  z-index: 3;
 }
 
 /* Fades: a dark ramp over the faded part of the clip. */
@@ -741,4 +748,110 @@ body.is-dragging-media * {
 
 body.is-dragging-media .tl__lane:hover {
   background: var(--accent-wash);
+}
+
+/* The sound wave's band: the wave, its sound fades and their drag dots. */
+.tl__clip.is-media .tl__wave-band {
+  position: relative;
+  order: 2;
+  flex: none;
+}
+
+.tl__clip.is-media.is-audio .tl__wave-band {
+  flex: 1;
+}
+
+.tl__clip.is-media .tl__wave-band > .tl__wave {
+  position: absolute;
+  inset: 0;
+  height: auto;
+}
+
+/* A sound fade: the quiet part shaded down to the clip's edge, a line along the slope. */
+.tl__sound-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.tl__sound-fade.is-in {
+  left: 0;
+}
+
+.tl__sound-fade.is-out {
+  right: 0;
+}
+
+.tl__sound-fade::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.tl__sound-fade.is-in::before {
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+
+.tl__sound-fade.is-out::before {
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+.tl__sound-fade svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.tl__sound-fade line {
+  stroke: #fff;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Dots on the band's top corners (kept clear of the trim handles): drag one to set a sound fade. */
+.tl__fade-dot {
+  position: absolute;
+  top: 0;
+  z-index: 4;
+  width: 9px;
+  height: 9px;
+  border: 1px solid rgb(0 0 0 / 0.6);
+  border-radius: 50%;
+  background: #fff;
+  cursor: ew-resize;
+  touch-action: none;
+  opacity: 0;
+}
+
+.tl__fade-dot.is-in {
+  translate: -50% -50%;
+}
+
+.tl__fade-dot.is-out {
+  translate: 50% -50%;
+}
+
+.tl__clip:hover .tl__fade-dot,
+.tl__clip.is-selected .tl__fade-dot,
+.tl__clip.is-fading .tl__fade-dot {
+  opacity: 1;
+}
+
+.tl__fade-tip {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  translate: -50% 0;
+  padding: 2px 6px;
+  border-radius: 2px;
+  background: rgb(0 0 0 / 0.85);
+  color: #fff;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
 }

@@ -1229,12 +1229,12 @@ export default function App() {
    * clicked: at the playhead, on the selected clip's track). One undo step.
    */
   /** Puts a dropped tile on the timeline; the clip it made (and selected), if any. */
-  const applyFx = (item: FxItem, trackId: string | undefined, time: number) => {
+  const applyFx = (item: FxItem, trackId: string | undefined | null, time: number) => {
     const done = dropEdits(project, item, trackId, time, [crypto.randomUUID(), crypto.randomUUID()]);
     if (!done) {
       setError(
         item.kind === "transition"
-          ? "Drop a transition on the join between two clips, or click the + there."
+          ? "Put the playhead on a clip first: the transition goes there."
           : item.kind === "fade"
             ? "Drop a fade on a clip: it fades that clip's start or end."
             : "Drop it on a video or sound clip (pictures have no speed).",
@@ -1856,10 +1856,11 @@ export default function App() {
               time={playback.time}
               playing={playback.playing}
               onPick={(item) => {
-                // On the selected clip (a transition on the join before it), else at the playhead.
+                // At the playhead, on the selected clip's track (a transition there cuts the clip at the playhead);
+                // with the playhead off the selected clip, at its start (a transition on the join before it).
                 if (!selected) return applyFx(item, undefined, playback.time);
                 const inside = playback.time >= selected.start && playback.time < clipEnd(selected);
-                applyFx(item, selected.trackId, item.kind !== "transition" && inside ? playback.time : selected.start);
+                applyFx(item, selected.trackId, inside ? playback.time : selected.start);
               }}
             />
           ) : rightTab === "transcript" ? (
@@ -1932,7 +1933,7 @@ export default function App() {
                   }
                   onSpeed={(speed) => api.edit({ type: "setSpeed", clipId: selected.id, speed })}
                   onTransition={
-                    selectedTrack.magnetic && previousOnTrack(project, selected)
+                    previousOnTrack(project, selected)
                       ? (transition, live) => (live ? api.editLive : api.edit)({ type: "setTransition", clipId: selected.id, transition })
                       : undefined
                   }

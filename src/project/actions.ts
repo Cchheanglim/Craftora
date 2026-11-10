@@ -53,6 +53,8 @@ export type ClipPatch = Partial<
     | "edge"
     | "fadeIn"
     | "fadeOut"
+    | "soundFadeIn"
+    | "soundFadeOut"
     | "crop"
   >
 >;
@@ -140,7 +142,9 @@ function newClip(fields: Pick<Clip, "id" | "trackId" | "start" | "in" | "out"> &
 function fitFades(c: Clip): Clip {
   const length = clipLength(c);
   const fadeIn = Math.min(c.fadeIn, length);
-  return { ...c, fadeIn, fadeOut: Math.min(c.fadeOut, length - fadeIn) };
+  const soundFadeIn = c.soundFadeIn !== undefined ? Math.min(c.soundFadeIn, length) : undefined;
+  const soundFadeOut = c.soundFadeOut !== undefined ? Math.min(c.soundFadeOut, length - (soundFadeIn ?? 0)) : undefined;
+  return { ...c, fadeIn, fadeOut: Math.min(c.fadeOut, length - fadeIn), soundFadeIn, soundFadeOut };
 }
 
 const isMagnetic = (p: Project, trackId: string) => Boolean(p.tracks.find((t) => t.id === trackId)?.magnetic);
@@ -239,10 +243,14 @@ function settle(p: Project): Project {
   for (const track of p.tracks.filter((t) => !t.magnetic)) {
     const onTrack = clips.filter((c) => c.trackId === track.id).sort((a, b) => a.start - b.start);
     let end = 0;
+    let prev: Clip | undefined;
     for (const c of onTrack) {
-      const start = round(Math.max(c.start, end));
+      // A transition overlaps the clip before when the two meet, as on a magnetic track; set apart, it waits.
+      const overlap = prev && c.start <= end + 0.05 ? transitionLength(prev, c) : 0;
+      const start = round(overlap > 0 ? end - overlap : Math.max(c.start, end));
       if (start !== c.start) clips = clips.map((x) => (x.id === c.id ? { ...x, start } : x));
       end = start + clipLength(c);
+      prev = { ...c, start };
     }
   }
   return packMagnetic({ ...p, clips });
@@ -473,8 +481,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
         second = { ...clip, id: action.newClipId, start: round(action.at), in: cut };
       }
       // The fade in stays with the first part, the fade out with the second.
-      first = fitFades({ ...first, fadeOut: 0 });
-      second = fitFades({ ...second, fadeIn: 0, transition: undefined });
+      first = fitFades({ ...first, fadeOut: 0, soundFadeOut: 0 });
+      second = fitFades({ ...second, fadeIn: 0, soundFadeIn: 0, transition: undefined });
       return { ...p, clips: p.clips.flatMap((c) => (c.id === clip.id ? [first, second] : [c])) };
     }
 
@@ -520,6 +528,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
           out: segOut,
           fadeIn: i === 0 ? clip.fadeIn : 0,
           fadeOut: i === ordered.length - 1 ? clip.fadeOut : 0,
+          soundFadeIn: i === 0 ? clip.soundFadeIn : 0,
+          soundFadeOut: i === ordered.length - 1 ? clip.soundFadeOut : 0,
           transition: i === 0 ? clip.transition : undefined,
         });
         t += clipLength(piece);
@@ -550,6 +560,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
           out: segOut,
           fadeIn: i === 0 ? clip.fadeIn : 0,
           fadeOut: i === ordered.length - 1 ? clip.fadeOut : 0,
+          soundFadeIn: i === 0 ? clip.soundFadeIn : 0,
+          soundFadeOut: i === ordered.length - 1 ? clip.soundFadeOut : 0,
           transition: i === 0 ? clip.transition : undefined,
         });
         t += clipLength(piece);
@@ -584,9 +596,10 @@ export function applyEdit(p: Project, action: EditAction): Project {
 
     case "setTransition": {
       const clip = p.clips.find((c) => c.id === action.clipId);
-      if (!clip || !isMagnetic(p, clip.trackId)) return p;
+      if (!clip) return p;
       const transition = action.transition ? { kind: action.transition.kind, duration: clamp(action.transition.duration, 0.1, 5) } : undefined;
-      return packMagnetic({ ...p, clips: p.clips.map((c) => (c.id === clip.id ? { ...c, transition } : c)) });
+      // On any track: a magnetic one packs, a free one moves only this clip to overlap the one it meets.
+      return settle({ ...p, clips: p.clips.map((c) => (c.id === clip.id ? { ...c, transition } : c)) });
     }
 
     case "addTrack":
@@ -605,9 +618,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const track = p.tracks.find((t) => t.id === action.trackId);
       if (!track || Boolean(track.magnetic) === action.magnetic) return p;
       const tracks = p.tracks.map((t) => (t.id === track.id ? { ...t, magnetic: action.magnetic } : t));
-      // Off a magnet, clips keep their places but transitions (which need it) go.
-      const clips = action.magnetic ? p.clips : p.clips.map((c) => (c.trackId === track.id ? { ...c, transition: undefined } : c));
-      return packMagnetic({ ...p, tracks, clips });
+      // Off a magnet, clips keep their places, transitions too (free tracks have them as well).
+      return packMagnetic({ ...p, tracks });
     }
 
     case "updateTrack":

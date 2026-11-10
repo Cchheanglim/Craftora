@@ -7,6 +7,7 @@ import { applyEdit, type ClipPatch, type EditAction } from "../project/actions";
 import {
   POSITIONS,
   SPEEDS,
+  TRANSITION_KINDS,
   clipEnd,
   showsPicture,
   projectDuration,
@@ -232,7 +233,11 @@ export const TOOLS = [
       type: "object",
       properties: {
         clip_id: { type: "string" },
-        kind: { type: "string", enum: ["none", "crossfade", "dip"], description: "dip = through black." },
+        kind: {
+          type: "string",
+          enum: ["none", ...TRANSITION_KINDS.map((t) => t.kind)],
+          description: "dip = through black, flash = through white, slide = in from the right, zoom = zoom in, wipe = left to right.",
+        },
         duration: { ...num, description: "Seconds (default 1)." },
       },
       required: ["clip_id", "kind"],
@@ -392,9 +397,13 @@ export function runTool(name: string, args: Record<string, unknown>, ctx: ToolCo
       const missing = needClip();
       if (missing) return missing;
       const kind = args.kind;
-      if (kind !== "none" && kind !== "crossfade" && kind !== "dip") return fail(p, "kind must be none, crossfade or dip.");
-      const transition = kind === "none" ? null : { kind: kind as "crossfade" | "dip", duration: isNum(args.duration) ? args.duration : 1 };
-      return edits([{ type: "setTransition", clipId: clip!.id, transition }], kind === "none" ? `Removed the transition into ${String(args.clip_id)}` : `Added a ${kind === "dip" ? "dip to black" : "crossfade"} into ${String(args.clip_id)}`);
+      const picked = TRANSITION_KINDS.find((t) => t.kind === kind);
+      if (kind !== "none" && !picked) return fail(p, `kind must be none or one of ${TRANSITION_KINDS.map((t) => t.kind).join(", ")}.`);
+      const transition = !picked ? null : { kind: picked.kind, duration: isNum(args.duration) ? args.duration : 1 };
+      return edits(
+        [{ type: "setTransition", clipId: clip!.id, transition }],
+        !picked ? `Removed the transition into ${String(args.clip_id)}` : `Added a ${picked.label.toLowerCase()} into ${String(args.clip_id)}`,
+      );
     }
     case "add_track": {
       const id = `track-${crypto.randomUUID().slice(0, 8)}`;

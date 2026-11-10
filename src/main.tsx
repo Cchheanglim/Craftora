@@ -12,6 +12,9 @@ import App from "./App";
 // Before the first paint, so a glass theme doesn't flash the classic colours at startup.
 applyTheme(savedTheme());
 
+// A touchpad pinch (it arrives as Ctrl + wheel) or Ctrl + wheel never zooms the whole window; the timeline zooms itself.
+window.addEventListener("wheel", (e) => e.ctrlKey && e.preventDefault(), { passive: false });
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <App />

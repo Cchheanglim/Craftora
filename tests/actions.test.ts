@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEdit } from "../src/project/actions";
-import { captionLines, emptyProject, mainTrack, mediaFromSource, sameFormat, trackOrder, transitionMix, upgradeProject, type Project } from "../src/project/model";
+import { captionLines, emptyProject, mainTrack, mediaFromSource, sameFormat, soundFadeAt, trackOrder, transitionMix, upgradeProject, type Project } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
 const source = (kind: "video" | "audio" | "image"): MediaSource => ({
@@ -337,4 +337,96 @@ test("a flash whitens the outgoing clip, then brings the incoming one up from wh
   expect(transitionMix(order, b, at(0.25)).picture).toBe(0);
   // Three quarters in: the incoming clip shown, half white; the sound dips like Dip to black.
   expect(transitionMix(order, b, at(0.75))).toMatchObject({ picture: 1, white: 0.5, sound: 0.5 });
+});
+
+test("a slide moves the outgoing clip left while the incoming one comes in from the right", () => {
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "a", mediaId: media.id, at: 0 });
+  p = applyEdit(p, { type: "addClip", clipId: "b", mediaId: media.id, at: 10 });
+  const track = mainTrack(p)!.id;
+  p = applyEdit(p, { type: "setMagnetic", trackId: track, magnetic: true });
+  p = applyEdit(p, { type: "setTransition", clipId: "b", transition: { kind: "slide", duration: 1 } });
+  const order = trackOrder(p, track);
+  const [a, b] = ["a", "b"].map((id) => order.find((c) => c.id === id)!);
+  const at = (share: number) => b.start + share;
+  expect(transitionMix(order, a, 0)).toMatchObject({ shift: 0, zoom: 1, wipe: 0 });
+  const [out, into] = [a, b].map((c) => transitionMix(order, c, at(0.5)));
+  expect(out).toMatchObject({ picture: 1, sound: 0.5 });
+  expect(out.shift).toBeCloseTo(-0.5);
+  expect(into).toMatchObject({ picture: 1, sound: 0.5 });
+  expect(into.shift).toBeCloseTo(0.5);
+});
+
+test("a zoom scales the outgoing clip up while the incoming one fades in from 1.5× to 1×", () => {
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "a", mediaId: media.id, at: 0 });
+  p = applyEdit(p, { type: "addClip", clipId: "b", mediaId: media.id, at: 10 });
+  const track = mainTrack(p)!.id;
+  p = applyEdit(p, { type: "setMagnetic", trackId: track, magnetic: true });
+  p = applyEdit(p, { type: "setTransition", clipId: "b", transition: { kind: "zoom", duration: 1 } });
+  const order = trackOrder(p, track);
+  const [a, b] = ["a", "b"].map((id) => order.find((c) => c.id === id)!);
+  const at = (share: number) => b.start + share;
+  expect(transitionMix(order, a, at(0.5))).toMatchObject({ picture: 1, zoom: 1.25, sound: 0.5 });
+  expect(transitionMix(order, b, at(0.5))).toMatchObject({ picture: 0.5, zoom: 1.25, sound: 0.5 });
+});
+
+test("a wipe reveals the incoming clip from left to right over the outgoing one", () => {
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "a", mediaId: media.id, at: 0 });
+  p = applyEdit(p, { type: "addClip", clipId: "b", mediaId: media.id, at: 10 });
+  const track = mainTrack(p)!.id;
+  p = applyEdit(p, { type: "setMagnetic", trackId: track, magnetic: true });
+  p = applyEdit(p, { type: "setTransition", clipId: "b", transition: { kind: "wipe", duration: 1 } });
+  const order = trackOrder(p, track);
+  const [a, b] = ["a", "b"].map((id) => order.find((c) => c.id === id)!);
+  const at = (share: number) => b.start + share;
+  expect(transitionMix(order, a, at(0.25))).toMatchObject({ picture: 1, wipe: 0, sound: 0.75 });
+  expect(transitionMix(order, b, at(0.25))).toMatchObject({ picture: 1, wipe: 0.75, sound: 0.25 });
+});
+
+test("sound fades ramp the sound, stay on the outer pieces when split, and fit when trimmed", () => {
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: media.id, at: 0 });
+  expect(soundFadeAt(p.clips[0], 5)).toBe(1);
+
+  p = applyEdit(p, { type: "updateClip", clipId: "c", patch: { soundFadeIn: 3, soundFadeOut: 2 } });
+  const c = p.clips[0];
+  expect([soundFadeAt(c, 1.5), soundFadeAt(c, 7), soundFadeAt(c, 9), soundFadeAt(c, 10)]).toEqual([0.5, 1, 0.5, 0]);
+
+  p = applyEdit(p, { type: "splitClip", clipId: "c", newClipId: "d", at: 5 });
+  expect(p.clips.map((x) => [x.soundFadeIn, x.soundFadeOut])).toEqual([
+    [3, 0],
+    [0, 2],
+  ]);
+
+  // Trimming the first piece down to 2 s clamps its 3 s sound fade in to 2 s.
+  p = applyEdit(p, { type: "trimClip", clipId: "c", edge: "end", time: 2 });
+  expect(p.clips.find((x) => x.id === "c")).toMatchObject({ soundFadeIn: 2, soundFadeOut: 0 });
+});
+
+
+test("a transition works on a track without the magnet: only the clip after the join moves", () => {
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addTrack", trackId: "t2" });
+  p = applyEdit(p, { type: "addClip", clipId: "a", mediaId: media.id, at: 20, trackId: "t2" });
+  p = applyEdit(p, { type: "splitClip", clipId: "a", newClipId: "b", at: 25 });
+  p = applyEdit(p, { type: "addClip", clipId: "far", mediaId: media.id, at: 60, trackId: "t2" });
+  p = applyEdit(p, { type: "setTransition", clipId: "b", transition: { kind: "slide", duration: 1 } });
+  const at = (id: string) => p.clips.find((c) => c.id === id)!.start;
+  // No magnet switched on, nothing packed to 0:00: the clip after the join overlaps the one before by the transition.
+  expect(p.tracks.find((t) => t.id === "t2")?.magnetic).toBeFalsy();
+  expect([at("a"), at("b"), at("far")]).toEqual([20, 24, 60]);
+  const order = trackOrder(p, "t2");
+  expect(transitionMix(order, order.find((c) => c.id === "b")!, 24.5).shift).toBeCloseTo(0.5);
+  // A clip set apart from the one before has no join, so its transition waits.
+  expect(transitionMix(order, order.find((c) => c.id === "far")!, 60.2).shift).toBe(0);
+  // Taken off again, the clip goes back to the cut.
+  p = applyEdit(p, { type: "setTransition", clipId: "b", transition: null });
+  expect(at("b")).toBe(25);
 });

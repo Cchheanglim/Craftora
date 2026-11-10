@@ -6,7 +6,7 @@
  * - Time effects (slow motion, speed up, reverse) change the clip (or piece) they're dropped on.
  * - Transitions go on the join between two clips.
  */
-import { MIN_CLIP, TRANSITION_KINDS, clipEnd, clipLength, isStill, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
+import { MIN_CLIP, TRANSITION_KINDS, clipEnd, meets, clipLength, isStill, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
 import type { ClipPatch, EditAction } from "./actions";
 import type { ShapeId } from "./shapes";
 
@@ -96,6 +96,9 @@ export type FxItem =
 /** A new filter or effect block off any clip lasts this long; drag its edges to change it. */
 export const BLOCK_LENGTH = 3;
 
+/** A transition this close to a join (seconds) goes on that join; further into a clip, it cuts the clip there. */
+const JOIN_REACH = 0.5;
+
 /** A filter or effect block's name on the timeline and in Edit. */
 export function blockLabel(c: Clip): string {
   return LOOKS.find((l) => l.id === c.look)?.label ?? PICTURE_EFFECTS.find((e) => e.id === c.effect)?.label ?? "Effect";
@@ -105,16 +108,21 @@ export function blockLabel(c: Clip): string {
  * The edits a dragged (or clicked) item makes when it lands at `time` on track `trackId`, and the
  * clip to select afterwards. On a clip there, a filter or effect covers that clip and a time effect
  * changes it; off any clip, a filter or effect is a short block at `time`. With no track (clicked
- * with nothing selected), time effects and transitions use the main track. Null when there's
- * nothing there for it to go on. `newIds`: ids for any clips it makes.
+ * with nothing selected), time effects and transitions use the main track; with `null` (dropped in the empty space
+ * around the tracks), a filter, effect or shape gets a new track of its own at the top. Null when there's nothing there
+ * for it to go on. `newIds`: ids for any clips it makes.
  */
 export function dropEdits(
   p: Project,
   item: FxItem,
-  trackId: string | undefined,
+  trackId: string | undefined | null,
   time: number,
   newIds: [string, string],
 ): { edits: EditAction[]; select?: string } | null {
+  if (trackId === null && item.kind !== "filter" && item.kind !== "effect" && item.kind !== "shape") trackId = undefined;
+  // Its own track: made first, then the block goes on it.
+  const ownTrack: EditAction[] = trackId === null ? [{ type: "addTrack", trackId: newIds[1] }] : [];
+  if (trackId === null) trackId = newIds[1];
   const dropped = p.tracks.find((t) => t.id === trackId);
   const mediaOn = (id?: string) => (id ? trackOrder(p, id).filter((c) => c.mediaId) : []);
   const clipAt = (clips: Clip[]) => clips.find((c) => time >= c.start && time < clipEnd(c));
@@ -128,10 +136,10 @@ export function dropEdits(
     }
     // On an empty spot: a block of its own, to stretch over several clips.
     const length = item.id === "punch" ? 0.6 : item.id === "shake" ? 1 : BLOCK_LENGTH;
-    return { edits: [{ type: "addBlock", clipId: newIds[0], at: time, length, trackId: dropped?.id, ...block }], select: newIds[0] };
+    return { edits: [...ownTrack, { type: "addBlock", clipId: newIds[0], at: time, length, trackId: ownTrack.length ? trackId : dropped?.id, ...block }], select: newIds[0] };
   }
   if (item.kind === "shape") {
-    return { edits: [{ type: "addShape", clipId: newIds[0], shape: item.id, at: time, length: BLOCK_LENGTH, trackId: dropped?.id }], select: newIds[0] };
+    return { edits: [...ownTrack, { type: "addShape", clipId: newIds[0], shape: item.id, at: time, length: BLOCK_LENGTH, trackId: ownTrack.length ? trackId : dropped?.id }], select: newIds[0] };
   }
   const track = dropped ?? mainTrack(p);
   if (!track || track.locked) return null;
@@ -150,14 +158,22 @@ export function dropEdits(
     const { edits, target } = effectEdits(clip, effect.change, undefined, newIds);
     return { edits, select: target };
   }
-  // A transition: on the join nearest to where it was dropped.
-  const joins = order.slice(1);
-  if (joins.length === 0) return null;
-  const clip = joins.reduce((best, c) => (Math.abs(c.start - time) < Math.abs(best.start - time) ? c : best));
   const kind = TRANSITION_KINDS.find((t) => t.kind === item.id)?.kind ?? "crossfade";
   const edits: EditAction[] = [];
-  // Transitions need clips back to back: the magnet does that.
-  if (!track.magnetic) edits.push({ type: "setMagnetic", trackId: track.id, magnetic: true });
+  // Over the middle of a clip: cut it there and put the transition on the cut (no splitting by hand first).
+  const under = order.filter((c) => time >= c.start && time < clipEnd(c));
+  const nearJoin = order.some((c) => Math.abs(time - c.start) <= JOIN_REACH || Math.abs(time - clipEnd(c)) <= JOIN_REACH);
+  // One clip only: inside a transition two clips overlap, and that one is changed on its join instead.
+  const inside = under.length === 1 && !nearJoin ? under[0] : undefined;
+  if (inside) {
+    edits.push({ type: "splitClip", clipId: inside.id, newClipId: newIds[0], at: time });
+    edits.push({ type: "setTransition", clipId: newIds[0], transition: { kind, duration: 1 } });
+    return { edits, select: newIds[0] };
+  }
+  // Near a join (or between clips): on the join nearest to where it was dropped (clips set apart have none).
+  const joins = order.filter((c, i) => i > 0 && meets(order[i - 1], c));
+  if (joins.length === 0) return null;
+  const clip = joins.reduce((best, c) => (Math.abs(c.start - time) < Math.abs(best.start - time) ? c : best));
   edits.push({ type: "setTransition", clipId: clip.id, transition: { kind, duration: 1 } });
   return { edits, select: clip.id };
 }

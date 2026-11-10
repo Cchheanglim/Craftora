@@ -4,6 +4,18 @@
 
 **New**
 
+- **Slide, Zoom and Wipe transitions**: the next clip pushes the last one out to the left, zooms through it, or is uncovered
+  left to right.
+- **Transitions without splitting first**: click one (or drop it) in the middle of a clip and Craftora cuts the clip
+  there and adds it; dropped next to a cut it goes on that cut, however far the timeline is zoomed out.
+- **Sound fades**: drag the dots on a clip's sound wave (or use Edit → Sound fade) to fade only its sound in or out, as
+  long as you like; the picture stays.
+- **Transitions on any track**, not only the main one; clips on other tracks stay where you put them. Drag a
+  transition's shaded area left or right to change its length.
+- **Effects on their own track**: drop an effect, filter or shape in the empty space around the tracks and it gets a
+  new track, ready to stretch over any part of the video.
+- **Zoom the timeline all the way out**, however long the video (a 2-hour video fits), with the buttons, Ctrl + wheel or
+  a touchpad pinch (which no longer zooms the whole window).
 - **Filters and effects inside a clip**: dropped on a video clip they belong to it (no extra track; its label shows them,
   the side panel removes them); dropped on an empty spot they're a block over several clips, as before.
 - **Catalog regrouped**: Effects by Camera / Style / Speed and direction; Transitions "Between clips" (Crossfade, Dip to
