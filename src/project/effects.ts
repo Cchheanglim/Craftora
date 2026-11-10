@@ -8,6 +8,7 @@
  */
 import { MIN_CLIP, TRANSITION_KINDS, clipEnd, clipLength, isStill, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
 import type { ClipPatch, EditAction } from "./actions";
+import type { ShapeId } from "./shapes";
 
 /**
  * One colour step of a filter: a CSS filter function and its amount (degrees for hue-rotate). The
@@ -54,17 +55,18 @@ export function lookFilter(id?: string, amount = 1): string | undefined {
 
 /** Picture effects: blocks like filters (project.rs `effect_filter` draws them in the export). */
 export const PICTURE_EFFECTS = [
-  { id: "fade-in", label: "Fade in" },
-  { id: "fade-out", label: "Fade out" },
-  { id: "flash", label: "Flash" },
-  { id: "blur", label: "Blur" },
-  { id: "mirror", label: "Mirror" },
-  { id: "zoom-in", label: "Zoom in" },
-  { id: "zoom-out", label: "Zoom out" },
-  { id: "punch", label: "Zoom punch" },
-  { id: "shake", label: "Shake" },
-  { id: "bars", label: "Cinema bars" },
-] as const;
+  // "old": kept so old projects' blocks keep their labels and keep working, not shown in the panel.
+  { id: "fade-in", label: "Fade in", category: "old" },
+  { id: "fade-out", label: "Fade out", category: "old" },
+  { id: "flash", label: "Flash", category: "old" },
+  { id: "blur", label: "Blur", category: "style" },
+  { id: "mirror", label: "Mirror", category: "style" },
+  { id: "zoom-in", label: "Zoom in", category: "camera" },
+  { id: "zoom-out", label: "Zoom out", category: "camera" },
+  { id: "punch", label: "Zoom punch", category: "camera" },
+  { id: "shake", label: "Shake", category: "camera" },
+  { id: "bars", label: "Cinema bars", category: "style" },
+] as const satisfies readonly { id: string; label: string; category: "camera" | "style" | "old" }[];
 export type PictureEffectId = (typeof PICTURE_EFFECTS)[number]["id"];
 
 /** Blur's strength: its standard deviation as a share of the frame width (CSS blur and FFmpeg gblur both use one). */
@@ -86,8 +88,10 @@ export const TIME_EFFECTS: { id: string; label: string; change: TimeChange }[] =
 export type FxItem =
   | { kind: "filter"; id: LookId }
   | { kind: "effect"; id: PictureEffectId }
+  | { kind: "fade"; id: "in" | "out" }
   | { kind: "time"; id: string }
-  | { kind: "transition"; id: Transition["kind"] };
+  | { kind: "transition"; id: Transition["kind"] }
+  | { kind: "shape"; id: ShapeId };
 
 /** A new filter or effect block off any clip lasts this long; drag its edges to change it. */
 export const BLOCK_LENGTH = 3;
@@ -116,14 +120,28 @@ export function dropEdits(
   const clipAt = (clips: Clip[]) => clips.find((c) => time >= c.start && time < clipEnd(c));
   if (item.kind === "filter" || item.kind === "effect") {
     const block = item.kind === "filter" ? { look: item.id } : { effect: item.id };
+    // Dropped on a video or picture: it goes inside that clip (one filter and one effect each; a new one replaces it).
     const clip = clipAt(mediaOn(dropped?.id).filter((c) => showsPicture(p, c)));
-    const defaultLength = item.id === "punch" ? 0.6 : item.id === "shake" ? 1 : BLOCK_LENGTH;
-    const [at, length] = clip ? [clip.start, clipLength(clip)] : [time, defaultLength];
-    return { edits: [{ type: "addBlock", clipId: newIds[0], at, length, trackId: dropped?.id, ...block }], select: newIds[0] };
+    if (clip) {
+      const patch = item.kind === "filter" ? { look: item.id, lookAmount: 1 } : { effect: item.id };
+      return { edits: [{ type: "updateClip", clipId: clip.id, patch }], select: clip.id };
+    }
+    // On an empty spot: a block of its own, to stretch over several clips.
+    const length = item.id === "punch" ? 0.6 : item.id === "shake" ? 1 : BLOCK_LENGTH;
+    return { edits: [{ type: "addBlock", clipId: newIds[0], at: time, length, trackId: dropped?.id, ...block }], select: newIds[0] };
+  }
+  if (item.kind === "shape") {
+    return { edits: [{ type: "addShape", clipId: newIds[0], shape: item.id, at: time, length: BLOCK_LENGTH, trackId: dropped?.id }], select: newIds[0] };
   }
   const track = dropped ?? mainTrack(p);
   if (!track || track.locked) return null;
   const order = mediaOn(track.id);
+  if (item.kind === "fade") {
+    const clip = clipAt(order.filter((c) => showsPicture(p, c)));
+    if (!clip) return null;
+    const fade = Math.min(1, clipLength(clip) / 2);
+    return { edits: [{ type: "updateClip", clipId: clip.id, patch: item.id === "in" ? { fadeIn: fade } : { fadeOut: fade } }], select: clip.id };
+  }
   if (item.kind === "time") {
     // A still picture has no speed or direction.
     const clip = clipAt(order.filter((c) => !isStill(p, c)));

@@ -6,6 +6,7 @@
 import type { Caption, MediaSource } from "../types";
 import type { LibraryEntry } from "../lib/storage";
 import type { LookId, PictureEffectId } from "./effects";
+import type { ShapeId } from "./shapes";
 
 /**
  * A row on the timeline. Every track works the same way: it holds videos, pictures, sound, text
@@ -108,7 +109,8 @@ export const MAX_CROP = 0.45;
 
 /** How a clip on a magnetic track takes over from the one before it. Both overlap for `duration`. */
 export interface Transition {
-  kind: "crossfade" | "dip";
+  /** "flash": like a dip, through white instead of black. */
+  kind: "crossfade" | "dip" | "flash";
   /** Seconds, as set; the real overlap may be shorter for short clips (see `transitionLength`). */
   duration: number;
 }
@@ -116,6 +118,7 @@ export interface Transition {
 export const TRANSITION_KINDS: { kind: Transition["kind"]; label: string }[] = [
   { kind: "crossfade", label: "Crossfade" },
   { kind: "dip", label: "Dip to black" },
+  { kind: "flash", label: "Flash" },
 ];
 
 export const isCropped = (c: Crop) => c.left > 0 || c.top > 0 || c.right > 0 || c.bottom > 0;
@@ -136,7 +139,7 @@ export interface Clip {
   volume: number;
   mirror: boolean;
   reverse: boolean;
-  /** Pictures: turned clockwise by this many degrees (90, 180 or 270); upright when absent. */
+  /** Pictures: turned clockwise by this many degrees (90, 180 or 270); shapes: any angle about the box centre; upright when absent. */
   rotate?: number;
   /** Slowed down with in-between frames made in the export (Smooth slow-mo), not each frame shown longer. */
   smooth?: boolean;
@@ -146,6 +149,14 @@ export interface Clip {
   lookAmount?: number;
   /** An effect block: effects.ts `PICTURE_EFFECTS`. */
   effect?: PictureEffectId;
+  /** A shape clip: shapes.ts `SHAPES`. */
+  shape?: ShapeId;
+  /** Shape clips: 0–1 (1 when absent). */
+  opacity?: number;
+  /** Shape clips: 0 or absent = filled; > 0 = outline only, its thickness as a share of the frame height. */
+  outline?: number;
+  /** Shape clips: box height / box width in frame pixels (1 when absent). */
+  aspect?: number;
   /** Seconds of fade from black/silence at the start and to black/silence at the end. */
   fadeIn: number;
   fadeOut: number;
@@ -154,7 +165,7 @@ export interface Clip {
   transition?: Transition;
   /**
    * Video: scale of the picture, where 1 fills the frame as far as its shape allows (like
-   * "fit"). Text: letter height as a fraction of the frame.
+   * "fit"). Text: letter height as a fraction of the frame. Shapes: box width as a share of the frame width.
    */
   size: number;
   /** Video: cover the frame (cropping what spills over) instead of fitting inside it. */
@@ -163,7 +174,7 @@ export interface Clip {
   x: number;
   y: number;
   text?: string;
-  /** Text color, #rrggbb. */
+  /** Text or shape colour, #rrggbb. */
   color?: string;
   /** Text font (`TEXT_FONTS`); Segoe UI when absent. */
   font?: TextFont;
@@ -262,26 +273,36 @@ export function transitionLength(prev: Clip | undefined, cur: Clip): number {
  * how visible (`picture`) and how loud (`sound`) the clip is, 0–1. The incoming clip is
  * drawn above the outgoing one.
  */
-export function transitionMix(order: Clip[], clip: Clip, t: number): { picture: number; sound: number } {
+/**
+ * How visible and loud a clip is during its transitions, and how white (a flash): the outgoing clip whitens over the first
+ * half, the incoming one (on top, white until then) comes back from white over the second half, as the export draws it.
+ */
+export function transitionMix(order: Clip[], clip: Clip, t: number): { picture: number; sound: number; white: number } {
   const i = order.findIndex((c) => c.id === clip.id);
-  if (i === -1) return { picture: 1, sound: 1 };
+  if (i === -1) return { picture: 1, sound: 1, white: 0 };
   let picture = 1;
   let sound = 1;
+  let white = 0;
   const incoming = transitionLength(order[i - 1], clip);
   if (incoming > 0 && t < clip.start + incoming) {
     const p = Math.max(0, (t - clip.start) / incoming);
-    picture = clip.transition!.kind === "dip" ? Math.max(0, 2 * p - 1) : p;
-    sound = clip.transition!.kind === "dip" ? Math.max(0, 2 * p - 1) : p;
+    const kind = clip.transition!.kind;
+    // A flash's incoming clip is hidden until the outgoing one is all white (as the export does).
+    picture = kind === "dip" ? Math.max(0, 2 * p - 1) : kind === "flash" ? (p < 0.5 ? 0 : 1) : p;
+    sound = kind === "crossfade" ? p : Math.max(0, 2 * p - 1);
+    if (kind === "flash") white = 1 - Math.max(0, 2 * p - 1);
   }
   const next = order[i + 1];
   const outgoing = next ? transitionLength(clip, next) : 0;
   if (next && outgoing > 0 && t >= next.start) {
     const p = Math.min(1, (t - next.start) / outgoing);
-    // A crossfade keeps the outgoing picture underneath; a dip fades it to black first.
-    if (next.transition!.kind === "dip") picture = Math.min(picture, Math.max(0, 1 - 2 * p));
-    sound = Math.min(sound, next.transition!.kind === "dip" ? Math.max(0, 1 - 2 * p) : 1 - p);
+    const kind = next.transition!.kind;
+    // A crossfade keeps the outgoing picture underneath; a dip fades it to black first, a flash to white.
+    if (kind === "dip") picture = Math.min(picture, Math.max(0, 1 - 2 * p));
+    if (kind === "flash") white = Math.max(white, Math.min(1, 2 * p));
+    sound = Math.min(sound, kind === "crossfade" ? 1 - p : Math.max(0, 1 - 2 * p));
   }
-  return { picture, sound };
+  return { picture, sound, white };
 }
 
 export function projectDuration(p: Project): number {
@@ -347,7 +368,14 @@ export const showsPicture = (p: Project, c: Clip) => Boolean(c.mediaId && mediaO
 export const isStill = (p: Project, c: Clip) => !c.mediaId || Boolean(mediaOf(p, c)?.source.image);
 
 /** A filter or effect block, rather than text. */
-export const isBlock = (c: Clip) => Boolean(c.look || c.effect);
+/** A filter or effect block of its own (a video clip can also carry a filter and an effect inside it). */
+export const isBlock = (c: Clip) => !c.mediaId && Boolean(c.look || c.effect);
+
+/** A shape clip (`shapes.ts`). */
+export const isShape = (c: Clip) => Boolean(c.shape);
+
+/** A text clip (not media, a shape or a filter/effect block). */
+export const isText = (c: Clip) => !c.mediaId && !c.shape && !isBlock(c);
 
 /** A name for the project list: the first thing imported. */
 export const projectName = (p: Project) => p.media[0]?.name.replace(/\.[a-z0-9]{2,4}$/i, "") ?? "Untitled project";

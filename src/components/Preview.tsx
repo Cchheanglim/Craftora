@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { isBlock, showsPicture, clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
+import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
+import { newShapeClip, shapeBox, shapeSvg } from "../project/shapes";
+import type { FxItem } from "../project/effects";
+import { fxDrag } from "./TimelineEditor";
 import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -9,7 +12,6 @@ import { blocksStyle } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
 import { SyncedMedia } from "./SyncedMedia";
-import { CopyReport } from "./CopyReport";
 import "./Preview.css";
 
 const FRAME = 1 / 30;
@@ -19,6 +21,11 @@ const SNAP_PX = 6;
 const MIN_PICTURE = 0.1;
 const MIN_TEXT = 0.02;
 const MAX_TEXT = 0.3;
+const MIN_SHAPE = 0.02;
+const MAX_SHAPE = 2;
+// A shape's height as a share of its width, as the Inspector allows.
+const MIN_ASPECT = 0.05;
+const MAX_ASPECT = 5;
 
 interface PreviewProps {
   project: Project;
@@ -30,6 +37,8 @@ interface PreviewProps {
   onSelect: (id: string | null) => void;
   /** Saves a PNG snapshot of the current preview frame and imports it into Media. */
   onSnapshot?: (bytes: Uint8Array) => Promise<void>;
+  /** A shape tile let go over the preview, with where its box goes (x/y like a clip's). */
+  onDropShape?: (item: FxItem, x: number, y: number) => void;
   /** How making captions from the sound is going ("making captions, 40%"), while it is. */
   captionStatus?: string;
   /** Captions on (CC): shown here and exported. */
@@ -98,17 +107,20 @@ async function captureStagePng(stage: HTMLElement, width: number, height: number
 }
 
 type Corner = "nw" | "ne" | "sw" | "se";
+/** Shapes also stretch from the middle of a side. */
+type Edge = "n" | "s" | "e" | "w";
 
-/** A picture-in-picture or text being moved or resized on the preview. */
+/** A picture-in-picture, shape or text being moved or resized on the preview. */
 interface Gesture {
   clipId: string;
-  mode: "move" | Corner;
+  mode: "move" | Corner | Edge;
   originX: number;
   originY: number;
   stage: DOMRect;
   box: DOMRect;
   size: number;
   isText: boolean;
+  isShape: boolean;
   /** A caption: moves and resizes every caption together. */
   captions: boolean;
   moved: boolean;
@@ -133,7 +145,7 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : {};
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape }: PreviewProps) {
   const [muted, setMuted] = useState(false);
   // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
   const [level, setLevel] = useState(1);
@@ -218,12 +230,14 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const mix = (c: Clip) => {
     const fade = fadeAt(c, time);
     const order = orders.get(c.trackId);
-    const t = order ? transitionMix(order, c, time) : { picture: 1, sound: 1 };
-    return { picture: fade * t.picture, sound: fade * t.sound };
+    const t = order ? transitionMix(order, c, time) : { picture: 1, sound: 1, white: 0 };
+    return { picture: fade * t.picture, sound: fade * t.sound, white: t.white };
   };
   // Sound files (pictures play their own sound).
   const sounds = project.clips.filter((c) => c.mediaId && !showsPicture(project, c));
-  const texts = project.clips.filter((c) => !c.mediaId && !isBlock(c) && !trackHidden(c)).sort(byLayer);
+  const texts = project.clips.filter((c) => isText(c) && !trackHidden(c)).sort(byLayer);
+  const shapes = project.clips.filter((c) => isShape(c) && !trackHidden(c)).sort(byLayer);
+  const overlays = [...texts, ...shapes].sort(byLayer);
   // Filter and effect blocks showing now change the pictures (not text), lowest track first.
   const blocks = blocksStyle(
     project.clips.filter((c) => isBlock(c) && active(c) && !trackHidden(c)).sort(byLayer),
@@ -330,23 +344,43 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const { stage, box } = g;
     const left0 = box.left - stage.left;
     const top0 = box.top - stage.top;
-    const change = (patch: { x: number; y: number; size?: number }) =>
+    const change = (patch: { x: number; y: number; size?: number; aspect?: number }) =>
       api.editLive(g.captions ? { type: "layoutCaptions", patch } : { type: "updateClip", clipId: g.clipId, patch });
     if (g.mode === "move") {
       change({ x: placeAlong(left0 + dx, stage.width - box.width), y: placeAlong(top0 + dy, stage.height - box.height) });
+      return;
+    }
+    const free = (total: number, used: number, offset: number) => (total - used <= 0 ? 0.5 : clamp(offset / (total - used), 0, 1));
+    if (g.isShape) {
+      // Shapes stretch freely: a side handle moves that side, a corner both (Shift keeps the shape); the opposite stays.
+      const has = (side: string) => g.mode.includes(side);
+      let width = box.width + (has("w") ? -dx : has("e") ? dx : 0);
+      let height = box.height + (has("n") ? -dy : has("s") ? dy : 0);
+      if (e.shiftKey && g.mode.length === 2) {
+        const k = Math.max(width / box.width, height / box.height);
+        [width, height] = [box.width * k, box.height * k];
+      }
+      width = clamp(width, MIN_SHAPE * stage.width, MAX_SHAPE * stage.width);
+      height = clamp(height, width * MIN_ASPECT, width * MAX_ASPECT);
+      const left = has("w") ? left0 + box.width - width : left0;
+      const top = has("n") ? top0 + box.height - height : top0;
+      change({ size: width / stage.width, aspect: height / width, x: free(stage.width, width, left), y: free(stage.height, height, top) });
       return;
     }
     // Resize from a corner, keeping the shape and the opposite corner where it is.
     const fromLeft = g.mode === "nw" || g.mode === "sw";
     const fromTop = g.mode === "nw" || g.mode === "ne";
     const scale = (box.width + (fromLeft ? -dx : dx)) / box.width;
-    const size = g.isText ? clamp(g.size * scale, MIN_TEXT, MAX_TEXT) : clamp(g.size * scale, MIN_PICTURE, 1);
+    const size = g.isShape
+      ? clamp(g.size * scale, MIN_SHAPE, MAX_SHAPE)
+      : g.isText
+        ? clamp(g.size * scale, MIN_TEXT, MAX_TEXT)
+        : clamp(g.size * scale, MIN_PICTURE, 1);
     const ratio = size / g.size;
     const width = box.width * ratio;
     const height = box.height * ratio;
     const left = fromLeft ? left0 + box.width - width : left0;
     const top = fromTop ? top0 + box.height - height : top0;
-    const free = (total: number, used: number, offset: number) => (total - used <= 0 ? 0.5 : clamp(offset / (total - used), 0, 1));
     change({ size, x: free(stage.width, width, left), y: free(stage.height, height, top) });
   };
 
@@ -357,16 +391,26 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const captions = isCaption(clip);
     // Captions not on the timeline aren't clips: they're picked as a whole.
     onSelect(clip.trackId.startsWith(SHOWN_CAPTIONS) ? SHOWN_CAPTIONS : clip.id);
-    const box = (mode === "move" ? e.currentTarget : e.currentTarget.parentElement!).getBoundingClientRect();
+    const stage = stageRef.current.getBoundingClientRect();
+    const elBox = (mode === "move" ? e.currentTarget : e.currentTarget.parentElement!).getBoundingClientRect();
+    // A rotated shape's DOM bounding rect is its wider axis-aligned envelope; keep the unrotated box for drag maths.
+    const box =
+      isShape(clip) && clip.rotate && stage.width > 0 && stage.height > 0
+        ? (() => {
+            const b = shapeBox(clip, stage.width, stage.height);
+            return new DOMRect(stage.left + b.left, stage.top + b.top, b.width, b.height);
+          })()
+        : elBox;
     gestureRef.current = {
       clipId: clip.id,
       mode,
       originX: e.clientX,
       originY: e.clientY,
-      stage: stageRef.current.getBoundingClientRect(),
+      stage,
       box,
       size: clip.size,
-      isText: !clip.mediaId,
+      isText: isText(clip),
+      isShape: isShape(clip),
       captions,
       moved: false,
     };
@@ -387,8 +431,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   };
 
   const handles = (clip: Clip) =>
-    (["nw", "ne", "sw", "se"] as Corner[]).map((corner) => (
-      <span key={corner} className={`preview__handle is-${corner}`} onPointerDown={beginGesture(clip, corner)} aria-hidden="true" />
+    (isShape(clip) ? ["nw", "ne", "sw", "se", "n", "s", "e", "w"] : ["nw", "ne", "sw", "se"]).map((corner) => (
+      <span key={corner} className={`preview__handle is-${corner}`} onPointerDown={beginGesture(clip, corner as Corner | Edge)} aria-hidden="true" />
     ));
 
   return (
@@ -402,7 +446,22 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           else playback.toggle();
         }}
       >
-        <div ref={stageRef} className="preview__stage" style={{ "--aspect": stageAspect } as CSSProperties}>
+        <div
+          ref={stageRef}
+          className="preview__stage"
+          style={{ "--aspect": stageAspect } as CSSProperties}
+          onPointerUp={(e) => {
+            // A shape tile dragged from the right panel and let go here lands centred where the pointer is.
+            const item = fxDrag.current;
+            if (item?.kind !== "shape" || !onDropShape || !stageRef.current) return;
+            const r = stageRef.current.getBoundingClientRect();
+            const shape = newShapeClip("", item.id);
+            const w = shape.size;
+            const h = (shape.size * (shape.aspect ?? 1) * frame.width) / frame.height;
+            const along = (at: number, used: number) => (used >= 1 ? 0.5 : clamp((at - used / 2) / (1 - used), 0, 1));
+            onDropShape(item, along((e.clientX - r.left) / r.width, w), along((e.clientY - r.top) / r.height, h));
+          }}
+        >
           {pictures.some((c) => {
             // A link with nothing playable, or whose preview failed, would otherwise just be black.
             const source = mediaOf(c)?.source;
@@ -412,7 +471,6 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               <span className="preview__failed">
                 This video can't play in the preview you have to download it first.{" "}
                 {downloadHere ?? "Download it with ⬇ under In this project to watch and edit it."}
-                <CopyReport />
               </span>
             </span>
           )}
@@ -433,9 +491,12 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               <PictureLayer
                 key={clip.id}
                 clip={clip}
+                time={time}
                 stageAspect={stageAspect}
+                stageWidth={stageRef.current?.clientWidth ?? frame.width}
                 visible={t !== null && !trackHidden(clip)}
                 opacity={t === null ? 0 : mix(clip).picture}
+                white={t === null ? 0 : mix(clip).white}
                 selected={isSelected}
                 poster={poster}
                 onPointerDown={beginGesture(clip, "move")}
@@ -529,8 +590,21 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               />
             );
           })}
-          {texts.filter(active).map((clip) => {
+          {overlays.filter(active).map((clip) => {
             const isSelected = clip.id === selectedId;
+            if (isShape(clip)) {
+              return (
+                <ShapeLayer
+                  key={clip.id}
+                  clip={clip}
+                  frame={frame}
+                  opacity={fadeAt(clip, time)}
+                  selected={isSelected}
+                  onPointerDown={beginGesture(clip, "move")}
+                  handles={isSelected ? handles(clip) : null}
+                />
+              );
+            }
             return (
               <div
                 key={clip.id}
@@ -739,9 +813,13 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
 
 interface PictureLayerProps {
   clip: Clip;
+  time: number;
   stageAspect: number;
+  stageWidth: number;
   visible: boolean;
   opacity: number;
+  /** 0–1: how white a flash transition makes it now. */
+  white: number;
   selected: boolean;
   poster?: string;
   onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
@@ -754,7 +832,7 @@ interface PictureLayerProps {
  * One picture on the stage, placed like the export: fitted inside the frame, scaled by its
  * size, at its position. The crop is a window onto the video.
  */
-function PictureLayer({ clip, stageAspect, visible, opacity, selected, poster, onPointerDown, handles, children }: PictureLayerProps) {
+function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, selected, poster, onPointerDown, handles, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
@@ -781,6 +859,9 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, poster, o
   // with `fill` covers it, the frame cutting off what spills over (=increase).
   const wider = aspect >= stageAspect;
   const fitWidth = clip.fill ? (wider ? aspect / stageAspect : 1) : wider ? 1 : aspect / stageAspect;
+  const boxWidth = stageWidth * fitWidth * clip.size;
+  // A filter or effect on this clip itself changes only its box, timed to the clip's span.
+  const fx = clip.look || clip.effect ? blocksStyle([clip], time, boxWidth, boxWidth / aspect) : undefined;
   const box: CSSProperties = {
     width: `${fitWidth * clip.size * 100}%`,
     aspectRatio: String(aspect),
@@ -803,30 +884,88 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, poster, o
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
     >
       <div className="preview__crop" style={turned}>
-        {!ready && poster && (
-          <img
-            src={poster}
-            alt=""
-            className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
-            style={video}
-            draggable={false}
-            onLoad={(e) => {
-              if (e.currentTarget.naturalWidth && e.currentTarget.naturalHeight) {
-                setVideoAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight);
-              }
-            }}
-          />
-        )}
-        {children(
-          (width, height) => {
-            if (width && height) setVideoAspect(width / height);
-          },
-          video,
-          () => setReady(true),
-        )}
+        <div
+          className="preview__clip-fx"
+          style={
+            fx && {
+              filter: fx.filter,
+              transform: [fx.transform, fx.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined,
+            }
+          }
+        >
+          {!ready && poster && (
+            <img
+              src={poster}
+              alt=""
+              className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
+              style={video}
+              draggable={false}
+              onLoad={(e) => {
+                if (e.currentTarget.naturalWidth && e.currentTarget.naturalHeight) {
+                  setVideoAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight);
+                }
+              }}
+            />
+          )}
+          {children(
+            (width, height) => {
+              if (width && height) setVideoAspect(width / height);
+            },
+            video,
+            () => setReady(true),
+          )}
+        </div>
       </div>
+      {/* A flash transition whitens the clip itself (the export fades its picture to white). */}
+      {white > 0 && <span className="preview__fx-layer" style={{ background: "#fff", opacity: white }} aria-hidden="true" />}
+      {fx?.layers.map((layer, i) => (
+        <span key={i} className="preview__fx-layer" style={{ background: layer.color, opacity: layer.opacity }} aria-hidden="true" />
+      ))}
+      {fx && fx.bars > 0 && (
+        <>
+          <span className="preview__bar is-top" style={{ height: `${fx.bars * 100}%` }} aria-hidden="true" />
+          <span className="preview__bar is-bottom" style={{ height: `${fx.bars * 100}%` }} aria-hidden="true" />
+        </>
+      )}
       {visible && !ready && !poster && <span className="preview__loading">Loading video…</span>}
       {handles}
     </div>
+  );
+}
+
+interface ShapeLayerProps {
+  clip: Clip;
+  frame: Frame;
+  opacity: number;
+  selected: boolean;
+  onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
+  handles: ReactNode;
+}
+
+/** One shape on the stage: a full-frame SVG picture with a hit box over its bounding box. */
+function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles }: ShapeLayerProps) {
+  const src = useMemo(
+    () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(shapeSvg(clip, frame.width, frame.height))}`,
+    [clip.shape, clip.color, clip.size, clip.aspect, clip.x, clip.y, clip.opacity, clip.outline, clip.rotate, frame.width, frame.height],
+  );
+  const box = shapeBox(clip, frame.width, frame.height);
+  return (
+    <>
+      <img className="preview__shape" src={src} alt="" draggable={false} style={{ opacity }} />
+      <div
+        className={selected ? "preview__shape-box is-selected" : "preview__shape-box"}
+        style={{
+          left: `${(box.left / frame.width) * 100}%`,
+          top: `${(box.top / frame.height) * 100}%`,
+          width: `${(box.width / frame.width) * 100}%`,
+          height: `${(box.height / frame.height) * 100}%`,
+          transform: clip.rotate ? `rotate(${clip.rotate}deg)` : undefined,
+        }}
+        onPointerDown={onPointerDown}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {handles}
+      </div>
+    </>
   );
 }

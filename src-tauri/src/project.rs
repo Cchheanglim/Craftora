@@ -70,6 +70,8 @@ enum Role {
     Text,
     /// A filter or effect block (effects.ts): changes the pictures under it while it lasts.
     Effect,
+    /// A shape (shapes.ts): the editor sends it drawn on a whole-frame PNG (`picture`), laid over the pictures.
+    Shape,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Default)]
@@ -79,6 +81,8 @@ enum TransitionKind {
     Crossfade,
     /// Fade to black, then up from black.
     Dip,
+    /// The same through white (a flash).
+    Flash,
 }
 
 fn one() -> f64 {
@@ -121,6 +125,9 @@ struct ClipSpec {
     /// Effect blocks: effects.ts `PICTURE_EFFECTS` id.
     #[serde(default)]
     effect: String,
+    /// Shapes: the whole frame as a PNG data URL with the shape drawn on it.
+    #[serde(default)]
+    picture: String,
     /// Cover size × the frame (what spills over is cut off by the frame) instead of fitting inside.
     #[serde(default)]
     fill: bool,
@@ -165,6 +172,8 @@ struct ClipSpec {
 /// A fade over the clip's own time: `fade_in` from `start` for `length`, or out.
 struct Ramp {
     fade_in: bool,
+    /// Through white (a flash transition) instead of see-through.
+    white: bool,
     start: f64,
     length: f64,
 }
@@ -185,24 +194,38 @@ impl ClipSpec {
         let length = self.length();
         let mut ramps = Vec::new();
         if self.fade_in > 0.0 {
-            ramps.push(Ramp { fade_in: true, start: 0.0, length: self.fade_in });
+            ramps.push(Ramp { white: false, fade_in: true, start: 0.0, length: self.fade_in });
         }
         if self.fade_out > 0.0 {
-            ramps.push(Ramp { fade_in: false, start: length - self.fade_out, length: self.fade_out });
+            ramps.push(Ramp { white: false, fade_in: false, start: length - self.fade_out, length: self.fade_out });
         }
         if self.transition_in > 0.0 {
             ramps.push(match self.transition_in_kind {
-                TransitionKind::Crossfade => Ramp { fade_in: true, start: 0.0, length: self.transition_in },
-                TransitionKind::Dip => Ramp { fade_in: true, start: self.transition_in / 2.0, length: self.transition_in / 2.0 },
+                TransitionKind::Crossfade => Ramp { white: false, fade_in: true, start: 0.0, length: self.transition_in },
+                TransitionKind::Dip | TransitionKind::Flash => Ramp {
+                    white: self.transition_in_kind == TransitionKind::Flash,
+                    fade_in: true,
+                    start: self.transition_in / 2.0,
+                    length: self.transition_in / 2.0,
+                },
             });
+            // A flash's incoming clip stays hidden until the outgoing one is all white, or its own white covers that.
+            if self.transition_in_kind == TransitionKind::Flash && !sound {
+                ramps.push(Ramp { white: false, fade_in: true, start: self.transition_in / 2.0, length: 0.001 });
+            }
         }
         if self.transition_out > 0.0 {
             let begins = length - self.transition_out;
             match self.transition_out_kind {
                 // The picture stays under the incoming one; only the sound fades.
-                TransitionKind::Crossfade if sound => ramps.push(Ramp { fade_in: false, start: begins, length: self.transition_out }),
+                TransitionKind::Crossfade if sound => ramps.push(Ramp { white: false, fade_in: false, start: begins, length: self.transition_out }),
                 TransitionKind::Crossfade => {}
-                TransitionKind::Dip => ramps.push(Ramp { fade_in: false, start: begins, length: self.transition_out / 2.0 }),
+                TransitionKind::Dip | TransitionKind::Flash => ramps.push(Ramp {
+                    white: self.transition_out_kind == TransitionKind::Flash,
+                    fade_in: false,
+                    start: begins,
+                    length: self.transition_out / 2.0,
+                }),
             }
         }
         ramps
@@ -260,7 +283,8 @@ impl ClipSpec {
     fn picture_fades(&self) -> String {
         self.ramps(false)
             .iter()
-            .map(|r| format!(",fade=t={}:st={}:d={}:alpha=1", if r.fade_in { "in" } else { "out" }, secs(r.start.max(0.0)), secs(r.length)))
+            // A flash fades the picture itself to white (each clip is fully white at the join, the later one on top).
+            .map(|r| format!(",fade=t={}:st={}:d={}:{}", if r.fade_in { "in" } else { "out" }, secs(r.start.max(0.0)), secs(r.length), if r.white { "color=white" } else { "alpha=1" }))
             .collect()
     }
 
@@ -384,6 +408,14 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             return Err("A clip on the timeline has an invalid setting.".into());
         }
         match clip.role {
+            Role::Video if !clip.effect.is_empty() && effect_filter(&clip.effect, 0.0, clip.length(), (1920, 1080, 30)).is_none() => {
+                return Err("An effect on a clip isn't one Craftora knows.".into());
+            }
+            Role::Shape => {
+                if shape_bytes(&clip.picture).is_none() {
+                    return Err("A shape on the timeline couldn't be read.".into());
+                }
+            }
             Role::Text => {
                 if clip.text.trim().is_empty() || clip.text.chars().count() > MAX_TEXT {
                     return Err("A text clip is empty or too long.".into());
@@ -629,14 +661,26 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         }
     }
 
+    // Shapes: each one's picture, read once (`loop` repeats it in the graph).
+    let mut shape_of: HashMap<usize, usize> = HashMap::new();
+    for (i, clip) in spec.clips.iter().enumerate().filter(|(_, c)| is_video && c.role == Role::Shape) {
+        let bytes = shape_bytes(&clip.picture).ok_or("A shape couldn't be read. Try the export again.")?;
+        let path = work.join(format!("shape{i}.png"));
+        std::fs::write(&path, bytes).map_err(|e| format!("Couldn't prepare a shape: {e}"))?;
+        inputs.extend(["-i".into(), path.to_string_lossy().into_owned()]);
+        shape_of.insert(i, next_input);
+        next_input += 1;
+    }
+
     // 3. The filter graph.
     let mut graph: Vec<String> = Vec::new();
     if is_video {
         graph.push(format!("color=black:s={w}x{h}:r={fps}:d={},format=yuv420p[base]", secs(total)));
         let mut picture = String::from("base");
         let mut layered: Vec<(usize, &ClipSpec)> = spec.clips.iter().enumerate().filter(|(_, c)| c.role != Role::Audio).collect();
-        // Pictures first, then the filter and effect blocks over them, then text on top (as the preview shows them).
-        layered.sort_by_key(|(_, c)| (matches!(c.role, Role::Effect) as u8 + 2 * matches!(c.role, Role::Text) as u8, c.layer));
+        // Pictures first, then the filter and effect blocks over them, then text and shapes on top by track (as the
+        // preview shows them).
+        layered.sort_by_key(|(_, c)| (matches!(c.role, Role::Effect) as u8 + 2 * matches!(c.role, Role::Text | Role::Shape) as u8, c.layer));
         for (i, clip) in layered {
             let (start, end) = (secs(clip.start), secs(clip.end()));
             match clip.role {
@@ -649,8 +693,15 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                         Some(&s) => format!("[{s}:v]setpts=PTS-STARTPTS"),
                         None => format!("[{k}:v]{}", clip.picture_chain(w, h, fps)),
                     };
+                    // A filter and an effect dropped on this clip draw on its own picture, timed from its first frame.
+                    let own: String = clip
+                        .look
+                        .iter()
+                        .filter_map(|(op, amount)| look_filter(op, *amount))
+                        .chain(effect_filter(&clip.effect, 0.0, clip.length(), (w, h, fps)).map(|f| format!(",{f}")))
+                        .collect();
                     graph.push(format!(
-                        "{chain},fps={fps},format=yuva420p{},setpts=PTS+{start}/TB[v{i}]",
+                        "{chain},fps={fps}{own},format=yuva420p{},setpts=PTS+{start}/TB[v{i}]",
                         clip.picture_fades()
                     ));
                     graph.push(format!(
@@ -658,6 +709,17 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                         x = clip.x,
                         y = clip.y
                     ));
+                    picture = format!("p{i}");
+                }
+                Role::Shape => {
+                    let Some(&k) = shape_of.get(&i) else { continue };
+                    // One frame repeated for the clip's time, faded like a picture, then moved to where the clip starts.
+                    let frames = (clip.length() * f64::from(fps)).ceil() as u64;
+                    graph.push(format!(
+                        "[{k}:v]format=rgba,loop=loop={frames}:size=1:start=0,setpts=N/{fps}/TB{},setpts=PTS+{start}/TB[s{i}]",
+                        clip.picture_fades()
+                    ));
+                    graph.push(format!("[{picture}][s{i}]overlay=0:0:eof_action=pass:repeatlast=0:enable='between(t,{start},{end})'[p{i}]"));
                     picture = format!("p{i}");
                 }
                 Role::Text => {
@@ -828,6 +890,9 @@ fn gpu_picture(spec: &RenderSpec, input_of: &HashMap<usize, (usize, &Source)>, t
         && !source.info.turned
         && !clip.reverse
         && !clip.smooth
+        // A filter or effect inside the clip is drawn on the processor.
+        && clip.look.is_empty()
+        && clip.effect.is_empty()
         && !clip.fill
         && clip.size == 1.0
         && clip.crop == [0.0; 4]
@@ -900,6 +965,13 @@ fn cover_file(data_url: &str, work: &Path) -> Result<Option<PathBuf>, String> {
     let path = work.join("cover.jpg");
     std::fs::write(&path, bytes).map_err(|e| format!("Couldn't prepare the cover: {e}"))?;
     Ok(Some(path))
+}
+
+/// A PNG data URL's picture, if it really is a PNG and not too big for a whole frame with a shape on it.
+fn shape_bytes(data_url: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data_url.strip_prefix("data:image/png;base64,")?).ok()?;
+    (bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) && bytes.len() <= 16_000_000).then_some(bytes)
 }
 
 /// A JPEG data URL's picture, if it really is a JPEG and not too big for a cover.

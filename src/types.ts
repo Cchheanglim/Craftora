@@ -1,4 +1,5 @@
 import type { LookStep } from "./project/effects";
+import type { Clip } from "./project/model";
 export type OutputKind = "video" | "audio";
 export type VideoContainer = "mp4" | "mkv";
 export type AudioContainer = "mp3" | "wav" | "flac";
@@ -122,11 +123,11 @@ export interface RenderSpec {
   quality: RenderQuality;
 }
 
-export type TransitionKind = "crossfade" | "dip";
+export type TransitionKind = "crossfade" | "dip" | "flash";
 
 export interface RenderClip {
-  /** "effect": a filter or effect block, which changes the pictures under it while it lasts. */
-  role: "video" | "audio" | "text" | "effect";
+  /** "effect": a filter or effect block, which changes the pictures under it while it lasts. "shape": a drawn shape. */
+  role: "video" | "audio" | "text" | "effect" | "shape";
   /** Drawing order for pictures and text: higher is on top. */
   layer: number;
   mediaId?: string;
@@ -167,6 +168,10 @@ export interface RenderClip {
   font?: string;
   /** "outline" or "box"; a soft shadow when absent. */
   edge?: string;
+  /** Shapes: how to draw it (shapes.ts `shapeSvg`); `startRender` turns it into `picture`. */
+  shape?: Partial<Pick<Clip, "shape" | "color" | "size" | "aspect" | "x" | "y" | "rotate" | "opacity" | "outline">>;
+  /** Shapes: the whole frame as a PNG data URL with the shape drawn on it, laid over the video. */
+  picture?: string;
 }
 
 export interface Job {

@@ -155,7 +155,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     const order = track?.magnetic ? trackOrder(project, track.id) : [];
     const i = order.findIndex((o) => o.id === c.id);
     const next = i >= 0 ? order[i + 1] : undefined;
-    const role: RenderClip["role"] = isBlock(c) ? "effect" : !c.mediaId ? "text" : track?.hidden ? "audio" : "video";
+    const role: RenderClip["role"] = isBlock(c) ? "effect" : c.shape ? "shape" : !c.mediaId ? "text" : track?.hidden ? "audio" : "video";
     return {
       role,
       // Lower tracks first; on a track, later clips over earlier ones (for transitions).
@@ -168,7 +168,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       volume: trackSilent(track) ? 0 : c.volume,
       mirror: c.mirror,
       reverse: c.reverse,
-      rotate: c.rotate ?? 0,
+      // A shape's angle is drawn into its picture (`shape`), not turned by FFmpeg.
+      rotate: c.shape ? 0 : (c.rotate ?? 0),
       smooth: Boolean(c.smooth && c.speed < 1),
       look: lookSteps(c.look, c.lookAmount),
       effect: c.effect ?? "",
@@ -179,11 +180,13 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       transitionInKind: c.transition?.kind ?? "crossfade",
       transitionOut: next ? transitionLength(c, next) : 0,
       transitionOutKind: next?.transition?.kind ?? "crossfade",
-      size: c.size,
+      // A shape's size is drawn into its picture; it may be wider than the frame, which the export's check refuses.
+      size: c.shape ? 1 : c.size,
       fill: Boolean(c.fill),
       x: c.x,
       y: c.y,
       text: textLines(c.text ?? "", c.size, frame),
+      shape: c.shape ? { shape: c.shape, color: c.color, size: c.size, aspect: c.aspect, x: c.x, y: c.y, rotate: c.rotate, opacity: c.opacity, outline: c.outline } : undefined,
       color: c.color ?? "#ffffff",
       font: c.font,
       edge: c.edge,

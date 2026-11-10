@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, mediaTimeAt, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
-import { blockLabel, type FxItem } from "../project/effects";
+import { LOOKS, PICTURE_EFFECTS, blockLabel, type FxItem } from "../project/effects";
 import { packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -232,8 +232,9 @@ export function TimelineEditor({
     contentRef.current ? timeAt(clientX) : g.originEdge + (clientX - g.originX) / pps;
 
   /** Snaps to the playhead and to other clips' edges when within a few pixels. */
-  const snap = (t: number, ignore: string) => {
-    const targets = [0, playback.time];
+  // `playhead`: also the playhead itself (not when it's the playhead being dragged: it would stick to itself).
+  const snap = (t: number, ignore: string, playhead = true) => {
+    const targets = playhead ? [0, playback.time] : [0];
     for (const c of project.clips) if (c.id !== ignore) targets.push(c.start, clipEnd(c));
     let best = t;
     let bestPx = SNAP_PX;
@@ -275,7 +276,8 @@ export function TimelineEditor({
     if (!g) return;
     if (g.kind === "scrub") {
       scrollAtEdge(e.clientX);
-      playback.seek(timeAt(e.clientX));
+      // The playhead snaps to cuts and clip edges, so it lands exactly on a join.
+      playback.seek(snap(timeAt(e.clientX), "", false));
       return;
     }
     const dx = e.clientX - g.originX;
@@ -360,7 +362,7 @@ export function TimelineEditor({
     e.stopPropagation();
     e.preventDefault();
     playback.pause();
-    playback.seek(timeAt(e.clientX));
+    playback.seek(snap(timeAt(e.clientX), "", false));
     setScrubbing(true);
     startGesture({ kind: "scrub" });
   };
@@ -750,11 +752,17 @@ export function TimelineEditor({
                           {label}
                           {media && <span className="tl__length mono">{formatTimecode(length)}</span>}
                         </span>
-                        {(clip.speed !== 1 || clip.reverse) && (
+                        {(clip.speed !== 1 || clip.reverse || (clip.mediaId && (clip.look || clip.effect))) && (
                           <span className="tl__tag mono" aria-hidden="true">
                             {clip.reverse ? "◀ " : ""}
                             {clip.speed !== 1 ? `${clip.speed}×` : ""}
                             {clip.smooth && clip.speed < 1 ? " smooth" : ""}
+                            {/* A filter and an effect carried inside the clip (dropped on it). */}
+                            {clip.mediaId &&
+                              [LOOKS.find((l) => l.id === clip.look)?.label, PICTURE_EFFECTS.find((f) => f.id === clip.effect)?.label]
+                                .filter(Boolean)
+                                .map((name) => ` ✦ ${name}`)
+                                .join("")}
                           </span>
                         )}
                         <span className="tl__trim is-end" title="Drag to change duration" onPointerDown={beginDrag(clip, "end")} aria-hidden="true" />

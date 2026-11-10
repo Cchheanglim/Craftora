@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { applyEdit, type EditAction } from "../src/project/actions";
 import { blocksStyle, dropEdits, lookFilter, lookSteps } from "../src/project/effects";
-import { clipEnd, emptyProject, mediaFromSource, trackLabel, type Project } from "../src/project/model";
+import { clipEnd, emptyProject, isBlock, mediaFromSource, trackLabel, type Project } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
 const video: MediaSource = {
@@ -51,27 +51,30 @@ test("a filter is the same CSS filter steps the export gets", () => {
   ]);
 });
 
-test("a filter dropped on a clip covers that clip, on a track above it", () => {
+test("a filter or effect dropped on a clip goes inside that clip; off any clip it's a block", () => {
   let p = withClip();
+  const tracks = p.tracks.length;
   const done = dropEdits(p, { kind: "filter", id: "bw" }, mainTrack(p), 2, ["f", "x"])!;
   p = run(p, done.edits);
-  const block = p.clips.find((c) => c.id === "f")!;
-  expect(done.select).toBe("f");
-  const row = (trackId: string) => p.tracks.findIndex((t) => t.id === trackId);
-  expect(row(block.trackId)).toBeLessThan(row(mainTrack(p)));
-  expect([block.start, clipEnd(block), block.look]).toEqual([0, 10, "bw"]);
-  // The video clip isn't touched.
-  expect(p.clips.find((c) => c.id === "c")).toMatchObject({ start: 0, in: 0, out: 10 });
-  // Off any clip: a 3 s block where it was dropped; at the same time as another, on another track.
-  p = run(p, dropEdits(p, { kind: "effect", id: "blur" }, block.trackId, 3, ["e", "y"])!.edits);
-  const blur = p.clips.find((c) => c.id === "e")!;
-  expect([blur.start, clipEnd(blur)]).toEqual([3, 6]);
-  expect(blur.trackId).not.toBe(block.trackId);
+  // No new clip, no new track: the video clip itself carries the filter, at full strength.
+  expect(done.select).toBe("c");
+  expect(p.clips.find((c) => c.id === "f")).toBeUndefined();
+  expect(p.tracks.length).toBe(tracks);
+  expect(p.clips.find((c) => c.id === "c")).toMatchObject({ start: 0, in: 0, out: 10, look: "bw", lookAmount: 1 });
+  // An effect joins it; another filter replaces the first.
+  p = run(p, dropEdits(p, { kind: "effect", id: "shake" }, mainTrack(p), 5, ["e", "y"])!.edits);
+  p = run(p, dropEdits(p, { kind: "filter", id: "sepia" }, mainTrack(p), 5, ["s", "z"])!.edits);
+  expect(p.clips.find((c) => c.id === "c")).toMatchObject({ look: "sepia", effect: "shake" });
+  expect(isBlock(p.clips.find((c) => c.id === "c")!)).toBe(false);
   // On a piece of a split clip: just that piece.
   p = applyEdit(p, { type: "splitClip", clipId: "c", newClipId: "b", at: 6 });
-  p = run(p, dropEdits(p, { kind: "filter", id: "sepia" }, mainTrack(p), 7, ["s", "z"])!.edits);
-  const sepia = p.clips.find((c) => c.id === "s")!;
-  expect([sepia.start, clipEnd(sepia)]).toEqual([6, 10]);
+  p = run(p, dropEdits(p, { kind: "filter", id: "noir" }, mainTrack(p), 7, ["n", "w"])!.edits);
+  expect([p.clips.find((c) => c.id === "c")!.look, p.clips.find((c) => c.id === "b")!.look]).toEqual(["sepia", "noir"]);
+  // Off any clip: a 3 s block where it was dropped, on a track of its own.
+  const done2 = dropEdits(p, { kind: "effect", id: "blur" }, undefined, 20, ["k", "v"])!;
+  p = run(p, done2.edits);
+  const blur = p.clips.find((c) => c.id === "k")!;
+  expect([blur.start, clipEnd(blur), isBlock(blur)]).toEqual([20, 23, true]);
 });
 
 test("slow motion dropped on a piece of a split clip slows that piece, and its edges move the cut", () => {
@@ -108,6 +111,19 @@ test("a transition goes on the join nearest to where it was dropped", () => {
   expect(p.clips.find((c) => c.id === "b")?.transition).toEqual({ kind: "dip", duration: 1 });
   // A track with one clip has no join.
   expect(dropEdits(withClip(), { kind: "transition", id: "crossfade" }, undefined, 1, ["x", "y"])).toBeNull();
+});
+
+test("a fade dropped on a clip fades its start or end; off any clip it does nothing", () => {
+  let p = withClip();
+  const doneIn = dropEdits(p, { kind: "fade", id: "in" }, mainTrack(p), 2, ["x", "y"])!;
+  p = run(p, doneIn.edits);
+  expect(doneIn.select).toBe("c");
+  expect(p.clips.length).toBe(1);
+  expect(p.clips[0]).toMatchObject({ id: "c", fadeIn: 1, fadeOut: 0 });
+  p = run(p, dropEdits(p, { kind: "fade", id: "out" }, mainTrack(p), 2, ["x", "y"])!.edits);
+  expect(p.clips.length).toBe(1);
+  expect(p.clips[0]).toMatchObject({ id: "c", fadeIn: 1, fadeOut: 1 });
+  expect(dropEdits(p, { kind: "fade", id: "in" }, mainTrack(p), 20, ["x", "y"])).toBeNull();
 });
 
 test("the preview draws blocks the way the export does", () => {

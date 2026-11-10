@@ -1228,16 +1228,24 @@ export default function App() {
    * A filter, effect or transition from the right panel, dropped on track `trackId` at `time` (or
    * clicked: at the playhead, on the selected clip's track). One undo step.
    */
+  /** Puts a dropped tile on the timeline; the clip it made (and selected), if any. */
   const applyFx = (item: FxItem, trackId: string | undefined, time: number) => {
     const done = dropEdits(project, item, trackId, time, [crypto.randomUUID(), crypto.randomUUID()]);
     if (!done) {
-      setError(item.kind === "transition" ? "Drop a transition on the join between two clips, or click the + there." : "Drop it on a video or sound clip (pictures have no speed).");
+      setError(
+        item.kind === "transition"
+          ? "Drop a transition on the join between two clips, or click the + there."
+          : item.kind === "fade"
+            ? "Drop a fade on a clip: it fades that clip's start or end."
+            : "Drop it on a video or sound clip (pictures have no speed).",
+      );
       return;
     }
     setError(null);
     api.checkpoint();
     for (const edit of done.edits) api.editLive(edit);
     if (done.select) setSelectedId(done.select);
+    return done.select;
   };
   const duplicate = () => {
     if (!selectedId) return;
@@ -1762,6 +1770,11 @@ export default function App() {
               selectedId={selectedId}
               onSelect={setSelectedId}
               onSnapshot={takeSnapshot}
+              onDropShape={(item, x, y) => {
+                // At the playhead, where it was let go (same undo step as adding it).
+                const id = applyFx(item, undefined, playback.time);
+                if (id) api.editLive({ type: "updateClip", clipId: id, patch: { x, y } });
+              }}
               captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
               showCaptions={showCaptions}
               onToggleCaptions={toggleCaptions}
@@ -1829,14 +1842,14 @@ export default function App() {
               Assistant
             </button>
           </div>
-          <div className="segmented app__tabs is-second" role="group" aria-label="Filters, effects and transitions">
-            {(["filters", "effects", "transitions"] as const).map((tab) => (
+          <div className="segmented app__tabs is-second" role="group" aria-label="Filters, effects, transitions and shapes">
+            {(["filters", "effects", "transitions", "shapes"] as const).map((tab) => (
               <button key={tab} type="button" aria-pressed={rightTab === tab} onClick={() => setRightTab(tab)}>
-                {tab === "filters" ? "Filters" : tab === "effects" ? "Effects" : "Transitions"}
+                {tab[0].toUpperCase() + tab.slice(1)}
               </button>
             ))}
           </div>
-          {rightTab === "filters" || rightTab === "effects" || rightTab === "transitions" ? (
+          {rightTab === "filters" || rightTab === "effects" || rightTab === "transitions" || rightTab === "shapes" ? (
             <FxPanel
               tab={rightTab}
               project={project}
