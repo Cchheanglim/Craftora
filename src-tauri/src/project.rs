@@ -142,6 +142,11 @@ struct ClipSpec {
     fade_in: f64,
     #[serde(default)]
     fade_out: f64,
+    /// Seconds the sound alone fades in and out (the picture stays).
+    #[serde(default)]
+    sound_fade_in: f64,
+    #[serde(default)]
+    sound_fade_out: f64,
     /// Fractions of the picture cut off: left, top, right, bottom.
     #[serde(default)]
     crop: [f64; 4],
@@ -204,6 +209,13 @@ impl ClipSpec {
         }
         if self.fade_out > 0.0 {
             ramps.push(Ramp { white: false, fade_in: false, start: length - self.fade_out, length: self.fade_out });
+        }
+        if sound && self.sound_fade_in > 0.0 {
+            ramps.push(Ramp { white: false, fade_in: true, start: 0.0, length: self.sound_fade_in.min(length) });
+        }
+        if sound && self.sound_fade_out > 0.0 {
+            let d = self.sound_fade_out.min(length);
+            ramps.push(Ramp { white: false, fade_in: false, start: length - d, length: d });
         }
         if self.transition_in > 0.0 {
             match self.transition_in_kind {
@@ -438,7 +450,7 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
     for clip in &spec.clips {
         let [l, t, r, b] = clip.crop;
         let numbers = [
-            clip.start, clip.in_point, clip.out, clip.speed, clip.volume, clip.fade_in, clip.fade_out, clip.transition_in,
+            clip.start, clip.in_point, clip.out, clip.speed, clip.volume, clip.fade_in, clip.fade_out, clip.sound_fade_in, clip.sound_fade_out, clip.transition_in,
             clip.transition_out, clip.size, clip.x, clip.y, l, t, r, b,
         ];
         if !numbers.into_iter().all(finite)
@@ -449,6 +461,9 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             || clip.fade_in < 0.0
             || clip.fade_out < 0.0
             || clip.fade_in + clip.fade_out > clip.length() + 0.01
+            || clip.sound_fade_in < 0.0
+            || clip.sound_fade_out < 0.0
+            || clip.sound_fade_in + clip.sound_fade_out > clip.length() + 0.01
             || !(0.0..=clip.length() / 2.0 + 0.01).contains(&clip.transition_in)
             || !(0.0..=clip.length() / 2.0 + 0.01).contains(&clip.transition_out)
             || !clip.crop.iter().all(|side| (0.0..=0.45).contains(side))
@@ -1249,6 +1264,11 @@ mod tests {
         let wipe = clip(r#""transitionIn":1,"transitionInKind":"wipe""#);
         assert_eq!(wipe.wipe_in(4), ",split[w4a][w4b];[w4a]trim=duration=1.000,lut=a=0[w4c];[w4c][w4b]xfade=transition=wiperight:duration=1.000:offset=0");
         assert_eq!(wipe.picture_fades(), "");
+        // A sound fade changes the sound only.
+        let quiet = clip(r#""soundFadeIn":0.5,"soundFadeOut":2"#);
+        assert_eq!(quiet.picture_fades(), "");
+        let sound = quiet.sound_edits();
+        assert!(sound.contains(",afade=t=in:st=0.000:d=0.500") && sound.contains(",afade=t=out:st=1.000:d=2.000"), "{sound}");
         // A crossfade moves, zooms and wipes nothing.
         let fade = clip(r#""transitionIn":1,"transitionOut":1"#);
         assert_eq!(fade.slide_x() + &fade.transition_zooms(30) + &fade.wipe_in(4), "");
