@@ -113,6 +113,16 @@ test("a transition goes on the join nearest to where it was dropped", () => {
   expect(dropEdits(withClip(), { kind: "transition", id: "crossfade" }, undefined, 12, ["x", "y"])).toBeNull();
 });
 
+test("an effect dropped in the empty space around the tracks gets a track of its own at the top", () => {
+  let p = withClip();
+  const done = dropEdits(p, { kind: "effect", id: "shake" }, null, 2, ["x", "y"])!;
+  p = run(p, done.edits);
+  expect(p.tracks.map((t) => t.id)[0]).toBe("y");
+  expect(p.clips.find((c) => c.id === "x")).toMatchObject({ trackId: "y", effect: "shake", start: 2 });
+  // The video keeps its own picture: nothing went inside it.
+  expect(p.clips.find((c) => c.id === "c")?.effect).toBeUndefined();
+});
+
 test("a transition in the middle of a clip cuts it there, with no splitting by hand", () => {
   let p = withClip();
   const done = dropEdits(p, { kind: "transition", id: "dip" }, undefined, 4, ["x", "y"])!;

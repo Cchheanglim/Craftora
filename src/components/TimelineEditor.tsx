@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, mediaTimeAt, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
+import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, mediaTimeAt, previousOnTrack, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
 import { LOOKS, PICTURE_EFFECTS, blockLabel, type FxItem } from "../project/effects";
 import { packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
@@ -52,6 +52,8 @@ const MIN_PPS = 2;
 const MAX_PPS = 400;
 /** Pixels the pointer must travel before a press on a clip becomes a drag. */
 const DRAG_THRESHOLD = 3;
+/** A sound fade's length: seconds, or minutes and seconds once it's a minute or more. */
+const fadeLength = (s: number) => (s < 60 ? `${s.toFixed(1)} s` : formatClock(s));
 
 interface TimelineEditorProps {
   project: Project;
@@ -67,7 +69,8 @@ interface TimelineEditorProps {
   onDelete: () => void;
   onAddText: () => void;
   /** A filter, effect or transition dropped on track `trackId` at `time`. */
-  onDropFx: (item: FxItem, trackId: string, time: number) => void;
+  /** `trackId` null: dropped in the empty space around the tracks (a filter, effect or shape gets its own track). */
+  onDropFx: (item: FxItem, trackId: string | null, time: number) => void;
   /** A pick from a clip's right-click menu; `time`: the playhead if it's on the clip, else where it was clicked. */
   onClipCommand: (command: ClipCommand, clip: Clip, time: number) => void;
   /** Something has been copied, so Paste can put it at the playhead. */
@@ -87,7 +90,8 @@ type DragMode = "move" | "start" | "end";
 type Gesture =
   | { kind: "scrub" }
   | { kind: "clip"; clipId: string; mode: DragMode; originX: number; originStart: number; originEdge: number; moved: boolean }
-  | { kind: "soundFade"; clipId: string; edge: "in" | "out" };
+  | { kind: "soundFade"; clipId: string; edge: "in" | "out"; originX: number; origin: number }
+  | { kind: "transition"; clipId: string; originX: number; origin: number };
 
 /** Where a clip being moved is drawn; the project only changes on release. */
 interface Ghost {
@@ -146,7 +150,7 @@ export function TimelineEditor({
   const [scrollbar, setScrollbar] = useState(0);
   const [fitted, setFitted] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
-  const [fadeDrag, setFadeDrag] = useState<{ clipId: string; edge: "in" | "out" } | null>(null);
+  const [fadeDrag, setFadeDrag] = useState<{ clipId: string; edge: "in" | "out" | "trans" } | null>(null);
   // Each video's filmstrip, made in the background (by preview address); until then its clips show its picture.
   const [strips, setStrips] = useState<Record<string, Strip>>({});
   useEffect(() => {
@@ -306,14 +310,28 @@ export function TimelineEditor({
       scrollAtEdge(e.clientX);
       const clip = project.clips.find((c) => c.id === g.clipId);
       if (!clip || !contentRef.current) return;
-      const t = (e.clientX - contentRef.current.getBoundingClientRect().left) / pps;
-      const raw = g.edge === "in" ? t - clip.start : clipEnd(clip) - t;
+      // From where the dot was, by how far the pointer moved: the dot may sit a little inside the clip's edge.
+      const moved = (e.clientX - g.originX) / pps;
+      const raw = g.origin + (g.edge === "in" ? moved : -moved);
       const other = (g.edge === "in" ? clip.soundFadeOut : clip.soundFadeIn) ?? 0;
       const v = Math.min(Math.max(0, clipLength(clip) - other), Math.max(0, Math.round(raw * 10) / 10));
       api.editLive({
         type: "updateClip",
         clipId: clip.id,
         patch: g.edge === "in" ? { soundFadeIn: v } : { soundFadeOut: v },
+      });
+      return;
+    }
+    if (g.kind === "transition") {
+      scrollAtEdge(e.clientX);
+      const clip = project.clips.find((c) => c.id === g.clipId);
+      if (!clip?.transition) return;
+      const raw = g.origin + (g.originX - e.clientX) / pps;
+      const duration = Math.min(5, Math.max(0.1, Math.round(raw * 10) / 10));
+      api.editLive({
+        type: "setTransition",
+        clipId: clip.id,
+        transition: { kind: clip.transition.kind, duration },
       });
       return;
     }
@@ -349,7 +367,7 @@ export function TimelineEditor({
     setScrubbing(false);
     setFadeDrag(null);
     if (!g) return;
-    if (g.kind === "soundFade") {
+    if (g.kind === "soundFade" || g.kind === "transition") {
       api.editLive({ type: "settle" });
       return;
     }
@@ -406,7 +424,17 @@ export function TimelineEditor({
     e.currentTarget.setPointerCapture?.(e.pointerId);
     api.checkpoint();
     setFadeDrag({ clipId: clip.id, edge });
-    startGesture({ kind: "soundFade", clipId: clip.id, edge });
+    startGesture({ kind: "soundFade", clipId: clip.id, edge, originX: e.clientX, origin: (edge === "in" ? clip.soundFadeIn : clip.soundFadeOut) ?? 0 });
+  };
+
+  const beginTransition = (clip: Clip) => (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || !clip.transition || project.tracks.find((t) => t.id === clip.trackId)?.locked) return;
+    e.stopPropagation();
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    api.checkpoint();
+    setFadeDrag({ clipId: clip.id, edge: "trans" });
+    startGesture({ kind: "transition", clipId: clip.id, originX: e.clientX, origin: clip.transition.duration });
   };
 
   /** Press on the ruler, the playhead or empty track space: move the playhead and follow the pointer. */
@@ -456,12 +484,11 @@ export function TimelineEditor({
     }
   }
   const where = (c: Clip) => placed.get(c.id) ?? { start: c.start, trackId: c.trackId };
-  /** Seconds a clip on a magnetic track overlaps the one before it (its transition). */
+  /** Seconds a clip overlaps the one before it (its transition). */
   const overlap = (c: Clip) => {
-    if (ghost || !isMagnetic(c.trackId)) return 0;
-    const order = trackOrder(project, c.trackId);
-    const i = order.findIndex((o) => o.id === c.id);
-    return i > 0 ? transitionLength(order[i - 1], c) : 0;
+    if (ghost) return 0;
+    const prev = previousOnTrack(project, c);
+    return prev ? transitionLength(prev, c) : 0;
   };
 
   return (
@@ -691,6 +718,9 @@ export function TimelineEditor({
               onSelect(null);
               beginScrub(e);
             }}
+            onPointerUp={(e) => {
+              if (fxDrag.current && !(e.target as Element).closest(".tl__lane")) onDropFx(fxDrag.current, null, timeAt(e.clientX));
+            }}
           >
             <div className="tl__ruler mono" style={{ "--minor": `${(step * pps) / 5}px` } as CSSProperties} onPointerDown={beginScrub}>
               {ticks.map((t) => (
@@ -770,13 +800,20 @@ export function TimelineEditor({
                         )}
                         {clip.fadeIn > 0 && <span className="tl__fade is-in" style={{ width: clip.fadeIn * pps }} aria-hidden="true" />}
                         {clip.fadeOut > 0 && <span className="tl__fade is-out" style={{ width: clip.fadeOut * pps }} aria-hidden="true" />}
-                        {overlap(clip) > 0 && (
+                        {overlap(clip) > 0 && clip.transition && (
                           <span
                             className="tl__trans"
                             style={{ width: overlap(clip) * pps }}
-                            title={TRANSITION_KINDS.find((t) => t.kind === clip.transition?.kind)?.label}
+                            title="Drag left or right to change the transition's length"
+                            onPointerDown={beginTransition(clip)}
                             aria-hidden="true"
-                          />
+                          >
+                            {fadeDrag?.clipId === clip.id && fadeDrag.edge === "trans" && (
+                              <span className="tl__fade-tip mono">
+                                {TRANSITION_KINDS.find((t) => t.kind === clip.transition?.kind)?.label} {fadeLength(clip.transition.duration)}
+                              </span>
+                            )}
+                          </span>
                         )}
                         {media?.hasAudio && !media.source.image && (() => {
                           const soundFadeIn = clip.soundFadeIn ?? 0;
@@ -804,21 +841,21 @@ export function TimelineEditor({
                                 <>
                                   <span
                                     className={fadingIn ? "tl__fade-dot is-in is-dragging" : "tl__fade-dot is-in"}
-                                    style={{ left: soundFadeIn * pps }}
+                                    style={{ left: Math.max(9, soundFadeIn * pps) }}
                                     title="Drag to fade the sound in"
                                     aria-label="Drag to fade the sound in"
                                     onPointerDown={beginSoundFade(clip, "in")}
                                   >
-                                    {fadingIn && <span className="tl__fade-tip mono">Fade in {soundFadeIn.toFixed(1)} s</span>}
+                                    {fadingIn && <span className="tl__fade-tip mono">Fade in {fadeLength(soundFadeIn)}</span>}
                                   </span>
                                   <span
                                     className={fadingOut ? "tl__fade-dot is-out is-dragging" : "tl__fade-dot is-out"}
-                                    style={{ right: soundFadeOut * pps }}
+                                    style={{ right: Math.max(9, soundFadeOut * pps) }}
                                     title="Drag to fade the sound out"
                                     aria-label="Drag to fade the sound out"
                                     onPointerDown={beginSoundFade(clip, "out")}
                                   >
-                                    {fadingOut && <span className="tl__fade-tip mono">Fade out {soundFadeOut.toFixed(1)} s</span>}
+                                    {fadingOut && <span className="tl__fade-tip mono">Fade out {fadeLength(soundFadeOut)}</span>}
                                   </span>
                                 </>
                               )}

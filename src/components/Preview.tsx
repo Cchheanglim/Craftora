@@ -220,7 +220,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const stageAspect = frame.width / frame.height;
 
   // Each magnetic track's clips in play order, for transitions.
-  const orders = new Map(project.tracks.filter((t) => t.magnetic).map((t) => [t.id, trackOrder(project, t.id)]));
+  const orders = new Map(project.tracks.map((t) => [t.id, trackOrder(project, t.id)]));
   // Bottom track first; on a track, later clips over earlier ones (an incoming transition
   // covers the outgoing clip). The same order as the export.
   const layer = (c: Clip) => (project.tracks.length - (trackIndex.get(c.trackId) ?? 0)) * 10_000 + (orders.get(c.trackId)?.indexOf(c) ?? 0);

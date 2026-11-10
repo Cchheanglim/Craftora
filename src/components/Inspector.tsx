@@ -378,7 +378,7 @@ export function Inspector({
         </div>
       )}
 
-      {!isText && !isShape && !isBlock && !track.magnetic && (
+      {!isText && !isShape && !isBlock && !onTransition && (
         <p className="insp__hint">To add a transition, put this clip right after another one and click the + where they meet.</p>
       )}
 

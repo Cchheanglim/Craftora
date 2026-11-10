@@ -272,9 +272,17 @@ export const trackOrder = (p: Project, trackId: string) => p.clips.filter((c) =>
 
 /** Where a clip's transition into it overlaps: the clip before it on a magnetic track. */
 export function previousOnTrack(p: Project, c: Clip): Clip | undefined {
-  if (!p.tracks.find((t) => t.id === c.trackId)?.magnetic) return undefined;
   const order = trackOrder(p, c.trackId);
-  return order[order.findIndex((o) => o.id === c.id) - 1];
+  const prev = order[order.findIndex((o) => o.id === c.id) - 1];
+  return meets(prev, c) ? prev : undefined;
+}
+
+/**
+ * Whether `cur` meets the clip before it on its track (touching, or overlapping for a transition): only then can a
+ * transition join them. On a magnetic track they always do; on a free one, clips set apart have none.
+ */
+export function meets(prev: Clip | undefined, cur: Clip): prev is Clip {
+  return prev !== undefined && cur.start <= clipEnd(prev) + 0.05;
 }
 
 /**
@@ -306,7 +314,7 @@ export function transitionMix(
   let zoom = 1;
   let wipe = 0;
   const e = (p: number) => 0.5 - 0.5 * Math.cos(Math.PI * p);
-  const incoming = transitionLength(order[i - 1], clip);
+  const incoming = meets(order[i - 1], clip) ? transitionLength(order[i - 1], clip) : 0;
   if (incoming > 0 && t < clip.start + incoming) {
     const p = Math.max(0, (t - clip.start) / incoming);
     const kind = clip.transition!.kind;
@@ -324,7 +332,7 @@ export function transitionMix(
     sound = kind === "dip" || kind === "flash" ? Math.max(0, 2 * p - 1) : p;
   }
   const next = order[i + 1];
-  const outgoing = next ? transitionLength(clip, next) : 0;
+  const outgoing = next && meets(clip, next) ? transitionLength(clip, next) : 0;
   if (next && outgoing > 0 && t >= next.start) {
     const p = Math.min(1, (t - next.start) / outgoing);
     const kind = next.transition!.kind;

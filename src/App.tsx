@@ -1229,7 +1229,7 @@ export default function App() {
    * clicked: at the playhead, on the selected clip's track). One undo step.
    */
   /** Puts a dropped tile on the timeline; the clip it made (and selected), if any. */
-  const applyFx = (item: FxItem, trackId: string | undefined, time: number) => {
+  const applyFx = (item: FxItem, trackId: string | undefined | null, time: number) => {
     const done = dropEdits(project, item, trackId, time, [crypto.randomUUID(), crypto.randomUUID()]);
     if (!done) {
       setError(
@@ -1933,7 +1933,7 @@ export default function App() {
                   }
                   onSpeed={(speed) => api.edit({ type: "setSpeed", clipId: selected.id, speed })}
                   onTransition={
-                    selectedTrack.magnetic && previousOnTrack(project, selected)
+                    previousOnTrack(project, selected)
                       ? (transition, live) => (live ? api.editLive : api.edit)({ type: "setTransition", clipId: selected.id, transition })
                       : undefined
                   }

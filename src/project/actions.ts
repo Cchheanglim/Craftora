@@ -243,10 +243,14 @@ function settle(p: Project): Project {
   for (const track of p.tracks.filter((t) => !t.magnetic)) {
     const onTrack = clips.filter((c) => c.trackId === track.id).sort((a, b) => a.start - b.start);
     let end = 0;
+    let prev: Clip | undefined;
     for (const c of onTrack) {
-      const start = round(Math.max(c.start, end));
+      // A transition overlaps the clip before when the two meet, as on a magnetic track; set apart, it waits.
+      const overlap = prev && c.start <= end + 0.05 ? transitionLength(prev, c) : 0;
+      const start = round(overlap > 0 ? end - overlap : Math.max(c.start, end));
       if (start !== c.start) clips = clips.map((x) => (x.id === c.id ? { ...x, start } : x));
       end = start + clipLength(c);
+      prev = { ...c, start };
     }
   }
   return packMagnetic({ ...p, clips });
@@ -592,9 +596,10 @@ export function applyEdit(p: Project, action: EditAction): Project {
 
     case "setTransition": {
       const clip = p.clips.find((c) => c.id === action.clipId);
-      if (!clip || !isMagnetic(p, clip.trackId)) return p;
+      if (!clip) return p;
       const transition = action.transition ? { kind: action.transition.kind, duration: clamp(action.transition.duration, 0.1, 5) } : undefined;
-      return packMagnetic({ ...p, clips: p.clips.map((c) => (c.id === clip.id ? { ...c, transition } : c)) });
+      // On any track: a magnetic one packs, a free one moves only this clip to overlap the one it meets.
+      return settle({ ...p, clips: p.clips.map((c) => (c.id === clip.id ? { ...c, transition } : c)) });
     }
 
     case "addTrack":
@@ -613,9 +618,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const track = p.tracks.find((t) => t.id === action.trackId);
       if (!track || Boolean(track.magnetic) === action.magnetic) return p;
       const tracks = p.tracks.map((t) => (t.id === track.id ? { ...t, magnetic: action.magnetic } : t));
-      // Off a magnet, clips keep their places but transitions (which need it) go.
-      const clips = action.magnetic ? p.clips : p.clips.map((c) => (c.trackId === track.id ? { ...c, transition: undefined } : c));
-      return packMagnetic({ ...p, tracks, clips });
+      // Off a magnet, clips keep their places, transitions too (free tracks have them as well).
+      return packMagnetic({ ...p, tracks });
     }
 
     case "updateTrack":

@@ -6,7 +6,7 @@
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
 import { lookSteps } from "./effects";
-import { isBlock, clipLength, isCropped, projectDuration, trackOrder, trackSilent, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
+import { isBlock, clipLength, isCropped, meets, projectDuration, trackOrder, trackSilent, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
   { id: "1080p", label: "16:9 · 1920 × 1080", width: 1920, height: 1080 },
@@ -154,7 +154,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   const clips: RenderClip[] = project.clips.filter((c) => !hidden.has(c.trackId) || c.mediaId).map((c) => {
     const trackIndex = project.tracks.findIndex((t) => t.id === c.trackId);
     const track = project.tracks[trackIndex];
-    const order = track?.magnetic ? trackOrder(project, track.id) : [];
+    const order = track ? trackOrder(project, track.id) : [];
     const i = order.findIndex((o) => o.id === c.id);
     const next = i >= 0 ? order[i + 1] : undefined;
     const role: RenderClip["role"] = isBlock(c) ? "effect" : c.shape ? "shape" : !c.mediaId ? "text" : track?.hidden ? "audio" : "video";
@@ -180,9 +180,9 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       soundFadeIn: c.soundFadeIn ?? 0,
       soundFadeOut: c.soundFadeOut ?? 0,
       crop: [c.crop.left, c.crop.top, c.crop.right, c.crop.bottom],
-      transitionIn: i > 0 ? transitionLength(order[i - 1], c) : 0,
+      transitionIn: i > 0 && meets(order[i - 1], c) ? transitionLength(order[i - 1], c) : 0,
       transitionInKind: c.transition?.kind ?? "crossfade",
-      transitionOut: next ? transitionLength(c, next) : 0,
+      transitionOut: next && meets(c, next) ? transitionLength(c, next) : 0,
       transitionOutKind: next?.transition?.kind ?? "crossfade",
       // A shape's size is drawn into its picture; it may be wider than the frame, which the export's check refuses.
       size: c.shape ? 1 : c.size,
