@@ -338,3 +338,52 @@ test("a flash whitens the outgoing clip, then brings the incoming one up from wh
   // Three quarters in: the incoming clip shown, half white; the sound dips like Dip to black.
   expect(transitionMix(order, b, at(0.75))).toMatchObject({ picture: 1, white: 0.5, sound: 0.5 });
 });
+
+test("a slide moves the outgoing clip left while the incoming one comes in from the right", () => {
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "a", mediaId: media.id, at: 0 });
+  p = applyEdit(p, { type: "addClip", clipId: "b", mediaId: media.id, at: 10 });
+  const track = mainTrack(p)!.id;
+  p = applyEdit(p, { type: "setMagnetic", trackId: track, magnetic: true });
+  p = applyEdit(p, { type: "setTransition", clipId: "b", transition: { kind: "slide", duration: 1 } });
+  const order = trackOrder(p, track);
+  const [a, b] = ["a", "b"].map((id) => order.find((c) => c.id === id)!);
+  const at = (share: number) => b.start + share;
+  expect(transitionMix(order, a, 0)).toMatchObject({ shift: 0, zoom: 1, wipe: 0 });
+  const [out, into] = [a, b].map((c) => transitionMix(order, c, at(0.5)));
+  expect(out).toMatchObject({ picture: 1, sound: 0.5 });
+  expect(out.shift).toBeCloseTo(-0.5);
+  expect(into).toMatchObject({ picture: 1, sound: 0.5 });
+  expect(into.shift).toBeCloseTo(0.5);
+});
+
+test("a zoom scales the outgoing clip up while the incoming one fades in from 1.5× to 1×", () => {
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "a", mediaId: media.id, at: 0 });
+  p = applyEdit(p, { type: "addClip", clipId: "b", mediaId: media.id, at: 10 });
+  const track = mainTrack(p)!.id;
+  p = applyEdit(p, { type: "setMagnetic", trackId: track, magnetic: true });
+  p = applyEdit(p, { type: "setTransition", clipId: "b", transition: { kind: "zoom", duration: 1 } });
+  const order = trackOrder(p, track);
+  const [a, b] = ["a", "b"].map((id) => order.find((c) => c.id === id)!);
+  const at = (share: number) => b.start + share;
+  expect(transitionMix(order, a, at(0.5))).toMatchObject({ picture: 1, zoom: 1.25, sound: 0.5 });
+  expect(transitionMix(order, b, at(0.5))).toMatchObject({ picture: 0.5, zoom: 1.25, sound: 0.5 });
+});
+
+test("a wipe reveals the incoming clip from left to right over the outgoing one", () => {
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "a", mediaId: media.id, at: 0 });
+  p = applyEdit(p, { type: "addClip", clipId: "b", mediaId: media.id, at: 10 });
+  const track = mainTrack(p)!.id;
+  p = applyEdit(p, { type: "setMagnetic", trackId: track, magnetic: true });
+  p = applyEdit(p, { type: "setTransition", clipId: "b", transition: { kind: "wipe", duration: 1 } });
+  const order = trackOrder(p, track);
+  const [a, b] = ["a", "b"].map((id) => order.find((c) => c.id === id)!);
+  const at = (share: number) => b.start + share;
+  expect(transitionMix(order, a, at(0.25))).toMatchObject({ picture: 1, wipe: 0, sound: 0.75 });
+  expect(transitionMix(order, b, at(0.25))).toMatchObject({ picture: 1, wipe: 0.75, sound: 0.25 });
+});

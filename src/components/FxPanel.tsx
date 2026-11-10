@@ -171,7 +171,7 @@ export function FxPanel({
       {tab === "transitions" && (
         <>
           <h3 className="section-label">Between clips</h3>
-          <p className="fx-panel__hint">Click the + where two clips meet, then pick a transition here; or drag one onto that join.</p>
+          <p className="fx-panel__hint">Click one to add it at the playhead: in the middle of a clip it cuts the clip there. Or drag one onto a join.</p>
           <div className="fx__grid">{TRANSITION_KINDS.map((t) => tile({ kind: "transition", id: t.kind }, t.label))}</div>
           <h3 className="section-label">In & out</h3>
           <p className="fx-panel__hint">Drop on a clip: it fades in from black at its start, or out at its end.</p>

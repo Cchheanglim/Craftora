@@ -205,6 +205,24 @@ export function TimelineEditor({
   // Zoomed all the way out, the whole edit fits however long it is (a 2-hour video too).
   const minPps = Math.min(MIN_PPS, (viewWidth - 40) / Math.max(duration * 1.5, 15));
   const fit = () => setPps(Math.min(MAX_PPS, Math.max(minPps, (viewWidth - 40) / Math.max(duration * 1.5, 15))));
+  const minPpsRef = useRef(minPps);
+  minPpsRef.current = minPps;
+
+  // Ctrl + wheel and a touchpad pinch (which arrives as Ctrl + wheel) zoom the timeline. Our own listener: React's can't
+  // stop the window zooming itself instead.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      // A wheel notch (about 100) zooms 1.2×; a pinch sends many small steps, so it zooms smoothly.
+      const delta = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY * 33 : e.deltaY;
+      setPps((p) => Math.min(MAX_PPS, Math.max(minPpsRef.current, p * Math.pow(1.2, -delta / 100))));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   // Fit the first time something lands on the timeline.
   useEffect(() => {
@@ -627,11 +645,6 @@ export function TimelineEditor({
         <div
           ref={scrollRef}
           className="tl__scroll"
-          onWheel={(e) => {
-            if (!e.ctrlKey) return;
-            e.preventDefault();
-            setPps((p) => Math.min(MAX_PPS, Math.max(minPps, p * (e.deltaY < 0 ? 1.2 : 1 / 1.2))));
-          }}
         >
           {/* A press anywhere here (a track, or the empty space above and below them) moves the playhead;
               the ruler, clips and the join + handle their own presses. */}
