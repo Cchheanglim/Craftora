@@ -123,21 +123,22 @@ export const TIME_EFFECTS: { id: string; label: string; change: TimeChange }[] =
 /** What the panels offer, as dragged or clicked. */
 export type FxItem =
   | { kind: "filter"; id: LookId }
+  | { kind: "adjust"; id: "layer" }
   | { kind: "effect"; id: PictureEffectId }
   | { kind: "fade"; id: "in" | "out" }
   | { kind: "time"; id: string }
   | { kind: "transition"; id: Transition["kind"] }
   | { kind: "shape"; id: ShapeId };
 
-/** A new filter or effect block off any clip lasts this long; drag its edges to change it. */
-export const BLOCK_LENGTH = 3;
+/** A new filter, effect, Adjust layer or shape block lasts this long; drag its edges to change it. */
+export const BLOCK_LENGTH = 5;
 
 /** A transition this close to a join (seconds) goes on that join; further into a clip, it cuts the clip there. */
 const JOIN_REACH = 0.5;
 
 /** A filter or effect block's name on the timeline and in Edit. */
 export function blockLabel(c: Clip): string {
-  return LOOKS.find((l) => l.id === c.look)?.label ?? PICTURE_EFFECTS.find((e) => e.id === c.effect)?.label ?? "Effect";
+  return LOOKS.find((l) => l.id === c.look)?.label ?? PICTURE_EFFECTS.find((e) => e.id === c.effect)?.label ?? (c.adjust ? "Adjust layer" : "Effect");
 }
 
 /**
@@ -155,13 +156,17 @@ export function dropEdits(
   time: number,
   newIds: [string, string],
 ): { edits: EditAction[]; select?: string } | null {
-  if (trackId === null && item.kind !== "filter" && item.kind !== "effect" && item.kind !== "shape") trackId = undefined;
+  if (trackId === null && item.kind !== "filter" && item.kind !== "effect" && item.kind !== "adjust" && item.kind !== "shape") trackId = undefined;
   // Its own track: made first, then the block goes on it.
   const ownTrack: EditAction[] = trackId === null ? [{ type: "addTrack", trackId: newIds[1] }] : [];
   if (trackId === null) trackId = newIds[1];
   const dropped = p.tracks.find((t) => t.id === trackId);
   const mediaOn = (id?: string) => (id ? trackOrder(p, id).filter((c) => c.mediaId) : []);
   const clipAt = (clips: Clip[]) => clips.find((c) => time >= c.start && time < clipEnd(c));
+  if (item.kind === "adjust") {
+    // Always a layer of its own (its sliders are in Edit): on a clip's spot it goes on a free track above (actions.ts `place`).
+    return { edits: [...ownTrack, { type: "addBlock", clipId: newIds[0], at: time, length: BLOCK_LENGTH, trackId: ownTrack.length ? trackId : dropped?.id, adjust: {} }], select: newIds[0] };
+  }
   if (item.kind === "filter" || item.kind === "effect") {
     const block = item.kind === "filter" ? { look: item.id } : { effect: item.id };
     // Dropped on a video or picture: it goes inside that clip (one filter and one effect each; a new one replaces it).

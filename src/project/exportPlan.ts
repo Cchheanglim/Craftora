@@ -151,7 +151,9 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   const frame = frameOf(settings);
   const used = project.media.filter((m) => project.clips.some((c) => c.mediaId === m.id));
   const hidden = new Set(project.tracks.filter((t) => t.hidden).map((t) => t.id));
-  const clips: RenderClip[] = project.clips.filter((c) => !hidden.has(c.trackId) || c.mediaId).map((c) => {
+  // An Adjust layer with every slider at 0 changes nothing (and the export refuses a block with nothing to draw).
+  const idle = (c: Clip) => isBlock(c) && !c.look && !c.effect && adjustSteps(c.adjust).length === 0;
+  const clips: RenderClip[] = project.clips.filter((c) => (!hidden.has(c.trackId) || c.mediaId) && !idle(c)).map((c) => {
     const trackIndex = project.tracks.findIndex((t) => t.id === c.trackId);
     const track = project.tracks[trackIndex];
     const order = track ? trackOrder(project, track.id) : [];

@@ -6,6 +6,8 @@
 
 - **Slide, Zoom and Wipe transitions**: the next clip pushes the last one out to the left, zooms through it, or is uncovered
   left to right.
+- **Adjust**: Brightness, Contrast, Saturation and Warmth sliders in Edit for a video or picture (or a filter block), shown
+  live in the preview and the same in the export. Reset puts them back.
 - **More transitions**: Slide right, up and down; Wipe left, up and down; **Circle** (the next clip opens in a growing
   circle) and **Spin** (both clips turn and zoom as they cross). Exports with a Wipe are also faster: only the wipe's own
   seconds go through the extra step.

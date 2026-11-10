@@ -118,7 +118,7 @@ export function Inspector({
       <header className="insp__head">
         <Icon name={isBlock ? "sparkle" : isShape ? "star" : isText ? "text" : isImage ? "image" : isPicture ? "film" : "music"} size={14} />
         <h2 id="insp-title" className="truncate">
-          {isBlock ? `${clip.look ? "Filter" : "Effect"}: ${blockLabel(clip)}` : isShape ? `Shape: ${shapeLabel(clip.shape)}` : isText ? "Text" : (media?.name ?? "Clip")}
+          {isBlock ? (clip.look || clip.effect ? `${clip.look ? "Filter" : "Effect"}: ${blockLabel(clip)}` : blockLabel(clip)) : isShape ? `Shape: ${shapeLabel(clip.shape)}` : isText ? "Text" : (media?.name ?? "Clip")}
         </h2>
       </header>
       <p className="insp__meta">
@@ -365,12 +365,12 @@ export function Inspector({
         </div>
       )}
 
-      {(isPicture || (isBlock && clip.look)) && (
+      {(isPicture || (isBlock && !clip.effect)) && (
         <fieldset className="insp__group">
           <legend>
             Adjust
             {adjustSteps(clip.adjust).length > 0 && (
-              <button type="button" className="insp__reset" onClick={() => onChange({ adjust: undefined })}>
+              <button type="button" className="insp__reset" onClick={() => onChange({ adjust: {} })}>
                 Reset
               </button>
             )}

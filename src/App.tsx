@@ -1245,6 +1245,8 @@ export default function App() {
     api.checkpoint();
     for (const edit of done.edits) api.editLive(edit);
     if (done.select) setSelectedId(done.select);
+    // An Adjust layer does nothing until its sliders move: show them.
+    if (item.kind === "adjust") setRightTab("edit");
     return done.select;
   };
   const duplicate = () => {

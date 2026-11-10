@@ -93,7 +93,7 @@ test("a filter or effect dropped on a clip goes inside that clip; off any clip i
   const done2 = dropEdits(p, { kind: "effect", id: "blur" }, undefined, 20, ["k", "v"])!;
   p = run(p, done2.edits);
   const blur = p.clips.find((c) => c.id === "k")!;
-  expect([blur.start, clipEnd(blur), isBlock(blur)]).toEqual([20, 23, true]);
+  expect([blur.start, clipEnd(blur), isBlock(blur)]).toEqual([20, 25, true]);
 });
 
 test("slow motion dropped on a piece of a split clip slows that piece, and its edges move the cut", () => {
@@ -175,10 +175,10 @@ test("the preview draws blocks the way the export does", () => {
   p = run(p, dropEdits(p, { kind: "effect", id: "fade-in" }, undefined, 0, ["a", "x"])!.edits);
   p = run(p, dropEdits(p, { kind: "effect", id: "mirror" }, undefined, 0, ["m", "x"])!.edits);
   const blocks = ["f", "a", "m"].map((id) => p.clips.find((c) => c.id === id)!);
-  const style = blocksStyle(blocks, 1.5, 1000);
+  const style = blocksStyle(blocks, 2.5, 1000);
   expect(style.filter).toBe("sepia(1)");
   expect(style.mirror).toBe(true);
-  // Halfway through a 3 s fade from black: half black.
+  // Halfway through a 5 s fade from black: half black.
   expect(style.layers).toEqual([{ color: "#000", opacity: 0.5 }]);
 
   // Zoom punch peaks at u = 0.1 s (scale 1.2); cinema bars on 16:9 cover ~12.8% top and bottom mid-block.

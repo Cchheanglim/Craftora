@@ -463,7 +463,7 @@ export const isStill = (p: Project, c: Clip) => !c.mediaId || Boolean(mediaOf(p,
 
 /** A filter or effect block, rather than text. */
 /** A filter or effect block of its own (a video clip can also carry a filter and an effect inside it). */
-export const isBlock = (c: Clip) => !c.mediaId && Boolean(c.look || c.effect);
+export const isBlock = (c: Clip) => !c.mediaId && Boolean(c.look || c.effect || c.adjust);
 
 /** A shape clip (`shapes.ts`). */
 export const isShape = (c: Clip) => Boolean(c.shape);

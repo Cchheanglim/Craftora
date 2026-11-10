@@ -103,7 +103,7 @@ export function FxPanel({
     <button
       key={`${item.kind}-${item.id}`}
       type="button"
-      className={`fx-tile is-${item.kind === "filter" ? "filter" : item.kind === "shape" ? "shape" : item.kind === "fade" ? `fade-${item.id}` : item.id}`}
+      className={`fx-tile is-${item.kind === "filter" || item.kind === "adjust" ? "filter" : item.kind === "shape" ? "shape" : item.kind === "fade" ? `fade-${item.id}` : item.id}`}
       title={`Drag onto the timeline, or click to add at the playhead`}
       onPointerDown={(e: ReactPointerEvent) => {
         if (e.button === 0) beginFxDrag(item, e);
@@ -127,8 +127,8 @@ export function FxPanel({
           <>
             <img
               // Craftora's cat until a frame of the video is ready (or when nothing is under the playhead).
-              src={(item.kind === "filter" && frame) || "/craftora.svg"}
-              className={item.kind === "filter" && frame ? "is-frame" : undefined}
+              src={((item.kind === "filter" || item.kind === "adjust") && frame) || "/craftora.svg"}
+              className={(item.kind === "filter" || item.kind === "adjust") && frame ? "is-frame" : undefined}
               alt=""
               draggable={false}
               style={look ? { filter: look } : undefined}
@@ -146,7 +146,11 @@ export function FxPanel({
       {tab === "filters" && (
         <>
           <p className="fx-panel__hint">Drag a filter onto a clip to colour all of it (split the clip first for just a part), or onto an empty spot and stretch it. It colours every picture under it, not text.</p>
-          <div className="fx__grid">{LOOKS.map((look) => tile({ kind: "filter", id: look.id }, look.label, lookFilter(look.id)))}</div>
+          <div className="fx__grid">
+            {/* Its own sliders (Edit → Adjust) for every picture under it; the tile hints at a change. */}
+            {tile({ kind: "adjust", id: "layer" }, "Adjust layer", "brightness(1.1) contrast(1.1) saturate(1.3)")}
+            {LOOKS.map((look) => tile({ kind: "filter", id: look.id }, look.label, lookFilter(look.id)))}
+          </div>
         </>
       )}
       {tab === "effects" && (
