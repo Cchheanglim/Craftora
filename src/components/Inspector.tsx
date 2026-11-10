@@ -26,7 +26,7 @@ import {
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
-import { LOOKS, PICTURE_EFFECTS, blockLabel } from "../project/effects";
+import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustSteps, blockLabel } from "../project/effects";
 import { SHAPES, shapeLabel } from "../project/shapes";
 import "./Inspector.css";
 
@@ -363,6 +363,33 @@ export function Inspector({
             <span>Fill the frame</span>
           </label>
         </div>
+      )}
+
+      {(isPicture || (isBlock && clip.look)) && (
+        <fieldset className="insp__group">
+          <legend>
+            Adjust
+            {adjustSteps(clip.adjust).length > 0 && (
+              <button type="button" className="insp__reset" onClick={() => onChange({ adjust: undefined })}>
+                Reset
+              </button>
+            )}
+          </legend>
+          {ADJUSTMENTS.map(({ id, label }) => (
+            <Slider
+              key={id}
+              id={`insp-adjust-${id}`}
+              label={label}
+              min={-100}
+              max={100}
+              step={1}
+              value={clip.adjust?.[id] ?? 0}
+              format={(v) => (v > 0 ? `+${v}` : String(v))}
+              onCheckpoint={onCheckpoint}
+              onChange={(v) => onChange({ adjust: { ...clip.adjust, [id]: v } }, true)}
+            />
+          ))}
+        </fieldset>
       )}
 
       {!isText && !isShape && !isImage && !isBlock && (

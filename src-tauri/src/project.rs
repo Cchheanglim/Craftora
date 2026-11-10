@@ -1225,6 +1225,8 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
             ]))
         }
         "brightness" if within(0.0, 2.0) => Some(mixer([amount, 0.0, 0.0, 0.0, amount, 0.0, 0.0, 0.0, amount])),
+        // Edit → Adjust → Warmth: red up and blue down by 0.2 at 1 (effects.ts `warmthMatrix`).
+        "warmth" if within(-1.0, 1.0) => Some(mixer([1.0 + 0.2 * amount, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 - 0.2 * amount])),
         // lutrgb keeps each result within 0..maxval, as the CSS functions do.
         "contrast" if within(0.0, 3.0) => {
             let channel = format!("'(val-maxval/2)*{amount:.4}+maxval/2'");
@@ -1399,6 +1401,8 @@ mod tests {
         assert!(look_filter("grayscale", 1.0).unwrap().contains("rr=0.21260:rg=0.71520:rb=0.07220"));
         assert_eq!(look_filter("contrast", 1.5).unwrap(), ",lutrgb=r='(val-maxval/2)*1.5000+maxval/2':g='(val-maxval/2)*1.5000+maxval/2':b='(val-maxval/2)*1.5000+maxval/2'");
         assert!(look_filter("invert", 1.0).unwrap().contains("r='val*-1.0000+maxval*1.0000'"));
+        assert!(look_filter("warmth", 0.5).unwrap().ends_with("rr=1.10000:rg=0.00000:rb=0.00000:gr=0.00000:gg=1.00000:gb=0.00000:br=0.00000:bg=0.00000:bb=0.90000"));
+        assert!(look_filter("warmth", 1.5).is_none());
         // Only the catalog's names and amounts reach FFmpeg.
         assert!(look_filter("saturate", 2.5).is_none());
         assert!(look_filter("blur", 1.0).is_none());

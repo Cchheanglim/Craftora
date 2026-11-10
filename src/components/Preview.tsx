@@ -8,7 +8,7 @@ import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
-import { blocksStyle } from "../project/effects";
+import { adjustSteps, blocksStyle, warmthMatrix } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
 import { SyncedMedia } from "./SyncedMedia";
@@ -474,6 +474,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               </span>
             </span>
           )}
+          {WARMTH_FILTERS}
           <div
             className="preview__pictures"
             style={{ filter: blocks.filter, transform: [blocks.transform, blocks.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined }}
@@ -816,6 +817,21 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   );
 }
 
+/**
+ * Warmth (Edit → Adjust) has no CSS filter function: one SVG colour matrix per value, -100 to 100, that the colour steps
+ * point at (effects.ts `stepsFilter`). In sRGB like the CSS functions and the export; hidden by size, not `display: none`
+ * (that would switch the filters off).
+ */
+const WARMTH_FILTERS = (
+  <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
+    {Array.from({ length: 201 }, (_, i) => i - 100).map((w) => (
+      <filter key={w} id={`warmth-${w}`} colorInterpolationFilters="sRGB">
+        <feColorMatrix type="matrix" values={warmthMatrix(w / 100)} />
+      </filter>
+    ))}
+  </svg>
+);
+
 interface PictureLayerProps {
   clip: Clip;
   time: number;
@@ -876,7 +892,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
   const fitWidth = clip.fill ? (wider ? aspect / stageAspect : 1) : wider ? 1 : aspect / stageAspect;
   const boxWidth = stageWidth * fitWidth * clip.size;
   // A filter or effect on this clip itself changes only its box, timed to the clip's span.
-  const fx = clip.look || clip.effect ? blocksStyle([clip], time, boxWidth, boxWidth / aspect) : undefined;
+  const fx = clip.look || clip.effect || adjustSteps(clip.adjust).length ? blocksStyle([clip], time, boxWidth, boxWidth / aspect) : undefined;
   const box: CSSProperties = {
     width: `${fitWidth * clip.size * 100}%`,
     aspectRatio: String(aspect),

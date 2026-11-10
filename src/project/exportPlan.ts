@@ -5,7 +5,7 @@
  */
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
-import { lookSteps } from "./effects";
+import { adjustSteps, lookSteps } from "./effects";
 import { isBlock, clipLength, isCropped, meets, projectDuration, trackOrder, trackSilent, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
@@ -173,7 +173,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       // A shape's angle is drawn into its picture (`shape`), not turned by FFmpeg.
       rotate: c.shape ? 0 : (c.rotate ?? 0),
       smooth: Boolean(c.smooth && c.speed < 1),
-      look: lookSteps(c.look, c.lookAmount),
+      // An effect block takes no colour steps (the export refuses both on one block).
+      look: !c.mediaId && c.effect ? [] : [...lookSteps(c.look, c.lookAmount), ...adjustSteps(c.adjust)],
       effect: c.effect ?? "",
       fadeIn: c.fadeIn,
       fadeOut: c.fadeOut,

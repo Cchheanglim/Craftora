@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEdit, type EditAction } from "../src/project/actions";
-import { blocksStyle, dropEdits, lookFilter, lookSteps } from "../src/project/effects";
+import { adjustSteps, blocksStyle, dropEdits, lookFilter, lookSteps, stepsFilter, warmthMatrix } from "../src/project/effects";
 import { clipEnd, emptyProject, isBlock, mediaFromSource, trackLabel, type Project } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
@@ -49,6 +49,25 @@ test("a filter is the same CSS filter steps the export gets", () => {
     ["contrast", 1.5],
     ["brightness", 0.9],
   ]);
+});
+
+test("Adjust adds colour steps after the filter, Warmth through its SVG filter, and clamps its sliders", () => {
+  expect(adjustSteps(undefined)).toEqual([]);
+  expect(adjustSteps({ brightness: 0, warmth: 0 })).toEqual([]);
+  expect(adjustSteps({ brightness: 40, contrast: -50, saturation: 100, warmth: -30 })).toEqual([
+    ["brightness", 1.2],
+    ["contrast", 0.75],
+    ["saturate", 2],
+    ["warmth", -0.3],
+  ]);
+  expect(stepsFilter([...lookSteps("bw"), ...adjustSteps({ warmth: 25 })])).toBe("grayscale(1) url(#warmth-25)");
+  expect(warmthMatrix(0.5)).toBe("1.1 0 0 0 0 0 1 0 0 0 0 0 0.9 0 0 0 0 0 1 0");
+  // On a picture clip it reaches the export; the slider can't go past ±100.
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: mediaFromSource(video) });
+  p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: p.media[0].id, at: 0 });
+  p = applyEdit(p, { type: "updateClip", clipId: "c", patch: { adjust: { warmth: 250.4 } } });
+  expect(p.clips[0].adjust).toEqual({ warmth: 100 });
+  expect(blocksStyle(p.clips, 0, 1280).filter).toBe("url(#warmth-100)");
 });
 
 test("a filter or effect dropped on a clip goes inside that clip; off any clip it's a block", () => {

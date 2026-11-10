@@ -5,7 +5,7 @@
  */
 import type { Caption, MediaSource } from "../types";
 import type { LibraryEntry } from "../lib/storage";
-import type { LookId, PictureEffectId } from "./effects";
+import type { Adjust, LookId, PictureEffectId } from "./effects";
 import type { ShapeId } from "./shapes";
 
 /**
@@ -172,6 +172,8 @@ export interface Clip {
   look?: LookId;
   /** A filter block: its strength, 0–1 (1 when absent). */
   lookAmount?: number;
+  /** Edit → Adjust (a picture, or a filter block): brightness, contrast, saturation and warmth, -100 to 100. */
+  adjust?: Adjust;
   /** An effect block: effects.ts `PICTURE_EFFECTS`. */
   effect?: PictureEffectId;
   /** A shape clip: shapes.ts `SHAPES`. */

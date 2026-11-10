@@ -14,7 +14,7 @@ import type { ShapeId } from "./shapes";
  * One colour step of a filter: a CSS filter function and its amount (degrees for hue-rotate). The
  * preview applies the steps in order; the export draws the same maths (project.rs `look_filter`).
  */
-export type LookStep = readonly ["grayscale" | "sepia" | "saturate" | "hue-rotate" | "brightness" | "contrast" | "invert", number];
+export type LookStep = readonly ["grayscale" | "sepia" | "saturate" | "hue-rotate" | "brightness" | "contrast" | "invert" | "warmth", number];
 
 export const LOOKS = [
   { id: "bw", label: "Black & white", steps: [["grayscale", 1]] },
@@ -47,10 +47,46 @@ export function lookSteps(id?: string, amount = 1): LookStep[] {
   ]);
 }
 
+/** Edit → Adjust: sliders from -100 to 100, 0 = unchanged. */
+export const ADJUSTMENTS = [
+  { id: "brightness", label: "Brightness" },
+  { id: "contrast", label: "Contrast" },
+  { id: "saturation", label: "Saturation" },
+  { id: "warmth", label: "Warmth" },
+] as const;
+export type Adjust = Partial<Record<(typeof ADJUSTMENTS)[number]["id"], number>>;
+
+/** A clip's adjustments as colour steps, drawn after its filter; none for all at 0. */
+export function adjustSteps(adjust?: Adjust): LookStep[] {
+  const v = (id: keyof Adjust) => Math.round(clamp(adjust?.[id] ?? 0, -100, 100)) / 100;
+  const steps: LookStep[] = [];
+  if (v("brightness")) steps.push(["brightness", round4(1 + v("brightness") / 2)]);
+  if (v("contrast")) steps.push(["contrast", round4(1 + v("contrast") / 2)]);
+  if (v("saturation")) steps.push(["saturate", round4(1 + v("saturation"))]);
+  if (v("warmth")) steps.push(["warmth", v("warmth")]);
+  return steps;
+}
+
+/** How much Warmth 100 changes red and blue (project.rs `look_filter` uses the same). */
+const WARMTH = 0.2;
+
+/** Warmth's colour matrix (red up and blue down, or the other way), as SVG's feColorMatrix takes it. */
+export function warmthMatrix(w: number): string {
+  return `${round4(1 + WARMTH * w)} 0 0 0 0 0 1 0 0 0 0 0 ${round4(1 - WARMTH * w)} 0 0 0 0 0 1 0`;
+}
+
+/**
+ * Colour steps as CSS, for the preview; undefined for none. CSS has no warmth function: it points at the SVG filter
+ * the preview draws for each Warmth value (Preview.tsx `WARMTH_FILTERS`).
+ */
+export function stepsFilter(steps: LookStep[]): string | undefined {
+  const css = ([op, a]: LookStep) => (op === "warmth" ? `url(#warmth-${Math.round(a * 100)})` : `${op}(${op === "hue-rotate" ? `${a}deg` : a})`);
+  return steps.length ? steps.map(css).join(" ") : undefined;
+}
+
 /** A filter's CSS, for the preview; undefined for none. */
 export function lookFilter(id?: string, amount = 1): string | undefined {
-  const steps = lookSteps(id, amount);
-  return steps.length ? steps.map(([op, a]) => `${op}(${op === "hue-rotate" ? `${a}deg` : a})`).join(" ") : undefined;
+  return stepsFilter(lookSteps(id, amount));
 }
 
 /** Picture effects: blocks like filters (project.rs `effect_filter` draws them in the export). */
@@ -222,7 +258,7 @@ export function blocksStyle(
   let mirror = false;
   let bars = 0;
   for (const b of blocks) {
-    const look = lookFilter(b.look, b.lookAmount);
+    const look = stepsFilter([...lookSteps(b.look, b.lookAmount), ...adjustSteps(b.adjust)]);
     if (look) filters.push(look);
     const u = Math.max(0, time - b.start);
     const d = Math.max(0.001, clipEnd(b) - b.start);
