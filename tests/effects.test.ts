@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { applyEdit, type EditAction } from "../src/project/actions";
 import { adjustSteps, blockLabel, blocksStyle, dropEdits, lookFilter, lookSteps, stepsFilter, warmthMatrix } from "../src/project/effects";
-import { clipEnd, emptyProject, isBlock, mediaFromSource, trackLabel, type Project } from "../src/project/model";
+import { clipEnd, emptyProject, isBlock, mediaFromSource, trackLabel, type Clip, type Project } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
 const video: MediaSource = {
@@ -70,26 +70,22 @@ test("Adjust adds colour steps after the filter, Warmth through its SVG filter, 
   expect(blocksStyle(p.clips, 0, 1280).filter).toBe("url(#warmth-100)");
 });
 
-test("a filter or effect dropped on a clip goes inside that clip; off any clip it's a block", () => {
+test("a filter or effect is always a 5 s block of its own where it lands, even dropped on a clip", () => {
   let p = withClip();
-  const tracks = p.tracks.length;
   const done = dropEdits(p, { kind: "filter", id: "bw" }, mainTrack(p), 2, ["f", "x"])!;
   p = run(p, done.edits);
-  // No new clip, no new track: the video clip itself carries the filter, at full strength.
-  expect(done.select).toBe("c");
-  expect(p.clips.find((c) => c.id === "f")).toBeUndefined();
-  expect(p.tracks.length).toBe(tracks);
-  expect(p.clips.find((c) => c.id === "c")).toMatchObject({ start: 0, in: 0, out: 10, look: "bw", lookAmount: 1 });
-  // An effect joins it; another filter replaces the first.
-  p = run(p, dropEdits(p, { kind: "effect", id: "shake" }, mainTrack(p), 5, ["e", "y"])!.edits);
-  p = run(p, dropEdits(p, { kind: "filter", id: "sepia" }, mainTrack(p), 5, ["s", "z"])!.edits);
-  expect(p.clips.find((c) => c.id === "c")).toMatchObject({ look: "sepia", effect: "shake" });
-  expect(isBlock(p.clips.find((c) => c.id === "c")!)).toBe(false);
-  // On a piece of a split clip: just that piece.
-  p = applyEdit(p, { type: "splitClip", clipId: "c", newClipId: "b", at: 6 });
-  p = run(p, dropEdits(p, { kind: "filter", id: "noir" }, mainTrack(p), 7, ["n", "w"])!.edits);
-  expect([p.clips.find((c) => c.id === "c")!.look, p.clips.find((c) => c.id === "b")!.look]).toEqual(["sepia", "noir"]);
-  // Off any clip: a 3 s block where it was dropped, on a track of its own.
+  // Not inside the clip: a block on a free track above, from where it was dropped, selected to set it up.
+  const filter = p.clips.find((c) => c.id === "f")!;
+  expect(done.select).toBe("f");
+  expect([filter.start, clipEnd(filter), isBlock(filter), filter.look]).toEqual([2, 7, true, "bw"]);
+  expect(filter.trackId).not.toBe(mainTrack(p));
+  const video = p.clips.find((c) => c.id === "c")!;
+  expect([video.start, video.out, video.look, video.effect]).toEqual([0, 10, undefined, undefined]);
+  // An effect on the same spot: another block (the first one's track is busy there, so the next free one).
+  p = run(p, dropEdits(p, { kind: "effect", id: "shake" }, mainTrack(p), 3, ["e", "y"])!.edits);
+  const shake = p.clips.find((c) => c.id === "e")!;
+  expect([shake.start, clipEnd(shake), shake.effect, shake.trackId === filter.trackId]).toEqual([3, 8, "shake", false]);
+  // Off any clip: a block too.
   const done2 = dropEdits(p, { kind: "effect", id: "blur" }, undefined, 20, ["k", "v"])!;
   p = run(p, done2.edits);
   const blur = p.clips.find((c) => c.id === "k")!;
@@ -143,6 +139,27 @@ test("an Adjust layer is a 5 s block of its own, even dropped on a clip, and onl
   // Reset keeps it a layer.
   p = applyEdit(p, { type: "updateClip", clipId: "L", patch: { adjust: {} } });
   expect(isBlock(layer())).toBe(true);
+});
+
+test("effects keep going for the whole block, follow Strength and Speed, and the new ones draw what the export does", () => {
+  const block = (effect: Clip["effect"], patch: Partial<Clip> = {}) => ({ ...withClip().clips[0], mediaId: undefined, start: 0, in: 0, out: 5, effect, ...patch }) as Clip;
+  const scale = (b: Clip, t: number) => Number(/scale\(([\d.]+)\)/.exec(blocksStyle([b], t, 1000).transform ?? "")?.[1] ?? 1);
+  // Shake no longer dies away: as strong near the end as at the start.
+  expect(scale(block("shake"), 4.9)).toBe(1.06);
+  expect(scale(block("shake", { effectStrength: 100 }), 4.9)).toBe(1.12);
+  // Zoom punch hits again every second (every half second at speed 2).
+  expect(scale(block("punch"), 3.1)).toBe(1.2);
+  expect(scale(block("punch", { effectSpeed: 2 }), 3.6)).toBe(1.2);
+  expect(scale(block("zoom-in", { effectStrength: 100 }), 5)).toBe(1.6);
+  // Strobe: a full flash at each beat, gone soon after.
+  expect(blocksStyle([block("strobe")], 1, 1000).layers).toEqual([{ color: "#fff", opacity: 0.6 }]);
+  expect(blocksStyle([block("strobe")], 1.4, 1000).layers[0].opacity).toBe(0);
+  // Vignette: FFmpeg's cos⁴ falloff at its default angle (π/5): clear in the middle, 57% black at the corners (1 - cos(π/5)⁴).
+  const vignette = blocksStyle([block("vignette")], 1, 1000).layers[0].color;
+  expect(vignette.startsWith("radial-gradient(circle farthest-corner at 50% 50%, rgba(0,0,0,0) 0%")).toBe(true);
+  expect(vignette.endsWith("rgba(0,0,0,0.5716) 100%)")).toBe(true);
+  expect(blocksStyle([block("rgb-split", { effectStrength: 80 })], 1, 1000).filter).toBe("url(#rgb-80)");
+  expect(blocksStyle([block("grain")], 1, 1000).layers[0]).toMatchObject({ opacity: 0.35, blend: "overlay" });
 });
 
 test("a transition goes on the join nearest to where it was dropped", () => {

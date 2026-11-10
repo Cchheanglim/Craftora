@@ -4,6 +4,16 @@
 
 **New**
 
+- **Effects and transitions you can control**: an effect or filter always lands as its own block over your clips (drag its
+  edges to set how long), never hidden inside a clip. Click a transition on the timeline to select it. The selected
+  effect's or transition's controls (Duration, Strength, Speed, Remove, and **Apply to all cuts** for transitions) show at
+  the top of the Effects, Filters or Transitions tab; click another transition to swap it. A transition added between
+  clips keeps the clips after it together (no gap opens further on).
+- Sound fade handles show only on the selected clip, clear of its edges, and their length reads over the clip.
+- **Effects you can tune, and four new ones**: Strength and Speed sliders in Edit for effects that have them; Shake keeps
+  shaking for its whole length and Zoom punch hits on a beat (they used to fade out or hit once). New: **Vignette**,
+  **Strobe**, **RGB split** and **Film grain**.
+- Tracks above the main track are as tall as it.
 - **Slide, Zoom and Wipe transitions**: the next clip pushes the last one out to the left, zooms through it, or is uncovered
   left to right.
 - **Adjust**: Brightness, Contrast, Saturation and Warmth sliders in Edit for a video or picture (or a filter block), shown

@@ -206,13 +206,8 @@ export function dropEdits(
   }
   if (item.kind === "filter" || item.kind === "effect") {
     const block = item.kind === "filter" ? { look: item.id } : { effect: item.id };
-    // Dropped on a video or picture: it goes inside that clip (one filter and one effect each; a new one replaces it).
-    const clip = clipAt(mediaOn(dropped?.id).filter((c) => showsPicture(p, c)));
-    if (clip) {
-      const patch = item.kind === "filter" ? { look: item.id, lookAmount: 1 } : { effect: item.id };
-      return { edits: [{ type: "updateClip", clipId: clip.id, patch }], select: clip.id };
-    }
-    // On an empty spot: a block of its own, to stretch over several clips.
+    // Always a block of its own where it lands, to move and stretch; on a clip's spot it goes on a free track above
+    // (actions.ts `place`). Never hidden inside the clip.
     return { edits: [...ownTrack, { type: "addBlock", clipId: newIds[0], at: time, length: BLOCK_LENGTH, trackId: ownTrack.length ? trackId : dropped?.id, ...block }], select: newIds[0] };
   }
   if (item.kind === "shape") {

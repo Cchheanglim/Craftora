@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { inDesktopApp } from "../lib/engine";
 import { captureThumbnail, draw } from "../lib/thumbnail";
-import { LOOKS, PICTURE_EFFECTS, TIME_EFFECTS, lookFilter, type FxItem } from "../project/effects";
-import { TRANSITION_KINDS, clipEnd, mediaTimeAt, showsPicture, type Project } from "../project/model";
+import type { ClipPatch } from "../project/actions";
+import { ADJUSTMENTS, EFFECT_SETTINGS, LOOKS, PICTURE_EFFECTS, TIME_EFFECTS, blockLabel, lookFilter, type FxItem } from "../project/effects";
+import { TRANSITION_KINDS, clipEnd, clipLength, mediaTimeAt, showsPicture, type Clip, type Project, type Transition } from "../project/model";
 import { SHAPES } from "../project/shapes";
+import { Slider } from "./Inspector";
 import { beginFxDrag } from "./TimelineEditor";
 import "./FxPanel.css";
 
@@ -48,12 +50,30 @@ export function FxPanel({
   time = 0,
   playing = false,
   onPick,
+  block,
+  transition,
+  onBlockChange,
+  onBlockDuration,
+  onTransitionChange,
+  onApplyToAll,
+  onRemoveBlock,
+  onCheckpoint,
 }: {
   tab: FxTab;
   project?: Project;
   time?: number;
   playing?: boolean;
   onPick: (item: FxItem) => void;
+  /** The selected filter, effect or Adjust-layer block (a clip with no media and `look`, `effect` or `adjust`). */
+  block?: Clip;
+  /** The clip whose transition (from the clip before it) is selected, and the longest it may be (seconds). */
+  transition?: { clip: Clip; max: number };
+  onBlockChange?: (patch: ClipPatch, live?: boolean) => void;
+  onBlockDuration?: (seconds: number, live?: boolean) => void;
+  onTransitionChange?: (transition: Transition | null, live?: boolean) => void;
+  onApplyToAll?: () => void;
+  onRemoveBlock?: () => void;
+  onCheckpoint?: () => void;
 }) {
   const [frame, setFrame] = useState<string>();
   const [shapeQuery, setShapeQuery] = useState("");
@@ -141,11 +161,118 @@ export function FxPanel({
     </button>
   );
 
+  const checkpoint = onCheckpoint ?? (() => {});
+  const sec = (v: number) => `${v.toFixed(1)} s`;
+  const activeTransition = tab === "transitions" ? transition?.clip.transition : undefined;
+  const selectedBlock =
+    (tab === "effects" && block?.effect) || (tab === "filters" && block && !block.effect && Boolean(block.look || block.adjust)) ? block : undefined;
+
   return (
     <section className="fx-panel" aria-label={tab === "filters" ? "Filters" : tab === "effects" ? "Effects" : tab === "transitions" ? "Transitions" : "Shapes"}>
+      {transition && activeTransition && (
+        <div className="fx-selected">
+          <div className="fx-selected__head">
+            <span className="fx-selected__title">{TRANSITION_KINDS.find((t) => t.kind === activeTransition.kind)?.label}</span>
+            <button type="button" className="btn btn--ghost" onClick={() => onTransitionChange?.(null)}>
+              Remove
+            </button>
+          </div>
+          <Slider
+            id="fx-trans-duration"
+            label="Duration"
+            min={0.1}
+            max={Math.max(0.1, transition.max)}
+            step={0.1}
+            value={Math.min(transition.max, activeTransition.duration)}
+            format={sec}
+            onCheckpoint={checkpoint}
+            onChange={(duration) => onTransitionChange?.({ kind: activeTransition.kind, duration }, true)}
+          />
+          <button type="button" className="btn btn--secondary" onClick={onApplyToAll}>
+            Apply to all cuts
+          </button>
+          <p className="fx-selected__hint">Click another transition below to swap it.</p>
+        </div>
+      )}
+      {selectedBlock && (
+        <div className="fx-selected">
+          <div className="fx-selected__head">
+            <span className="fx-selected__title">{blockLabel(selectedBlock)}</span>
+            <button type="button" className="btn btn--ghost" onClick={onRemoveBlock}>
+              Remove
+            </button>
+          </div>
+          <Slider
+            id="fx-block-duration"
+            label="Duration"
+            min={0.5}
+            max={Math.max(30, Math.ceil(clipLength(selectedBlock)))}
+            step={0.5}
+            value={clipLength(selectedBlock)}
+            format={sec}
+            onCheckpoint={checkpoint}
+            onChange={(s) => onBlockDuration?.(s, true)}
+          />
+          {selectedBlock.effect && EFFECT_SETTINGS[selectedBlock.effect]?.includes("strength") && (
+            <Slider
+              id="fx-effect-strength"
+              label="Strength"
+              min={0}
+              max={100}
+              step={1}
+              value={selectedBlock.effectStrength ?? 50}
+              format={(v) => String(Math.round(v))}
+              onCheckpoint={checkpoint}
+              onChange={(effectStrength) => onBlockChange?.({ effectStrength }, true)}
+            />
+          )}
+          {selectedBlock.effect && EFFECT_SETTINGS[selectedBlock.effect]?.includes("speed") && (
+            <Slider
+              id="fx-effect-speed"
+              label="Speed"
+              min={0.5}
+              max={3}
+              step={0.1}
+              value={selectedBlock.effectSpeed ?? 1}
+              format={(v) => `${v.toFixed(1)}×`}
+              onCheckpoint={checkpoint}
+              onChange={(effectSpeed) => onBlockChange?.({ effectSpeed }, true)}
+            />
+          )}
+          {selectedBlock.look && (
+            <Slider
+              id="fx-look-strength"
+              label="Strength"
+              min={0}
+              max={1}
+              step={0.05}
+              value={selectedBlock.lookAmount ?? 1}
+              format={(v) => `${Math.round(v * 100)}%`}
+              onCheckpoint={checkpoint}
+              onChange={(lookAmount) => onBlockChange?.({ lookAmount }, true)}
+            />
+          )}
+          {selectedBlock.adjust &&
+            !selectedBlock.look &&
+            ADJUSTMENTS.map(({ id, label }) => (
+              <Slider
+                key={id}
+                id={`fx-adjust-${id}`}
+                label={label}
+                min={-100}
+                max={100}
+                step={1}
+                value={selectedBlock.adjust?.[id] ?? 0}
+                format={(v) => (v > 0 ? `+${v}` : String(v))}
+                onCheckpoint={checkpoint}
+                onChange={(v) => onBlockChange?.({ adjust: { ...selectedBlock.adjust, [id]: v } }, true)}
+              />
+            ))}
+        </div>
+      )}
       {tab === "filters" && (
         <>
-          <p className="fx-panel__hint">Drag a filter onto a clip to colour all of it (split the clip first for just a part), or onto an empty spot and stretch it. It colours every picture under it, not text.</p>
+          <p className="fx-panel__hint">Drag a filter onto the timeline, or click one to add it at the playhead. It lands as a block over your clips and colours every picture under it (not text): drag its edges to set how long.</p>
           <div className="fx__grid">
             {/* Its own sliders (Edit → Adjust) for every picture under it; the tile hints at a change. */}
             {tile({ kind: "adjust", id: "layer" }, "Adjust layer", "brightness(1.1) contrast(1.1) saturate(1.3)")}
@@ -155,7 +282,7 @@ export function FxPanel({
       )}
       {tab === "effects" && (
         <>
-          <p className="fx-panel__hint">Drag an effect onto a clip to cover all of it, or onto an empty spot and stretch it. It changes every picture under it.</p>
+          <p className="fx-panel__hint">Drag an effect onto the timeline, or click one to add it at the playhead. It lands as a block over your clips: drag its edges to set how long, and select it to change it here.</p>
           <h3 className="section-label">Camera</h3>
           <div className="fx__grid">
             {PICTURE_EFFECTS.filter((e) => e.category === "camera").map((effect) => tile({ kind: "effect", id: effect.id }, effect.label))}

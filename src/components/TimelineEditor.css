@@ -835,7 +835,7 @@ body.is-dragging-media .tl__lane:hover {
   translate: 50% -50%;
 }
 
-.tl__clip:hover .tl__fade-dot,
+/* Drawn only on the selected clip. */
 .tl__clip.is-selected .tl__fade-dot,
 .tl__clip.is-fading .tl__fade-dot {
   opacity: 1;
@@ -846,6 +846,7 @@ body.is-dragging-media .tl__lane:hover {
   bottom: calc(100% + 4px);
   left: 50%;
   translate: -50% 0;
+  z-index: 6;
   padding: 2px 6px;
   border-radius: 2px;
   background: rgb(0 0 0 / 0.85);
@@ -854,4 +855,32 @@ body.is-dragging-media .tl__lane:hover {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* A fade's length reads inward from its handle, so it stays over the clip, not off its edge. */
+.tl__fade-dot.is-in .tl__fade-tip {
+  left: 0;
+  translate: none;
+}
+
+.tl__fade-dot.is-out .tl__fade-tip {
+  left: auto;
+  right: 0;
+  translate: none;
+}
+
+/* The transition's own label sits inside its shaded part, at the top. */
+.tl__trans .tl__fade-tip {
+  top: 2px;
+  bottom: auto;
+  left: 2px;
+  translate: none;
+}
+
+/* A selected transition: outlined like a selected clip; its settings are in the right panel. */
+.tl__trans.is-selected {
+  background: rgb(255 255 255 / 0.22);
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+  z-index: 4;
 }

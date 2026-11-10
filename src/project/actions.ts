@@ -246,12 +246,18 @@ function settle(p: Project): Project {
   for (const track of p.tracks.filter((t) => !t.magnetic)) {
     const onTrack = clips.filter((c) => c.trackId === track.id).sort((a, b) => a.start - b.start);
     let end = 0;
+    // Where the clip before ended before it moved here.
+    let wasEnd = 0;
     let prev: Clip | undefined;
     for (const c of onTrack) {
-      // A transition overlaps the clip before when the two meet, as on a magnetic track; set apart, it waits.
-      const overlap = prev && c.start <= end + 0.05 ? transitionLength(prev, c) : 0;
-      const start = round(overlap > 0 ? end - overlap : Math.max(c.start, end));
+      // A clip that touched the one before still does when that one moved for a transition: the row after a cut moves
+      // along with it, as on a magnetic track. Clips set apart, or left apart by a trim, stay where they are.
+      const at = prev && Math.abs(c.start - wasEnd) <= 0.05 ? end : c.start;
+      // A transition overlaps the clip before when the two meet; set apart, it waits.
+      const overlap = prev && at <= end + 0.05 ? transitionLength(prev, c) : 0;
+      const start = round(overlap > 0 ? end - overlap : Math.max(at, end));
       if (start !== c.start) clips = clips.map((x) => (x.id === c.id ? { ...x, start } : x));
+      wasEnd = c.start + clipLength(c);
       end = start + clipLength(c);
       prev = { ...c, start };
     }

@@ -702,7 +702,7 @@ export function CaptionStyle({
   );
 }
 
-function Slider({
+export function Slider({
   id,
   label,
   min,

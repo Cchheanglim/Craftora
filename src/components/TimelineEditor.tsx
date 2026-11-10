@@ -56,6 +56,8 @@ const MAX_PPS = 400;
 const DRAG_THRESHOLD = 3;
 /** A sound fade's length: seconds, or minutes and seconds once it's a minute or more. */
 const fadeLength = (s: number) => (s < 60 ? `${s.toFixed(1)} s` : formatClock(s));
+/** A sound-fade handle at no fade sits this far inside the clip's edge, clear of the trim handle. */
+const FADE_INSET = 16;
 
 interface TimelineEditorProps {
   project: Project;
@@ -75,6 +77,9 @@ interface TimelineEditorProps {
   onDropFx: (item: FxItem, trackId: string | null, time: number) => void;
   /** A block just added from the right panel: zoomed in to when it's too small to see or grab. */
   revealed?: { clipId: string; at: number } | null;
+  /** The clip whose transition (from the clip before it) is selected: outlined, its controls in the right panel. */
+  selectedTransition?: string | null;
+  onSelectTransition?: (clipId: string) => void;
   /** A pick from a clip's right-click menu; `time`: the playhead if it's on the clip, else where it was clicked. */
   onClipCommand: (command: ClipCommand, clip: Clip, time: number) => void;
   /** Something has been copied, so Paste can put it at the playhead. */
@@ -133,6 +138,8 @@ export function TimelineEditor({
   onAddText,
   onDropFx,
   revealed,
+  selectedTransition,
+  onSelectTransition,
   onClipCommand,
   canPaste,
   onCover,
@@ -457,6 +464,7 @@ export function TimelineEditor({
     e.stopPropagation();
     e.preventDefault();
     e.currentTarget.setPointerCapture?.(e.pointerId);
+    onSelectTransition?.(clip.id);
     api.checkpoint();
     setFadeDrag({ clipId: clip.id, edge: "trans" });
     startGesture({ kind: "transition", clipId: clip.id, originX: e.clientX, origin: clip.transition.duration });
@@ -827,13 +835,13 @@ export function TimelineEditor({
                         {clip.fadeOut > 0 && <span className="tl__fade is-out" style={{ width: clip.fadeOut * pps }} aria-hidden="true" />}
                         {overlap(clip) > 0 && clip.transition && (
                           <span
-                            className="tl__trans"
+                            className={selectedTransition === clip.id ? "tl__trans is-selected" : "tl__trans"}
                             style={{ width: overlap(clip) * pps }}
-                            title="Drag left or right to change the transition's length"
+                            title="Click to set it up; drag left or right to change its length"
                             onPointerDown={beginTransition(clip)}
                             aria-hidden="true"
                           >
-                            {fadeDrag?.clipId === clip.id && fadeDrag.edge === "trans" && (
+                            {(selectedTransition === clip.id || (fadeDrag?.clipId === clip.id && fadeDrag.edge === "trans")) && (
                               <span className="tl__fade-tip mono">
                                 {TRANSITION_KINDS.find((t) => t.kind === clip.transition?.kind)?.label} {fadeLength(clip.transition.duration)}
                               </span>
@@ -862,25 +870,25 @@ export function TimelineEditor({
                                   </svg>
                                 </span>
                               )}
-                              {!track.locked && (
+                              {!track.locked && isSelected && length * pps >= 56 && (
                                 <>
                                   <span
                                     className={fadingIn ? "tl__fade-dot is-in is-dragging" : "tl__fade-dot is-in"}
-                                    style={{ left: Math.max(9, soundFadeIn * pps) }}
+                                    style={{ left: Math.max(FADE_INSET, soundFadeIn * pps) }}
                                     title="Drag to fade the sound in"
                                     aria-label="Drag to fade the sound in"
                                     onPointerDown={beginSoundFade(clip, "in")}
                                   >
-                                    {fadingIn && <span className="tl__fade-tip mono">Fade in {fadeLength(soundFadeIn)}</span>}
+                                    {fadingIn && soundFadeIn > 0 && <span className="tl__fade-tip mono">Fade in {fadeLength(soundFadeIn)}</span>}
                                   </span>
                                   <span
                                     className={fadingOut ? "tl__fade-dot is-out is-dragging" : "tl__fade-dot is-out"}
-                                    style={{ right: Math.max(9, soundFadeOut * pps) }}
+                                    style={{ right: Math.max(FADE_INSET, soundFadeOut * pps) }}
                                     title="Drag to fade the sound out"
                                     aria-label="Drag to fade the sound out"
                                     onPointerDown={beginSoundFade(clip, "out")}
                                   >
-                                    {fadingOut && <span className="tl__fade-tip mono">Fade out {fadeLength(soundFadeOut)}</span>}
+                                    {fadingOut && soundFadeOut > 0 && <span className="tl__fade-tip mono">Fade out {fadeLength(soundFadeOut)}</span>}
                                   </span>
                                 </>
                               )}
@@ -943,7 +951,7 @@ export function TimelineEditor({
                           title={kind ? `${kind.label}: click to change it` : "Add a transition here"}
                           disabled={track.locked}
                           onPointerDown={(e) => e.stopPropagation()}
-                          onClick={() => onJoin(clip)}
+                          onClick={() => (kind && onSelectTransition ? onSelectTransition(clip.id) : onJoin(clip))}
                         >
                           <Icon name={kind ? "check" : "plus"} size={8} />
                         </button>
