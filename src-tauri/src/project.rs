@@ -209,6 +209,10 @@ impl ClipSpec {
                     length: self.transition_in / 2.0,
                 },
             });
+            // A flash's incoming clip stays hidden until the outgoing one is all white, or its own white covers that.
+            if self.transition_in_kind == TransitionKind::Flash && !sound {
+                ramps.push(Ramp { white: false, fade_in: true, start: self.transition_in / 2.0, length: 0.001 });
+            }
         }
         if self.transition_out > 0.0 {
             let begins = length - self.transition_out;

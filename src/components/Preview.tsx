@@ -230,8 +230,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const mix = (c: Clip) => {
     const fade = fadeAt(c, time);
     const order = orders.get(c.trackId);
-    const t = order ? transitionMix(order, c, time) : { picture: 1, sound: 1 };
-    return { picture: fade * t.picture, sound: fade * t.sound };
+    const t = order ? transitionMix(order, c, time) : { picture: 1, sound: 1, white: 0 };
+    return { picture: fade * t.picture, sound: fade * t.sound, white: t.white };
   };
   // Sound files (pictures play their own sound).
   const sounds = project.clips.filter((c) => c.mediaId && !showsPicture(project, c));
@@ -491,9 +491,12 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               <PictureLayer
                 key={clip.id}
                 clip={clip}
+                time={time}
                 stageAspect={stageAspect}
+                stageWidth={stageRef.current?.clientWidth ?? frame.width}
                 visible={t !== null && !trackHidden(clip)}
                 opacity={t === null ? 0 : mix(clip).picture}
+                white={t === null ? 0 : mix(clip).white}
                 selected={isSelected}
                 poster={poster}
                 onPointerDown={beginGesture(clip, "move")}
@@ -810,9 +813,13 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
 
 interface PictureLayerProps {
   clip: Clip;
+  time: number;
   stageAspect: number;
+  stageWidth: number;
   visible: boolean;
   opacity: number;
+  /** 0–1: how white a flash transition makes it now. */
+  white: number;
   selected: boolean;
   poster?: string;
   onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
@@ -825,7 +832,7 @@ interface PictureLayerProps {
  * One picture on the stage, placed like the export: fitted inside the frame, scaled by its
  * size, at its position. The crop is a window onto the video.
  */
-function PictureLayer({ clip, stageAspect, visible, opacity, selected, poster, onPointerDown, handles, children }: PictureLayerProps) {
+function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, selected, poster, onPointerDown, handles, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
@@ -852,6 +859,9 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, poster, o
   // with `fill` covers it, the frame cutting off what spills over (=increase).
   const wider = aspect >= stageAspect;
   const fitWidth = clip.fill ? (wider ? aspect / stageAspect : 1) : wider ? 1 : aspect / stageAspect;
+  const boxWidth = stageWidth * fitWidth * clip.size;
+  // A filter or effect on this clip itself changes only its box, timed to the clip's span.
+  const fx = clip.look || clip.effect ? blocksStyle([clip], time, boxWidth, boxWidth / aspect) : undefined;
   const box: CSSProperties = {
     width: `${fitWidth * clip.size * 100}%`,
     aspectRatio: String(aspect),
@@ -874,28 +884,49 @@ function PictureLayer({ clip, stageAspect, visible, opacity, selected, poster, o
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
     >
       <div className="preview__crop" style={turned}>
-        {!ready && poster && (
-          <img
-            src={poster}
-            alt=""
-            className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
-            style={video}
-            draggable={false}
-            onLoad={(e) => {
-              if (e.currentTarget.naturalWidth && e.currentTarget.naturalHeight) {
-                setVideoAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight);
-              }
-            }}
-          />
-        )}
-        {children(
-          (width, height) => {
-            if (width && height) setVideoAspect(width / height);
-          },
-          video,
-          () => setReady(true),
-        )}
+        <div
+          className="preview__clip-fx"
+          style={
+            fx && {
+              filter: fx.filter,
+              transform: [fx.transform, fx.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined,
+            }
+          }
+        >
+          {!ready && poster && (
+            <img
+              src={poster}
+              alt=""
+              className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
+              style={video}
+              draggable={false}
+              onLoad={(e) => {
+                if (e.currentTarget.naturalWidth && e.currentTarget.naturalHeight) {
+                  setVideoAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight);
+                }
+              }}
+            />
+          )}
+          {children(
+            (width, height) => {
+              if (width && height) setVideoAspect(width / height);
+            },
+            video,
+            () => setReady(true),
+          )}
+        </div>
       </div>
+      {/* A flash transition whitens the clip itself (the export fades its picture to white). */}
+      {white > 0 && <span className="preview__fx-layer" style={{ background: "#fff", opacity: white }} aria-hidden="true" />}
+      {fx?.layers.map((layer, i) => (
+        <span key={i} className="preview__fx-layer" style={{ background: layer.color, opacity: layer.opacity }} aria-hidden="true" />
+      ))}
+      {fx && fx.bars > 0 && (
+        <>
+          <span className="preview__bar is-top" style={{ height: `${fx.bars * 100}%` }} aria-hidden="true" />
+          <span className="preview__bar is-bottom" style={{ height: `${fx.bars * 100}%` }} aria-hidden="true" />
+        </>
+      )}
       {visible && !ready && !poster && <span className="preview__loading">Loading video…</span>}
       {handles}
     </div>

@@ -78,10 +78,12 @@
   pointer-events: none;
 }
 
-.preview__crop {
+.preview__crop,
+.preview__clip-fx {
   position: absolute;
   inset: 0;
   overflow: hidden;
+  transform-origin: 50% 50%;
 }
 
 .preview__loading {

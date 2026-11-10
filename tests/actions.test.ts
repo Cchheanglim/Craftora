@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEdit } from "../src/project/actions";
-import { captionLines, emptyProject, mainTrack, mediaFromSource, sameFormat, upgradeProject, type Project } from "../src/project/model";
+import { captionLines, emptyProject, mainTrack, mediaFromSource, sameFormat, trackOrder, transitionMix, upgradeProject, type Project } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
 const source = (kind: "video" | "audio" | "image"): MediaSource => ({
@@ -319,4 +319,22 @@ test("the transcript follows the timeline, words are timed in their line, and pi
     [1, 4],
     [4.3, 10],
   ]);
+});
+
+test("a flash whitens the outgoing clip, then brings the incoming one up from white", () => {
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "a", mediaId: media.id, at: 0 });
+  p = applyEdit(p, { type: "addClip", clipId: "b", mediaId: media.id, at: 10 });
+  const track = mainTrack(p)!.id;
+  p = applyEdit(p, { type: "setMagnetic", trackId: track, magnetic: true });
+  p = applyEdit(p, { type: "setTransition", clipId: "b", transition: { kind: "flash", duration: 1 } });
+  const order = trackOrder(p, track);
+  const [a, b] = ["a", "b"].map((id) => order.find((c) => c.id === id)!);
+  const at = (share: number) => b.start + share;
+  // A quarter in: the outgoing clip half white, the incoming one not shown yet.
+  expect(transitionMix(order, a, at(0.25))).toMatchObject({ picture: 1, white: 0.5 });
+  expect(transitionMix(order, b, at(0.25)).picture).toBe(0);
+  // Three quarters in: the incoming clip shown, half white; the sound dips like Dip to black.
+  expect(transitionMix(order, b, at(0.75))).toMatchObject({ picture: 1, white: 0.5, sound: 0.5 });
 });
