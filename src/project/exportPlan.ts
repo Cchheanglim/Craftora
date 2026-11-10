@@ -69,6 +69,8 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
     clip.speed === 1 &&
     !clip.fadeIn &&
     !clip.fadeOut &&
+    !clip.soundFadeIn &&
+    !clip.soundFadeOut &&
     !isCropped(clip.crop) &&
     !clip.fill &&
     clip.size >= 0.999 &&

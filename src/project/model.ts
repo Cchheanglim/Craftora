@@ -163,6 +163,9 @@ export interface Clip {
   /** Seconds of fade from black/silence at the start and to black/silence at the end. */
   fadeIn: number;
   fadeOut: number;
+  /** Seconds of sound-only fade in and out (picture stays; 0 when absent). */
+  soundFadeIn?: number;
+  soundFadeOut?: number;
   crop: Crop;
   /** Magnetic tracks only: the transition from the previous clip into this one. */
   transition?: Transition;
@@ -249,6 +252,18 @@ export function fadeAt(c: Clip, t: number): number {
   let f = 1;
   if (c.fadeIn > 0) f = Math.min(f, into / c.fadeIn);
   if (c.fadeOut > 0) f = Math.min(f, left / c.fadeOut);
+  return Math.min(1, Math.max(0, f));
+}
+
+/** 0–1: how far faded in/out the clip's sound is at timeline time `t`. */
+export function soundFadeAt(c: Clip, t: number): number {
+  const into = t - c.start;
+  const left = clipEnd(c) - t;
+  const fadeIn = c.soundFadeIn ?? 0;
+  const fadeOut = c.soundFadeOut ?? 0;
+  let f = 1;
+  if (fadeIn > 0) f = Math.min(f, into / fadeIn);
+  if (fadeOut > 0) f = Math.min(f, left / fadeOut);
   return Math.min(1, Math.max(0, f));
 }
 
@@ -605,7 +620,8 @@ export function clipPeaks(clip: Clip, media: MediaItem | undefined, bars: number
   return Array.from({ length: bars }, (_, i) => {
     // Each bar: the loudest moment in the stretch of sound it stands for.
     const loud = peakBetween(full, total, at(i / bars), at((i + 1) / bars));
-    const fade = fadeAt(clip, clip.start + ((i + 0.5) / bars) * len);
+    const t = clip.start + ((i + 0.5) / bars) * len;
+    const fade = fadeAt(clip, t) * soundFadeAt(clip, t);
     return Math.max(4, Math.min(100, Math.round(loud * clip.volume * fade)));
   });
 }

@@ -150,6 +150,8 @@ export interface RenderClip {
   fill: boolean;
   fadeIn: number;
   fadeOut: number;
+  soundFadeIn: number;
+  soundFadeOut: number;
   /** Fractions cut off each side: left, top, right, bottom. */
   crop: [number, number, number, number];
   /** Seconds this clip overlaps the clip before it on its track (0 = straight cut), and how. */

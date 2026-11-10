@@ -53,6 +53,8 @@ export type ClipPatch = Partial<
     | "edge"
     | "fadeIn"
     | "fadeOut"
+    | "soundFadeIn"
+    | "soundFadeOut"
     | "crop"
   >
 >;
@@ -140,7 +142,9 @@ function newClip(fields: Pick<Clip, "id" | "trackId" | "start" | "in" | "out"> &
 function fitFades(c: Clip): Clip {
   const length = clipLength(c);
   const fadeIn = Math.min(c.fadeIn, length);
-  return { ...c, fadeIn, fadeOut: Math.min(c.fadeOut, length - fadeIn) };
+  const soundFadeIn = c.soundFadeIn !== undefined ? Math.min(c.soundFadeIn, length) : undefined;
+  const soundFadeOut = c.soundFadeOut !== undefined ? Math.min(c.soundFadeOut, length - (soundFadeIn ?? 0)) : undefined;
+  return { ...c, fadeIn, fadeOut: Math.min(c.fadeOut, length - fadeIn), soundFadeIn, soundFadeOut };
 }
 
 const isMagnetic = (p: Project, trackId: string) => Boolean(p.tracks.find((t) => t.id === trackId)?.magnetic);
@@ -473,8 +477,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
         second = { ...clip, id: action.newClipId, start: round(action.at), in: cut };
       }
       // The fade in stays with the first part, the fade out with the second.
-      first = fitFades({ ...first, fadeOut: 0 });
-      second = fitFades({ ...second, fadeIn: 0, transition: undefined });
+      first = fitFades({ ...first, fadeOut: 0, soundFadeOut: 0 });
+      second = fitFades({ ...second, fadeIn: 0, soundFadeIn: 0, transition: undefined });
       return { ...p, clips: p.clips.flatMap((c) => (c.id === clip.id ? [first, second] : [c])) };
     }
 
@@ -520,6 +524,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
           out: segOut,
           fadeIn: i === 0 ? clip.fadeIn : 0,
           fadeOut: i === ordered.length - 1 ? clip.fadeOut : 0,
+          soundFadeIn: i === 0 ? clip.soundFadeIn : 0,
+          soundFadeOut: i === ordered.length - 1 ? clip.soundFadeOut : 0,
           transition: i === 0 ? clip.transition : undefined,
         });
         t += clipLength(piece);
@@ -550,6 +556,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
           out: segOut,
           fadeIn: i === 0 ? clip.fadeIn : 0,
           fadeOut: i === ordered.length - 1 ? clip.fadeOut : 0,
+          soundFadeIn: i === 0 ? clip.soundFadeIn : 0,
+          soundFadeOut: i === ordered.length - 1 ? clip.soundFadeOut : 0,
           transition: i === 0 ? clip.transition : undefined,
         });
         t += clipLength(piece);

@@ -216,9 +216,9 @@ export function TimelineEditor({
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
-      // A wheel notch (about 100) zooms 1.2×; a pinch sends many small steps, so it zooms smoothly.
+      // A pinch follows the fingers (its steps add up to the pinch's scale); a wheel notch (about 100) zooms 1.2×.
       const delta = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY * 33 : e.deltaY;
-      setPps((p) => Math.min(MAX_PPS, Math.max(minPpsRef.current, p * Math.pow(1.2, -delta / 100))));
+      setPps((p) => Math.min(MAX_PPS, Math.max(minPpsRef.current, p * Math.min(1.2, Math.max(1 / 1.2, Math.exp(-delta / 100))))));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
