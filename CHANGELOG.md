@@ -6,6 +6,9 @@
 
 - **Slide, Zoom and Wipe transitions**: the next clip pushes the last one out to the left, zooms through it, or is uncovered
   left to right.
+- **More transitions**: Slide right, up and down; Wipe left, up and down; **Circle** (the next clip opens in a growing
+  circle) and **Spin** (both clips turn and zoom as they cross). Exports with a Wipe are also faster: only the wipe's own
+  seconds go through the extra step.
 - **Transitions without splitting first**: click one (or drop it) in the middle of a clip and Craftora cuts the clip
   there and adds it; dropped next to a cut it goes on that cut, however far the timeline is zoomed out.
 - **Sound fades**: drag the dots on a clip's sound wave (or use Edit → Sound fade) to fade only its sound in or out, as
