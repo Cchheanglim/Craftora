@@ -202,7 +202,9 @@ export function TimelineEditor({
     return () => observer.disconnect();
   }, []);
 
-  const fit = () => setPps(Math.min(MAX_PPS, Math.max(MIN_PPS, (viewWidth - 40) / Math.max(duration * 1.5, 15))));
+  // Zoomed all the way out, the whole edit fits however long it is (a 2-hour video too).
+  const minPps = Math.min(MIN_PPS, (viewWidth - 40) / Math.max(duration * 1.5, 15));
+  const fit = () => setPps(Math.min(MAX_PPS, Math.max(minPps, (viewWidth - 40) / Math.max(duration * 1.5, 15))));
 
   // Fit the first time something lands on the timeline.
   useEffect(() => {
@@ -456,7 +458,7 @@ export function TimelineEditor({
           Track
         </button>
         <div className="tl__zoom">
-          <button type="button" className="btn btn--icon" aria-label="Zoom out" onClick={() => setPps((p) => Math.max(MIN_PPS, p / 1.5))}>
+          <button type="button" className="btn btn--icon" aria-label="Zoom out" onClick={() => setPps((p) => Math.max(minPps, p / 1.5))}>
             <Icon name="minus" size={14} />
           </button>
           <button type="button" className="btn btn--icon" aria-label="Fit timeline" title="Fit" onClick={fit}>
@@ -628,7 +630,7 @@ export function TimelineEditor({
           onWheel={(e) => {
             if (!e.ctrlKey) return;
             e.preventDefault();
-            setPps((p) => Math.min(MAX_PPS, Math.max(MIN_PPS, p * (e.deltaY < 0 ? 1.2 : 1 / 1.2))));
+            setPps((p) => Math.min(MAX_PPS, Math.max(minPps, p * (e.deltaY < 0 ? 1.2 : 1 / 1.2))));
           }}
         >
           {/* A press anywhere here (a track, or the empty space above and below them) moves the playhead;

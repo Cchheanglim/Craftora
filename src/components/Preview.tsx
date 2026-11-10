@@ -230,8 +230,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const mix = (c: Clip) => {
     const fade = fadeAt(c, time);
     const order = orders.get(c.trackId);
-    const t = order ? transitionMix(order, c, time) : { picture: 1, sound: 1, white: 0 };
-    return { picture: fade * t.picture, sound: fade * t.sound, white: t.white };
+    const t = order ? transitionMix(order, c, time) : { picture: 1, sound: 1, white: 0, shift: 0, zoom: 1, wipe: 0 };
+    return { ...t, picture: fade * t.picture, sound: fade * t.sound };
   };
   // Sound files (pictures play their own sound).
   const sounds = project.clips.filter((c) => c.mediaId && !showsPicture(project, c));
@@ -497,6 +497,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 visible={t !== null && !trackHidden(clip)}
                 opacity={t === null ? 0 : mix(clip).picture}
                 white={t === null ? 0 : mix(clip).white}
+                shift={t === null ? 0 : mix(clip).shift}
+                zoom={t === null ? 1 : mix(clip).zoom}
+                wipe={t === null ? 0 : mix(clip).wipe}
                 selected={isSelected}
                 poster={poster}
                 onPointerDown={beginGesture(clip, "move")}
@@ -820,6 +823,12 @@ interface PictureLayerProps {
   opacity: number;
   /** 0–1: how white a flash transition makes it now. */
   white: number;
+  /** Frame widths moved right by a slide transition (negative = left). */
+  shift: number;
+  /** Scale about the box centre from a zoom transition (1 = none). */
+  zoom: number;
+  /** 0–1: share of the box hidden from its right edge by a wipe transition. */
+  wipe: number;
   selected: boolean;
   poster?: string;
   onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
@@ -832,7 +841,7 @@ interface PictureLayerProps {
  * One picture on the stage, placed like the export: fitted inside the frame, scaled by its
  * size, at its position. The crop is a window onto the video.
  */
-function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, selected, poster, onPointerDown, handles, children }: PictureLayerProps) {
+function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, zoom, wipe, selected, poster, onPointerDown, handles, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
@@ -868,6 +877,8 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
     left: `${clip.x * 100}%`,
     top: `${clip.y * 100}%`,
     translate: `${-clip.x * 100}% ${-clip.y * 100}%`,
+    transform: shift !== 0 ? `translateX(${shift * stageWidth}px)` : undefined,
+    clipPath: wipe > 0 ? `inset(0 ${wipe * 100}% 0 0)` : undefined,
   };
   const video: CSSProperties = {
     width: `${100 / keptW}%`,
@@ -887,10 +898,12 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
         <div
           className="preview__clip-fx"
           style={
-            fx && {
-              filter: fx.filter,
-              transform: [fx.transform, fx.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined,
-            }
+            fx || zoom !== 1
+              ? {
+                  filter: fx?.filter,
+                  transform: [zoom !== 1 && `scale(${zoom})`, fx?.transform, fx?.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined,
+                }
+              : undefined
           }
         >
           {!ready && poster && (
