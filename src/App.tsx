@@ -291,6 +291,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** A block just added from the right panel, for the timeline to zoom in to (`at` makes each one new). */
+  const [revealed, setRevealed] = useState<{ clipId: string; at: number } | null>(null);
   // Settings page: how many jobs run at once.
   const [maxRunning, setMaxRunning] = useState(() => rememberedCount("craftora.maxRunning", MAX_RUNNING));
   const [timelineHeight, setTimelineHeight] = useState(() => rememberedSize("craftora.timelineHeight"));
@@ -1245,6 +1247,10 @@ export default function App() {
     api.checkpoint();
     for (const edit of done.edits) api.editLive(edit);
     if (done.select) setSelectedId(done.select);
+    // A new block or shape: the timeline zooms in to it if it's too small to see at its zoom.
+    if (done.select && done.edits.some((e) => e.type === "addBlock" || e.type === "addShape")) setRevealed({ clipId: done.select, at: Date.now() });
+    // An Adjust layer does nothing until its sliders move: show them.
+    if (item.kind === "adjust") setRightTab("edit");
     return done.select;
   };
   const duplicate = () => {
@@ -1797,6 +1803,7 @@ export default function App() {
             <TimelineEditor
               project={project}
               api={api}
+              revealed={revealed}
               playback={playback}
               duration={duration}
               selectedId={selectedId}

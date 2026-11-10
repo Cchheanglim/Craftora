@@ -14,7 +14,7 @@ import type { ShapeId } from "./shapes";
  * One colour step of a filter: a CSS filter function and its amount (degrees for hue-rotate). The
  * preview applies the steps in order; the export draws the same maths (project.rs `look_filter`).
  */
-export type LookStep = readonly ["grayscale" | "sepia" | "saturate" | "hue-rotate" | "brightness" | "contrast" | "invert", number];
+export type LookStep = readonly ["grayscale" | "sepia" | "saturate" | "hue-rotate" | "brightness" | "contrast" | "invert" | "warmth", number];
 
 export const LOOKS = [
   { id: "bw", label: "Black & white", steps: [["grayscale", 1]] },
@@ -47,10 +47,46 @@ export function lookSteps(id?: string, amount = 1): LookStep[] {
   ]);
 }
 
+/** Edit → Adjust: sliders from -100 to 100, 0 = unchanged. */
+export const ADJUSTMENTS = [
+  { id: "brightness", label: "Brightness" },
+  { id: "contrast", label: "Contrast" },
+  { id: "saturation", label: "Saturation" },
+  { id: "warmth", label: "Warmth" },
+] as const;
+export type Adjust = Partial<Record<(typeof ADJUSTMENTS)[number]["id"], number>>;
+
+/** A clip's adjustments as colour steps, drawn after its filter; none for all at 0. */
+export function adjustSteps(adjust?: Adjust): LookStep[] {
+  const v = (id: keyof Adjust) => Math.round(clamp(adjust?.[id] ?? 0, -100, 100)) / 100;
+  const steps: LookStep[] = [];
+  if (v("brightness")) steps.push(["brightness", round4(1 + v("brightness") / 2)]);
+  if (v("contrast")) steps.push(["contrast", round4(1 + v("contrast") / 2)]);
+  if (v("saturation")) steps.push(["saturate", round4(1 + v("saturation"))]);
+  if (v("warmth")) steps.push(["warmth", v("warmth")]);
+  return steps;
+}
+
+/** How much Warmth 100 changes red and blue (project.rs `look_filter` uses the same). */
+const WARMTH = 0.2;
+
+/** Warmth's colour matrix (red up and blue down, or the other way), as SVG's feColorMatrix takes it. */
+export function warmthMatrix(w: number): string {
+  return `${round4(1 + WARMTH * w)} 0 0 0 0 0 1 0 0 0 0 0 ${round4(1 - WARMTH * w)} 0 0 0 0 0 1 0`;
+}
+
+/**
+ * Colour steps as CSS, for the preview; undefined for none. CSS has no warmth function: it points at the SVG filter
+ * the preview draws for each Warmth value (Preview.tsx `WARMTH_FILTERS`).
+ */
+export function stepsFilter(steps: LookStep[]): string | undefined {
+  const css = ([op, a]: LookStep) => (op === "warmth" ? `url(#warmth-${Math.round(a * 100)})` : `${op}(${op === "hue-rotate" ? `${a}deg` : a})`);
+  return steps.length ? steps.map(css).join(" ") : undefined;
+}
+
 /** A filter's CSS, for the preview; undefined for none. */
 export function lookFilter(id?: string, amount = 1): string | undefined {
-  const steps = lookSteps(id, amount);
-  return steps.length ? steps.map(([op, a]) => `${op}(${op === "hue-rotate" ? `${a}deg` : a})`).join(" ") : undefined;
+  return stepsFilter(lookSteps(id, amount));
 }
 
 /** Picture effects: blocks like filters (project.rs `effect_filter` draws them in the export). */
@@ -87,21 +123,22 @@ export const TIME_EFFECTS: { id: string; label: string; change: TimeChange }[] =
 /** What the panels offer, as dragged or clicked. */
 export type FxItem =
   | { kind: "filter"; id: LookId }
+  | { kind: "adjust"; id: "layer" }
   | { kind: "effect"; id: PictureEffectId }
   | { kind: "fade"; id: "in" | "out" }
   | { kind: "time"; id: string }
   | { kind: "transition"; id: Transition["kind"] }
   | { kind: "shape"; id: ShapeId };
 
-/** A new filter or effect block off any clip lasts this long; drag its edges to change it. */
-export const BLOCK_LENGTH = 3;
+/** A new filter, effect, Adjust layer or shape block lasts this long (Zoom punch hits in its first half second); drag its edges to change it. */
+export const BLOCK_LENGTH = 5;
 
 /** A transition this close to a join (seconds) goes on that join; further into a clip, it cuts the clip there. */
 const JOIN_REACH = 0.5;
 
 /** A filter or effect block's name on the timeline and in Edit. */
 export function blockLabel(c: Clip): string {
-  return LOOKS.find((l) => l.id === c.look)?.label ?? PICTURE_EFFECTS.find((e) => e.id === c.effect)?.label ?? "Effect";
+  return LOOKS.find((l) => l.id === c.look)?.label ?? PICTURE_EFFECTS.find((e) => e.id === c.effect)?.label ?? (c.adjust ? "Adjust layer" : "Effect");
 }
 
 /**
@@ -119,13 +156,17 @@ export function dropEdits(
   time: number,
   newIds: [string, string],
 ): { edits: EditAction[]; select?: string } | null {
-  if (trackId === null && item.kind !== "filter" && item.kind !== "effect" && item.kind !== "shape") trackId = undefined;
+  if (trackId === null && item.kind !== "filter" && item.kind !== "effect" && item.kind !== "adjust" && item.kind !== "shape") trackId = undefined;
   // Its own track: made first, then the block goes on it.
   const ownTrack: EditAction[] = trackId === null ? [{ type: "addTrack", trackId: newIds[1] }] : [];
   if (trackId === null) trackId = newIds[1];
   const dropped = p.tracks.find((t) => t.id === trackId);
   const mediaOn = (id?: string) => (id ? trackOrder(p, id).filter((c) => c.mediaId) : []);
   const clipAt = (clips: Clip[]) => clips.find((c) => time >= c.start && time < clipEnd(c));
+  if (item.kind === "adjust") {
+    // Always a layer of its own (its sliders are in Edit): on a clip's spot it goes on a free track above (actions.ts `place`).
+    return { edits: [...ownTrack, { type: "addBlock", clipId: newIds[0], at: time, length: BLOCK_LENGTH, trackId: ownTrack.length ? trackId : dropped?.id, adjust: {} }], select: newIds[0] };
+  }
   if (item.kind === "filter" || item.kind === "effect") {
     const block = item.kind === "filter" ? { look: item.id } : { effect: item.id };
     // Dropped on a video or picture: it goes inside that clip (one filter and one effect each; a new one replaces it).
@@ -135,8 +176,7 @@ export function dropEdits(
       return { edits: [{ type: "updateClip", clipId: clip.id, patch }], select: clip.id };
     }
     // On an empty spot: a block of its own, to stretch over several clips.
-    const length = item.id === "punch" ? 0.6 : item.id === "shake" ? 1 : BLOCK_LENGTH;
-    return { edits: [...ownTrack, { type: "addBlock", clipId: newIds[0], at: time, length, trackId: ownTrack.length ? trackId : dropped?.id, ...block }], select: newIds[0] };
+    return { edits: [...ownTrack, { type: "addBlock", clipId: newIds[0], at: time, length: BLOCK_LENGTH, trackId: ownTrack.length ? trackId : dropped?.id, ...block }], select: newIds[0] };
   }
   if (item.kind === "shape") {
     return { edits: [...ownTrack, { type: "addShape", clipId: newIds[0], shape: item.id, at: time, length: BLOCK_LENGTH, trackId: ownTrack.length ? trackId : dropped?.id }], select: newIds[0] };
@@ -222,7 +262,7 @@ export function blocksStyle(
   let mirror = false;
   let bars = 0;
   for (const b of blocks) {
-    const look = lookFilter(b.look, b.lookAmount);
+    const look = stepsFilter([...lookSteps(b.look, b.lookAmount), ...adjustSteps(b.adjust)]);
     if (look) filters.push(look);
     const u = Math.max(0, time - b.start);
     const d = Math.max(0.001, clipEnd(b) - b.start);

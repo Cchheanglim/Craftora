@@ -38,6 +38,7 @@ export type ClipPatch = Partial<
     | "smooth"
     | "look"
     | "lookAmount"
+    | "adjust"
     | "effect"
     | "shape"
     | "opacity"
@@ -76,7 +77,7 @@ export type EditAction =
   /** Another file in a clip's place, from that file's start, as long as the clip was (or the file is). */
   | { type: "replaceClipMedia"; clipId: string; mediaId: string }
   /** A filter (`look`) or effect block on track `trackId` (or another one free at `at`). */
-  | { type: "addBlock"; clipId: string; at: number; length: number; trackId?: string; look?: Clip["look"]; effect?: Clip["effect"] }
+  | { type: "addBlock"; clipId: string; at: number; length: number; trackId?: string; look?: Clip["look"]; effect?: Clip["effect"]; adjust?: Clip["adjust"] }
   /** A shape clip (`shapes.ts`) on track `trackId` (or another one free at `at`). */
   | { type: "addShape"; clipId: string; shape: ShapeId; at: number; length?: number; trackId?: string }
   /** The media's captions as text clips on a new "Captions" track, lined up with each of its clips. */
@@ -363,8 +364,9 @@ export function applyEdit(p: Project, action: EditAction): Project {
     }
 
     case "addBlock": {
-      if (!action.look === !action.effect) return p;
-      const clip = newClip({ id: action.clipId, trackId: "", start: 0, in: 0, out: round(Math.max(MIN_CLIP, action.length)), look: action.look, effect: action.effect });
+      // A filter, an effect or an Adjust layer: exactly one.
+      if ([action.look, action.effect, action.adjust].filter(Boolean).length !== 1) return p;
+      const clip = newClip({ id: action.clipId, trackId: "", start: 0, in: 0, out: round(Math.max(MIN_CLIP, action.length)), look: action.look, effect: action.effect, adjust: action.adjust });
       return place(p, p.tracks.find((t) => t.id === action.trackId), clip, action.at);
     }
 
@@ -582,6 +584,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
       if (patch.x !== undefined) patch.x = clamp(patch.x, 0, 1);
       if (patch.y !== undefined) patch.y = clamp(patch.y, 0, 1);
       if (patch.lookAmount !== undefined) patch.lookAmount = clamp(patch.lookAmount, 0, 1);
+      if (patch.adjust) patch.adjust = Object.fromEntries(Object.entries(patch.adjust).map(([k, v]) => [k, Math.round(clamp(v ?? 0, -100, 100))]));
       if (patch.opacity !== undefined) patch.opacity = clamp(patch.opacity, 0, 1);
       if (patch.outline !== undefined) patch.outline = Math.max(0, patch.outline);
       return { ...p, clips: p.clips.map((c) => (c.id === action.clipId ? fitFades({ ...c, ...patch }) : c)) };

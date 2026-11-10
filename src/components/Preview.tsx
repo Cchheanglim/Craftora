@@ -8,7 +8,7 @@ import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
-import { blocksStyle } from "../project/effects";
+import { adjustSteps, blocksStyle, warmthMatrix } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
 import { SyncedMedia } from "./SyncedMedia";
@@ -230,7 +230,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const mix = (c: Clip) => {
     const fade = fadeAt(c, time);
     const order = orders.get(c.trackId);
-    const t = order ? transitionMix(order, c, time) : { picture: 1, sound: 1, white: 0, shift: 0, zoom: 1, wipe: 0 };
+    const t = order ? transitionMix(order, c, time) : { picture: 1, sound: 1, white: 0, shift: 0, lift: 0, zoom: 1, turn: 0, reveal: "" };
     return { ...t, picture: fade * t.picture, sound: fade * soundFadeAt(c, time) * t.sound };
   };
   // Sound files (pictures play their own sound).
@@ -474,6 +474,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               </span>
             </span>
           )}
+          {WARMTH_FILTERS}
           <div
             className="preview__pictures"
             style={{ filter: blocks.filter, transform: [blocks.transform, blocks.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined }}
@@ -498,8 +499,10 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 opacity={t === null ? 0 : mix(clip).picture}
                 white={t === null ? 0 : mix(clip).white}
                 shift={t === null ? 0 : mix(clip).shift}
+                lift={t === null ? 0 : mix(clip).lift}
                 zoom={t === null ? 1 : mix(clip).zoom}
-                wipe={t === null ? 0 : mix(clip).wipe}
+                turn={t === null ? 0 : mix(clip).turn}
+                reveal={t === null ? "" : mix(clip).reveal}
                 selected={isSelected}
                 poster={poster}
                 onPointerDown={beginGesture(clip, "move")}
@@ -814,6 +817,21 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   );
 }
 
+/**
+ * Warmth (Edit → Adjust) has no CSS filter function: one SVG colour matrix per value, -100 to 100, that the colour steps
+ * point at (effects.ts `stepsFilter`). In sRGB like the CSS functions and the export; hidden by size, not `display: none`
+ * (that would switch the filters off).
+ */
+const WARMTH_FILTERS = (
+  <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
+    {Array.from({ length: 201 }, (_, i) => i - 100).map((w) => (
+      <filter key={w} id={`warmth-${w}`} colorInterpolationFilters="sRGB">
+        <feColorMatrix type="matrix" values={warmthMatrix(w / 100)} />
+      </filter>
+    ))}
+  </svg>
+);
+
 interface PictureLayerProps {
   clip: Clip;
   time: number;
@@ -825,10 +843,14 @@ interface PictureLayerProps {
   white: number;
   /** Frame widths moved right by a slide transition (negative = left). */
   shift: number;
-  /** Scale about the box centre from a zoom transition (1 = none). */
+  /** Frame heights moved down by a slide transition (negative = up). */
+  lift: number;
+  /** Scale about the box centre from a zoom or spin transition (1 = none). */
   zoom: number;
-  /** 0–1: share of the box hidden from its right edge by a wipe transition. */
-  wipe: number;
+  /** Degrees turned clockwise about the box centre by a spin transition (0 = none). */
+  turn: number;
+  /** CSS `clip-path` for a wipe or circle transition ("" = none). */
+  reveal: string;
   selected: boolean;
   poster?: string;
   onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
@@ -841,7 +863,7 @@ interface PictureLayerProps {
  * One picture on the stage, placed like the export: fitted inside the frame, scaled by its
  * size, at its position. The crop is a window onto the video.
  */
-function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, zoom, wipe, selected, poster, onPointerDown, handles, children }: PictureLayerProps) {
+function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, selected, poster, onPointerDown, handles, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
@@ -850,17 +872,17 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
   const keptH = 1 - top - bottom;
   const upright = (videoAspect * keptW) / keptH;
   // A quarter turn swaps the picture's shape; the crop window turns inside the box (the export: crop, then transpose).
-  const turn = clip.rotate ?? 0;
-  const sideways = turn === 90 || turn === 270;
+  const rotate = clip.rotate ?? 0;
+  const sideways = rotate === 90 || rotate === 270;
   const aspect = sideways ? 1 / upright : upright;
-  const turned: CSSProperties | undefined = turn
+  const turned: CSSProperties | undefined = rotate
     ? {
         inset: "auto",
         left: "50%",
         top: "50%",
         width: sideways ? `${100 / aspect}%` : "100%",
         height: sideways ? `${100 * aspect}%` : "100%",
-        transform: `translate(-50%, -50%) rotate(${turn}deg)`,
+        transform: `translate(-50%, -50%) rotate(${rotate}deg)`,
       }
     : undefined;
 
@@ -870,15 +892,15 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
   const fitWidth = clip.fill ? (wider ? aspect / stageAspect : 1) : wider ? 1 : aspect / stageAspect;
   const boxWidth = stageWidth * fitWidth * clip.size;
   // A filter or effect on this clip itself changes only its box, timed to the clip's span.
-  const fx = clip.look || clip.effect ? blocksStyle([clip], time, boxWidth, boxWidth / aspect) : undefined;
+  const fx = clip.look || clip.effect || adjustSteps(clip.adjust).length ? blocksStyle([clip], time, boxWidth, boxWidth / aspect) : undefined;
   const box: CSSProperties = {
     width: `${fitWidth * clip.size * 100}%`,
     aspectRatio: String(aspect),
     left: `${clip.x * 100}%`,
     top: `${clip.y * 100}%`,
     translate: `${-clip.x * 100}% ${-clip.y * 100}%`,
-    transform: shift !== 0 ? `translateX(${shift * stageWidth}px)` : undefined,
-    clipPath: wipe > 0 ? `inset(0 ${wipe * 100}% 0 0)` : undefined,
+    transform: shift !== 0 || lift !== 0 ? `translate(${shift * stageWidth}px, ${(lift * stageWidth) / stageAspect}px)` : undefined,
+    clipPath: reveal || undefined,
   };
   const video: CSSProperties = {
     width: `${100 / keptW}%`,
@@ -898,10 +920,10 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
         <div
           className="preview__clip-fx"
           style={
-            fx || zoom !== 1
+            fx || zoom !== 1 || turn !== 0
               ? {
                   filter: fx?.filter,
-                  transform: [zoom !== 1 && `scale(${zoom})`, fx?.transform, fx?.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined,
+                  transform: [turn !== 0 && `rotate(${turn}deg)`, zoom !== 1 && `scale(${zoom})`, fx?.transform, fx?.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined,
                 }
               : undefined
           }

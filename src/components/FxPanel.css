@@ -349,6 +349,33 @@
   animation-name: fx-slide-in;
 }
 
+/* Slide right: the first cat leaves right while the second comes in from the left. */
+.fx-tile.is-slide-right img {
+  animation: fx-slide-right-out 3s ease-in-out infinite;
+}
+
+.fx-tile.is-slide-right img.is-next {
+  animation-name: fx-slide-right-in;
+}
+
+/* Slide up: the first cat leaves up while the second comes in from below. */
+.fx-tile.is-slide-up img {
+  animation: fx-slide-up-out 3s ease-in-out infinite;
+}
+
+.fx-tile.is-slide-up img.is-next {
+  animation-name: fx-slide-up-in;
+}
+
+/* Slide down: the first cat leaves down while the second comes in from above. */
+.fx-tile.is-slide-down img {
+  animation: fx-slide-down-out 3s ease-in-out infinite;
+}
+
+.fx-tile.is-slide-down img.is-next {
+  animation-name: fx-slide-down-in;
+}
+
 /* Zoom: the first cat scales up while the second fades in from 1.5× to 1×. */
 .fx-tile.is-zoom img {
   animation: fx-zoom-out 3s ease-in-out infinite;
@@ -361,6 +388,35 @@
 /* Wipe: the second cat is revealed from left to right over the first. */
 .fx-tile.is-wipe img.is-next {
   animation: fx-wipe-in 3s ease-in-out infinite;
+}
+
+/* Wipe left: the second cat is revealed from right to left over the first. */
+.fx-tile.is-wipe-left img.is-next {
+  animation: fx-wipe-left-in 3s ease-in-out infinite;
+}
+
+/* Wipe up: the second cat is revealed from bottom to top over the first. */
+.fx-tile.is-wipe-up img.is-next {
+  animation: fx-wipe-up-in 3s ease-in-out infinite;
+}
+
+/* Wipe down: the second cat is revealed from top to bottom over the first. */
+.fx-tile.is-wipe-down img.is-next {
+  animation: fx-wipe-down-in 3s ease-in-out infinite;
+}
+
+/* Circle: the second cat expands out from the middle over the first. */
+.fx-tile.is-circle img.is-next {
+  animation: fx-circle-in 3s ease-in-out infinite;
+}
+
+/* Spin: the first cat turns and scales away while the second spins in. */
+.fx-tile.is-spin img {
+  animation: fx-spin-out 3s ease-in-out infinite;
+}
+
+.fx-tile.is-spin img.is-next {
+  animation-name: fx-spin-in;
 }
 
 @keyframes fx-out {
@@ -429,6 +485,72 @@
   }
 }
 
+@keyframes fx-slide-right-out {
+  0%,
+  30% {
+    transform: translateX(0);
+  }
+  65%,
+  100% {
+    transform: translateX(140%);
+  }
+}
+
+@keyframes fx-slide-right-in {
+  0%,
+  30% {
+    transform: translateX(-140%);
+  }
+  65%,
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes fx-slide-up-out {
+  0%,
+  30% {
+    transform: translateY(0);
+  }
+  65%,
+  100% {
+    transform: translateY(-140%);
+  }
+}
+
+@keyframes fx-slide-up-in {
+  0%,
+  30% {
+    transform: translateY(140%);
+  }
+  65%,
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes fx-slide-down-out {
+  0%,
+  30% {
+    transform: translateY(0);
+  }
+  65%,
+  100% {
+    transform: translateY(140%);
+  }
+}
+
+@keyframes fx-slide-down-in {
+  0%,
+  30% {
+    transform: translateY(-140%);
+  }
+  65%,
+  100% {
+    transform: translateY(0);
+  }
+}
+
 @keyframes fx-zoom-out {
   0%,
   30% {
@@ -463,6 +585,76 @@
   65%,
   100% {
     clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes fx-wipe-left-in {
+  0%,
+  30% {
+    clip-path: inset(0 0 0 100%);
+  }
+  65%,
+  100% {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes fx-wipe-up-in {
+  0%,
+  30% {
+    clip-path: inset(100% 0 0 0);
+  }
+  65%,
+  100% {
+    clip-path: inset(0);
+  }
+}
+
+@keyframes fx-wipe-down-in {
+  0%,
+  30% {
+    clip-path: inset(0 0 100% 0);
+  }
+  65%,
+  100% {
+    clip-path: inset(0);
+  }
+}
+
+@keyframes fx-circle-in {
+  0%,
+  30% {
+    clip-path: circle(0% at 50% 50%);
+  }
+  65%,
+  100% {
+    clip-path: circle(71% at 50% 50%);
+  }
+}
+
+@keyframes fx-spin-out {
+  0%,
+  30% {
+    transform: rotate(0) scale(1);
+    opacity: 1;
+  }
+  65%,
+  100% {
+    transform: rotate(90deg) scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes fx-spin-in {
+  0%,
+  30% {
+    transform: rotate(-90deg) scale(1.5);
+    opacity: 0;
+  }
+  65%,
+  100% {
+    transform: rotate(0) scale(1);
+    opacity: 1;
   }
 }
 

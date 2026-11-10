@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEdit } from "../src/project/actions";
-import { captionLines, emptyProject, mainTrack, mediaFromSource, sameFormat, soundFadeAt, trackOrder, transitionMix, upgradeProject, type Project } from "../src/project/model";
+import { captionLines, emptyProject, mainTrack, mediaFromSource, sameFormat, soundFadeAt, trackOrder, transitionMix, upgradeProject, type Project, type Transition } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
 const source = (kind: "video" | "audio" | "image"): MediaSource => ({
@@ -350,7 +350,7 @@ test("a slide moves the outgoing clip left while the incoming one comes in from 
   const order = trackOrder(p, track);
   const [a, b] = ["a", "b"].map((id) => order.find((c) => c.id === id)!);
   const at = (share: number) => b.start + share;
-  expect(transitionMix(order, a, 0)).toMatchObject({ shift: 0, zoom: 1, wipe: 0 });
+  expect(transitionMix(order, a, 0)).toMatchObject({ shift: 0, lift: 0, zoom: 1, turn: 0, reveal: "" });
   const [out, into] = [a, b].map((c) => transitionMix(order, c, at(0.5)));
   expect(out).toMatchObject({ picture: 1, sound: 0.5 });
   expect(out.shift).toBeCloseTo(-0.5);
@@ -384,8 +384,42 @@ test("a wipe reveals the incoming clip from left to right over the outgoing one"
   const order = trackOrder(p, track);
   const [a, b] = ["a", "b"].map((id) => order.find((c) => c.id === id)!);
   const at = (share: number) => b.start + share;
-  expect(transitionMix(order, a, at(0.25))).toMatchObject({ picture: 1, wipe: 0, sound: 0.75 });
-  expect(transitionMix(order, b, at(0.25))).toMatchObject({ picture: 1, wipe: 0.75, sound: 0.25 });
+  expect(transitionMix(order, a, at(0.25))).toMatchObject({ picture: 1, reveal: "", sound: 0.75 });
+  expect(transitionMix(order, b, at(0.25))).toMatchObject({ picture: 1, reveal: "inset(0 75% 0 0)", sound: 0.25 });
+});
+
+test("directional slides and wipes, circle, and spin mix incoming and outgoing clips", () => {
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  p = applyEdit(p, { type: "addClip", clipId: "a", mediaId: media.id, at: 0 });
+  p = applyEdit(p, { type: "addClip", clipId: "b", mediaId: media.id, at: 10 });
+  const track = mainTrack(p)!.id;
+  p = applyEdit(p, { type: "setMagnetic", trackId: track, magnetic: true });
+  const half = (kind: Transition["kind"]) => {
+    const q = applyEdit(p, { type: "setTransition", clipId: "b", transition: { kind, duration: 1 } });
+    const order = trackOrder(q, track);
+    const [a, b] = ["a", "b"].map((id) => order.find((c) => c.id === id)!);
+    return [transitionMix(order, a, b.start + 0.5), transitionMix(order, b, b.start + 0.5)] as const;
+  };
+  const [srOut, srIn] = half("slide-right");
+  expect(srIn.shift).toBeCloseTo(-0.5);
+  expect(srOut.shift).toBeCloseTo(0.5);
+  const [suOut, suIn] = half("slide-up");
+  expect(suIn.lift).toBeCloseTo(0.5);
+  expect(suOut.lift).toBeCloseTo(-0.5);
+  const [sdOut, sdIn] = half("slide-down");
+  expect(sdIn.lift).toBeCloseTo(-0.5);
+  expect(sdOut.lift).toBeCloseTo(0.5);
+  expect(half("wipe-left")[1].reveal).toBe("inset(0 0 0 50%)");
+  expect(half("wipe-up")[1].reveal).toBe("inset(50% 0 0 0)");
+  expect(half("wipe-down")[1].reveal).toBe("inset(0 0 50% 0)");
+  expect(half("circle")[1].reveal.startsWith("circle(35.35")).toBe(true);
+  const [spOut, spIn] = half("spin");
+  expect(spIn.picture).toBe(0.5);
+  expect(spIn.zoom).toBeCloseTo(1.25);
+  expect(spIn.turn).toBeCloseTo(-45);
+  expect(spOut.zoom).toBeCloseTo(1.25);
+  expect(spOut.turn).toBeCloseTo(45);
 });
 
 test("sound fades ramp the sound, stay on the outer pieces when split, and fit when trimmed", () => {

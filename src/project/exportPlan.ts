@@ -5,7 +5,7 @@
  */
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
-import { lookSteps } from "./effects";
+import { adjustSteps, lookSteps } from "./effects";
 import { isBlock, clipLength, isCropped, meets, projectDuration, trackOrder, trackSilent, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
@@ -151,7 +151,9 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   const frame = frameOf(settings);
   const used = project.media.filter((m) => project.clips.some((c) => c.mediaId === m.id));
   const hidden = new Set(project.tracks.filter((t) => t.hidden).map((t) => t.id));
-  const clips: RenderClip[] = project.clips.filter((c) => !hidden.has(c.trackId) || c.mediaId).map((c) => {
+  // An Adjust layer with every slider at 0 changes nothing (and the export refuses a block with nothing to draw).
+  const idle = (c: Clip) => isBlock(c) && !c.look && !c.effect && adjustSteps(c.adjust).length === 0;
+  const clips: RenderClip[] = project.clips.filter((c) => (!hidden.has(c.trackId) || c.mediaId) && !idle(c)).map((c) => {
     const trackIndex = project.tracks.findIndex((t) => t.id === c.trackId);
     const track = project.tracks[trackIndex];
     const order = track ? trackOrder(project, track.id) : [];
@@ -173,7 +175,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       // A shape's angle is drawn into its picture (`shape`), not turned by FFmpeg.
       rotate: c.shape ? 0 : (c.rotate ?? 0),
       smooth: Boolean(c.smooth && c.speed < 1),
-      look: lookSteps(c.look, c.lookAmount),
+      // An effect block takes no colour steps (the export refuses both on one block).
+      look: !c.mediaId && c.effect ? [] : [...lookSteps(c.look, c.lookAmount), ...adjustSteps(c.adjust)],
       effect: c.effect ?? "",
       fadeIn: c.fadeIn,
       fadeOut: c.fadeOut,

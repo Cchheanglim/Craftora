@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, mediaTimeAt, previousOnTrack, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
 import { LOOKS, PICTURE_EFFECTS, blockLabel, type FxItem } from "../project/effects";
@@ -48,6 +48,8 @@ function followDrag<T>(holder: { current: T | null }, value: T, e: ReactPointerE
 
 const RULER_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
 const SNAP_PX = 7;
+/** A new block narrower than this many pixels is zoomed in to. */
+const REVEAL_PX = 40;
 const MIN_PPS = 2;
 const MAX_PPS = 400;
 /** Pixels the pointer must travel before a press on a clip becomes a drag. */
@@ -71,6 +73,8 @@ interface TimelineEditorProps {
   /** A filter, effect or transition dropped on track `trackId` at `time`. */
   /** `trackId` null: dropped in the empty space around the tracks (a filter, effect or shape gets its own track). */
   onDropFx: (item: FxItem, trackId: string | null, time: number) => void;
+  /** A block just added from the right panel: zoomed in to when it's too small to see or grab. */
+  revealed?: { clipId: string; at: number } | null;
   /** A pick from a clip's right-click menu; `time`: the playhead if it's on the clip, else where it was clicked. */
   onClipCommand: (command: ClipCommand, clip: Clip, time: number) => void;
   /** Something has been copied, so Paste can put it at the playhead. */
@@ -128,6 +132,7 @@ export function TimelineEditor({
   onDelete,
   onAddText,
   onDropFx,
+  revealed,
   onClipCommand,
   canPaste,
   onCover,
@@ -239,6 +244,24 @@ export function TimelineEditor({
     if (duration === 0) setFitted(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [duration, viewWidth]);
+
+  // A new block narrower than this at the current zoom (a 5 s effect on a zoomed-out long video is a sliver): zoom in so
+  // it's a fifth of the view, centred, with room for its name and edges.
+  const scrollTo = useRef<number | null>(null);
+  useEffect(() => {
+    const clip = revealed && project.clips.find((c) => c.id === revealed.clipId);
+    if (!clip || viewWidth === 0 || clipLength(clip) * pps >= REVEAL_PX) return;
+    const next = Math.min(MAX_PPS, viewWidth / 5 / clipLength(clip));
+    scrollTo.current = (clip.start + clipLength(clip) / 2) * next - viewWidth / 2;
+    setPps(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealed]);
+  // After the wider content is drawn, so it can scroll that far.
+  useLayoutEffect(() => {
+    if (scrollTo.current === null || !scrollRef.current) return;
+    scrollRef.current.scrollLeft = Math.max(0, scrollTo.current);
+    scrollTo.current = null;
+  }, [pps]);
 
   // Keep the playhead in view while playing.
   useEffect(() => {
@@ -1029,15 +1052,18 @@ const ClipWave = memo(function ClipWave({ clip, media, bars, muted, height }: { 
 const ClipFrames = memo(function ClipFrames({ clip, strip, pps, cellHeight, duration }: { clip: Clip; strip: Strip; pps: number; cellHeight: number; duration: number }) {
   const cell = (Math.max(12, cellHeight) * 16) / 9;
   const count = Math.min(200, Math.max(1, Math.ceil((clipLength(clip) * pps) / cell)));
+  // At most 200 frames: on a long clip zoomed in, each is wider (cropped top and bottom, not stretched) so they reach its end.
+  const w = Math.max(cell, (clipLength(clip) * pps) / count);
   const frameAt = (j: number) => {
     if (strip.frames === 1 || duration <= 0) return 0;
-    const t = Math.min(clip.start + ((j + 0.5) * cell) / pps, clipEnd(clip));
+    const t = Math.min(clip.start + ((j + 0.5) * w) / pps, clipEnd(clip));
     return Math.min(strip.frames - 1, Math.max(0, Math.floor((mediaTimeAt(clip, t) / duration) * strip.frames)));
   };
+  const size = w > cell ? `${strip.frames * w}px ${(w * 9) / 16}px` : `${strip.frames * cell}px 100%`;
   return (
     <span className="tl__frames" style={{ "--strip": `url("${strip.url}")` } as CSSProperties} aria-hidden="true">
       {Array.from({ length: count }, (_, j) => (
-        <span key={j} style={{ width: cell, backgroundSize: `${strip.frames * cell}px 100%`, backgroundPosition: `${-frameAt(j) * cell}px 0` }} />
+        <span key={j} style={{ width: w, backgroundSize: size, backgroundPosition: `${-frameAt(j) * w}px center` }} />
       ))}
     </span>
   );

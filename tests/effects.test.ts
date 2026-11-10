@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEdit, type EditAction } from "../src/project/actions";
-import { blocksStyle, dropEdits, lookFilter, lookSteps } from "../src/project/effects";
+import { adjustSteps, blockLabel, blocksStyle, dropEdits, lookFilter, lookSteps, stepsFilter, warmthMatrix } from "../src/project/effects";
 import { clipEnd, emptyProject, isBlock, mediaFromSource, trackLabel, type Project } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
@@ -51,6 +51,25 @@ test("a filter is the same CSS filter steps the export gets", () => {
   ]);
 });
 
+test("Adjust adds colour steps after the filter, Warmth through its SVG filter, and clamps its sliders", () => {
+  expect(adjustSteps(undefined)).toEqual([]);
+  expect(adjustSteps({ brightness: 0, warmth: 0 })).toEqual([]);
+  expect(adjustSteps({ brightness: 40, contrast: -50, saturation: 100, warmth: -30 })).toEqual([
+    ["brightness", 1.2],
+    ["contrast", 0.75],
+    ["saturate", 2],
+    ["warmth", -0.3],
+  ]);
+  expect(stepsFilter([...lookSteps("bw"), ...adjustSteps({ warmth: 25 })])).toBe("grayscale(1) url(#warmth-25)");
+  expect(warmthMatrix(0.5)).toBe("1.1 0 0 0 0 0 1 0 0 0 0 0 0.9 0 0 0 0 0 1 0");
+  // On a picture clip it reaches the export; the slider can't go past ±100.
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: mediaFromSource(video) });
+  p = applyEdit(p, { type: "addClip", clipId: "c", mediaId: p.media[0].id, at: 0 });
+  p = applyEdit(p, { type: "updateClip", clipId: "c", patch: { adjust: { warmth: 250.4 } } });
+  expect(p.clips[0].adjust).toEqual({ warmth: 100 });
+  expect(blocksStyle(p.clips, 0, 1280).filter).toBe("url(#warmth-100)");
+});
+
 test("a filter or effect dropped on a clip goes inside that clip; off any clip it's a block", () => {
   let p = withClip();
   const tracks = p.tracks.length;
@@ -74,7 +93,7 @@ test("a filter or effect dropped on a clip goes inside that clip; off any clip i
   const done2 = dropEdits(p, { kind: "effect", id: "blur" }, undefined, 20, ["k", "v"])!;
   p = run(p, done2.edits);
   const blur = p.clips.find((c) => c.id === "k")!;
-  expect([blur.start, clipEnd(blur), isBlock(blur)]).toEqual([20, 23, true]);
+  expect([blur.start, clipEnd(blur), isBlock(blur)]).toEqual([20, 25, true]);
 });
 
 test("slow motion dropped on a piece of a split clip slows that piece, and its edges move the cut", () => {
@@ -103,6 +122,29 @@ test("slow motion dropped on a piece of a split clip slows that piece, and its e
   expect(pieces()[1].slice(0, 4)).toEqual(["middle", 1, 1, 6]);
 });
 
+test("an Adjust layer is a 5 s block of its own, even dropped on a clip, and only reaches the export once it changes something", async () => {
+  const { planExport } = await import("../src/project/exportPlan");
+  let p = withClip();
+  p = run(p, dropEdits(p, { kind: "adjust", id: "layer" }, mainTrack(p), 2, ["L", "x"])!.edits);
+  const layer = () => p.clips.find((c) => c.id === "L")!;
+  expect([layer().start, clipEnd(layer()), isBlock(layer()), blockLabel(layer())]).toEqual([2, 7, true, "Adjust layer"]);
+  // Not inside the clip: on a free track of its own.
+  expect(layer().trackId).not.toBe(mainTrack(p));
+  expect(p.clips.find((c) => c.id === "c")!.adjust).toBeUndefined();
+  const settings = { output: "video", videoContainer: "mp4", audioContainer: "mp3", cutMode: "fast", frameId: "1080p", quality: "fast" } as const;
+  const roles = () => {
+    const plan = planExport(p, settings);
+    return plan.kind === "render" ? plan.spec.clips.map((c) => [c.role, c.look]) : plan.kind;
+  };
+  expect(roles()).toEqual([["video", []]]);
+  p = applyEdit(p, { type: "updateClip", clipId: "L", patch: { adjust: { warmth: 50 } } });
+  expect(roles()).toEqual([["video", []], ["effect", [["warmth", 0.5]]]]);
+  expect(blocksStyle([layer()], 3, 1000).filter).toBe("url(#warmth-50)");
+  // Reset keeps it a layer.
+  p = applyEdit(p, { type: "updateClip", clipId: "L", patch: { adjust: {} } });
+  expect(isBlock(layer())).toBe(true);
+});
+
 test("a transition goes on the join nearest to where it was dropped", () => {
   let p = withClip();
   p = applyEdit(p, { type: "splitClip", clipId: "c", newClipId: "b", at: 6 });
@@ -119,6 +161,8 @@ test("an effect dropped in the empty space around the tracks gets a track of its
   p = run(p, done.edits);
   expect(p.tracks.map((t) => t.id)[0]).toBe("y");
   expect(p.clips.find((c) => c.id === "x")).toMatchObject({ trackId: "y", effect: "shake", start: 2 });
+  // Every dragged effect lasts 5 s, Shake too (it used to be 1 s).
+  expect(clipEnd(p.clips.find((c) => c.id === "x")!)).toBe(7);
   // The video keeps its own picture: nothing went inside it.
   expect(p.clips.find((c) => c.id === "c")?.effect).toBeUndefined();
 });
@@ -156,10 +200,10 @@ test("the preview draws blocks the way the export does", () => {
   p = run(p, dropEdits(p, { kind: "effect", id: "fade-in" }, undefined, 0, ["a", "x"])!.edits);
   p = run(p, dropEdits(p, { kind: "effect", id: "mirror" }, undefined, 0, ["m", "x"])!.edits);
   const blocks = ["f", "a", "m"].map((id) => p.clips.find((c) => c.id === id)!);
-  const style = blocksStyle(blocks, 1.5, 1000);
+  const style = blocksStyle(blocks, 2.5, 1000);
   expect(style.filter).toBe("sepia(1)");
   expect(style.mirror).toBe(true);
-  // Halfway through a 3 s fade from black: half black.
+  // Halfway through a 5 s fade from black: half black.
   expect(style.layers).toEqual([{ color: "#000", opacity: 0.5 }]);
 
   // Zoom punch peaks at u = 0.1 s (scale 1.2); cinema bars on 16:9 cover ~12.8% top and bottom mid-block.

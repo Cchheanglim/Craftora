@@ -26,7 +26,7 @@ import {
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
-import { LOOKS, PICTURE_EFFECTS, blockLabel } from "../project/effects";
+import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustSteps, blockLabel } from "../project/effects";
 import { SHAPES, shapeLabel } from "../project/shapes";
 import "./Inspector.css";
 
@@ -118,7 +118,7 @@ export function Inspector({
       <header className="insp__head">
         <Icon name={isBlock ? "sparkle" : isShape ? "star" : isText ? "text" : isImage ? "image" : isPicture ? "film" : "music"} size={14} />
         <h2 id="insp-title" className="truncate">
-          {isBlock ? `${clip.look ? "Filter" : "Effect"}: ${blockLabel(clip)}` : isShape ? `Shape: ${shapeLabel(clip.shape)}` : isText ? "Text" : (media?.name ?? "Clip")}
+          {isBlock ? (clip.look || clip.effect ? `${clip.look ? "Filter" : "Effect"}: ${blockLabel(clip)}` : blockLabel(clip)) : isShape ? `Shape: ${shapeLabel(clip.shape)}` : isText ? "Text" : (media?.name ?? "Clip")}
         </h2>
       </header>
       <p className="insp__meta">
@@ -363,6 +363,33 @@ export function Inspector({
             <span>Fill the frame</span>
           </label>
         </div>
+      )}
+
+      {(isPicture || (isBlock && !clip.effect)) && (
+        <fieldset className="insp__group">
+          <legend>
+            Adjust
+            {adjustSteps(clip.adjust).length > 0 && (
+              <button type="button" className="insp__reset" onClick={() => onChange({ adjust: {} })}>
+                Reset
+              </button>
+            )}
+          </legend>
+          {ADJUSTMENTS.map(({ id, label }) => (
+            <Slider
+              key={id}
+              id={`insp-adjust-${id}`}
+              label={label}
+              min={-100}
+              max={100}
+              step={1}
+              value={clip.adjust?.[id] ?? 0}
+              format={(v) => (v > 0 ? `+${v}` : String(v))}
+              onCheckpoint={onCheckpoint}
+              onChange={(v) => onChange({ adjust: { ...clip.adjust, [id]: v } }, true)}
+            />
+          ))}
+        </fieldset>
       )}
 
       {!isText && !isShape && !isImage && !isBlock && (

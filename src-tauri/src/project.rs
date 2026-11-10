@@ -75,7 +75,7 @@ enum Role {
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Default)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 enum TransitionKind {
     #[default]
     Crossfade,
@@ -85,10 +85,40 @@ enum TransitionKind {
     Flash,
     /// The outgoing clip moves out to the left as the incoming one pushes in from the right.
     Slide,
+    /// The same to the right, up and down.
+    SlideRight,
+    SlideUp,
+    SlideDown,
     /// The outgoing clip zooms in; the incoming one fades in over it, settling from 1.5× to its own size.
     Zoom,
     /// The incoming clip is uncovered from its left edge, the edge moving right.
     Wipe,
+    /// From its right edge moving left, from the bottom moving up, from the top moving down.
+    WipeLeft,
+    WipeUp,
+    WipeDown,
+    /// The incoming clip is uncovered through a circle growing from its centre.
+    Circle,
+    /// Like Zoom, with the outgoing clip turning a quarter clockwise and the incoming one turning in from a quarter back.
+    Spin,
+}
+
+impl TransitionKind {
+    /// Where a slide brings the incoming clip from, in frame widths and heights (the outgoing one leaves the other way).
+    fn slide_from(self) -> (i8, i8) {
+        match self {
+            TransitionKind::Slide => (1, 0),
+            TransitionKind::SlideRight => (-1, 0),
+            TransitionKind::SlideUp => (0, 1),
+            TransitionKind::SlideDown => (0, -1),
+            _ => (0, 0),
+        }
+    }
+
+    /// Whether the incoming picture fades in over the outgoing one (the others move it in or uncover it).
+    fn fades_in(self) -> bool {
+        matches!(self, TransitionKind::Crossfade | TransitionKind::Zoom | TransitionKind::Spin)
+    }
 }
 
 fn one() -> f64 {
@@ -219,18 +249,15 @@ impl ClipSpec {
         }
         if self.transition_in > 0.0 {
             match self.transition_in_kind {
-                TransitionKind::Crossfade | TransitionKind::Zoom => ramps.push(Ramp { white: false, fade_in: true, start: 0.0, length: self.transition_in }),
-                // The picture moves in or is uncovered (`slide_x`, `wipe_in`); only the sound fades.
-                TransitionKind::Slide | TransitionKind::Wipe if sound => {
-                    ramps.push(Ramp { white: false, fade_in: true, start: 0.0, length: self.transition_in })
-                }
-                TransitionKind::Slide | TransitionKind::Wipe => {}
                 TransitionKind::Dip | TransitionKind::Flash => ramps.push(Ramp {
                     white: self.transition_in_kind == TransitionKind::Flash,
                     fade_in: true,
                     start: self.transition_in / 2.0,
                     length: self.transition_in / 2.0,
                 }),
+                // Otherwise the picture moves in or is uncovered (`slide`, `reveal_in`); only the sound fades.
+                k if k.fades_in() || sound => ramps.push(Ramp { white: false, fade_in: true, start: 0.0, length: self.transition_in }),
+                _ => {}
             }
             // A flash's incoming clip stays hidden until the outgoing one is all white, or its own white covers that.
             if self.transition_in_kind == TransitionKind::Flash && !sound {
@@ -311,48 +338,85 @@ impl ClipSpec {
             .collect()
     }
 
-    /// Slide transitions: added to the overlay's x (timeline time `t`), eased like the preview (model.ts
-    /// `transitionMix`). Empty without one.
-    fn slide_x(&self) -> String {
+    /// Slide transitions: added to the overlay's x (`axis` 'W') or y ('H') in timeline time `t`, eased like the preview
+    /// (model.ts `transitionMix`). Empty without one.
+    fn slide(&self, axis: char) -> String {
         let ease = |from: f64, d: f64| format!("(0.5-0.5*cos(PI*clip((t-{})/{},0,1)))", secs(from), secs(d));
-        let mut x = String::new();
-        if self.transition_in > 0.0 && self.transition_in_kind == TransitionKind::Slide {
-            x.push_str(&format!("+W*(1-{})", ease(self.start, self.transition_in)));
+        let along = |kind: TransitionKind| {
+            let (x, y) = kind.slide_from();
+            if axis == 'W' { x } else { y }
+        };
+        let sign = |d: i8| if d > 0 { '+' } else { '-' };
+        let mut moved = String::new();
+        let from = along(self.transition_in_kind);
+        if self.transition_in > 0.0 && from != 0 {
+            moved.push_str(&format!("{}{axis}*(1-{})", sign(from), ease(self.start, self.transition_in)));
         }
-        if self.transition_out > 0.0 && self.transition_out_kind == TransitionKind::Slide {
-            x.push_str(&format!("-W*{}", ease(self.end() - self.transition_out, self.transition_out)));
+        // The outgoing clip leaves the way the next one comes in.
+        let to = -along(self.transition_out_kind);
+        if self.transition_out > 0.0 && to != 0 {
+            moved.push_str(&format!("{}{axis}*{}", sign(to), ease(self.end() - self.transition_out, self.transition_out)));
         }
-        x
+        moved
     }
 
-    /// Zoom transitions on the clip's own picture, in its own time (`in` counts its frames). Each starts with a comma.
-    fn transition_zooms(&self, fps: u32) -> String {
+    /// Zoom and spin transitions on the clip's own picture, in its own time (`in` counts its frames, `t` is seconds),
+    /// after it has a see-through layer (the turned corners). Each starts with a comma.
+    fn transition_moves(&self, fps: u32) -> String {
         let mut chain = String::new();
-        let mut zoom = |from: f64, d: f64, incoming: bool| {
-            let e = format!("(0.5-0.5*cos(PI*clip((in/{fps}-{})/{},0,1)))", secs(from), secs(d));
-            // The incoming clip settles from 1.5× to 1×; the outgoing one zooms from 1× to 1.5×.
-            let z = if incoming { format!("(1.5-0.5*{e})") } else { format!("(1+0.5*{e})") };
-            // Only while it lasts: perspective redraws every pixel.
+        let mut zoom = |from: f64, d: f64, incoming: bool, spin: bool| {
+            let e = |time: &str| format!("(0.5-0.5*cos(PI*clip(({time}-{})/{},0,1)))", secs(from), secs(d));
+            // Only while it lasts: perspective and rotate redraw every pixel.
             let on = format!("enable='between(t,{},{})'", secs(from), secs(from + d));
+            if spin {
+                // Turned first, then zoomed, as the preview's `rotate() scale()`: the outgoing clip turns a quarter
+                // clockwise, the incoming one comes in from a quarter back.
+                let a = if incoming { format!("-PI/2*(1-{})", e("t")) } else { format!("PI/2*{}", e("t")) };
+                chain.push_str(&format!(",{}", timed(&format!("rotate=a='{a}':c=black@0"), &on)));
+            }
+            // The incoming clip settles from 1.5× to 1×; the outgoing one zooms from 1× to 1.5×.
+            let z = if incoming { format!("(1.5-0.5*{})", e(&format!("in/{fps}"))) } else { format!("(1+0.5*{})", e(&format!("in/{fps}"))) };
             chain.push_str(&format!(",{}", timed(&warp(&z, "0", "0"), &on)));
         };
-        if self.transition_in > 0.0 && self.transition_in_kind == TransitionKind::Zoom {
-            zoom(0.0, self.transition_in, true);
+        if self.transition_in > 0.0 && matches!(self.transition_in_kind, TransitionKind::Zoom | TransitionKind::Spin) {
+            zoom(0.0, self.transition_in, true, self.transition_in_kind == TransitionKind::Spin);
         }
-        if self.transition_out > 0.0 && self.transition_out_kind == TransitionKind::Zoom {
-            zoom(self.length() - self.transition_out, self.transition_out, false);
+        if self.transition_out > 0.0 && matches!(self.transition_out_kind, TransitionKind::Zoom | TransitionKind::Spin) {
+            zoom(self.length() - self.transition_out, self.transition_out, false, self.transition_out_kind == TransitionKind::Spin);
         }
         chain
     }
 
-    /// A wipe into this clip: its picture uncovered from the left edge, at an even speed. xfade from a see-through copy
-    /// of its first seconds does that (pads named after clip `i`). Empty without one.
-    fn wipe_in(&self, i: usize) -> String {
-        if self.transition_in <= 0.0 || self.transition_in_kind != TransitionKind::Wipe {
+    /// A wipe or circle into this clip: its picture uncovered at an even speed, by xfade from a see-through copy. Only
+    /// the transition's first `n` frames go through it (xfade on the whole clip made a Wipe's export ~2× slower), then
+    /// the rest is joined back on. Pads are named after clip `i`. Empty without one.
+    fn reveal_in(&self, i: usize, fps: u32) -> String {
+        let shape = match self.transition_in_kind {
+            TransitionKind::Wipe => "wiperight",
+            TransitionKind::WipeLeft => "wipeleft",
+            TransitionKind::WipeUp => "wipeup",
+            TransitionKind::WipeDown => "wipedown",
+            TransitionKind::Circle => "circleopen",
+            _ => return String::new(),
+        };
+        if self.transition_in <= 0.0 {
             return String::new();
         }
         let d = secs(self.transition_in);
-        format!(",split[w{i}a][w{i}b];[w{i}a]trim=duration={d},lut=a=0[w{i}c];[w{i}c][w{i}b]xfade=transition=wiperight:duration={d}:offset=0")
+        let n = (self.transition_in * f64::from(fps) - 1e-6).ceil().max(1.0) as u64;
+        let reveal = if shape == "circleopen" {
+            // xfade's circle has a soft edge as wide as the whole picture: its middle third, cut at half, is a sharp
+            // circle growing evenly from nothing to the corners. Padding puts the clip's frames in that third.
+            // shortcut: about 3 s of export time per 1 s of circle at 1080p (three times the frames through xfade).
+            format!(
+                "tpad=start={n}:stop={n}:stop_mode=clone:color=black@0,split[w{i}a][w{i}b];[w{i}a]lut=a=0[w{i}c];[w{i}c][w{i}b]xfade=transition=circleopen:duration={}:offset=0,trim=start_frame={n}:end_frame={},setpts=PTS-STARTPTS,lut=a='if(gte(val,128),255,0)'",
+                secs(3.0 * n as f64 / f64::from(fps)),
+                2 * n
+            )
+        } else {
+            format!("split[w{i}a][w{i}b];[w{i}a]lut=a=0[w{i}c];[w{i}c][w{i}b]xfade=transition={shape}:duration={d}:offset=0")
+        };
+        format!(",split[h{i}a][h{i}b];[h{i}a]trim=end_frame={n},{reveal},format=yuva420p[h{i}h];[h{i}b]trim=start_frame={n},setpts=PTS-STARTPTS[h{i}r];[h{i}h][h{i}r]concat=n=2:v=1:a=0")
     }
 
     /// Sound filters after the cut: reverse, speed, volume, fades. Each starts with a comma.
@@ -770,17 +834,19 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                         .filter_map(|(op, amount)| look_filter(op, *amount))
                         .chain(effect_filter(&clip.effect, 0.0, clip.length(), (w, h, fps)).map(|f| format!(",{f}")))
                         .collect();
+                    // Uncovered before the fades: the circle's sharp edge would cut a fading picture's see-through too.
                     graph.push(format!(
-                        "{chain},fps={fps}{own}{},format=yuva420p{}{},setpts=PTS+{start}/TB[v{i}]",
-                        clip.transition_zooms(fps),
-                        clip.picture_fades(),
-                        clip.wipe_in(i)
+                        "{chain},fps={fps}{own},format=yuva420p{}{}{},setpts=PTS+{start}/TB[v{i}]",
+                        clip.transition_moves(fps),
+                        clip.reveal_in(i, fps),
+                        clip.picture_fades()
                     ));
                     graph.push(format!(
-                        "[{picture}][v{i}]overlay=x='{x}*(W-w){slide}':y='{y}*(H-h)':eof_action=pass:repeatlast=0:enable='between(t,{start},{end})'[p{i}]",
+                        "[{picture}][v{i}]overlay=x='{x}*(W-w){}':y='{y}*(H-h){}':eof_action=pass:repeatlast=0:enable='between(t,{start},{end})'[p{i}]",
+                        clip.slide('W'),
+                        clip.slide('H'),
                         x = clip.x,
-                        y = clip.y,
-                        slide = clip.slide_x()
+                        y = clip.y
                     ));
                     picture = format!("p{i}");
                 }
@@ -1159,6 +1225,8 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
             ]))
         }
         "brightness" if within(0.0, 2.0) => Some(mixer([amount, 0.0, 0.0, 0.0, amount, 0.0, 0.0, 0.0, amount])),
+        // Edit → Adjust → Warmth: red up and blue down by 0.2 at 1 (effects.ts `warmthMatrix`).
+        "warmth" if within(-1.0, 1.0) => Some(mixer([1.0 + 0.2 * amount, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 - 0.2 * amount])),
         // lutrgb keeps each result within 0..maxval, as the CSS functions do.
         "contrast" if within(0.0, 3.0) => {
             let channel = format!("'(val-maxval/2)*{amount:.4}+maxval/2'");
@@ -1246,24 +1314,44 @@ mod tests {
         let clip = |json: &str| -> ClipSpec { serde_json::from_str(&format!(r#"{{"role":"video","start":2,"in":0,"out":3,{json}}}"#)).unwrap() };
         // Slide: in from the right, out to the left; only the sound fades.
         let slide_in = clip(r#""transitionIn":1,"transitionInKind":"slide""#);
-        assert_eq!(slide_in.slide_x(), "+W*(1-(0.5-0.5*cos(PI*clip((t-2.000)/1.000,0,1))))");
+        assert_eq!(slide_in.slide('W'), "+W*(1-(0.5-0.5*cos(PI*clip((t-2.000)/1.000,0,1))))");
+        assert_eq!(slide_in.slide('H'), "");
         assert_eq!(slide_in.picture_fades(), "");
         assert!(slide_in.sound_edits().contains(",afade=t=in:st=0.000:d=1.000"));
         let slide_out = clip(r#""transitionOut":1,"transitionOutKind":"slide""#);
-        assert_eq!(slide_out.slide_x(), "-W*(0.5-0.5*cos(PI*clip((t-4.000)/1.000,0,1)))");
+        assert_eq!(slide_out.slide('W'), "-W*(0.5-0.5*cos(PI*clip((t-4.000)/1.000,0,1)))");
         assert_eq!(slide_out.picture_fades(), "");
+        // Slide up: in from below, out over the top.
+        let up = clip(r#""transitionIn":1,"transitionInKind":"slide-up","transitionOut":1,"transitionOutKind":"slide-up""#);
+        assert_eq!(up.slide('W'), "");
+        assert_eq!(up.slide('H'), "+H*(1-(0.5-0.5*cos(PI*clip((t-2.000)/1.000,0,1))))-H*(0.5-0.5*cos(PI*clip((t-4.000)/1.000,0,1)))");
+        assert!(clip(r#""transitionIn":1,"transitionInKind":"slide-right""#).slide('W').starts_with("-W*(1-"));
         // Zoom: the incoming clip fades in as it settles; each zoom only while its transition lasts.
         let zoom_in = clip(r#""transitionIn":1,"transitionInKind":"zoom""#);
         assert_eq!(zoom_in.picture_fades(), ",fade=t=in:st=0.000:d=1.000:alpha=1");
-        let zooms = zoom_in.transition_zooms(30);
+        let zooms = zoom_in.transition_moves(30);
         assert!(zooms.starts_with(",perspective=x0='W/2-(W/2+0)/(1.5-0.5*(0.5-0.5*cos(PI*clip((in/30-0.000)/1.000,0,1))))'"), "{zooms}");
         assert!(zooms.ends_with(":eval=frame:enable='between(t,0.000,1.000)'"), "{zooms}");
-        let zooms = clip(r#""transitionOut":1,"transitionOutKind":"zoom""#).transition_zooms(30);
+        let zooms = clip(r#""transitionOut":1,"transitionOutKind":"zoom""#).transition_moves(30);
         assert!(zooms.contains("/(1+0.5*(0.5-0.5*cos(PI*clip((in/30-2.000)/1.000,0,1))))'") && zooms.ends_with("enable='between(t,2.000,3.000)'"), "{zooms}");
-        // Wipe: uncovered by xfade from a see-through copy; no fade.
+        // Spin: turned, then zoomed; the incoming clip fades in.
+        let spin = clip(r#""transitionIn":1,"transitionInKind":"spin","transitionOut":1,"transitionOutKind":"spin""#);
+        let moves = spin.transition_moves(30);
+        assert!(moves.starts_with(",rotate=a='-PI/2*(1-(0.5-0.5*cos(PI*clip((t-0.000)/1.000,0,1))))':c=black@0:enable='between(t,0.000,1.000)',perspective="), "{moves}");
+        assert!(moves.contains(",rotate=a='PI/2*(0.5-0.5*cos(PI*clip((t-2.000)/1.000,0,1)))':c=black@0:enable='between(t,2.000,3.000)',perspective="), "{moves}");
+        assert_eq!(spin.picture_fades(), ",fade=t=in:st=0.000:d=1.000:alpha=1");
+        // Wipe: the first 30 frames uncovered by xfade from a see-through copy, the rest joined back; no fade.
         let wipe = clip(r#""transitionIn":1,"transitionInKind":"wipe""#);
-        assert_eq!(wipe.wipe_in(4), ",split[w4a][w4b];[w4a]trim=duration=1.000,lut=a=0[w4c];[w4c][w4b]xfade=transition=wiperight:duration=1.000:offset=0");
+        assert_eq!(
+            wipe.reveal_in(4, 30),
+            ",split[h4a][h4b];[h4a]trim=end_frame=30,split[w4a][w4b];[w4a]lut=a=0[w4c];[w4c][w4b]xfade=transition=wiperight:duration=1.000:offset=0,format=yuva420p[h4h];[h4b]trim=start_frame=30,setpts=PTS-STARTPTS[h4r];[h4h][h4r]concat=n=2:v=1:a=0"
+        );
         assert_eq!(wipe.picture_fades(), "");
+        assert!(clip(r#""transitionIn":1,"transitionInKind":"wipe-up""#).reveal_in(4, 30).contains("transition=wipeup:"));
+        // A 0.75 s circle at 30 fps: 23 frames (0.733 s is the last before 0.75), the middle third of a 69-frame circleopen.
+        let circle = clip(r#""transitionIn":0.75,"transitionInKind":"circle""#).reveal_in(4, 30);
+        assert!(circle.contains("trim=end_frame=23,tpad=start=23:stop=23:") && circle.contains("circleopen:duration=2.300:offset=0,trim=start_frame=23:end_frame=46,"), "{circle}");
+        assert_eq!(clip(r#""transitionIn":1,"transitionInKind":"circle""#).picture_fades(), "");
         // A sound fade changes the sound only.
         let quiet = clip(r#""soundFadeIn":0.5,"soundFadeOut":2"#);
         assert_eq!(quiet.picture_fades(), "");
@@ -1271,7 +1359,7 @@ mod tests {
         assert!(sound.contains(",afade=t=in:st=0.000:d=0.500") && sound.contains(",afade=t=out:st=1.000:d=2.000"), "{sound}");
         // A crossfade moves, zooms and wipes nothing.
         let fade = clip(r#""transitionIn":1,"transitionOut":1"#);
-        assert_eq!(fade.slide_x() + &fade.transition_zooms(30) + &fade.wipe_in(4), "");
+        assert_eq!(fade.slide('W') + &fade.slide('H') + &fade.transition_moves(30) + &fade.reveal_in(4, 30), "");
     }
 
     #[test]
@@ -1313,6 +1401,8 @@ mod tests {
         assert!(look_filter("grayscale", 1.0).unwrap().contains("rr=0.21260:rg=0.71520:rb=0.07220"));
         assert_eq!(look_filter("contrast", 1.5).unwrap(), ",lutrgb=r='(val-maxval/2)*1.5000+maxval/2':g='(val-maxval/2)*1.5000+maxval/2':b='(val-maxval/2)*1.5000+maxval/2'");
         assert!(look_filter("invert", 1.0).unwrap().contains("r='val*-1.0000+maxval*1.0000'"));
+        assert!(look_filter("warmth", 0.5).unwrap().ends_with("rr=1.10000:rg=0.00000:rb=0.00000:gr=0.00000:gg=1.00000:gb=0.00000:br=0.00000:bg=0.00000:bb=0.90000"));
+        assert!(look_filter("warmth", 1.5).is_none());
         // Only the catalog's names and amounts reach FFmpeg.
         assert!(look_filter("saturate", 2.5).is_none());
         assert!(look_filter("blur", 1.0).is_none());

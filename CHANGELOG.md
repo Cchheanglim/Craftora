@@ -6,6 +6,15 @@
 
 - **Slide, Zoom and Wipe transitions**: the next clip pushes the last one out to the left, zooms through it, or is uncovered
   left to right.
+- **Adjust**: Brightness, Contrast, Saturation and Warmth sliders in Edit for a video or picture (or a filter block), shown
+  live in the preview and the same in the export. Reset puts them back.
+- **Adjust layer** (first tile in Filters): a block on its own track whose Adjust sliders change every picture under it
+  while it lasts. Filters, effects (Shake and Zoom punch too), Adjust layers and shapes dragged onto the timeline now
+  last 5 seconds (were 3, or 1 and 0.6), and on a zoomed-out timeline it zooms in to the new block so you can see and
+  stretch it.
+- **More transitions**: Slide right, up and down; Wipe left, up and down; **Circle** (the next clip opens in a growing
+  circle) and **Spin** (both clips turn and zoom as they cross). Exports with a Wipe are also faster: only the wipe's own
+  seconds go through the extra step.
 - **Transitions without splitting first**: click one (or drop it) in the middle of a clip and Craftora cuts the clip
   there and adds it; dropped next to a cut it goes on that cut, however far the timeline is zoomed out.
 - **Sound fades**: drag the dots on a clip's sound wave (or use Edit → Sound fade) to fade only its sound in or out, as
@@ -49,6 +58,7 @@
 
 **Fixed**
 
+- A long video zoomed in on the timeline showed its picture frames only part of the way; they now reach its end.
 - The trim handles at a selected clip's ends are a thin line now (same area to grab); the "Copy report" buttons are gone.
 - Playing on in the background after leaving the editor (Settings, Projects…): leaving it now pauses.
 - **Downloads started over after Pause or after closing Craftora** (#123). A whole link exported
