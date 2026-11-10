@@ -86,7 +86,8 @@ type DragMode = "move" | "start" | "end";
 /** What the pointer is doing between press and release. */
 type Gesture =
   | { kind: "scrub" }
-  | { kind: "clip"; clipId: string; mode: DragMode; originX: number; originStart: number; originEdge: number; moved: boolean };
+  | { kind: "clip"; clipId: string; mode: DragMode; originX: number; originStart: number; originEdge: number; moved: boolean }
+  | { kind: "soundFade"; clipId: string; edge: "in" | "out" };
 
 /** Where a clip being moved is drawn; the project only changes on release. */
 interface Ghost {
@@ -145,6 +146,7 @@ export function TimelineEditor({
   const [scrollbar, setScrollbar] = useState(0);
   const [fitted, setFitted] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
+  const [fadeDrag, setFadeDrag] = useState<{ clipId: string; edge: "in" | "out" } | null>(null);
   // Each video's filmstrip, made in the background (by preview address); until then its clips show its picture.
   const [strips, setStrips] = useState<Record<string, Strip>>({});
   useEffect(() => {
@@ -300,6 +302,21 @@ export function TimelineEditor({
       playback.seek(snap(timeAt(e.clientX), "", false));
       return;
     }
+    if (g.kind === "soundFade") {
+      scrollAtEdge(e.clientX);
+      const clip = project.clips.find((c) => c.id === g.clipId);
+      if (!clip || !contentRef.current) return;
+      const t = (e.clientX - contentRef.current.getBoundingClientRect().left) / pps;
+      const raw = g.edge === "in" ? t - clip.start : clipEnd(clip) - t;
+      const other = (g.edge === "in" ? clip.soundFadeOut : clip.soundFadeIn) ?? 0;
+      const v = Math.min(Math.max(0, clipLength(clip) - other), Math.max(0, Math.round(raw * 10) / 10));
+      api.editLive({
+        type: "updateClip",
+        clipId: clip.id,
+        patch: g.edge === "in" ? { soundFadeIn: v } : { soundFadeOut: v },
+      });
+      return;
+    }
     const dx = e.clientX - g.originX;
     if (!g.moved) {
       if (Math.abs(dx) < DRAG_THRESHOLD && !laneChanged(g.clipId, e.clientY)) return;
@@ -330,7 +347,13 @@ export function TimelineEditor({
     const g = gestureRef.current;
     gestureRef.current = null;
     setScrubbing(false);
-    if (!g || g.kind !== "clip" || !g.moved) return;
+    setFadeDrag(null);
+    if (!g) return;
+    if (g.kind === "soundFade") {
+      api.editLive({ type: "settle" });
+      return;
+    }
+    if (g.kind !== "clip" || !g.moved) return;
     const final = ghostRef.current;
     setGhost(null);
     if (g.mode === "move" && final) {
@@ -376,6 +399,16 @@ export function TimelineEditor({
     });
   };
 
+  const beginSoundFade = (clip: Clip, edge: "in" | "out") => (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || project.tracks.find((t) => t.id === clip.trackId)?.locked) return;
+    e.stopPropagation();
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    api.checkpoint();
+    setFadeDrag({ clipId: clip.id, edge });
+    startGesture({ kind: "soundFade", clipId: clip.id, edge });
+  };
+
   /** Press on the ruler, the playhead or empty track space: move the playhead and follow the pointer. */
   const beginScrub = (e: ReactPointerEvent<HTMLElement>) => {
     if (e.button !== 0) return;
@@ -391,7 +424,9 @@ export function TimelineEditor({
     if (track.locked) return;
     const mediaId = mediaDrag.current;
     if (mediaId) api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId, trackId: track.id, at: timeAt(e.clientX) });
-    else if (fxDrag.current) onDropFx(fxDrag.current, track.id, timeAt(e.clientX));
+    // A transition dropped a few pixels from a cut goes on that cut, however far out the timeline is zoomed (further
+    // into a clip it cuts the clip there).
+    else if (fxDrag.current) onDropFx(fxDrag.current, track.id, fxDrag.current.kind === "transition" ? snap(timeAt(e.clientX), "", false) : timeAt(e.clientX));
   };
 
   const step = RULER_STEPS.find((s) => s * pps >= 70) ?? 3600;
@@ -700,6 +735,7 @@ export function TimelineEditor({
                       `is-${isBlock(clip) ? "effect" : !media ? "text" : media.hasVideo ? "video" : "audio"}`,
                       isSelected && "is-selected",
                       isGhost && "is-dragging",
+                      fadeDrag?.clipId === clip.id && "is-fading",
                       media?.missing && "is-missing",
                       strip && "has-frames",
                     ].filter(Boolean);
@@ -742,9 +778,53 @@ export function TimelineEditor({
                             aria-hidden="true"
                           />
                         )}
-                        {media?.hasAudio && !media.source.image && (
-                          <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={trackSilent(track)} height={media.hasVideo ? `${waveBand}px` : undefined} />
-                        )}
+                        {media?.hasAudio && !media.source.image && (() => {
+                          const soundFadeIn = clip.soundFadeIn ?? 0;
+                          const soundFadeOut = clip.soundFadeOut ?? 0;
+                          const fadingIn = fadeDrag?.clipId === clip.id && fadeDrag.edge === "in";
+                          const fadingOut = fadeDrag?.clipId === clip.id && fadeDrag.edge === "out";
+                          return (
+                            <div className="tl__wave-band" style={media.hasVideo ? { height: `${waveBand}px` } : undefined}>
+                              <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={trackSilent(track)} />
+                              {soundFadeIn > 0 && (
+                                <span className="tl__sound-fade is-in" style={{ width: soundFadeIn * pps }} aria-hidden="true">
+                                  <svg preserveAspectRatio="none">
+                                    <line x1="0" y1="100%" x2="100%" y2="0" />
+                                  </svg>
+                                </span>
+                              )}
+                              {soundFadeOut > 0 && (
+                                <span className="tl__sound-fade is-out" style={{ width: soundFadeOut * pps }} aria-hidden="true">
+                                  <svg preserveAspectRatio="none">
+                                    <line x1="0" y1="0" x2="100%" y2="100%" />
+                                  </svg>
+                                </span>
+                              )}
+                              {!track.locked && (
+                                <>
+                                  <span
+                                    className={fadingIn ? "tl__fade-dot is-in is-dragging" : "tl__fade-dot is-in"}
+                                    style={{ left: soundFadeIn * pps }}
+                                    title="Drag to fade the sound in"
+                                    aria-label="Drag to fade the sound in"
+                                    onPointerDown={beginSoundFade(clip, "in")}
+                                  >
+                                    {fadingIn && <span className="tl__fade-tip mono">Fade in {soundFadeIn.toFixed(1)} s</span>}
+                                  </span>
+                                  <span
+                                    className={fadingOut ? "tl__fade-dot is-out is-dragging" : "tl__fade-dot is-out"}
+                                    style={{ right: soundFadeOut * pps }}
+                                    title="Drag to fade the sound out"
+                                    aria-label="Drag to fade the sound out"
+                                    onPointerDown={beginSoundFade(clip, "out")}
+                                  >
+                                    {fadingOut && <span className="tl__fade-tip mono">Fade out {soundFadeOut.toFixed(1)} s</span>}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })()}
                         {media?.source.chapters
                           ?.filter((ch) => ch.start > clip.in + 0.2 && ch.start < clip.out - 0.2)
                           .map((ch) => {

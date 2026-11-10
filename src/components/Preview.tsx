@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Frame } from "../types";
-import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
+import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, soundFadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
 import { newShapeClip, shapeBox, shapeSvg } from "../project/shapes";
 import type { FxItem } from "../project/effects";
 import { fxDrag } from "./TimelineEditor";
@@ -231,7 +231,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const fade = fadeAt(c, time);
     const order = orders.get(c.trackId);
     const t = order ? transitionMix(order, c, time) : { picture: 1, sound: 1, white: 0, shift: 0, zoom: 1, wipe: 0 };
-    return { ...t, picture: fade * t.picture, sound: fade * t.sound };
+    return { ...t, picture: fade * t.picture, sound: fade * soundFadeAt(c, time) * t.sound };
   };
   // Sound files (pictures play their own sound).
   const sounds = project.clips.filter((c) => c.mediaId && !showsPicture(project, c));
@@ -291,7 +291,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
         // The loudest moment of this clip within the bar's stretch of the timeline.
         const [a, b] = [mediaTimeAt(c, Math.max(from, c.start)), mediaTimeAt(c, Math.min(to, clipEnd(c)) - 0.001)];
         const inClip = Math.min(Math.max(t, c.start), clipEnd(c) - 0.001);
-        sum += peakBetween(full, Math.max(0.1, m.source.duration), a, b) * c.volume * fadeAt(c, inClip);
+        sum += peakBetween(full, Math.max(0.1, m.source.duration), a, b) * c.volume * fadeAt(c, inClip) * soundFadeAt(c, inClip);
       }
       return Math.max(6, Math.min(100, Math.round(sum)));
     });

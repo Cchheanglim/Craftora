@@ -177,6 +177,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       effect: c.effect ?? "",
       fadeIn: c.fadeIn,
       fadeOut: c.fadeOut,
+      soundFadeIn: c.soundFadeIn ?? 0,
+      soundFadeOut: c.soundFadeOut ?? 0,
       crop: [c.crop.left, c.crop.top, c.crop.right, c.crop.bottom],
       transitionIn: i > 0 ? transitionLength(order[i - 1], c) : 0,
       transitionInKind: c.transition?.kind ?? "crossfade",
@@ -235,7 +237,9 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     project.clips.some((c) => c.reverse) && "reverse",
     project.clips.some((c) => isCropped(c.crop)) && "crop",
     project.clips.some((c) => c.speed !== 1) && "setpts, atempo",
-    project.clips.some((c) => c.fadeIn || c.fadeOut) && "fade, afade",
+    project.clips.some((c) => c.fadeIn || c.fadeOut)
+      ? "fade, afade"
+      : project.clips.some((c) => c.soundFadeIn || c.soundFadeOut) && "afade",
     clips.some((c) => c.transitionIn > 0) && "transitions",
     "overlay",
     counts.texts && "drawtext",

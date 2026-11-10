@@ -7,7 +7,7 @@
 - **Slide, Zoom and Wipe transitions**: the next clip pushes the last one out to the left, zooms through it, or is uncovered
   left to right.
 - **Transitions without splitting first**: click one (or drop it) in the middle of a clip and Craftora cuts the clip
-  there and adds it; near a cut it goes on that cut.
+  there and adds it; dropped next to a cut it goes on that cut, however far the timeline is zoomed out.
 - **Zoom the timeline all the way out**, however long the video (a 2-hour video fits), with the buttons, Ctrl + wheel or
   a touchpad pinch (which no longer zooms the whole window).
 - **Filters and effects inside a clip**: dropped on a video clip they belong to it (no extra track; its label shows them,
