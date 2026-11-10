@@ -235,6 +235,87 @@
   }
 }
 
+/* Vignette: dark edges close in around the picture. */
+.fx-tile.is-vignette .fx-tile__stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle farthest-corner, transparent 35%, rgba(0, 0, 0, 0.85) 100%);
+  animation: fx-vignette 3s ease-in-out infinite;
+}
+
+@keyframes fx-vignette {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Strobe: quick white flashes. */
+.fx-tile.is-strobe img {
+  animation: fx-strobe 1.2s linear infinite;
+}
+
+@keyframes fx-strobe {
+  0%,
+  25%,
+  50%,
+  75% {
+    filter: brightness(2.2);
+  }
+  5%,
+  24%,
+  30%,
+  49%,
+  55%,
+  74%,
+  80%,
+  100% {
+    filter: brightness(1);
+  }
+}
+
+/* RGB split: red and cyan edges pull apart and back. */
+.fx-tile.is-rgb-split img {
+  animation: fx-rgb-split 2s ease-in-out infinite;
+}
+
+@keyframes fx-rgb-split {
+  0%,
+  100% {
+    filter: drop-shadow(0px 0 0 rgba(255, 0, 0, 0.8)) drop-shadow(0px 0 0 rgba(0, 255, 255, 0.8));
+  }
+  50% {
+    filter: drop-shadow(-3px 0 0 rgba(255, 0, 0, 0.8)) drop-shadow(3px 0 0 rgba(0, 255, 255, 0.8));
+  }
+}
+
+/* Film grain: a gritty flicker with a tiny jitter. */
+.fx-tile.is-grain img {
+  filter: contrast(1.3) grayscale(0.4);
+  animation: fx-grain 0.4s steps(1) infinite;
+}
+
+@keyframes fx-grain {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-1px, 1px);
+  }
+  50% {
+    transform: translate(1px, -1px);
+  }
+  75% {
+    transform: translate(-1px, -1px);
+  }
+}
+
 .fx-tile.is-fade-in img {
   animation: fx-fade-in 2.4s ease-in infinite;
 }
