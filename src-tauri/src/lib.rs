@@ -48,6 +48,12 @@ pub fn run() {
         .manage(local::OpenedFiles::default())
         .manage(media_cache::MediaCache::default())
         .manage(live::Recordings::default())
+        // The voice-over recorder: the microphone without a question window, for Craftora's own window only (never
+        // the sign-in window's websites).
+        .on_permission_request(|webview, kind| match kind {
+            tauri::webview::PermissionKind::Microphone if webview.label() == "main" => tauri::webview::PermissionResponse::Allow,
+            _ => tauri::webview::PermissionResponse::Default,
+        })
         // Link previews play through a disk cache, so scrubbing what's fetched is instant.
         .register_asynchronous_uri_scheme_protocol("cmedia", |ctx, request, responder| {
             // Only Craftora's own window. Every window gets every custom scheme, and a website in
@@ -159,6 +165,7 @@ pub fn run() {
             notify::notify,
             speech::make_captions,
             store::save_snapshot,
+            store::save_voice,
             virustotal::site_check_available,
             virustotal::set_site_check_key,
             virustotal::check_site,

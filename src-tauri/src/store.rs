@@ -357,6 +357,47 @@ pub fn save_snapshot(
     Ok(normalized.to_string_lossy().into_owned())
 }
 
+/// The longest voice-over take accepted: about 5 hours at the recorder's 128 kbit/s.
+const MAX_VOICE_BYTES: usize = 300_000_000;
+
+/// Saves a voice-over take into the export folder as an .m4a and opens it for the editor. The take is the window's
+/// recorder output (WebM/Opus) sent as the raw request body; that WebM has no length written in it, so FFmpeg makes a
+/// plain AAC file that every player (and the editor) reads.
+#[tauri::command]
+pub async fn save_voice(
+    app: AppHandle,
+    opened: tauri::State<'_, crate::local::OpenedFiles>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(take) = request.body() else {
+        return Err("Couldn't save the recording.".into());
+    };
+    // WebM starts with the EBML header.
+    if take.len() > MAX_VOICE_BYTES || !take.starts_with(&[0x1a, 0x45, 0xdf, 0xa3]) {
+        return Err("Couldn't save the recording.".into());
+    }
+    let dir = crate::jobs::output_dir(&app)?;
+    let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let raw = dir.join(format!(".craftora-voice-{id}.webm"));
+    let made = dir.join(format!(".craftora-voice-{id}.m4a"));
+    std::fs::write(&raw, take).map_err(|e| format!("Couldn't save the recording: {e}"))?;
+    let (input, output) = (raw.to_string_lossy().into_owned(), made.to_string_lossy().into_owned());
+    let args = ["-hide_banner", "-loglevel", "error", "-y", "-i", &input, "-vn", "-c:a", "aac", "-b:a", "192k", &output];
+    let result = crate::engine::run_to_end(&app, crate::engine::FFMPEG, &args).await;
+    let _ = std::fs::remove_file(&raw);
+    if !result.is_ok_and(|out| out.status.success()) {
+        let _ = std::fs::remove_file(&made);
+        return Err("Couldn't save the recording.".into());
+    }
+    let saved = crate::jobs::deliver(&made, &dir, "Voice-over", "m4a").inspect_err(|_| {
+        let _ = std::fs::remove_file(&made);
+    })?;
+    let normalized = crate::local::normalize(&saved)?;
+    crate::local::allow_preview(&app, &normalized)?;
+    opened.allow(normalized.clone());
+    Ok(normalized.to_string_lossy().into_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::deleted_files;

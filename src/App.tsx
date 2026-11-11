@@ -33,6 +33,7 @@ import {
   allowLocal,
   pickFolder,
   saveSnapshot,
+  saveVoice,
   saveSrt,
   openCaptionsFile,
   pickMediaFiles,
@@ -113,6 +114,8 @@ import { TimelineDivider } from "./components/TimelineDivider";
 import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/EdgeResizer";
 import { dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, type FxTab } from "./components/FxPanel";
+import { SoundPanel } from "./components/SoundPanel";
+import { VoicePanel } from "./components/VoicePanel";
 import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
 import { TimelineEditor, type ClipCommand } from "./components/TimelineEditor";
@@ -297,8 +300,10 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** A block just added from the right panel, for the timeline to zoom in to (`at` makes each one new). */
   const [revealed, setRevealed] = useState<{ clipId: string; at: number } | null>(null);
-  /** The clip whose transition is selected on the timeline (its controls show at the top of Transitions). */
+  /** The clip whose transition is selected on the timeline. */
   const [selectedTransition, setSelectedTransition] = useState<string | null>(null);
+  /** The effect, filter or transition (its clip id) whose settings panel is open in its tab, instead of the tiles. */
+  const [fxDetail, setFxDetail] = useState<string | null>(null);
   // Settings page: how many jobs run at once.
   const [maxRunning, setMaxRunning] = useState(() => rememberedCount("craftora.maxRunning", MAX_RUNNING));
   const [timelineHeight, setTimelineHeight] = useState(() => rememberedSize("craftora.timelineHeight"));
@@ -348,9 +353,12 @@ export default function App() {
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const [cuttingSilences, setCuttingSilences] = useState(false);
-  const [rightTab, setRightTab] = useState<"edit" | "export" | "transcript" | "assistant" | "sound" | FxTab>("edit");
-  // Where the Sound panel's Back button goes: the tab it was opened from.
-  const soundBack = useRef<typeof rightTab>("edit");
+  const [rightTab, setRightTab] = useState<"edit" | "export" | "transcript" | "assistant" | "sound" | "voice" | FxTab>("edit");
+  // Where the Sound or Voice-over panel's Back button goes: the tab it was opened from.
+  const panelBack = useRef<typeof rightTab>("edit");
+  // A voice-over take: where on the timeline it started, and the preview kept quiet while it records.
+  const voiceAt = useRef(0);
+  const [voiceSilent, setVoiceSilent] = useState(false);
   /** How much of each link preview is cached on disk (by cache id), 0–100. */
   const [cached, setCached] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -532,7 +540,7 @@ export default function App() {
   const selected = project.clips.find((c) => c.id === selectedId) ?? null;
   // The Sound panel belongs to a clip: with none selected, it goes back to where it was opened from.
   useEffect(() => {
-    if (rightTab === "sound" && !selected?.mediaId) setRightTab(soundBack.current);
+    if (rightTab === "sound" && !selected?.mediaId) setRightTab(panelBack.current);
   }, [rightTab, selected]);
   // A selected transition belongs to the selected clip, while it still has one.
   const transitionClip = selected && selectedTransition === selected.id && selected.transition ? selected : null;
@@ -1254,12 +1262,36 @@ export default function App() {
       if (i > 0 && meets(order[i - 1], c)) api.editLive({ type: "setTransition", clipId: c.id, transition: transitionClip.transition! });
     });
   };
+  /** A finished voice-over take: saved as a file in the export folder, then on the timeline where it started. */
+  const placeVoice = async (take: Blob) => {
+    try {
+      const path = await saveVoice(new Uint8Array(await take.arrayBuffer()));
+      const item = importSource(await openLocal(path), false);
+      const clipId = crypto.randomUUID();
+      // A sound clip with no track given goes on a free track below the main one (actions.ts `place`).
+      api.edit({ type: "addClip", clipId, mediaId: item.id, at: voiceAt.current });
+      setSelectedId(clipId);
+    } catch (err) {
+      throw new Error(errorText(err));
+    }
+  };
+  const openVoice = () => {
+    if (rightTab !== "sound" && rightTab !== "voice") panelBack.current = rightTab;
+    setRightTab("voice");
+    if (!rightOpen) toggleRight();
+  };
+  /** Open an effect, filter or transition's settings panel (id = its clip) in its tab. */
+  const openFx = (id: string, tab: FxTab) => {
+    setFxDetail(id);
+    setRightTab(tab);
+    if (!rightOpen) toggleRight();
+  };
   const applyFx = (item: FxItem, trackId: string | undefined | null, time: number) => {
     const done = dropEdits(project, item, trackId, time, [crypto.randomUUID(), crypto.randomUUID()]);
     if (!done) {
       setError(
         item.kind === "transition"
-          ? "Put the playhead on a clip first: the transition goes there."
+          ? "A transition goes where two clips meet: use it on a clip with another one right before or after it."
           : item.kind === "fade"
             ? "Drop a fade on a clip: it fades that clip's start or end."
             : "Drop it on a video or sound clip (pictures have no speed).",
@@ -1270,12 +1302,15 @@ export default function App() {
     api.checkpoint();
     for (const edit of done.edits) api.editLive(edit);
     if (done.select) setSelectedId(done.select);
-    // A transition just added is the one selected, its controls on top of Transitions.
+    // A transition just added is the one selected (a tile clicked next swaps it).
     setSelectedTransition(item.kind === "transition" ? (done.select ?? null) : null);
     // A new block or shape: the timeline zooms in to it if it's too small to see at its zoom.
     if (done.select && done.edits.some((e) => e.type === "addBlock" || e.type === "addShape")) setRevealed({ clipId: done.select, at: Date.now() });
-    // An Adjust layer does nothing until its sliders move: show them.
-    if (item.kind === "adjust") setRightTab("edit");
+    // An Adjust layer does nothing until its sliders move: open its settings.
+    if (item.kind === "adjust" && done.select) {
+      setRightTab("filters");
+      setFxDetail(done.select);
+    }
     return done.select;
   };
   const duplicate = () => {
@@ -1793,6 +1828,7 @@ export default function App() {
             style={timelineHeight ? ({ "--tl-h": `${timelineHeight}px` } as CSSProperties) : undefined}
           >
             <Preview
+              silent={voiceSilent}
               project={project}
               api={api}
               playback={playback}
@@ -1835,13 +1871,18 @@ export default function App() {
               onSelect={(id) => {
                 setSelectedTransition(null);
                 setSelectedId(id);
-                // Like a transition: a filter or effect block picked while those tabs are open shows its controls in its own tab.
+                // Like a transition: a filter or effect block opens its settings panel in its own tab (Edit is only for clips).
                 const clip = project.clips.find((c) => c.id === id);
-                if (clip && isBlock(clip) && ["filters", "effects", "transitions", "shapes"].includes(rightTab)) setRightTab(clip.effect ? "effects" : "filters");
+                if (clip && isBlock(clip)) openFx(clip.id, clip.effect ? "effects" : "filters");
               }}
               selectedTransition={transitionClip?.id ?? null}
+              onOpenFx={(id, tab) => {
+                setSelectedTransition(null);
+                setSelectedId(id);
+                openFx(id, tab);
+              }}
               onOpenSound={(id) => {
-                if (rightTab !== "sound") soundBack.current = rightTab;
+                if (rightTab !== "sound" && rightTab !== "voice") panelBack.current = rightTab;
                 setSelectedId(id);
                 setRightTab("sound");
                 if (!rightOpen) toggleRight();
@@ -1849,8 +1890,7 @@ export default function App() {
               onSelectTransition={(id) => {
                 setSelectedId(id);
                 setSelectedTransition(id);
-                setRightTab("transitions");
-                if (!rightOpen) toggleRight();
+                openFx(id, "transitions");
               }}
               onSplit={split}
               onDuplicate={duplicate}
@@ -1858,6 +1898,7 @@ export default function App() {
               cuttingSilences={cuttingSilences}
               onDelete={remove}
               onAddText={addText}
+              onRecordVoice={inDesktopApp ? openVoice : undefined}
               onDropFx={applyFx}
               onClipCommand={clipCommand}
               canPaste={canPaste}
@@ -1906,7 +1947,8 @@ export default function App() {
               project={project}
               time={playback.time}
               playing={playback.playing}
-              block={selected && isBlock(selected) ? selected : undefined}
+              // A filter or effect block, or a clip with a filter or effect inside it.
+              block={selected && (isBlock(selected) || (selected.mediaId && (selected.look || selected.effect))) ? selected : undefined}
               transition={
                 transitionClip
                   ? {
@@ -1932,15 +1974,25 @@ export default function App() {
               }}
               onApplyToAll={applyTransitionToAll}
               onCheckpoint={api.checkpoint}
+              detail={fxDetail !== null && fxDetail === selectedId}
+              onBack={() => {
+                setFxDetail(null);
+                // Back at the tiles, a tile clicked adds a new transition rather than swapping this one.
+                setSelectedTransition(null);
+              }}
+              onClose={() => {
+                setFxDetail(null);
+                toggleRight();
+              }}
               onPick={(item) => {
                 // A transition tile with a transition selected swaps it, keeping its length.
                 if (item.kind === "transition" && transitionClip?.transition) {
                   api.edit({ type: "setTransition", clipId: transitionClip.id, transition: { kind: item.id, duration: transitionClip.transition.duration } });
                   return;
                 }
-                // At the playhead, on the selected clip's track (a transition there cuts the clip at the playhead);
-                // with the playhead off the selected clip, at its start (a transition on the join before it).
                 if (!selected) return applyFx(item, undefined, playback.time);
+                // At the playhead on the selected clip (a filter or effect goes inside it, a transition on its cut);
+                // with the playhead off the selected clip, at its start.
                 const inside = playback.time >= selected.start && playback.time < clipEnd(selected);
                 applyFx(item, selected.trackId, inside ? playback.time : selected.start);
               }}
@@ -1964,9 +2016,28 @@ export default function App() {
               media={project.media.find((m) => m.id === selected.mediaId)}
               onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
               onCheckpoint={api.checkpoint}
-              onBack={() => setRightTab(soundBack.current)}
+              onBack={() => setRightTab(panelBack.current)}
               onClose={() => {
-                setRightTab(soundBack.current);
+                setRightTab(panelBack.current);
+                toggleRight();
+              }}
+            />
+          ) : rightTab === "voice" ? (
+            <VoicePanel
+              startAt={formatClock(playback.time)}
+              onStart={(mute) => {
+                voiceAt.current = playback.time;
+                setVoiceSilent(mute);
+                if (!playback.playing) playback.toggle();
+              }}
+              onStop={(take) => {
+                playback.pause();
+                setVoiceSilent(false);
+                return placeVoice(take);
+              }}
+              onBack={() => setRightTab(panelBack.current)}
+              onClose={() => {
+                setRightTab(panelBack.current);
                 toggleRight();
               }}
             />
@@ -2005,7 +2076,15 @@ export default function App() {
                   onOpenCaptions={inDesktopApp ? () => void openCaptions() : undefined}
                 />
               )}
-              {selected && selectedTrack && (
+              {selected && isBlock(selected) && (
+                <p className="export__hint">
+                  {selected.effect ? "Effects" : "Filters"} have their own settings.{" "}
+                  <button type="button" className="btn btn--ghost" onClick={() => openFx(selected.id, selected.effect ? "effects" : "filters")}>
+                    Open its settings
+                  </button>
+                </p>
+              )}
+              {selected && selectedTrack && !isBlock(selected) && (
                 <Inspector
                   key={selected.id}
                   clip={selected}
@@ -2026,11 +2105,6 @@ export default function App() {
                       : undefined
                   }
                   onSpeed={(speed) => api.edit({ type: "setSpeed", clipId: selected.id, speed })}
-                  onTransition={
-                    previousOnTrack(project, selected)
-                      ? (transition, live) => (live ? api.editLive : api.edit)({ type: "setTransition", clipId: selected.id, transition })
-                      : undefined
-                  }
                   onCheckpoint={api.checkpoint}
                   onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
                   onSplit={split}

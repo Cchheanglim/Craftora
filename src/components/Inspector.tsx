@@ -5,7 +5,6 @@ import {
   POSITIONS,
   SPEEDS,
   TEXT_FONTS,
-  TRANSITION_KINDS,
   clipEnd,
   clipLength,
   isBlock as blockClip,
@@ -21,12 +20,11 @@ import {
   type TextEdge,
   type TextFont,
   type Track,
-  type Transition,
 } from "../project/model";
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
-import { ADJUSTMENTS, EFFECT_SETTINGS, LOOKS, PICTURE_EFFECTS, adjustSteps, blockLabel } from "../project/effects";
+import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustSteps, blockLabel } from "../project/effects";
 import { SHAPES, shapeLabel } from "../project/shapes";
 import "./Inspector.css";
 
@@ -56,8 +54,6 @@ interface InspectorProps {
   /** Still images and text: sets how many seconds the clip stays on screen. */
   onDuration?: (seconds: number, live?: boolean) => void;
   onSpeed: (speed: number) => void;
-  /** Video 1 clips after the first: set the transition into this clip (`live` as in onChange). */
-  onTransition?: (transition: Transition | null, live?: boolean) => void;
   onCheckpoint: () => void;
   onFormat: (format: { videoFormat?: string; audioFormat?: string }) => void;
   onSplit: () => void;
@@ -83,7 +79,6 @@ export function Inspector({
   onChange,
   onDuration,
   onSpeed,
-  onTransition,
   onCheckpoint,
   onFormat,
   onSplit,
@@ -161,59 +156,6 @@ export function Inspector({
               </p>
             ),
         )}
-
-      {clip.look && (
-        <Slider
-          id="insp-strength"
-          label="Strength"
-          min={0}
-          max={1}
-          step={0.05}
-          value={clip.lookAmount ?? 1}
-          format={pct}
-          onCheckpoint={onCheckpoint}
-          onChange={(lookAmount) => onChange({ lookAmount }, true)}
-        />
-      )}
-
-      {clip.effect && EFFECT_SETTINGS[clip.effect] && (
-        <fieldset className="insp__group">
-          <legend>
-            Effect
-            {(clip.effectStrength !== undefined || clip.effectSpeed !== undefined) && (
-              <button type="button" className="insp__reset" onClick={() => onChange({ effectStrength: undefined, effectSpeed: undefined })}>
-                Reset
-              </button>
-            )}
-          </legend>
-          {EFFECT_SETTINGS[clip.effect]?.includes("strength") && (
-            <Slider
-              id="insp-effect-strength"
-              label="Strength"
-              min={0}
-              max={100}
-              step={1}
-              value={clip.effectStrength ?? 50}
-              format={(v) => String(Math.round(v))}
-              onCheckpoint={onCheckpoint}
-              onChange={(effectStrength) => onChange({ effectStrength }, true)}
-            />
-          )}
-          {EFFECT_SETTINGS[clip.effect]?.includes("speed") && (
-            <Slider
-              id="insp-effect-speed"
-              label="Speed"
-              min={0.5}
-              max={3}
-              step={0.1}
-              value={clip.effectSpeed ?? 1}
-              format={(v) => `${v.toFixed(1)}×`}
-              onCheckpoint={onCheckpoint}
-              onChange={(effectSpeed) => onChange({ effectSpeed }, true)}
-            />
-          )}
-        </fieldset>
-      )}
 
       {onDuration && (
         <div className="insp__slider">
@@ -442,48 +384,6 @@ export function Inspector({
             ))}
           </select>
         </div>
-      )}
-
-      {!isText && !isShape && !isBlock && !onTransition && (
-        <p className="insp__hint">To add a transition, put this clip right after another one and click the + where they meet.</p>
-      )}
-
-      {onTransition && (
-        <fieldset className="insp__group">
-          <legend>Transition from the clip before</legend>
-          <label htmlFor="insp-transition" className="sr-only">
-            Transition
-          </label>
-          <select
-            id="insp-transition"
-            className="field"
-            value={clip.transition?.kind ?? "none"}
-            onChange={(e) => {
-              const kind = e.target.value;
-              onTransition(kind === "none" ? null : { kind: kind as Transition["kind"], duration: clip.transition?.duration ?? 1 });
-            }}
-          >
-            <option value="none">None (straight cut)</option>
-            {TRANSITION_KINDS.map((t) => (
-              <option key={t.kind} value={t.kind}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-          {clip.transition && (
-            <Slider
-              id="insp-transition-length"
-              label="Length"
-              min={0.1}
-              max={3}
-              step={0.1}
-              value={clip.transition.duration}
-              format={sec}
-              onCheckpoint={onCheckpoint}
-              onChange={(duration) => onTransition({ ...clip.transition!, duration }, true)}
-            />
-          )}
-        </fieldset>
       )}
 
       {!isBlock && (

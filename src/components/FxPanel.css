@@ -7,40 +7,8 @@
   overflow-y: auto;
 }
 
-.fx-selected {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) 10px;
-  margin-bottom: var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--bg-raised);
-}
-
-.fx-selected__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.fx-selected__title {
-  color: var(--text);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.fx-selected__head .btn--ghost {
-  height: 24px;
-  padding: 0 var(--space-2);
-  font-size: var(--text-xs);
-}
-
-.fx-selected__hint {
-  font-size: var(--text-xs);
-  line-height: 1.4;
-  color: var(--text-3);
+.fx-detail__remove {
+  align-self: flex-start;
 }
 
 .fx-panel h3 {

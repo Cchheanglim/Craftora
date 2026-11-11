@@ -1,0 +1,58 @@
+/* The voice-over panel (VoicePanel.tsx): microphone, level meter, countdown and Record/Stop. */
+.voice-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  overflow-y: auto;
+}
+
+.voice__meter {
+  height: 6px;
+  background: var(--line);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+/* No transition: it follows the voice frame by frame. */
+.voice__level {
+  height: 100%;
+  width: 0;
+  background: var(--ok);
+}
+
+.voice__hint {
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--text-3);
+}
+
+.voice__error {
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--danger);
+}
+
+.voice__count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  min-height: 40px;
+}
+
+/* The one red thing. */
+.voice__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.voice__record {
+  width: 100%;
+  justify-content: center;
+}
