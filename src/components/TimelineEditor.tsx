@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { shapeLabel } from "../project/shapes";
-import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, showsPicture, mediaTimeAt, previousOnTrack, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
+import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, showsPicture, mediaTimeAt, previousOnTrack, trackLabel, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
 import { LOOKS, PICTURE_EFFECTS, blockLabel, type FxItem } from "../project/effects";
 import { packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
@@ -91,8 +91,6 @@ interface TimelineEditorProps {
   canPaste: boolean;
   /** Cover on the main track: from the frame at the playhead, a picture, or none. */
   onCover: (choice: "frame" | "picture" | "remove") => void;
-  /** The + on the join before `clip` (where a clip was split or two clips meet). */
-  onJoin: (clip: Clip) => void;
   /**
    * A voice-over being recorded: drawn as a growing clip from `start` to `end` (seconds on the timeline) on track
    * `trackId`, the track the take will land on; null: a new row below all the tracks (the take gets a new track).
@@ -113,10 +111,15 @@ type Gesture =
   | { kind: "transition"; clipId: string; originX: number; origin: number };
 
 /** Where a clip being moved is drawn; the project only changes on release. */
+/** Where the track buttons being folded away is remembered on this PC. */
+const HEADS_HIDDEN = "craftora.trackHeadsHidden";
+
 interface Ghost {
   clipId: string;
   start: number;
   trackId: string;
+  /** Over the empty space above the top track or below the bottom one: let go, and it gets a new track there. */
+  newTrack?: "top" | "bottom";
 }
 
 /** Track height and waveform size choices (the header's … menu). */
@@ -156,7 +159,6 @@ export function TimelineEditor({
   onClipCommand,
   canPaste,
   onCover,
-  onJoin,
   recording,
 }: TimelineEditorProps) {
   const sectionRef = useRef<HTMLElement>(null);
@@ -171,6 +173,14 @@ export function TimelineEditor({
     setGhostState(g);
   };
   const [pps, setPps] = useState(40);
+  // The track buttons folded away (the line between them and the clips), remembered on this PC.
+  const [headsHidden, setHeadsHidden] = useState(() => {
+    try {
+      return localStorage.getItem(HEADS_HIDDEN) === "1";
+    } catch {
+      return false;
+    }
+  });
   // 0 until measured, so the first automatic fit uses the real width.
   const [viewWidth, setViewWidth] = useState(0);
   const [scrollbar, setScrollbar] = useState(0);
@@ -401,10 +411,11 @@ export function TimelineEditor({
       const endSnaps = snappedEnd !== start;
       if (startSnaps && (!endSnaps || Math.abs(snappedStart - start) <= Math.abs(snappedEnd - start))) start = snappedStart;
       else if (endSnaps) start = snappedEnd;
-      // Any track takes any clip, unless it's locked.
+      // Any track takes any clip, unless it's locked; the empty space above or below the tracks makes a new one.
       const lane = project.tracks.find((t) => t.id === laneAt(e.clientY));
-      const trackId = lane && !lane.locked ? lane.id : (ghostRef.current?.trackId ?? clip.trackId);
-      setGhost({ clipId: clip.id, start: Math.max(0, start), trackId });
+      const newTrack = lane ? undefined : edgeAt(e.clientY);
+      const trackId = lane && !lane.locked ? lane.id : newTrack ? clip.trackId : (ghostRef.current?.trackId ?? clip.trackId);
+      setGhost({ clipId: clip.id, start: Math.max(0, start), trackId, newTrack });
     } else {
       scrollAtEdge(e.clientX);
       api.editLive({ type: "trimClip", clipId: clip.id, edge: g.mode, time: snap(getTimeAt(e.clientX, g), clip.id) });
@@ -445,6 +456,14 @@ export function TimelineEditor({
       onSelect(into.id);
       return;
     }
+    if (g.mode === "move" && final?.newTrack) {
+      const trackId = `track-${crypto.randomUUID().slice(0, 8)}`;
+      api.checkpoint();
+      api.editLive({ type: "addTrack", trackId, below: final.newTrack === "bottom" });
+      api.editLive({ type: "moveClip", clipId: final.clipId, start: final.start, trackId });
+      api.editLive({ type: "settle" });
+      return;
+    }
     if (g.mode === "move" && final) {
       api.edit({ type: "moveClip", clipId: final.clipId, start: final.start, trackId: final.trackId });
     }
@@ -454,7 +473,17 @@ export function TimelineEditor({
   const laneChanged = (clipId: string, clientY: number) => {
     const clip = project.clips.find((c) => c.id === clipId);
     const lane = laneAt(clientY);
-    return Boolean(clip && lane && lane !== clip.trackId);
+    return Boolean(clip && ((lane && lane !== clip.trackId) || (!lane && edgeAt(clientY))));
+  };
+
+  /** Above the top track or below the bottom one, within the timeline: where a dragged clip gets a new track. */
+  const edgeAt = (clientY: number): "top" | "bottom" | undefined => {
+    const lanes = [...laneRefs.current.values()].map((el) => el.getBoundingClientRect());
+    const box = scrollRef.current?.getBoundingClientRect();
+    if (!lanes.length || !box) return undefined;
+    if (clientY >= box.top && clientY < Math.min(...lanes.map((r) => r.top))) return "top";
+    if (clientY >= Math.max(...lanes.map((r) => r.bottom)) && clientY <= box.bottom) return "bottom";
+    return undefined;
   };
 
   const startGesture = (g: Gesture) => {
@@ -535,7 +564,8 @@ export function TimelineEditor({
   // clips close up behind it and open a gap where it would land.
   const isMagnetic = (trackId: string) => Boolean(project.tracks.find((t) => t.id === trackId)?.magnetic);
   const placed = new Map<string, { start: number; trackId: string }>();
-  if (ghost) {
+  // Headed for a new track: the clip stays put (dimmed) and the dashed "New track" outline shows where it goes.
+  if (ghost && !ghost.newTrack) {
     const dragged = project.clips.find((c) => c.id === ghost.clipId);
     if (dragged) {
       for (const trackId of new Set([ghost.trackId, dragged.trackId])) {
@@ -622,7 +652,7 @@ export function TimelineEditor({
       </div>
 
       <div className="tl__body">
-        <div className="tl__heads" style={{ paddingBottom: scrollbar }}>
+        <div className={headsHidden ? "tl__heads is-hidden" : "tl__heads"} style={{ paddingBottom: scrollbar }} inert={headsHidden}>
           <div className="tl__ruler-spacer" />
           <div className="tl__lanes">
           {project.tracks.map((track) => {
@@ -775,13 +805,29 @@ export function TimelineEditor({
           {recording?.trackId === null && <div className="tl__head is-recording" style={{ height: ROW_PX.m }} role="group" aria-label="Voice-over" />}
           </div>
         </div>
+        {/* The line between the track buttons and the clips: click it to fold the buttons away (and back). */}
+        <button
+          type="button"
+          className="tl__heads-toggle"
+          title={headsHidden ? "Show panel" : "Hide panel"}
+          aria-label={headsHidden ? "Show the track buttons" : "Hide the track buttons"}
+          aria-expanded={!headsHidden}
+          onClick={() => {
+            try {
+              localStorage.setItem(HEADS_HIDDEN, headsHidden ? "0" : "1");
+            } catch {
+              /* not remembered: shown next time */
+            }
+            setHeadsHidden(!headsHidden);
+          }}
+        />
 
         <div
           ref={scrollRef}
           className="tl__scroll"
         >
           {/* A press anywhere here (a track, or the empty space above and below them) moves the playhead;
-              the ruler, clips and the join + handle their own presses. */}
+              the ruler and clips handle their own presses. */}
           <div
             ref={contentRef}
             className="tl__content"
@@ -803,6 +849,17 @@ export function TimelineEditor({
             </div>
 
             <div className="tl__lanes">
+            {ghost?.newTrack &&
+              (() => {
+                const dragged = project.clips.find((c) => c.id === ghost.clipId);
+                return (
+                  dragged && (
+                    <div className={`tl__new-track is-${ghost.newTrack}`} style={{ left: ghost.start * pps, width: Math.max(4, clipLength(dragged) * pps) }} aria-hidden="true">
+                      New track
+                    </div>
+                  )
+                );
+              })()}
             {project.tracks.map((track) => (
               <div
                 key={track.id}
@@ -966,30 +1023,6 @@ export function TimelineEditor({
                       </div>
                     );
                   })}
-                {/* A + where two clips meet (a split, or clips back to back): transitions there. */}
-                {!ghost &&
-                  trackOrder(project, track.id)
-                    .filter((c) => c.mediaId)
-                    .filter((c, i, order) => i > 0 && c.start <= clipEnd(order[i - 1]) + 0.05)
-                    .map((clip) => {
-                      const kind = TRANSITION_KINDS.find((t) => t.kind === clip.transition?.kind);
-                      if (kind && overlap(clip) > 0) return null;
-                      return (
-                        <button
-                          key={`join-${clip.id}`}
-                          type="button"
-                          className={kind ? "tl__join is-set" : "tl__join"}
-                          style={{ left: (clip.start + overlap(clip) / 2) * pps }}
-                          aria-label={kind ? `${kind.label} at ${formatClock(clip.start)}: change it` : `Add a transition at ${formatClock(clip.start)}`}
-                          title={kind ? `${kind.label}: click to change it` : "Add a transition here"}
-                          disabled={track.locked}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={() => (kind && onSelectTransition ? onSelectTransition(clip.id) : onJoin(clip))}
-                        >
-                          <Icon name={kind ? "check" : "plus"} size={8} />
-                        </button>
-                      );
-                    })}
                 {recording && recording.trackId === track.id && <RecordingClip recording={recording} pps={pps} />}
               </div>
             ))}

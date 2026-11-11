@@ -17,6 +17,13 @@
   just as loud through the transition (it used to dip in the middle, and went silent there for Dip and Flash); lower
   dips it in the middle, in the preview and the export alike.
 - **A "+" on filter, effect and transition tiles** when you point at one: clicking adds it at the playhead.
+- **Drag a clip to make a new track**: drag it into the empty space above the top track or below the bottom one (a
+  dashed "New track" outline shows where) and let go: it gets a new track there. There's always a little room above
+  and below the tracks for this.
+- **Hide the track buttons**: the line between the track buttons and the clips folds them away ("Hide panel") and back
+  ("Show panel"), remembered on this PC.
+- **Cleaner timeline**: no "+" on the cuts between clips (add a transition by dragging or clicking one in Transitions),
+  and a selected clip has a plain white outline, without thick ends or grip lines (its ends still trim).
 - **Crop window**: Crop… (right-click a clip → Edit, or "Crop on the picture…" in Edit) opens the clip's picture with a
   box to drag and resize, shape buttons (Free, Original, 16:9, 9:16, 1:1, 4:3, 3:4), Reset, Cancel and Done. The crop
   can now keep any part of the picture, a corner too (it used to take at most 45% off each side).

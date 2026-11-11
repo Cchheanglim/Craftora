@@ -1940,13 +1940,6 @@ export default function App() {
               onClipCommand={clipCommand}
               canPaste={canPaste}
               onCover={(choice) => void chooseCover(choice)}
-              onJoin={(clip) => {
-                // The clip after the join: a transition clicked now goes on this join, a filter or effect on it.
-                setSelectedId(clip.id);
-                playback.seek(clip.start);
-                setRightTab("transitions");
-                if (!rightOpen) toggleRight();
-              }}
             />
           </div>
         )}

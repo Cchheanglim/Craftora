@@ -108,7 +108,7 @@ export type EditAction =
   /** Magnetic tracks: how the clip takes over from the one before it; null for a straight cut. */
   | { type: "setTransition"; clipId: string; transition: Transition | null }
   /** A new empty track at the top. */
-  | { type: "addTrack"; trackId: string }
+  | { type: "addTrack"; trackId: string; /** Under every other track instead of on top. */ below?: boolean }
   /** Removes a track and every clip on it. */
   | { type: "removeTrack"; trackId: string }
   /** Magnet on: the track's clips close up and stay back to back. */
@@ -626,7 +626,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
 
     case "addTrack":
       if (p.tracks.some((t) => t.id === action.trackId)) return p;
-      return withTrack(p, false, action.trackId).project;
+      return withTrack(p, Boolean(action.below), action.trackId).project;
 
     case "removeTrack":
       if (!p.tracks.some((t) => t.id === action.trackId)) return p;
