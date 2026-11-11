@@ -8,7 +8,7 @@ import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
-import { RGB_SHARE, adjustSteps, blocksStyle, warmthMatrix } from "../project/effects";
+import { RGB_SHARE, adjustSteps, blocksStyle, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
 import { SyncedMedia } from "./SyncedMedia";
@@ -478,6 +478,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             </span>
           )}
           {WARMTH_FILTERS}
+          <AdjustFilters clips={project.clips} />
           <div
             className="preview__pictures"
             style={{ filter: blocks.filter, transform: [blocks.transform, blocks.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined }}
@@ -817,6 +818,49 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * Exposure, Highlights, Shadows and Sharpen (Edit → Adjust), for each value a clip uses (effects.ts `stepsFilter` points
+ * at them): the tone curve sampled at 33 points (straight lines between, within 1/255 of the export's curve), Sharpen as
+ * the export's 3×3 kernel. Sharpen works on the preview's own pixels, fewer than the video's, so it looks a little
+ * coarser here than in the export.
+ */
+function AdjustFilters({ clips }: { clips: Clip[] }) {
+  const used = useMemo(() => {
+    const steps = new Map<string, LookStep>();
+    for (const c of clips) {
+      for (const step of adjustSteps(c.adjust)) {
+        if (["exposure", "highlights", "shadows", "sharpen"].includes(step[0])) steps.set(`${step[0]}-${Math.round(step[1] * 100)}`, step);
+      }
+    }
+    return [...steps];
+  }, [clips]);
+  if (!used.length) return null;
+  return (
+    <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
+      {used.map(([id, [op, v]]) => {
+        if (op === "sharpen") {
+          const a = sharpenWeight(v);
+          return (
+            <filter key={id} id={id} colorInterpolationFilters="sRGB">
+              <feConvolveMatrix order={3} kernelMatrix={`0 ${-a} 0 ${-a} ${1 + 4 * a} ${-a} 0 ${-a} 0`} divisor={1} preserveAlpha="true" edgeMode="duplicate" />
+            </filter>
+          );
+        }
+        const table = Array.from({ length: 33 }, (_, i) => toneCurve(op as ToneOp, v, i / 32).toFixed(4)).join(" ");
+        return (
+          <filter key={id} id={id} colorInterpolationFilters="sRGB">
+            <feComponentTransfer>
+              <feFuncR type="table" tableValues={table} />
+              <feFuncG type="table" tableValues={table} />
+              <feFuncB type="table" tableValues={table} />
+            </feComponentTransfer>
+          </filter>
+        );
+      })}
+    </svg>
   );
 }
 

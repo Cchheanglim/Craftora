@@ -911,3 +911,61 @@ body.is-dragging-media .tl__lane:hover {
   width: 4px;
   background: var(--text);
 }
+
+/* A voice-over being recorded (RecordingClip): an audio clip in the playhead's red, its name along the top and the
+   wave filling the rest edge to edge (each bar at its own time). Not a real clip: presses go through it. */
+.tl__clip.is-recording {
+  flex-direction: column;
+  align-items: stretch;
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  border-color: var(--accent);
+  cursor: default;
+  pointer-events: none;
+}
+
+.tl__clip.is-recording .tl__label {
+  flex: none;
+  height: 14px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.tl__clip.is-recording .tl__wave {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  flex: 1;
+  height: auto;
+  padding-top: 2px;
+}
+
+.tl__clip.is-recording .tl__wave > span {
+  background: var(--accent);
+}
+
+.tl__rec-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 1px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tl__rec-dot {
+    animation: tl-rec-blink 1s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes tl-rec-blink {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.35;
+  }
+}

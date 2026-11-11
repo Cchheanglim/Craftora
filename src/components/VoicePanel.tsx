@@ -7,11 +7,15 @@ type Phase = "ready" | "countdown" | "recording" | "saving";
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
+/** Seconds of the take per `onLevel` call. */
+export const LEVEL_STEP = 0.1;
+
 /** Record a voice-over: pick the microphone, watch its level, count in, record while the video plays, stop. */
 export function VoicePanel({
   startAt,
   onStart,
   onStop,
+  onLevel,
   onBack,
   onClose,
 }: {
@@ -21,6 +25,8 @@ export function VoicePanel({
   onStart: (mute: boolean) => void;
   /** The take ended: App saves it and puts it on the timeline where it started. Rejects with an Error whose message is a sentence. */
   onStop: (take: Blob) => Promise<void>;
+  /** While recording, every LEVEL_STEP seconds of the take: the microphone's loudest level (0–1) in that time. */
+  onLevel?: (level: number) => void;
   onBack: () => void;
   onClose: () => void;
 }) {
@@ -38,9 +44,11 @@ export function VoicePanel({
   const recorderRef = useRef<{ stop: () => Promise<Blob> } | null>(null);
   const countdownRef = useRef<number | undefined>(undefined);
   const clockRef = useRef<number | undefined>(undefined);
-  // The latest callbacks, for the countdown's timer and the unmount cleanup.
-  const props = useRef({ onStart, onStop });
-  props.current = { onStart, onStop };
+  // The take being recorded: when it began, how many levels were sent, the loudest level since the last one.
+  const takeRef = useRef<{ startedAt: number; sent: number; peak: number } | null>(null);
+  // The latest callbacks, for the countdown's timer, the level meter and the unmount cleanup.
+  const props = useRef({ onStart, onStop, onLevel });
+  props.current = { onStart, onStop, onLevel };
 
   // Declared before the microphone effect so its cleanup runs first on unmount: the recorder must stop before the
   // microphone's tracks do, or MediaRecorder goes inactive on its own and `stop()` never resolves.
@@ -50,6 +58,7 @@ export function VoicePanel({
       window.clearInterval(clockRef.current);
       const recorder = recorderRef.current;
       recorderRef.current = null;
+      takeRef.current = null;
       // The user switched tabs mid-take: keep it anyway.
       if (recorder) void recorder.stop().then((take) => props.current.onStop(take));
     },
@@ -87,7 +96,18 @@ export function VoicePanel({
     let frame = 0;
     const tick = () => {
       const mic = micRef.current;
-      if (mic) bar.style.width = `${mic.level() * 100}%`;
+      const level = mic?.level() ?? 0;
+      bar.style.width = `${level * 100}%`;
+      const take = takeRef.current;
+      if (take) {
+        take.peak = Math.max(take.peak, level);
+        // A loop: after frames the window skipped it catches up, so the levels keep pace with the take.
+        const due = Math.floor((Date.now() - take.startedAt) / (LEVEL_STEP * 1000));
+        if (take.sent < due) {
+          for (; take.sent < due; take.sent++) props.current.onLevel?.(take.peak);
+          take.peak = 0;
+        }
+      }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
@@ -113,6 +133,7 @@ export function VoicePanel({
     // Only once it records: the video plays (and goes quiet) for a take that's really being made.
     props.current.onStart(mute);
     const startedAt = Date.now();
+    takeRef.current = { startedAt, sent: 0, peak: 0 };
     setSeconds(0);
     setPhase("recording");
     clockRef.current = window.setInterval(() => setSeconds((Date.now() - startedAt) / 1000), 250);
@@ -144,6 +165,7 @@ export function VoicePanel({
   async function stop() {
     const recorder = recorderRef.current;
     recorderRef.current = null;
+    takeRef.current = null;
     window.clearInterval(clockRef.current);
     clockRef.current = undefined;
     if (!recorder) {

@@ -172,7 +172,7 @@ export interface Clip {
   look?: LookId;
   /** A filter block: its strength, 0–1 (1 when absent). */
   lookAmount?: number;
-  /** Edit → Adjust (a picture, or a filter block): brightness, contrast, saturation and warmth, -100 to 100. */
+  /** Edit → Adjust (a picture, or a filter block): brightness, contrast, saturation, exposure, highlights, shadows, warmth, sharpen; -100 (0 for sharpen) to 100. */
   adjust?: Adjust;
   /** An effect block: effects.ts `PICTURE_EFFECTS`. */
   effect?: PictureEffectId;

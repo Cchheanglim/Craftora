@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { inDesktopApp } from "../lib/engine";
 import { captureThumbnail, draw } from "../lib/thumbnail";
 import type { ClipPatch } from "../project/actions";
-import { ADJUSTMENTS, EFFECT_SETTINGS, LOOKS, PICTURE_EFFECTS, TIME_EFFECTS, blockLabel, lookFilter, type FxItem } from "../project/effects";
+import { ADJUSTMENTS, EFFECT_SETTINGS, adjustMin, LOOKS, PICTURE_EFFECTS, TIME_EFFECTS, blockLabel, lookFilter, type FxItem } from "../project/effects";
 import { TRANSITION_KINDS, clipEnd, clipLength, mediaTimeAt, showsPicture, type Clip, type Project, type Transition } from "../project/model";
 import { SHAPES } from "../project/shapes";
 import { Slider } from "./Inspector";
@@ -296,7 +296,7 @@ export function FxPanel({
                   key={id}
                   id={`fx-adjust-${id}`}
                   label={label}
-                  min={-100}
+                  min={adjustMin(id)}
                   max={100}
                   step={1}
                   value={selectedBlock.adjust?.[id] ?? 0}

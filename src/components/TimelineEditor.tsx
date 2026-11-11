@@ -92,6 +92,12 @@ interface TimelineEditorProps {
   onCover: (choice: "frame" | "picture" | "remove") => void;
   /** The + on the join before `clip` (where a clip was split or two clips meet). */
   onJoin: (clip: Clip) => void;
+  /**
+   * A voice-over being recorded: drawn as a growing clip from `start` to `end` (seconds on the timeline) on track
+   * `trackId`, the track the take will land on; null: a new row below all the tracks (the take gets a new track).
+   * `levels`: the microphone's loudness, 0 to 1, one value per 0.1 s of the take so far, oldest first.
+   */
+  recording?: { start: number; end: number; trackId: string | null; levels: number[] } | null;
 }
 
 /** What a clip's right-click menu can do (App `clipCommand` does it). */
@@ -150,6 +156,7 @@ export function TimelineEditor({
   canPaste,
   onCover,
   onJoin,
+  recording,
 }: TimelineEditorProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -288,7 +295,7 @@ export function TimelineEditor({
     else if (x < el.scrollLeft) el.scrollLeft = Math.max(0, x - 80);
   }, [playback.time, playback.playing, pps]);
 
-  const contentWidth = Math.max(viewWidth, (Math.max(duration, 10, playback.time) + 10) * pps);
+  const contentWidth = Math.max(viewWidth, (Math.max(duration, 10, playback.time, recording?.end ?? 0) + 10) * pps);
   const timeAt = (clientX: number) => {
     const rect = contentRef.current!.getBoundingClientRect();
     return Math.max(0, (clientX - rect.left) / pps);
@@ -730,6 +737,8 @@ export function TimelineEditor({
               </div>
             );
           })}
+          {/* The new track a voice-over being recorded will get: an empty head (tracks are unnamed). */}
+          {recording?.trackId === null && <div className="tl__head is-recording" style={{ height: ROW_PX.m }} role="group" aria-label="Voice-over" />}
           </div>
         </div>
 
@@ -934,8 +943,15 @@ export function TimelineEditor({
                         </button>
                       );
                     })}
+                {recording && recording.trackId === track.id && <RecordingClip recording={recording} pps={pps} />}
               </div>
             ))}
+            {/* Not a real track yet: no laneRefs entry, takes no drops. */}
+            {recording?.trackId === null && (
+              <div className="tl__lane is-recording" style={{ height: ROW_PX.m }}>
+                <RecordingClip recording={recording} pps={pps} />
+              </div>
+            )}
             </div>
 
             {coverMenu && createPortal(
@@ -1024,6 +1040,36 @@ const ClipWave = memo(function ClipWave({ clip, media, bars, muted, height }: { 
     </span>
   );
 });
+
+/**
+ * A voice-over being recorded: a red clip from where the take started to now, the microphone's wave growing inside
+ * it. Not a real clip: nothing to press (CSS lets clicks through).
+ */
+function RecordingClip({ recording, pps }: { recording: NonNullable<TimelineEditorProps["recording"]>; pps: number }) {
+  const { levels } = recording;
+  const length = recording.end - recording.start;
+  const width = Math.max(4, length * pps);
+  // At most 1,500 bars, and no more than fit at 2 px each (1 px bar + 1 px gap, .tl__wave's grid), so the wave never
+  // runs past the clip's end: neighbours merge into their loudest.
+  const group = Math.ceil(levels.length / Math.min(1500, Math.max(1, Math.floor(width / 2))));
+  const bars = group <= 1 ? levels : Array.from({ length: Math.ceil(levels.length / group) }, (_, i) => Math.max(...levels.slice(i * group, (i + 1) * group)));
+  return (
+    <div className="tl__clip is-audio is-recording" style={{ left: recording.start * pps, width }} aria-label="Voice-over, recording">
+      <span className="tl__label">
+        <span className="tl__name truncate">
+          <span className="tl__rec-dot" aria-hidden="true" />
+          Recording
+        </span>
+        <span className="tl__length mono">{formatTimecode(length)}</span>
+      </span>
+      <span className="tl__wave" aria-hidden="true">
+        {bars.map((level, i) => (
+          <span key={i} style={{ height: `${Math.max(4, level * 100)}%` }} />
+        ))}
+      </span>
+    </div>
+  );
+}
 
 /**
  * A video clip's frames along it: as many as fit at their own shape, each the frame

@@ -78,7 +78,7 @@ import { applyTheme, saveTheme, savedTheme, type Theme } from "./lib/theme";
 import { preference } from "./lib/preferences";
 import { useGlideScroll } from "./lib/glide";
 import { useProject } from "./project/useProject";
-import { applyEdit, SHOWN_CAPTIONS, timelineCaptions, withShownCaptions } from "./project/actions";
+import { applyEdit, SHOWN_CAPTIONS, timelineCaptions, voiceTrack, withShownCaptions } from "./project/actions";
 import { usePlayback } from "./project/usePlayback";
 import { cutModeApplies, formatSize, frameOf, planExport, type ExportPlan } from "./project/exportPlan";
 import {
@@ -115,7 +115,7 @@ import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/Edge
 import { dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, type FxTab } from "./components/FxPanel";
 import { SoundPanel } from "./components/SoundPanel";
-import { VoicePanel } from "./components/VoicePanel";
+import { LEVEL_STEP, VoicePanel } from "./components/VoicePanel";
 import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
 import { TimelineEditor, type ClipCommand } from "./components/TimelineEditor";
@@ -359,6 +359,8 @@ export default function App() {
   // A voice-over take: where on the timeline it started, and the preview kept quiet while it records.
   const voiceAt = useRef(0);
   const [voiceSilent, setVoiceSilent] = useState(false);
+  // The take's microphone levels so far (VoicePanel `onLevel`), for its live clip on the timeline; null when not recording.
+  const [voiceLevels, setVoiceLevels] = useState<number[] | null>(null);
   /** How much of each link preview is cached on disk (by cache id), 0–100. */
   const [cached, setCached] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -1275,6 +1277,8 @@ export default function App() {
       throw new Error(errorText(err));
     }
   };
+  const voiceEnd = voiceAt.current + (voiceLevels?.length ?? 0) * LEVEL_STEP;
+  const recording = voiceLevels && { start: voiceAt.current, end: voiceEnd, trackId: voiceTrack(project, voiceAt.current, voiceEnd), levels: voiceLevels };
   const openVoice = () => {
     if (rightTab !== "sound" && rightTab !== "voice") panelBack.current = rightTab;
     setRightTab("voice");
@@ -1899,6 +1903,7 @@ export default function App() {
               onDelete={remove}
               onAddText={addText}
               onRecordVoice={inDesktopApp ? openVoice : undefined}
+              recording={recording}
               onDropFx={applyFx}
               onClipCommand={clipCommand}
               canPaste={canPaste}
@@ -2027,14 +2032,17 @@ export default function App() {
               startAt={formatClock(playback.time)}
               onStart={(mute) => {
                 voiceAt.current = playback.time;
+                setVoiceLevels([]);
                 setVoiceSilent(mute);
                 if (!playback.playing) playback.toggle();
               }}
               onStop={(take) => {
                 playback.pause();
                 setVoiceSilent(false);
-                return placeVoice(take);
+                // The live clip stays until the take is on the timeline in its place.
+                return placeVoice(take).finally(() => setVoiceLevels(null));
               }}
+              onLevel={(level) => setVoiceLevels((levels) => levels && [...levels, level])}
               onBack={() => setRightTab(panelBack.current)}
               onClose={() => {
                 setRightTab(panelBack.current);

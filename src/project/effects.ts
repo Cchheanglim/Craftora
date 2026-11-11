@@ -15,7 +15,10 @@ import type { CSSProperties } from "react";
  * One colour step of a filter: a CSS filter function and its amount (degrees for hue-rotate). The
  * preview applies the steps in order; the export draws the same maths (project.rs `look_filter`).
  */
-export type LookStep = readonly ["grayscale" | "sepia" | "saturate" | "hue-rotate" | "brightness" | "contrast" | "invert" | "warmth", number];
+export type LookStep = readonly [
+  "grayscale" | "sepia" | "saturate" | "hue-rotate" | "brightness" | "contrast" | "invert" | "warmth" | ToneOp | "sharpen",
+  number,
+];
 
 export const LOOKS = [
   { id: "bw", label: "Black & white", steps: [["grayscale", 1]] },
@@ -48,25 +51,56 @@ export function lookSteps(id?: string, amount = 1): LookStep[] {
   ]);
 }
 
-/** Edit → Adjust: sliders from -100 to 100, 0 = unchanged. */
+/** Edit → Adjust: sliders from `adjustMin` to 100, 0 = unchanged. */
 export const ADJUSTMENTS = [
   { id: "brightness", label: "Brightness" },
   { id: "contrast", label: "Contrast" },
   { id: "saturation", label: "Saturation" },
+  { id: "exposure", label: "Exposure" },
+  { id: "highlights", label: "Highlights" },
+  { id: "shadows", label: "Shadows" },
   { id: "warmth", label: "Warmth" },
+  { id: "sharpen", label: "Sharpen" },
 ] as const;
 export type Adjust = Partial<Record<(typeof ADJUSTMENTS)[number]["id"], number>>;
 
+/** Where an Adjust slider starts: Sharpen only sharpens. */
+export const adjustMin = (id: keyof Adjust) => (id === "sharpen" ? 0 : -100);
+
 /** A clip's adjustments as colour steps, drawn after its filter; none for all at 0. */
 export function adjustSteps(adjust?: Adjust): LookStep[] {
-  const v = (id: keyof Adjust) => Math.round(clamp(adjust?.[id] ?? 0, -100, 100)) / 100;
+  const v = (id: keyof Adjust) => Math.round(clamp(adjust?.[id] ?? 0, adjustMin(id), 100)) / 100;
   const steps: LookStep[] = [];
+  if (v("exposure")) steps.push(["exposure", v("exposure")]);
   if (v("brightness")) steps.push(["brightness", round4(1 + v("brightness") / 2)]);
   if (v("contrast")) steps.push(["contrast", round4(1 + v("contrast") / 2)]);
+  if (v("highlights")) steps.push(["highlights", v("highlights")]);
+  if (v("shadows")) steps.push(["shadows", v("shadows")]);
   if (v("saturation")) steps.push(["saturate", round4(1 + v("saturation"))]);
   if (v("warmth")) steps.push(["warmth", v("warmth")]);
+  if (v("sharpen")) steps.push(["sharpen", v("sharpen")]);
   return steps;
 }
+
+/** Adjust's tone curves, the same on red, green and blue. */
+export type ToneOp = "exposure" | "highlights" | "shadows";
+
+/**
+ * A tone curve at `v` (-1 to 1) for a value `x` (0 to 1); black and white stay put and it never folds back
+ * (project.rs `look_filter` draws the same maths with lutrgb):
+ * - Exposure: gain 2^(1.5 v) on the darks that eases off towards white, so brighter never burns the highlights out.
+ * - Highlights: moves the bright tones (most at two thirds up); Shadows: the dark ones (most at a third).
+ */
+export function toneCurve(op: ToneOp, v: number, x: number): number {
+  if (op === "exposure") {
+    const g = 2 ** (1.5 * v);
+    return (g * x) / (1 + (g - 1) * x);
+  }
+  return op === "highlights" ? x + v * x * x * (1 - x) : x + v * x * (1 - x) ** 2;
+}
+
+/** Sharpen at `v` (0 to 1): the 3×3 kernel's weight on each of the four neighbours, taken away (the middle gets 1 + 4×). */
+export const sharpenWeight = (v: number) => 0.5 * v;
 
 /** How much Warmth 100 changes red and blue (project.rs `look_filter` uses the same). */
 const WARMTH = 0.2;
@@ -76,12 +110,16 @@ export function warmthMatrix(w: number): string {
   return `${round4(1 + WARMTH * w)} 0 0 0 0 0 1 0 0 0 0 0 ${round4(1 - WARMTH * w)} 0 0 0 0 0 1 0`;
 }
 
+/** Adjust's steps that CSS has no function for: the preview draws them as SVG filters with ids `<op>-<slider value>`. */
+export const SVG_STEPS = ["warmth", "exposure", "highlights", "shadows", "sharpen"] as const;
+const isSvgStep = (op: LookStep[0]): op is (typeof SVG_STEPS)[number] => (SVG_STEPS as readonly string[]).includes(op);
+
 /**
- * Colour steps as CSS, for the preview; undefined for none. CSS has no warmth function: it points at the SVG filter
- * the preview draws for each Warmth value (Preview.tsx `WARMTH_FILTERS`).
+ * Colour steps as CSS, for the preview; undefined for none. Warmth, the tone curves and Sharpen point at the SVG
+ * filter the preview draws for their value (Preview.tsx `WARMTH_FILTERS`, `AdjustFilters`).
  */
 export function stepsFilter(steps: LookStep[]): string | undefined {
-  const css = ([op, a]: LookStep) => (op === "warmth" ? `url(#warmth-${Math.round(a * 100)})` : `${op}(${op === "hue-rotate" ? `${a}deg` : a})`);
+  const css = ([op, a]: LookStep) => (isSvgStep(op) ? `url(#${op}-${Math.round(a * 100)})` : `${op}(${op === "hue-rotate" ? `${a}deg` : a})`);
   return steps.length ? steps.map(css).join(" ") : undefined;
 }
 
