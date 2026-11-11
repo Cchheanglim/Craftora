@@ -13,6 +13,13 @@
   it says so when it heard nothing.
 - **Hover tips in Craftora's own look**: resting the pointer on a button shows its tip in the app's theme (dark, light
   or glass) instead of the white Windows box, also over open windows like the Welcome guide.
+- **Volume for transitions**: a transition's settings have a Volume slider. At 100% (the default) the sound stays
+  just as loud through the transition (it used to dip in the middle, and went silent there for Dip and Flash); lower
+  dips it in the middle, in the preview and the export alike.
+- **A "+" on filter, effect and transition tiles** when you point at one: clicking adds it at the playhead.
+- **Muted clips show it**: a clip whose sound is at 0% has a crossed-out speaker before its name; click it for the
+  Sound panel. And once the Sound panel is open, it comes back by itself when you select a clip with sound again
+  (after clicking somewhere else), until you close it or pick another tab.
 - **Settings panels for effects, filters and transitions**: click one on the timeline and its settings open in their own
   panel (Back to the tiles, X to close): Duration, Strength or Speed, Adjust sliders, or a transition's Type, Duration and
   Apply to all cuts, each with Remove. Edit is now only about the clip itself. A transition clicked in Transitions with a
@@ -92,6 +99,14 @@
 
 **Fixed**
 
+- A transition between a video and a shape (or text) right after it said the two clips had to meet; it now goes on
+  that cut. On a clip with no cut at all (one long video), a transition now cuts it at the playhead (or where it's
+  dropped) and goes there, instead of asking you to split it first. Adding another transition (click or drag) further
+  along a clip that already has one adds a new one there instead of replacing the first; drop onto a cut, or use Type
+  in a transition's settings, to change one. Shapes on the timeline show their name
+  (Rectangle…) instead of "Clip".
+- Zooming the timeline with a touchpad pinch or Ctrl + mouse wheel now zooms around the pointer, not the left edge.
+- No white squares on the corners of the selected thing in the preview; its corners and sides still resize it.
 - A long video zoomed in on the timeline showed its picture frames only part of the way; they now reach its end.
 - The trim handles at a selected clip's ends are a thin line now (same area to grab); the "Copy report" buttons are gone.
 - Playing on in the background after leaving the editor (Settings, Projects…): leaving it now pauses.

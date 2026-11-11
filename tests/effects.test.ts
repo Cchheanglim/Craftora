@@ -211,10 +211,34 @@ test("an effect dropped in the empty space around the tracks gets a track of its
   expect(p.clips.find((c) => c.id === "c")?.effect).toBeUndefined();
 });
 
-test("a transition in the middle of a clip goes on that clip's own cut and never cuts it", () => {
+test("a transition on a clip with no cut cuts it there", () => {
   let p = withClip();
-  // One clip alone has no cut: nowhere to go (it used to cut the clip there).
-  expect(dropEdits(p, { kind: "transition", id: "dip" }, undefined, 4, ["x", "y"])).toBeNull();
+  const done = dropEdits(p, { kind: "transition", id: "dip" }, undefined, 4, ["x", "y"])!;
+  expect(done.select).toBe("x");
+  p = run(p, done.edits);
+  expect(p.clips.length).toBe(2);
+  expect(p.clips.find((c) => c.id === "x")?.transition).toEqual({ kind: "dip", duration: 1 });
+  // At its very start: no cut, nowhere to go.
+  expect(dropEdits(withClip(), { kind: "transition", id: "dip" }, undefined, 0.2, ["x", "y"])).toBeNull();
+});
+
+test("a second transition in a clip whose cut already has one cuts it there, keeping the first", () => {
+  let p = withClip();
+  p = run(p, dropEdits(p, { kind: "transition", id: "dip" }, undefined, 3, ["x", "y"])!.edits);
+  const later = p.clips.find((c) => c.id === "x")!;
+  // Well inside the piece after the dip: a new flash there, the dip untouched.
+  const done = dropEdits(p, { kind: "transition", id: "flash" }, later.trackId, later.start + 4, ["f", "g"])!;
+  expect(done.edits[0]).toMatchObject({ type: "splitClip", clipId: "x" });
+  p = run(p, done.edits);
+  expect(p.clips.find((c) => c.id === "x")?.transition?.kind).toBe("dip");
+  expect(p.clips.find((c) => c.id === "f")?.transition?.kind).toBe("flash");
+  // Dropped on the dip's cut: that one changes.
+  const swap = dropEdits(p, { kind: "transition", id: "wipe" }, later.trackId, later.start + 0.5, ["h", "i"])!;
+  expect(swap.edits).toEqual([{ type: "setTransition", clipId: "x", transition: { kind: "wipe", duration: 1 } }]);
+});
+
+test("a transition in the middle of a clip with a cut goes on that cut and doesn't cut it", () => {
+  let p = withClip();
   p = applyEdit(p, { type: "splitClip", clipId: "c", newClipId: "b", at: 4 });
   p = applyEdit(p, { type: "splitClip", clipId: "b", newClipId: "d", at: 7 });
   // In the middle of the first clip: into the clip after it.

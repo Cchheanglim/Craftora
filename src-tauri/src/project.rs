@@ -196,6 +196,11 @@ struct ClipSpec {
     transition_out: f64,
     #[serde(default)]
     transition_out_kind: TransitionKind,
+    /// How loud the sound stays in the middle of each transition, 0–1 (`transition_sound`).
+    #[serde(default = "one")]
+    transition_in_volume: f64,
+    #[serde(default = "one")]
+    transition_out_volume: f64,
     /// Video: scale where 1 fills the frame as far as the shape allows. Text: height / frame.
     #[serde(default = "one")]
     size: f64,
@@ -237,6 +242,7 @@ impl ClipSpec {
     /// Every fade the clip has, in its own time: fades, and its share of transitions. A
     /// crossfade fades the incoming clip in over the outgoing one (whose picture stays); a dip
     /// fades the outgoing clip out in the first half and the incoming one in the second half.
+    /// The sound's share of transitions is `transition_sound` instead.
     fn ramps(&self, sound: bool) -> Vec<Ramp> {
         let length = self.length();
         let mut ramps = Vec::new();
@@ -253,7 +259,7 @@ impl ClipSpec {
             let d = self.sound_fade_out.min(length);
             ramps.push(Ramp { white: false, fade_in: false, start: length - d, length: d });
         }
-        if self.transition_in > 0.0 {
+        if self.transition_in > 0.0 && !sound {
             match self.transition_in_kind {
                 TransitionKind::Dip | TransitionKind::Flash => ramps.push(Ramp {
                     white: self.transition_in_kind == TransitionKind::Flash,
@@ -261,30 +267,45 @@ impl ClipSpec {
                     start: self.transition_in / 2.0,
                     length: self.transition_in / 2.0,
                 }),
-                // Otherwise the picture moves in or is uncovered (`slide`, `reveal_in`); only the sound fades.
-                k if k.fades_in() || sound => ramps.push(Ramp { white: false, fade_in: true, start: 0.0, length: self.transition_in }),
+                // Otherwise the picture moves in or is uncovered (`slide`, `reveal_in`).
+                k if k.fades_in() => ramps.push(Ramp { white: false, fade_in: true, start: 0.0, length: self.transition_in }),
                 _ => {}
             }
             // A flash's incoming clip stays hidden until the outgoing one is all white, or its own white covers that.
-            if self.transition_in_kind == TransitionKind::Flash && !sound {
+            if self.transition_in_kind == TransitionKind::Flash {
                 ramps.push(Ramp { white: false, fade_in: true, start: self.transition_in / 2.0, length: 0.001 });
             }
         }
-        if self.transition_out > 0.0 {
-            let begins = length - self.transition_out;
-            match self.transition_out_kind {
-                TransitionKind::Dip | TransitionKind::Flash => ramps.push(Ramp {
-                    white: self.transition_out_kind == TransitionKind::Flash,
-                    fade_in: false,
-                    start: begins,
-                    length: self.transition_out / 2.0,
-                }),
-                // The picture stays under the incoming one (moved or zoomed, but whole); only the sound fades.
-                _ if sound => ramps.push(Ramp { white: false, fade_in: false, start: begins, length: self.transition_out }),
-                _ => {}
-            }
+        // Otherwise the picture stays under the incoming one (moved or zoomed, but whole).
+        if self.transition_out > 0.0 && !sound && matches!(self.transition_out_kind, TransitionKind::Dip | TransitionKind::Flash) {
+            ramps.push(Ramp {
+                white: self.transition_out_kind == TransitionKind::Flash,
+                fade_in: false,
+                start: length - self.transition_out,
+                length: self.transition_out / 2.0,
+            });
         }
         ramps
+    }
+
+    /// The sound through its transitions, matching the preview (model.ts `transitionGain`): an equal-power crossfade
+    /// (sine in, cosine out, so the two clips together stay as loud), dipped in the middle down to the transition's
+    /// volume. A `volume` filter over the clip's own time; nothing without transitions.
+    fn transition_sound(&self) -> String {
+        let dip = |p: &str, volume: f64| format!("(1-{:.3}*sin(PI*{p}))", 1.0 - volume.clamp(0.0, 1.0));
+        let mut gain = Vec::new();
+        if self.transition_in > 0.0 {
+            let p = format!("clip(t/{},0,1)", secs(self.transition_in));
+            gain.push(format!("sin(PI/2*{p})*{}", dip(&p, self.transition_in_volume)));
+        }
+        if self.transition_out > 0.0 {
+            let p = format!("clip((t-{})/{},0,1)", secs(self.length() - self.transition_out), secs(self.transition_out));
+            gain.push(format!("cos(PI/2*{p})*{}", dip(&p, self.transition_out_volume)));
+        }
+        if gain.is_empty() {
+            return String::new();
+        }
+        format!(",volume='{}':eval=frame", gain.join("*"))
     }
 
     /// Picture filters after the cut: mirror, reverse, crop, speed. Each starts with a comma.
@@ -438,6 +459,7 @@ impl ClipSpec {
         for r in self.ramps(true) {
             chain.push_str(&format!(",afade=t={}:st={}:d={}", if r.fade_in { "in" } else { "out" }, secs(r.start.max(0.0)), secs(r.length)));
         }
+        chain.push_str(&self.transition_sound());
         chain
     }
 
@@ -1365,7 +1387,11 @@ mod tests {
         assert_eq!(slide_in.slide('W'), "+W*(1-(0.5-0.5*cos(PI*clip((t-2.000)/1.000,0,1))))");
         assert_eq!(slide_in.slide('H'), "");
         assert_eq!(slide_in.picture_fades(), "");
-        assert!(slide_in.sound_edits().contains(",afade=t=in:st=0.000:d=1.000"));
+        assert_eq!(slide_in.sound_edits(), ",volume=1.00,volume='sin(PI/2*clip(t/1.000,0,1))*(1-0.000*sin(PI*clip(t/1.000,0,1)))':eval=frame");
+        // Out, at 30%: falls from 2 s of the 3 s clip and dips to 30% in the middle (the preview's `transitionGain`).
+        let quiet_out = clip(r#""transitionOut":1,"transitionOutKind":"dip","transitionOutVolume":0.3"#).sound_edits();
+        assert!(quiet_out.ends_with(",volume='cos(PI/2*clip((t-2.000)/1.000,0,1))*(1-0.700*sin(PI*clip((t-2.000)/1.000,0,1)))':eval=frame"), "{quiet_out}");
+        assert!(!quiet_out.contains("afade"), "{quiet_out}");
         let slide_out = clip(r#""transitionOut":1,"transitionOutKind":"slide""#);
         assert_eq!(slide_out.slide('W'), "-W*(0.5-0.5*cos(PI*clip((t-4.000)/1.000,0,1)))");
         assert_eq!(slide_out.picture_fades(), "");

@@ -516,6 +516,28 @@
   vertical-align: -2px;
 }
 
+/* A clip with its sound at 0%: a crossed speaker before its name, opening the Sound panel. */
+.tl__mute {
+  margin-right: 5px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 2px;
+  background: rgb(0 0 0 / 0.72);
+  color: #fff;
+  line-height: 14px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.tl__mute:hover {
+  background: rgb(0 0 0 / 0.9);
+}
+
+.tl__name .tl__mute svg {
+  margin: 0;
+  vertical-align: -2px;
+}
+
 /* The audio wave along the bottom of video and audio clips. */
 /* A video clip's frames (ClipFrames), under its name and sound wave. */
 .tl__frames {

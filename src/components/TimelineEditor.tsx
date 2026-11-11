@@ -895,6 +895,18 @@ export function TimelineEditor({
                         <span className="tl__label">
                           <span className="tl__name truncate">
                             {isBlock(clip) && <Icon name={clip.effect ? "sparkle" : clip.look ? "blend" : "sliders"} size={12} />}
+                            {media?.hasAudio && !media.source.image && clip.volume <= 0 && (
+                              <button
+                                type="button"
+                                className="tl__mute"
+                                title="Sound off: click for volume"
+                                aria-label="Sound off: open the sound settings"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={() => onOpenSound?.(clip.id)}
+                              >
+                                <Icon name="volumeOff" size={12} />
+                              </button>
+                            )}
                             {media?.missing && "Missing · "}
                             {label}
                           </span>

@@ -278,15 +278,22 @@ export function dropEdits(
   const edits: EditAction[] = [];
   // Any clip but a filter/effect block can take one: a video into a shape or text works like the preview and export.
   const pieces = trackOrder(p, track.id).filter((c) => !isBlock(c));
-  // Over the middle of a clip: on that clip's own cut, from the clip before it, else into the clip after it (never cuts it).
+  // Over the middle of a clip: on that clip's own cut from the clip before it, else into the clip after it, while that
+  // cut has no transition yet. Otherwise (one long video, or both cuts taken) the clip is cut right there, so a new
+  // transition never replaces one already there; dropping on a cut does that.
   const under = pieces.filter((c) => time >= c.start && time < clipEnd(c));
   const nearJoin = pieces.some((c) => Math.abs(time - c.start) <= JOIN_REACH || Math.abs(time - clipEnd(c)) <= JOIN_REACH);
   // One clip only: inside a transition two clips overlap, and that one is changed on its join instead.
   const inside = under.length === 1 && !nearJoin ? under[0] : undefined;
   if (inside) {
     const i = pieces.indexOf(inside);
-    const join = meets(pieces[i - 1], inside) ? inside : pieces[i + 1] && meets(inside, pieces[i + 1]) ? pieces[i + 1] : undefined;
-    if (!join) return null;
+    const next = pieces[i + 1];
+    const join = meets(pieces[i - 1], inside) && !inside.transition ? inside : next && meets(inside, next) && !next.transition ? next : undefined;
+    if (!join) {
+      edits.push({ type: "splitClip", clipId: inside.id, newClipId: newIds[0], at: time });
+      edits.push({ type: "setTransition", clipId: newIds[0], transition: { kind, duration: 1 } });
+      return { edits, select: newIds[0] };
+    }
     edits.push({ type: "setTransition", clipId: join.id, transition: { kind, duration: 1 } });
     return { edits, select: join.id };
   }

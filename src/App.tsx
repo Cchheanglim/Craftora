@@ -541,10 +541,18 @@ export default function App() {
   const toExport = useMemo(() => (showCaptions ? withShownCaptions(project) : project), [project, showCaptions]);
   const plan = useMemo(() => planExport(toExport, effective), [toExport, effective]);
   const selected = project.clips.find((c) => c.id === selectedId) ?? null;
-  // The Sound panel belongs to a clip: with none selected, it goes back to where it was opened from.
+  // The Sound panel belongs to a clip: with none selected, it goes back to where it was opened from, and comes back when
+  // a clip with sound is selected again, until it's closed or another tab is picked (`soundOpen`).
+  const [soundOpen, setSoundOpen] = useState(false);
+  const selectedHasSound = Boolean(selected?.mediaId && project.media.find((m) => m.id === selected.mediaId)?.hasAudio);
   useEffect(() => {
     if (rightTab === "sound" && !selected?.mediaId) setRightTab(panelBack.current);
-  }, [rightTab, selected]);
+    else if (soundOpen && selectedHasSound && rightTab === panelBack.current) setRightTab("sound");
+  }, [rightTab, selected, soundOpen, selectedHasSound]);
+  const pickTab = (tab: typeof rightTab) => {
+    setSoundOpen(false);
+    setRightTab(tab);
+  };
   // A selected transition belongs to the selected clip, while it still has one.
   const transitionClip = selected && selectedTransition === selected.id && selected.transition ? selected : null;
 
@@ -1296,7 +1304,7 @@ export default function App() {
     if (!done) {
       setError(
         item.kind === "transition"
-          ? "A transition goes where two clips meet: use it on a clip with another one right before or after it."
+          ? "Put the playhead inside a clip (not at its very start or end) to add a transition there."
           : item.kind === "fade"
             ? "Drop a fade on a clip: it fades that clip's start or end."
             : "Drop it on a video or sound clip (pictures have no speed).",
@@ -1307,7 +1315,7 @@ export default function App() {
     api.checkpoint();
     for (const edit of done.edits) api.editLive(edit);
     if (done.select) setSelectedId(done.select);
-    // A transition just added is the one selected (a tile clicked next swaps it).
+    // A transition just added is the one selected.
     setSelectedTransition(item.kind === "transition" ? (done.select ?? null) : null);
     // A new block or shape: the timeline zooms in to it if it's too small to see at its zoom.
     if (done.select && done.edits.some((e) => e.type === "addBlock" || e.type === "addShape")) setRevealed({ clipId: done.select, at: Date.now() });
@@ -1890,6 +1898,7 @@ export default function App() {
               onOpenSound={(id) => {
                 if (rightTab !== "sound" && rightTab !== "voice") panelBack.current = rightTab;
                 setSelectedId(id);
+                setSoundOpen(true);
                 setRightTab("sound");
                 if (!rightOpen) toggleRight();
               }}
@@ -1928,22 +1937,22 @@ export default function App() {
         // Stays mounted when closed so it can slide away; inert keeps it out of Tab and clicks.
         <div className={`app__panel${rightOpen ? "" : " is-closed"}`} inert={!rightOpen}>
           <div className="segmented app__tabs" role="group" aria-label="Right panel">
-            <button type="button" aria-pressed={rightTab === "edit"} onClick={() => setRightTab("edit")}>
+            <button type="button" aria-pressed={rightTab === "edit"} onClick={() => pickTab("edit")}>
               Edit
             </button>
-            <button type="button" aria-pressed={rightTab === "export"} onClick={() => setRightTab("export")}>
+            <button type="button" aria-pressed={rightTab === "export"} onClick={() => pickTab("export")}>
               Export
             </button>
-            <button type="button" aria-pressed={rightTab === "transcript"} onClick={() => setRightTab("transcript")}>
+            <button type="button" aria-pressed={rightTab === "transcript"} onClick={() => pickTab("transcript")}>
               Transcript
             </button>
-            <button type="button" aria-pressed={rightTab === "assistant"} onClick={() => setRightTab("assistant")}>
+            <button type="button" aria-pressed={rightTab === "assistant"} onClick={() => pickTab("assistant")}>
               Assistant
             </button>
           </div>
           <div className="segmented app__tabs is-second" role="group" aria-label="Filters, effects, transitions and shapes">
             {(["filters", "effects", "transitions", "shapes"] as const).map((tab) => (
-              <button key={tab} type="button" aria-pressed={rightTab === tab} onClick={() => setRightTab(tab)}>
+              <button key={tab} type="button" aria-pressed={rightTab === tab} onClick={() => pickTab(tab)}>
                 {tab[0].toUpperCase() + tab.slice(1)}
               </button>
             ))}
@@ -1992,12 +2001,8 @@ export default function App() {
                 toggleRight();
               }}
               onPick={(item) => {
-                // A transition tile with a transition selected swaps it, keeping its length.
-                if (item.kind === "transition" && transitionClip?.transition) {
-                  api.edit({ type: "setTransition", clipId: transitionClip.id, transition: { ...transitionClip.transition, kind: item.id } });
-                  return;
-                }
-                if (!selected) return applyFx(item, undefined, playback.time);
+                // A transition tile always adds one at the playhead (never swaps the selected one: its Type does that).
+                if (!selected || item.kind === "transition") return applyFx(item, selected?.trackId, playback.time);
                 // At the playhead on the selected clip (a filter or effect goes inside it, a transition on its cut);
                 // with the playhead off the selected clip, at its start.
                 const inside = playback.time >= selected.start && playback.time < clipEnd(selected);
@@ -2023,9 +2028,9 @@ export default function App() {
               media={project.media.find((m) => m.id === selected.mediaId)}
               onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
               onCheckpoint={api.checkpoint}
-              onBack={() => setRightTab(panelBack.current)}
+              onBack={() => pickTab(panelBack.current)}
               onClose={() => {
-                setRightTab(panelBack.current);
+                pickTab(panelBack.current);
                 toggleRight();
               }}
             />

@@ -154,12 +154,11 @@
   outline-offset: -1px;
 }
 
+/* Unseen grab spots on the selection's corners and sides (owner: no white squares); the cursor shows the resize. */
 .preview__handle {
   position: absolute;
   width: 11px;
   height: 11px;
-  background: var(--text);
-  border: 1px solid #000;
   z-index: 2;
   touch-action: none;
 }
