@@ -807,11 +807,12 @@ body.is-dragging-media .tl__lane:hover {
   background: var(--accent-wash);
 }
 
-/* The sound wave's band: the wave, its sound fades and their drag dots. */
+/* The sound wave's band (its fades shown by the wave shrinking): a click opens the Sound panel. */
 .tl__clip.is-media .tl__wave-band {
   position: relative;
   order: 2;
   flex: none;
+  cursor: pointer;
 }
 
 .tl__clip.is-media.is-audio .tl__wave-band {
@@ -824,36 +825,7 @@ body.is-dragging-media .tl__lane:hover {
   height: auto;
 }
 
-/* A sound fade: the quiet part shaded down to the clip's edge, a line along the slope. */
-/* Dots on the band's top corners (kept clear of the trim handles): drag one to set a sound fade. */
-.tl__fade-dot {
-  position: absolute;
-  top: 0;
-  z-index: 4;
-  width: 9px;
-  height: 9px;
-  border: 1px solid rgb(0 0 0 / 0.6);
-  border-radius: 50%;
-  background: #fff;
-  cursor: ew-resize;
-  touch-action: none;
-  opacity: 0;
-}
-
-.tl__fade-dot.is-in {
-  translate: -50% -50%;
-}
-
-.tl__fade-dot.is-out {
-  translate: 50% -50%;
-}
-
-/* Drawn only on the selected clip. */
-.tl__clip.is-selected .tl__fade-dot,
-.tl__clip.is-fading .tl__fade-dot {
-  opacity: 1;
-}
-
+/* A length or name read out while dragging (trim, transition). */
 .tl__fade-tip {
   position: absolute;
   bottom: calc(100% + 4px);
@@ -868,18 +840,6 @@ body.is-dragging-media .tl__lane:hover {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
-}
-
-/* A fade's length reads inward from its handle, so it stays over the clip, not off its edge. */
-.tl__fade-dot.is-in .tl__fade-tip {
-  left: 0;
-  translate: none;
-}
-
-.tl__fade-dot.is-out .tl__fade-tip {
-  left: auto;
-  right: 0;
-  translate: none;
 }
 
 .tl__trim-tip {

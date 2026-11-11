@@ -54,10 +54,8 @@ const MIN_PPS = 2;
 const MAX_PPS = 400;
 /** Pixels the pointer must travel before a press on a clip becomes a drag. */
 const DRAG_THRESHOLD = 3;
-/** A sound fade's length: seconds, or minutes and seconds once it's a minute or more. */
+/** A length on the timeline: seconds, or minutes and seconds once it's a minute or more. */
 const fadeLength = (s: number) => (s < 60 ? `${s.toFixed(1)} s` : formatClock(s));
-/** A sound-fade handle at no fade sits this far inside the clip's edge, clear of the trim handle. */
-const FADE_INSET = 16;
 
 interface TimelineEditorProps {
   project: Project;
@@ -80,6 +78,8 @@ interface TimelineEditorProps {
   /** The clip whose transition (from the clip before it) is selected: outlined, its controls in the right panel. */
   selectedTransition?: string | null;
   onSelectTransition?: (clipId: string) => void;
+  /** A click on a clip's sound wave: open its Sound panel. */
+  onOpenSound?: (clipId: string) => void;
   /** A pick from a clip's right-click menu; `time`: the playhead if it's on the clip, else where it was clicked. */
   onClipCommand: (command: ClipCommand, clip: Clip, time: number) => void;
   /** Something has been copied, so Paste can put it at the playhead. */
@@ -98,8 +98,7 @@ type DragMode = "move" | "start" | "end";
 /** What the pointer is doing between press and release. */
 type Gesture =
   | { kind: "scrub" }
-  | { kind: "clip"; clipId: string; mode: DragMode; originX: number; originStart: number; originEdge: number; moved: boolean }
-  | { kind: "soundFade"; clipId: string; edge: "in" | "out"; originX: number; origin: number }
+  | { kind: "clip"; clipId: string; mode: DragMode; originX: number; originStart: number; originEdge: number; moved: boolean; onWave: boolean }
   | { kind: "transition"; clipId: string; originX: number; origin: number };
 
 /** Where a clip being moved is drawn; the project only changes on release. */
@@ -140,6 +139,7 @@ export function TimelineEditor({
   revealed,
   selectedTransition,
   onSelectTransition,
+  onOpenSound,
   onClipCommand,
   canPaste,
   onCover,
@@ -162,7 +162,7 @@ export function TimelineEditor({
   const [scrollbar, setScrollbar] = useState(0);
   const [fitted, setFitted] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
-  const [fadeDrag, setFadeDrag] = useState<{ clipId: string; edge: "in" | "out" | "trans" } | null>(null);
+  const [fadeDrag, setFadeDrag] = useState<{ clipId: string; edge: "trans" } | null>(null);
   const [trimTip, setTrimTip] = useState<{ clipId: string; edge: "start" | "end" } | null>(null);
   // Each video's filmstrip, made in the background (by preview address); until then its clips show its picture.
   const [strips, setStrips] = useState<Record<string, Strip>>({});
@@ -339,22 +339,6 @@ export function TimelineEditor({
       playback.seek(snap(timeAt(e.clientX), "", false));
       return;
     }
-    if (g.kind === "soundFade") {
-      scrollAtEdge(e.clientX);
-      const clip = project.clips.find((c) => c.id === g.clipId);
-      if (!clip || !contentRef.current) return;
-      // From where the dot was, by how far the pointer moved: the dot may sit a little inside the clip's edge.
-      const moved = (e.clientX - g.originX) / pps;
-      const raw = g.origin + (g.edge === "in" ? moved : -moved);
-      const other = (g.edge === "in" ? clip.soundFadeOut : clip.soundFadeIn) ?? 0;
-      const v = Math.min(Math.max(0, clipLength(clip) - other), Math.max(0, Math.round(raw * 10) / 10));
-      api.editLive({
-        type: "updateClip",
-        clipId: clip.id,
-        patch: g.edge === "in" ? { soundFadeIn: v } : { soundFadeOut: v },
-      });
-      return;
-    }
     if (g.kind === "transition") {
       scrollAtEdge(e.clientX);
       const clip = project.clips.find((c) => c.id === g.clipId);
@@ -408,10 +392,11 @@ export function TimelineEditor({
     setFadeDrag(null);
     setTrimTip(null);
     if (!g) return;
-    if (g.kind === "soundFade" || g.kind === "transition") {
+    if (g.kind === "transition") {
       api.editLive({ type: "settle" });
       return;
     }
+    if (g.kind === "clip" && !g.moved && g.onWave) onOpenSound?.(g.clipId);
     if (g.kind !== "clip" || !g.moved) return;
     const final = ghostRef.current;
     setGhost(null);
@@ -455,17 +440,8 @@ export function TimelineEditor({
       originStart: clip.start,
       originEdge: mode === "end" ? clipEnd(clip) : clip.start,
       moved: false,
+      onWave: mode === "move" && Boolean((e.target as Element).closest(".tl__wave-band")),
     });
-  };
-
-  const beginSoundFade = (clip: Clip, edge: "in" | "out") => (e: ReactPointerEvent<HTMLElement>) => {
-    if (e.button !== 0 || project.tracks.find((t) => t.id === clip.trackId)?.locked) return;
-    e.stopPropagation();
-    e.preventDefault();
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-    api.checkpoint();
-    setFadeDrag({ clipId: clip.id, edge });
-    startGesture({ kind: "soundFade", clipId: clip.id, edge, originX: e.clientX, origin: (edge === "in" ? clip.soundFadeIn : clip.soundFadeOut) ?? 0 });
   };
 
   const beginTransition = (clip: Clip) => (e: ReactPointerEvent<HTMLElement>) => {
@@ -860,40 +836,12 @@ export function TimelineEditor({
                             )}
                           </span>
                         )}
-                        {media?.hasAudio && !media.source.image && (() => {
-                          const soundFadeIn = clip.soundFadeIn ?? 0;
-                          const soundFadeOut = clip.soundFadeOut ?? 0;
-                          const fadingIn = fadeDrag?.clipId === clip.id && fadeDrag.edge === "in";
-                          const fadingOut = fadeDrag?.clipId === clip.id && fadeDrag.edge === "out";
-                          return (
-                            <div className="tl__wave-band" style={media.hasVideo ? { height: `${waveBand}px` } : undefined}>
-                              {/* A fade shows as the wave itself getting smaller (model.ts `clipPeaks`), no lines drawn over it. */}
-                              <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={trackSilent(track)} />
-                              {!track.locked && isSelected && length * pps >= 56 && (
-                                <>
-                                  <span
-                                    className={fadingIn ? "tl__fade-dot is-in is-dragging" : "tl__fade-dot is-in"}
-                                    style={{ left: Math.max(FADE_INSET, soundFadeIn * pps) }}
-                                    title="Drag to fade the sound in"
-                                    aria-label="Drag to fade the sound in"
-                                    onPointerDown={beginSoundFade(clip, "in")}
-                                  >
-                                    {fadingIn && soundFadeIn > 0 && <span className="tl__fade-tip mono">Fade in {fadeLength(soundFadeIn)}</span>}
-                                  </span>
-                                  <span
-                                    className={fadingOut ? "tl__fade-dot is-out is-dragging" : "tl__fade-dot is-out"}
-                                    style={{ right: Math.max(FADE_INSET, soundFadeOut * pps) }}
-                                    title="Drag to fade the sound out"
-                                    aria-label="Drag to fade the sound out"
-                                    onPointerDown={beginSoundFade(clip, "out")}
-                                  >
-                                    {fadingOut && soundFadeOut > 0 && <span className="tl__fade-tip mono">Fade out {fadeLength(soundFadeOut)}</span>}
-                                  </span>
-                                </>
-                              )}
-                            </div>
-                          );
-                        })()}
+                        {media?.hasAudio && !media.source.image && (
+                          // Clicked (not dragged), it opens the Sound panel (onPointerUp); a fade shows as the wave itself getting smaller.
+                          <div className="tl__wave-band" style={media.hasVideo ? { height: `${waveBand}px` } : undefined} title="Click for volume and sound fades">
+                            <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={trackSilent(track)} />
+                          </div>
+                        )}
                         {media?.source.chapters
                           ?.filter((ch) => ch.start > clip.in + 0.2 && ch.start < clip.out - 0.2)
                           .map((ch) => {

@@ -348,7 +348,9 @@ export default function App() {
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const [cuttingSilences, setCuttingSilences] = useState(false);
-  const [rightTab, setRightTab] = useState<"edit" | "export" | "transcript" | "assistant" | FxTab>("edit");
+  const [rightTab, setRightTab] = useState<"edit" | "export" | "transcript" | "assistant" | "sound" | FxTab>("edit");
+  // Where the Sound panel's Back button goes: the tab it was opened from.
+  const soundBack = useRef<typeof rightTab>("edit");
   /** How much of each link preview is cached on disk (by cache id), 0–100. */
   const [cached, setCached] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -528,6 +530,10 @@ export default function App() {
   const toExport = useMemo(() => (showCaptions ? withShownCaptions(project) : project), [project, showCaptions]);
   const plan = useMemo(() => planExport(toExport, effective), [toExport, effective]);
   const selected = project.clips.find((c) => c.id === selectedId) ?? null;
+  // The Sound panel belongs to a clip: with none selected, it goes back to where it was opened from.
+  useEffect(() => {
+    if (rightTab === "sound" && !selected?.mediaId) setRightTab(soundBack.current);
+  }, [rightTab, selected]);
   // A selected transition belongs to the selected clip, while it still has one.
   const transitionClip = selected && selectedTransition === selected.id && selected.transition ? selected : null;
 
@@ -1834,6 +1840,12 @@ export default function App() {
                 if (clip && isBlock(clip) && ["filters", "effects", "transitions", "shapes"].includes(rightTab)) setRightTab(clip.effect ? "effects" : "filters");
               }}
               selectedTransition={transitionClip?.id ?? null}
+              onOpenSound={(id) => {
+                if (rightTab !== "sound") soundBack.current = rightTab;
+                setSelectedId(id);
+                setRightTab("sound");
+                if (!rightOpen) toggleRight();
+              }}
               onSelectTransition={(id) => {
                 setSelectedId(id);
                 setSelectedTransition(id);
@@ -1946,6 +1958,18 @@ export default function App() {
             />
           ) : rightTab === "assistant" ? (
             <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} />
+          ) : rightTab === "sound" && selected?.mediaId ? (
+            <SoundPanel
+              clip={selected}
+              media={project.media.find((m) => m.id === selected.mediaId)}
+              onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
+              onCheckpoint={api.checkpoint}
+              onBack={() => setRightTab(soundBack.current)}
+              onClose={() => {
+                setRightTab(soundBack.current);
+                toggleRight();
+              }}
+            />
           ) : rightTab === "export" ? (
             <ExportPanel
               settings={effective}
