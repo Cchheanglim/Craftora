@@ -624,11 +624,11 @@
   pointer-events: none;
 }
 
-/* On a video or sound clip: over the top of its frames, under the name bar. */
+/* On a video or sound clip: over the top of its frames at the clip's end (its start has the transition's label). */
 .tl__clip.is-media .tl__tag {
   position: absolute;
   top: 16px;
-  left: 12px;
+  right: 12px;
   z-index: 2;
   display: flex;
   gap: 3px;

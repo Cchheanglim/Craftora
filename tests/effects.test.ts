@@ -70,22 +70,21 @@ test("Adjust adds colour steps after the filter, Warmth through its SVG filter, 
   expect(blocksStyle(p.clips, 0, 1280).filter).toBe("url(#warmth-100)");
 });
 
-test("a filter or effect is always a 5 s block of its own where it lands, even dropped on a clip", () => {
+test("a filter or effect dropped on a video goes inside it; off any clip it's a 5 s block of its own", () => {
   let p = withClip();
   const done = dropEdits(p, { kind: "filter", id: "bw" }, mainTrack(p), 2, ["f", "x"])!;
   p = run(p, done.edits);
-  // Not inside the clip: a block on a free track above, from where it was dropped, selected to set it up.
-  const filter = p.clips.find((c) => c.id === "f")!;
-  expect(done.select).toBe("f");
-  expect([filter.start, clipEnd(filter), isBlock(filter), filter.look]).toEqual([2, 7, true, "bw"]);
-  expect(filter.trackId).not.toBe(mainTrack(p));
-  const video = p.clips.find((c) => c.id === "c")!;
-  expect([video.start, video.out, video.look, video.effect]).toEqual([0, 10, undefined, undefined]);
-  // An effect on the same spot: another block (the first one's track is busy there, so the next free one).
+  // Inside the clip, for its whole length: no block, the clip selected.
+  const video = () => p.clips.find((c) => c.id === "c")!;
+  expect(done.select).toBe("c");
+  expect(p.clips.length).toBe(1);
+  expect([video().start, video().out, video().look, video().lookAmount]).toEqual([0, 10, "bw", 1]);
+  // An effect on it too; a second effect replaces the first, its Strength and Speed back to their defaults.
   p = run(p, dropEdits(p, { kind: "effect", id: "shake" }, mainTrack(p), 3, ["e", "y"])!.edits);
-  const shake = p.clips.find((c) => c.id === "e")!;
-  expect([shake.start, clipEnd(shake), shake.effect, shake.trackId === filter.trackId]).toEqual([3, 8, "shake", false]);
-  // Off any clip: a block too.
+  p = applyEdit(p, { type: "updateClip", clipId: "c", patch: { effectStrength: 90, effectSpeed: 2 } });
+  p = run(p, dropEdits(p, { kind: "effect", id: "punch" }, mainTrack(p), 3, ["e", "y"])!.edits);
+  expect([video().look, video().effect, video().effectStrength, video().effectSpeed, p.clips.length]).toEqual(["bw", "punch", undefined, undefined, 1]);
+  // Off any clip: a block of its own.
   const done2 = dropEdits(p, { kind: "effect", id: "blur" }, undefined, 20, ["k", "v"])!;
   p = run(p, done2.edits);
   const blur = p.clips.find((c) => c.id === "k")!;
@@ -184,18 +183,20 @@ test("an effect dropped in the empty space around the tracks gets a track of its
   expect(p.clips.find((c) => c.id === "c")?.effect).toBeUndefined();
 });
 
-test("a transition in the middle of a clip cuts it there, with no splitting by hand", () => {
+test("a transition in the middle of a clip goes on that clip's own cut and never cuts it", () => {
   let p = withClip();
-  const done = dropEdits(p, { kind: "transition", id: "dip" }, undefined, 4, ["x", "y"])!;
+  // One clip alone has no cut: nowhere to go (it used to cut the clip there).
+  expect(dropEdits(p, { kind: "transition", id: "dip" }, undefined, 4, ["x", "y"])).toBeNull();
+  p = applyEdit(p, { type: "splitClip", clipId: "c", newClipId: "b", at: 4 });
+  p = applyEdit(p, { type: "splitClip", clipId: "b", newClipId: "d", at: 7 });
+  // In the middle of the first clip: into the clip after it.
+  expect(dropEdits(p, { kind: "transition", id: "dip" }, mainTrack(p), 1.5, ["x", "y"])?.select).toBe("b");
+  // In the middle of the last one: from the clip before it, not the nearer edge of anything else.
+  const done = dropEdits(p, { kind: "transition", id: "dip" }, mainTrack(p), 9, ["x", "y"])!;
+  expect(done.edits.some((e) => e.type === "splitClip")).toBe(false);
   p = run(p, done.edits);
-  expect(done.select).toBe("x");
-  expect(p.clips.map((c) => [c.id, c.start, c.in, c.out])).toEqual([
-    ["c", 0, 0, 4],
-    ["x", 3, 4, 10], // overlapping the piece before it for the transition's second
-  ]);
-  expect(p.clips.find((c) => c.id === "x")?.transition).toEqual({ kind: "dip", duration: 1 });
-  // Near a join it goes on that join; no new cut.
-  expect(dropEdits(p, { kind: "transition", id: "crossfade" }, mainTrack(p), 4.3, ["y", "z"])?.edits.some((e) => e.type === "splitClip")).toBe(false);
+  expect(p.clips.find((c) => c.id === "d")?.transition).toEqual({ kind: "dip", duration: 1 });
+  expect(p.clips.length).toBe(3);
 });
 
 test("a fade dropped on a clip fades its start or end; off any clip it does nothing", () => {
