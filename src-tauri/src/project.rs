@@ -1128,8 +1128,8 @@ fn cover_bytes(data_url: &str) -> Option<Vec<u8>> {
     (bytes.starts_with(&[0xFF, 0xD8, 0xFF]) && bytes.len() <= 8_000_000).then_some(bytes)
 }
 
-/// More than any look in effects.ts has.
-const MAX_LOOK_STEPS: usize = 8;
+/// More than any look in effects.ts has, plus every Adjust slider.
+const MAX_LOOK_STEPS: usize = 12;
 
 /// Blur's strength: its standard deviation as a share of the frame width (effects.ts `BLUR_SHARE`).
 /// RGB split at strength 1: red and blue moved this share of the width (effects.ts `RGB_SHARE`).
@@ -1219,6 +1219,11 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
         format!(",colorchannelmixer={}", options.join(":"))
     };
     let within = |lo: f64, hi: f64| amount.is_finite() && (lo..=hi).contains(&amount);
+    // A tone curve of x = val/maxval on red, green and blue.
+    let curve = |y: String| {
+        let channel = format!("'maxval*({})'", y.replace('X', "(val/maxval)"));
+        Some(format!(",lutrgb=r={channel}:g={channel}:b={channel}"))
+    };
     match op {
         "grayscale" if within(0.0, 1.0) => {
             let k = 1.0 - amount;
@@ -1264,6 +1269,20 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
         "invert" if within(0.0, 1.0) => {
             let channel = format!("'val*{:.4}+maxval*{amount:.4}'", 1.0 - 2.0 * amount);
             Some(format!(",lutrgb=r={channel}:g={channel}:b={channel}"))
+        }
+        // Edit → Adjust → Exposure, Highlights, Shadows: the same curves as effects.ts `toneCurve`.
+        "exposure" if within(-1.0, 1.0) => {
+            let g = 2f64.powf(1.5 * amount);
+            curve(format!("{g:.5}*X/(1{:+.5}*X)", g - 1.0))
+        }
+        "highlights" if within(-1.0, 1.0) => curve(format!("X{amount:+.4}*X*X*(1-X)")),
+        "shadows" if within(-1.0, 1.0) => curve(format!("X{amount:+.4}*X*(1-X)*(1-X)")),
+        // Edit → Adjust → Sharpen: each neighbour's weight 0.5 × amount taken away (effects.ts `sharpenWeight`), in
+        // thousandths, as convolution takes whole numbers; the same on every colour plane, alpha left alone.
+        "sharpen" if within(0.0, 1.0) => {
+            let a = (500.0 * amount).round() as i64;
+            let m = format!("'0 -{a} 0 -{a} {} -{a} 0 -{a} 0'", 1000 + 4 * a);
+            Some(format!(",convolution=0m={m}:1m={m}:2m={m}:0rdiv=0.001:1rdiv=0.001:2rdiv=0.001"))
         }
         _ => None,
     }
@@ -1444,6 +1463,15 @@ mod tests {
         assert!(look_filter("invert", 1.0).unwrap().contains("r='val*-1.0000+maxval*1.0000'"));
         assert!(look_filter("warmth", 0.5).unwrap().ends_with("rr=1.10000:rg=0.00000:rb=0.00000:gr=0.00000:gg=1.00000:gb=0.00000:br=0.00000:bg=0.00000:bb=0.90000"));
         assert!(look_filter("warmth", 1.5).is_none());
+        assert_eq!(
+            look_filter("exposure", -1.0).unwrap(),
+            ",lutrgb=r='maxval*(0.35355*(val/maxval)/(1-0.64645*(val/maxval)))':g='maxval*(0.35355*(val/maxval)/(1-0.64645*(val/maxval)))':b='maxval*(0.35355*(val/maxval)/(1-0.64645*(val/maxval)))'"
+        );
+        assert!(look_filter("highlights", 0.5).unwrap().starts_with(",lutrgb=r='maxval*((val/maxval)+0.5000*(val/maxval)*(val/maxval)*(1-(val/maxval)))'"));
+        assert!(look_filter("shadows", -0.25).unwrap().starts_with(",lutrgb=r='maxval*((val/maxval)-0.2500*(val/maxval)*(1-(val/maxval))*(1-(val/maxval)))'"));
+        assert_eq!(look_filter("sharpen", 0.5).unwrap(), ",convolution=0m='0 -250 0 -250 2000 -250 0 -250 0':1m='0 -250 0 -250 2000 -250 0 -250 0':2m='0 -250 0 -250 2000 -250 0 -250 0':0rdiv=0.001:1rdiv=0.001:2rdiv=0.001");
+        assert!(look_filter("sharpen", -0.5).is_none());
+        assert!(look_filter("exposure", 1.5).is_none());
         // Only the catalog's names and amounts reach FFmpeg.
         assert!(look_filter("saturate", 2.5).is_none());
         assert!(look_filter("blur", 1.0).is_none());

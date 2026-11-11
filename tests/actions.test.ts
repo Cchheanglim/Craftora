@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { applyEdit } from "../src/project/actions";
+import { applyEdit, voiceTrack } from "../src/project/actions";
 import { captionLines, emptyProject, mainTrack, mediaFromSource, sameFormat, soundFadeAt, trackOrder, transitionMix, upgradeProject, type Project, type Transition } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
@@ -469,4 +469,22 @@ test("a transition works on a track without the magnet: the clips after the join
   // Taken off again, the clip goes back to the cut, and the one after it too.
   p = applyEdit(p, { type: "setTransition", clipId: "b", transition: null });
   expect([at("b"), at("c"), at("far")]).toEqual([25, 28, 60]);
+});
+
+test("a voice-over take goes on a free sound track below the main one, else on a new track", () => {
+  const video = mediaFromSource(source("video"));
+  const music = mediaFromSource(source("audio"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: video });
+  p = applyEdit(p, { type: "importMedia", item: music });
+  p = applyEdit(p, { type: "addClip", clipId: "v", mediaId: video.id, at: 0 });
+  // Only the main track: the take needs a new one.
+  expect(voiceTrack(p, 2, 5)).toBeNull();
+  p = applyEdit(p, { type: "addClip", clipId: "m", mediaId: music.id, at: 0 });
+  const below = p.clips.find((c) => c.id === "m")!.trackId;
+  // The music (0 to 10 s) is in the way, then not (from 10 s on).
+  expect(voiceTrack(p, 2, 5)).toBeNull();
+  expect(voiceTrack(p, 10, 14)).toBe(below);
+  // Where it lands is where the live clip was drawn.
+  p = applyEdit(p, { type: "addClip", clipId: "take", mediaId: music.id, at: 10 });
+  expect(p.clips.find((c) => c.id === "take")!.trackId).toBe(below);
 });
