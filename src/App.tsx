@@ -114,6 +114,7 @@ import { TimelineDivider } from "./components/TimelineDivider";
 import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/EdgeResizer";
 import { dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, type FxTab } from "./components/FxPanel";
+import { CropDialog } from "./components/CropDialog";
 import { SoundPanel } from "./components/SoundPanel";
 import { LEVEL_STEP, VoicePanel } from "./components/VoicePanel";
 import { Tooltip } from "./components/Tooltip";
@@ -141,6 +142,8 @@ import { Ambient } from "./components/Ambient";
 import "./App.css";
 
 const DEMO = DEMO_SOURCES[0];
+/** The right panel's second row of tabs: tiles to add to the timeline. */
+const FX_TABS = ["filters", "effects", "transitions", "shapes"] as const;
 /** Quiet time after the last edit before the project is saved. */
 const AUTOSAVE_MS = 600;
 /** The label of captions Craftora made from the sound (whisper). */
@@ -1488,6 +1491,24 @@ export default function App() {
     const name = `${(media?.name ?? "clip").replace(/\.[a-z0-9]{2,4}$/i, "")}_clip`;
     queueExport(planExport(single, { ...effective, name }), single);
   };
+  /** The crop window (CropDialog) for a clip: its picture at `time` (the playhead when it's on the clip), upright. */
+  const [cropping, setCropping] = useState<{ clipId: string; frame?: string; failed?: boolean; aspect: number } | null>(null);
+  const openCrop = (clip: Clip, time: number) => {
+    const media = project.media.find((m) => m.id === clip.mediaId);
+    if (!media) return;
+    setCropping({ clipId: clip.id, aspect: 16 / 9 });
+    const at = Math.min(Math.max(time, clip.start), clipEnd(clip) - 0.05);
+    void captureThumbnail(media.source.previewUrl, media.source.image, media.source.previewHls, media.source.image ? 0 : mediaTimeAt(clip, at), 1280).then(
+      (frame) => {
+        if (!frame) return setCropping((c) => (c?.clipId === clip.id ? { ...c, failed: true } : c));
+        // The picture's own shape, for the window and its "Original" button.
+        const img = new Image();
+        img.onload = () => setCropping((c) => (c?.clipId === clip.id ? { ...c, frame, aspect: img.naturalWidth / img.naturalHeight } : c));
+        img.src = frame;
+      },
+    );
+  };
+  const croppingClip = cropping && project.clips.find((c) => c.id === cropping.clipId);
   /** Another file from this PC in the clip's place, from that file's start. */
   const replaceClip = async (clip: Clip) => {
     const path = await pickMediaFile().catch(() => null);
@@ -1525,8 +1546,8 @@ export default function App() {
         for (const c of [...after].sort((a, b) => b.start - a.start)) api.editLive({ type: "moveClip", clipId: c.id, start: c.start + FREEZE_LENGTH, trackId: c.trackId });
         api.editLive({ type: "moveClip", clipId: rest, start: at + FREEZE_LENGTH, trackId: clip.trackId });
       }
-      api.editLive({ type: "addClip", clipId: stillId, mediaId: still.id, trackId: clip.trackId, at });
-      api.editLive({ type: "trimClip", clipId: stillId, edge: "end", time: at + FREEZE_LENGTH });
+      // Its length up front, so it fits the gap on this track (a 5 s picture didn't, and went on another track).
+      api.editLive({ type: "addClip", clipId: stillId, mediaId: still.id, trackId: clip.trackId, at, length: FREEZE_LENGTH });
       api.editLive({ type: "settle" });
       setSelectedId(stillId);
     } catch (err) {
@@ -1575,13 +1596,7 @@ export default function App() {
       reverse: () => patch({ reverse: !clip.reverse }),
       mirror: () => patch({ mirror: !clip.mirror }),
       rotate: () => patch({ rotate: ((clip.rotate ?? 0) + 90) % 360 || undefined }),
-      crop: () => {
-        // The crop sliders in Edit.
-        setSelectedId(clip.id);
-        setRightTab("edit");
-        if (!rightOpen) toggleRight();
-        window.setTimeout(() => document.getElementById("insp-crop-left")?.focus(), 80);
-      },
+      crop: () => openCrop(clip, time),
       export: () => exportClip(clip),
       replace: () => void replaceClip(clip),
       reveal: () => media?.source.local && void revealFile(media.source.url),
@@ -1888,6 +1903,12 @@ export default function App() {
                 // Like a transition: a filter or effect block opens its settings panel in its own tab (Edit is only for clips).
                 const clip = project.clips.find((c) => c.id === id);
                 if (clip && isBlock(clip)) openFx(clip.id, clip.effect ? "effects" : "filters");
+                // A clip (a video with an effect inside too) shows its own settings, like the popular editor: from the
+                // Filters, Effects, Transitions or Shapes tiles, Edit (or Sound when it was left open: `soundOpen`).
+                else if (clip && (FX_TABS as readonly string[]).includes(rightTab)) {
+                  setFxDetail(null);
+                  setRightTab(soundOpen && project.media.find((m) => m.id === clip.mediaId)?.hasAudio ? "sound" : "edit");
+                }
               }}
               selectedTransition={transitionClip?.id ?? null}
               onOpenFx={(id, tab) => {
@@ -1951,7 +1972,7 @@ export default function App() {
             </button>
           </div>
           <div className="segmented app__tabs is-second" role="group" aria-label="Filters, effects, transitions and shapes">
-            {(["filters", "effects", "transitions", "shapes"] as const).map((tab) => (
+            {FX_TABS.map((tab) => (
               <button key={tab} type="button" aria-pressed={rightTab === tab} onClick={() => pickTab(tab)}>
                 {tab[0].toUpperCase() + tab.slice(1)}
               </button>
@@ -2124,6 +2145,7 @@ export default function App() {
                   onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
                   onSplit={split}
                   onDuplicate={duplicate}
+                  onOpenCrop={() => openCrop(selected, playback.time)}
                   onCutSilences={
                     selected.mediaId && project.media.find((m) => m.id === selected.mediaId)?.hasAudio && !project.media.find((m) => m.id === selected.mediaId)?.source.image
                       ? () => void cutSilences()
@@ -2155,6 +2177,19 @@ export default function App() {
 
       <TextMenu />
       {closeDialog}
+      {croppingClip && (
+        <CropDialog
+          frame={cropping.frame}
+          failed={cropping.failed}
+          aspect={cropping.aspect}
+          crop={croppingClip.crop}
+          onDone={(crop) => {
+            api.edit({ type: "updateClip", clipId: croppingClip.id, patch: { crop } });
+            setCropping(null);
+          }}
+          onCancel={() => setCropping(null)}
+        />
+      )}
       {welcoming && (
         <WelcomeDialog
           onImport={inDesktopApp ? () => void importFiles() : undefined}

@@ -516,8 +516,9 @@
   vertical-align: -2px;
 }
 
-/* A clip with its sound at 0%: a crossed speaker before its name, opening the Sound panel. */
-.tl__mute {
+/* Badges before a clip name: its filter and effect (each opens its settings) and a crossed speaker when its sound is at
+   0% (opens the Sound panel). In the name bar, so they never cover the clip. */
+.tl__badge {
   margin-right: 5px;
   padding: 0 3px;
   border: 0;
@@ -529,11 +530,11 @@
   pointer-events: auto;
 }
 
-.tl__mute:hover {
+.tl__badge:hover {
   background: rgb(0 0 0 / 0.9);
 }
 
-.tl__name .tl__mute svg {
+.tl__name .tl__badge svg {
   margin: 0;
   vertical-align: -2px;
 }
@@ -655,24 +656,6 @@
   display: flex;
   gap: 3px;
   color: #fff;
-}
-
-/* A filter or effect inside the clip: click for its settings. */
-.tl__fx {
-  padding: 0 4px;
-  border: 0;
-  border-radius: 2px;
-  background: rgb(0 0 0 / 0.72);
-  color: #fff;
-  font: inherit;
-  line-height: 14px;
-  white-space: nowrap;
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.tl__fx:hover {
-  background: rgb(0 0 0 / 0.9);
 }
 
 /* A transition: a chip on the cut over the overlapping part of the incoming clip; drag to change its length (above the start trim handle). */

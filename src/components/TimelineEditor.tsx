@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { shapeLabel } from "../project/shapes";
-import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, mediaTimeAt, previousOnTrack, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
+import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, showsPicture, mediaTimeAt, previousOnTrack, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
 import { LOOKS, PICTURE_EFFECTS, blockLabel, type FxItem } from "../project/effects";
 import { packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
@@ -345,7 +345,7 @@ export function TimelineEditor({
   // the pointer leaves the clip or the clip moves to another track. These read the latest
   // props through refs that are refreshed on every render.
   const onPointerMove = useRef<(e: PointerEvent) => void>(() => {});
-  const onPointerUp = useRef<() => void>(() => {});
+  const onPointerUp = useRef<(e: PointerEvent) => void>(() => {});
 
   /** Near the timeline's left or right edge, a drag scrolls it along. */
   const scrollAtEdge = (clientX: number) => {
@@ -411,7 +411,7 @@ export function TimelineEditor({
     }
   };
 
-  onPointerUp.current = () => {
+  onPointerUp.current = (e) => {
     const g = gestureRef.current;
     gestureRef.current = null;
     setScrubbing(false);
@@ -426,6 +426,25 @@ export function TimelineEditor({
     if (g.kind !== "clip" || !g.moved) return;
     const final = ghostRef.current;
     setGhost(null);
+    // A filter or effect block let go over a video or picture goes inside it (like dropping one from the panel).
+    const block = project.clips.find((c) => c.id === g.clipId);
+    const lane = laneAt(e.clientY);
+    const time = contentRef.current ? timeAt(e.clientX) : -1;
+    const into =
+      g.mode === "move" && block && isBlock(block) && (block.look || block.effect) && lane
+        ? project.clips.find((c) => c.trackId === lane && c.mediaId && showsPicture(project, c) && time >= c.start && time < clipEnd(c))
+        : undefined;
+    if (block && into) {
+      api.checkpoint();
+      api.editLive({
+        type: "updateClip",
+        clipId: into.id,
+        patch: block.look ? { look: block.look, lookAmount: block.lookAmount ?? 1 } : { effect: block.effect, effectStrength: block.effectStrength, effectSpeed: block.effectSpeed },
+      });
+      api.editLive({ type: "deleteClip", clipId: block.id });
+      onSelect(into.id);
+      return;
+    }
     if (g.mode === "move" && final) {
       api.edit({ type: "moveClip", clipId: final.clipId, start: final.start, trackId: final.trackId });
     }
@@ -441,8 +460,8 @@ export function TimelineEditor({
   const startGesture = (g: Gesture) => {
     gestureRef.current = g;
     const move = (e: PointerEvent) => onPointerMove.current(e);
-    const up = () => {
-      onPointerUp.current();
+    const up = (e: PointerEvent) => {
+      onPointerUp.current(e);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
@@ -453,6 +472,8 @@ export function TimelineEditor({
   };
 
   const beginDrag = (clip: Clip, mode: DragMode) => (e: ReactPointerEvent<HTMLElement>) => {
+    // A right-click only opens the clip's menu: it never reaches the lane, which would move the playhead there.
+    if (e.button === 2) return e.stopPropagation();
     // On a locked track a press just moves the playhead (the lane does that).
     if (e.button !== 0 || project.tracks.find((t) => t.id === clip.trackId)?.locked) return;
     e.stopPropagation();
@@ -895,10 +916,31 @@ export function TimelineEditor({
                         <span className="tl__label">
                           <span className="tl__name truncate">
                             {isBlock(clip) && <Icon name={clip.effect ? "sparkle" : clip.look ? "blend" : "sliders"} size={12} />}
+                            {/* A filter and an effect inside the clip (dropped on it): small badges in its name bar, so the
+                                clip itself stays free to click; each opens its settings. */}
+                            {clip.mediaId &&
+                              ([
+                                ["filters", "blend", LOOKS.find((l) => l.id === clip.look)?.label],
+                                ["effects", "sparkle", PICTURE_EFFECTS.find((f) => f.id === clip.effect)?.label],
+                              ] as const).map(
+                                ([tab, icon, name]) =>
+                                  name && (
+                                    <button
+                                      key={tab}
+                                      type="button"
+                                      className="tl__badge"
+                                      title={`${tab === "filters" ? "Filter" : "Effect"}: ${name} (click for its settings)`}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      onClick={() => onOpenFx?.(clip.id, tab)}
+                                    >
+                                      <Icon name={icon} size={12} />
+                                    </button>
+                                  ),
+                              )}
                             {media?.hasAudio && !media.source.image && clip.volume <= 0 && (
                               <button
                                 type="button"
-                                className="tl__mute"
+                                className="tl__badge"
                                 title="Sound off: click for volume"
                                 aria-label="Sound off: open the sound settings"
                                 onPointerDown={(e) => e.stopPropagation()}
@@ -912,31 +954,11 @@ export function TimelineEditor({
                           </span>
                           {(media || isBlock(clip)) && <span className="tl__length mono">{media ? formatTimecode(length) : fadeLength(length)}</span>}
                         </span>
-                        {(clip.speed !== 1 || clip.reverse || (clip.mediaId && (clip.look || clip.effect))) && (
+                        {(clip.speed !== 1 || clip.reverse) && (
                           <span className="tl__tag mono">
                             {clip.reverse ? "◀ " : ""}
                             {clip.speed !== 1 ? `${clip.speed}×` : ""}
                             {clip.smooth && clip.speed < 1 ? " smooth" : ""}
-                            {/* A filter and an effect inside the clip (dropped on it): each opens its settings. */}
-                            {clip.mediaId &&
-                              ([
-                                ["filters", LOOKS.find((l) => l.id === clip.look)?.label],
-                                ["effects", PICTURE_EFFECTS.find((f) => f.id === clip.effect)?.label],
-                              ] as const).map(
-                                ([tab, name]) =>
-                                  name && (
-                                    <button
-                                      key={tab}
-                                      type="button"
-                                      className="tl__fx"
-                                      title={`${name}: click for its settings`}
-                                      onPointerDown={(e) => e.stopPropagation()}
-                                      onClick={() => onOpenFx?.(clip.id, tab)}
-                                    >
-                                      ✦ {name}
-                                    </button>
-                                  ),
-                              )}
                           </span>
                         )}
                         {trimTip?.clipId === clip.id && <span className={`tl__fade-tip mono tl__trim-tip is-${trimTip.edge}`}>{fadeLength(length)}</span>}
@@ -981,11 +1003,19 @@ export function TimelineEditor({
 
             {coverMenu && createPortal(
               <>
-                <div className="tl__menu-catcher" onPointerDown={() => setCoverMenu(null)} />
+                {/* Presses stop here: through the portal they'd still reach the timeline, moving the playhead. */}
+                <div
+                  className="tl__menu-catcher"
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    setCoverMenu(null);
+                  }}
+                />
                 <div
                   className="tl__menu tl__clip-menu"
                   role="menu"
                   aria-label="Cover"
+                  onPointerDown={(e) => e.stopPropagation()}
                   style={{ position: "fixed", left: coverMenu.x, top: Math.min(coverMenu.y, window.innerHeight - 140) }}
                   onKeyDown={(e) => {
                     if (e.key === "Escape") setCoverMenu(null);
@@ -1178,9 +1208,14 @@ function ClipMenu({
   const media = Boolean(clip.mediaId);
   return createPortal(
     <>
+      {/* Presses stop here: React passes them through the portal to the timeline, which would move the playhead and
+          drop the selection (Paste and Freeze frame then used the wrong time). */}
       <div
         className="tl__menu-catcher"
-        onPointerDown={onClose}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           onClose();
@@ -1190,6 +1225,7 @@ function ClipMenu({
         className="tl__menu tl__clip-menu"
         role="menu"
         aria-label="Clip"
+        onPointerDown={(e) => e.stopPropagation()}
         style={{ position: "fixed", left: x, top: y }}
         onKeyDown={(e) => {
           if (e.key === "Escape") onClose();

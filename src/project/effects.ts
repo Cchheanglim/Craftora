@@ -244,14 +244,18 @@ export function dropEdits(
   }
   if (item.kind === "filter" || item.kind === "effect") {
     const block = item.kind === "filter" ? { look: item.id } : { effect: item.id };
-    // Dropped on a video or picture: inside that clip, for its whole length (one filter and one effect each; a new one
-    // replaces it, its settings back to their defaults).
-    const clip = clipAt(mediaOn(dropped?.id).filter((c) => showsPicture(p, c)));
+    // Over a video or picture: inside that clip, for its whole length (one filter and one effect each; a new one
+    // replaces it, its settings back to their defaults). Dropped on an empty track or clicked, it's the picture at
+    // that time on the nearest track to it (the main track when clicked), so it never needs a track of its own.
+    const near = p.tracks.findIndex((t) => t.id === (dropped ?? mainTrack(p))?.id);
+    const away = (c: Clip) => Math.abs(p.tracks.findIndex((t) => t.id === c.trackId) - near);
+    const clip = clipAt(mediaOn(dropped?.id).filter((c) => showsPicture(p, c))) ??
+      p.clips.filter((c) => c.mediaId && showsPicture(p, c) && time >= c.start && time < clipEnd(c)).sort((a, b) => away(a) - away(b))[0];
     if (clip) {
       const patch = item.kind === "filter" ? { look: item.id, lookAmount: 1 } : { effect: item.id, effectStrength: undefined, effectSpeed: undefined };
       return { edits: [{ type: "updateClip", clipId: clip.id, patch }], select: clip.id };
     }
-    // On an empty spot: a block of its own, to stretch over several clips.
+    // Where no picture is: a block of its own, to stretch over several clips.
     return { edits: [...ownTrack, { type: "addBlock", clipId: newIds[0], at: time, length: BLOCK_LENGTH, trackId: ownTrack.length ? trackId : dropped?.id, ...block }], select: newIds[0] };
   }
   if (item.kind === "shape") {

@@ -136,7 +136,7 @@
   margin-right: calc(-1 * var(--panel-w) - 12px);
 }
 
-:root[data-theme] :is(.confirm, .welcome, .text-menu, .export__more, .tl__menu, .queue__panel, .tooltip) {
+:root[data-theme] :is(.confirm, .welcome, .crop-dialog, .text-menu, .export__more, .tl__menu, .queue__panel, .tooltip) {
   border-color: var(--glass-edge);
   -webkit-backdrop-filter: blur(30px) saturate(170%);
   backdrop-filter: blur(30px) saturate(170%);

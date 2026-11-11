@@ -201,12 +201,13 @@ test("a transition goes on the join nearest to where it was dropped", () => {
 
 test("an effect dropped in the empty space around the tracks gets a track of its own at the top", () => {
   let p = withClip();
-  const done = dropEdits(p, { kind: "effect", id: "shake" }, null, 2, ["x", "y"])!;
+  // After the video (no picture there to go inside).
+  const done = dropEdits(p, { kind: "effect", id: "shake" }, null, 12, ["x", "y"])!;
   p = run(p, done.edits);
   expect(p.tracks.map((t) => t.id)[0]).toBe("y");
-  expect(p.clips.find((c) => c.id === "x")).toMatchObject({ trackId: "y", effect: "shake", start: 2 });
+  expect(p.clips.find((c) => c.id === "x")).toMatchObject({ trackId: "y", effect: "shake", start: 12 });
   // Every dragged effect lasts 5 s, Shake too (it used to be 1 s).
-  expect(clipEnd(p.clips.find((c) => c.id === "x")!)).toBe(7);
+  expect(clipEnd(p.clips.find((c) => c.id === "x")!)).toBe(17);
   // The video keeps its own picture: nothing went inside it.
   expect(p.clips.find((c) => c.id === "c")?.effect).toBeUndefined();
 });
@@ -275,25 +276,37 @@ test("a fade dropped on a clip fades its start or end; off any clip it does noth
   expect(dropEdits(p, { kind: "fade", id: "in" }, mainTrack(p), 20, ["x", "y"])).toBeNull();
 });
 
+test("an effect dropped on an empty track above a video, or clicked, goes inside the video", () => {
+  let p = withClip();
+  p = applyEdit(p, { type: "addTrack", trackId: "above" });
+  const done = dropEdits(p, { kind: "effect", id: "punch" }, "above", 3, ["x", "y"])!;
+  expect(done.edits).toEqual([{ type: "updateClip", clipId: "c", patch: { effect: "punch", effectStrength: undefined, effectSpeed: undefined } }]);
+  // Clicked (no track), and dropped around the tracks: the same.
+  expect(dropEdits(p, { kind: "filter", id: "noir" }, undefined, 3, ["x", "y"])!.select).toBe("c");
+  expect(dropEdits(p, { kind: "filter", id: "noir" }, null, 3, ["x", "y"])!.select).toBe("c");
+});
+
 test("the preview draws blocks the way the export does", () => {
   let p = withClip();
-  p = run(p, dropEdits(p, { kind: "filter", id: "sepia" }, undefined, 0, ["f", "x"])!.edits);
-  p = run(p, dropEdits(p, { kind: "effect", id: "fade-in" }, undefined, 0, ["a", "x"])!.edits);
-  p = run(p, dropEdits(p, { kind: "effect", id: "mirror" }, undefined, 0, ["m", "x"])!.edits);
+  // Blocks after the video (over it they would go inside it).
+  const T = 12;
+  p = run(p, dropEdits(p, { kind: "filter", id: "sepia" }, undefined, T, ["f", "x"])!.edits);
+  p = run(p, dropEdits(p, { kind: "effect", id: "fade-in" }, undefined, T, ["a", "x"])!.edits);
+  p = run(p, dropEdits(p, { kind: "effect", id: "mirror" }, undefined, T, ["m", "x"])!.edits);
   const blocks = ["f", "a", "m"].map((id) => p.clips.find((c) => c.id === id)!);
-  const style = blocksStyle(blocks, 2.5, 1000);
+  const style = blocksStyle(blocks, T + 2.5, 1000);
   expect(style.filter).toBe("sepia(1)");
   expect(style.mirror).toBe(true);
   // Halfway through a 5 s fade from black: half black.
   expect(style.layers).toEqual([{ color: "#000", opacity: 0.5 }]);
 
   // Zoom punch peaks at u = 0.1 s (scale 1.2); cinema bars on 16:9 cover ~12.8% top and bottom mid-block.
-  p = run(p, dropEdits(p, { kind: "effect", id: "punch" }, undefined, 0, ["p", "x"])!.edits);
-  p = run(p, dropEdits(p, { kind: "effect", id: "bars" }, undefined, 0, ["b", "x"])!.edits);
+  p = run(p, dropEdits(p, { kind: "effect", id: "punch" }, undefined, T, ["p", "x"])!.edits);
+  p = run(p, dropEdits(p, { kind: "effect", id: "bars" }, undefined, T, ["b", "x"])!.edits);
   const punch = p.clips.find((c) => c.id === "p")!;
   const bars = p.clips.find((c) => c.id === "b")!;
-  expect(blocksStyle([punch], 0.1, 1920, 1080).transform).toBe("translate(0%, 0%) scale(1.2)");
-  expect(blocksStyle([bars], 1.5, 1920, 1080).bars).toBeCloseTo(0.128, 3);
+  expect(blocksStyle([punch], T + 0.1, 1920, 1080).transform).toBe("translate(0%, 0%) scale(1.2)");
+  expect(blocksStyle([bars], T + 1.5, 1920, 1080).bars).toBeCloseTo(0.128, 3);
 });
 
 test("tracks are called Track 1, Track 2… from the top", () => {

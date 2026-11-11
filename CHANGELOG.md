@@ -17,6 +17,15 @@
   just as loud through the transition (it used to dip in the middle, and went silent there for Dip and Flash); lower
   dips it in the middle, in the preview and the export alike.
 - **A "+" on filter, effect and transition tiles** when you point at one: clicking adds it at the playhead.
+- **Crop window**: Crop… (right-click a clip → Edit, or "Crop on the picture…" in Edit) opens the clip's picture with a
+  box to drag and resize, shape buttons (Free, Original, 16:9, 9:16, 1:1, 4:3, 3:4), Reset, Cancel and Done. The crop
+  can now keep any part of the picture, a corner too (it used to take at most 45% off each side).
+- **Effects and filters go inside the video more easily**: dropped on the empty track above a video, or clicked with
+  nothing selected, they go inside the video at that spot instead of making a block on a track of their own (a block
+  is made only where there's no video). An effect or filter block dragged onto a video moves inside it. A video's filter
+  and effect show as small badges before its name (point at one for its name, click it for its settings), so they never
+  cover the clip; clicking the clip itself, even from the Filters or Effects tiles, shows the clip's own settings (Edit,
+  or Sound when that was open).
 - **Muted clips show it**: a clip whose sound is at 0% has a crossed-out speaker before its name; click it for the
   Sound panel. And once the Sound panel is open, it comes back by itself when you select a clip with sound again
   (after clicking somewhere else), until you close it or pick another tab.
@@ -107,6 +116,10 @@
   (Rectangle…) instead of "Clip".
 - Zooming the timeline with a touchpad pinch or Ctrl + mouse wheel now zooms around the pointer, not the left edge.
 - No white squares on the corners of the selected thing in the preview; its corners and sides still resize it.
+- The clip's right-click menu: clicking an item (or outside the menu to close it) also moved the playhead to that spot
+  and dropped the selection, so Paste landed in the wrong place, Freeze frame took the wrong frame and Cut did nothing.
+  A right-click no longer moves the playhead either. Freeze frame's still now goes in the gap it makes, on the same
+  track (it went on another track).
 - A long video zoomed in on the timeline showed its picture frames only part of the way; they now reach its end.
 - The trim handles at a selected clip's ends are a thin line now (same area to grab); the "Copy report" buttons are gone.
 - Playing on in the background after leaving the editor (Settings, Projects…): leaving it now pauses.
