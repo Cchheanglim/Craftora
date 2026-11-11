@@ -116,6 +116,7 @@ import { dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, type FxTab } from "./components/FxPanel";
 import { SoundPanel } from "./components/SoundPanel";
 import { LEVEL_STEP, VoicePanel } from "./components/VoicePanel";
+import { Tooltip } from "./components/Tooltip";
 import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
 import { TimelineEditor, type ClipCommand } from "./components/TimelineEditor";
@@ -1663,6 +1664,7 @@ export default function App() {
   return (
     <div className="app" data-left={leftOpen ? "open" : "closed"} style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen ? sideWidth : 56, PANEL_WIDTH)}px` } as CSSProperties}>
       <Ambient active={theme !== "classic"} />
+      <Tooltip />
       {fetchReview.dialog}
       <Toolbar
         queue={<QueueDock queue={queue} freshId={freshId} />}

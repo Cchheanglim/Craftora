@@ -3,12 +3,17 @@ import { listMicrophones, openMicrophone, startRecording, type Microphone } from
 import { PanelHead } from "./SoundPanel";
 import "./VoicePanel.css";
 
-type Phase = "ready" | "countdown" | "recording" | "saving";
+type Phase = "ready" | "countdown" | "recording" | "saving" | "testing" | "playing";
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /** Seconds of the take per `onLevel` call. */
 export const LEVEL_STEP = 0.1;
+
+/** Test your mic: seconds recorded, then played back. */
+const TEST_SECONDS = 3;
+/** Quieter than this (about -54 dB) all through the test: the microphone heard nothing. */
+const HEARD = 0.1;
 
 /** Record a voice-over: pick the microphone, watch its level, count in, record while the video plays, stop. */
 export function VoicePanel({
@@ -46,6 +51,10 @@ export function VoicePanel({
   const clockRef = useRef<number | undefined>(undefined);
   // The take being recorded: when it began, how many levels were sent, the loudest level since the last one.
   const takeRef = useRef<{ startedAt: number; sent: number; peak: number } | null>(null);
+  // Test your mic in progress: `end` stops its recording or playback early, `cancel` drops it (the panel closed).
+  const testRef = useRef<{ end: () => void; cancel: () => void } | null>(null);
+  // The loudest level during the test's recording; -1 when not testing.
+  const testPeak = useRef(-1);
   // The latest callbacks, for the countdown's timer, the level meter and the unmount cleanup.
   const props = useRef({ onStart, onStop, onLevel });
   props.current = { onStart, onStop, onLevel };
@@ -59,6 +68,8 @@ export function VoicePanel({
       const recorder = recorderRef.current;
       recorderRef.current = null;
       takeRef.current = null;
+      testRef.current?.cancel();
+      testRef.current = null;
       // The user switched tabs mid-take: keep it anyway.
       if (recorder) void recorder.stop().then((take) => props.current.onStop(take));
     },
@@ -98,6 +109,7 @@ export function VoicePanel({
       const mic = micRef.current;
       const level = mic?.level() ?? 0;
       bar.style.width = `${level * 100}%`;
+      if (testPeak.current >= 0) testPeak.current = Math.max(testPeak.current, level);
       const take = takeRef.current;
       if (take) {
         take.peak = Math.max(take.peak, level);
@@ -137,6 +149,60 @@ export function VoicePanel({
     setSeconds(0);
     setPhase("recording");
     clockRef.current = window.setInterval(() => setSeconds((Date.now() - startedAt) / 1000), 250);
+  }
+
+  /** Test your mic: record a few seconds without the video, play them back, keep nothing. */
+  async function testMic() {
+    const mic = micRef.current;
+    if (!mic) return;
+    setError(null);
+    let recorder: { stop: () => Promise<Blob> };
+    try {
+      recorder = startRecording(mic.stream);
+    } catch (err) {
+      setError(message(err));
+      return;
+    }
+    let end = () => {};
+    let audio: HTMLAudioElement | null = null;
+    const test = {
+      end: () => end(),
+      // Before the microphone closes (the unmount cleanup's order), so the recorder isn't left waiting.
+      cancel: () => {
+        end();
+        void recorder.stop();
+        audio?.pause();
+      },
+    };
+    testRef.current = test;
+    testPeak.current = 0;
+    setPhase("testing");
+    await new Promise<void>((done) => {
+      end = done;
+      window.setTimeout(done, TEST_SECONDS * 1000);
+    });
+    const peak = testPeak.current;
+    testPeak.current = -1;
+    if (testRef.current !== test) return;
+    const sound = await recorder.stop();
+    if (testRef.current !== test) return;
+    if (peak < HEARD) setError("Craftora didn't hear anything. Pick another microphone above, or check it isn't muted in Windows.");
+    const url = URL.createObjectURL(sound);
+    audio = new Audio(url);
+    setPhase("playing");
+    await new Promise<void>((done) => {
+      end = done;
+      audio!.onended = () => done();
+      audio!.play().catch(() => {
+        setError("Couldn't play the test back. Check that your speakers or headphones are on.");
+        done();
+      });
+    });
+    audio.pause();
+    URL.revokeObjectURL(url);
+    if (testRef.current !== test) return;
+    testRef.current = null;
+    setPhase("ready");
   }
 
   function record() {
@@ -184,6 +250,7 @@ export function VoicePanel({
 
   const time = `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
   const busy = phase !== "ready";
+  const testing = phase === "testing" || phase === "playing";
 
   return (
     <section className="voice-panel" aria-labelledby="voice-title">
@@ -208,6 +275,19 @@ export function VoicePanel({
       <div className="voice__meter" aria-hidden="true">
         <div ref={barRef} className="voice__level" />
       </div>
+      <div className="voice__test">
+        <button
+          type="button"
+          className="btn btn--secondary"
+          disabled={!micOpen || (busy && !testing)}
+          onClick={testing ? () => testRef.current?.end() : () => void testMic()}
+        >
+          {phase === "testing" ? "Stop test" : phase === "playing" ? "Stop" : "Test your mic"}
+        </button>
+        <span className="voice__hint" aria-live="polite">
+          {phase === "testing" ? "Say something…" : phase === "playing" ? "Playing it back…" : `Records ${TEST_SECONDS} seconds and plays them back.`}
+        </span>
+      </div>
       <label className="option">
         <input type="checkbox" checked={mute} disabled={busy} onChange={(e) => setMute(e.target.checked)} />
         <span>Mute the video while recording</span>
@@ -223,7 +303,7 @@ export function VoicePanel({
       <button
         type="button"
         className="btn btn--primary voice__record"
-        disabled={phase === "saving" || (phase === "ready" && !micOpen)}
+        disabled={phase === "saving" || testing || (phase === "ready" && !micOpen)}
         onClick={phase === "countdown" ? cancel : phase === "recording" ? () => void stop() : record}
       >
         {phase === "countdown" ? "Cancel" : phase === "recording" ? "Stop" : phase === "saving" ? "Saving…" : "Record"}

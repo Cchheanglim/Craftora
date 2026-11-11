@@ -7,7 +7,9 @@
 - **Voice-over**: the microphone button on the timeline opens a recorder: pick the microphone, see its level, press
   Record, and after a 3-2-1 count talk while the video plays from the playhead (muted, so the speakers don't get into
   the microphone; can be turned off). Stop puts the take on its own track where it started, saved as an .m4a in the
-  export folder. Craftora uses the microphone without asking each time (its own window only).
+  export folder. Craftora uses the microphone without asking each time (its own window only). While it records, a red
+  clip grows on the timeline from where the take started, with your voice's wave drawn in as you talk, on the track the
+  take will land on.
 - **Settings panels for effects, filters and transitions**: click one on the timeline and its settings open in their own
   panel (Back to the tiles, X to close): Duration, Strength or Speed, Adjust sliders, or a transition's Type, Duration and
   Apply to all cuts, each with Remove. Edit is now only about the clip itself. A transition clicked in Transitions with a
@@ -35,8 +37,9 @@
 - Tracks above the main track are as tall as it.
 - **Slide, Zoom and Wipe transitions**: the next clip pushes the last one out to the left, zooms through it, or is uncovered
   left to right.
-- **Adjust**: Brightness, Contrast, Saturation and Warmth sliders in Edit for a video or picture (or a filter block), shown
-  live in the preview and the same in the export. Reset puts them back.
+- **Adjust**: Brightness, Contrast, Saturation, Exposure, Highlights, Shadows, Warmth and Sharpen sliders in Edit for a
+  video or picture (or a filter block), shown live in the preview and the same in the export. Exposure brightens without
+  burning out the whites; Highlights and Shadows change only the bright or the dark parts. Reset puts them back.
 - **Adjust layer** (first tile in Filters): a block on its own track whose Adjust sliders change every picture under it
   while it lasts. Filters, effects (Shake and Zoom punch too), Adjust layers and shapes dragged onto the timeline now
   last 5 seconds (were 3, or 1 and 0.6), and on a zoomed-out timeline it zooms in to the new block so you can see and
