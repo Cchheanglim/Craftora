@@ -114,7 +114,7 @@ const SIZES: { size: TrackSize; label: string }[] = [
   { size: "m", label: "Medium" },
   { size: "l", label: "Large" },
 ];
-const ROW_PX: Record<TrackSize, number> = { s: 30, m: 48, l: 62 };
+const ROW_PX: Record<TrackSize, number> = { s: 28, m: 40, l: 52 };
 /** A track's row size: as set in its menu, else large for the main track and the tracks over it (as tall as each other), medium for the sound below. */
 const rowSize = (t: Track, large: boolean): TrackSize => t.height ?? (large ? "l" : "m");
 /** Share of a video clip's row its sound-wave band takes, by the track's Waveform size. */
@@ -592,7 +592,6 @@ export function TimelineEditor({
                     }}
                   >
                     {project.cover ? <img src={project.cover} alt="" /> : <Icon name="image" size={13} />}
-                    <span>Cover</span>
                   </button>
                 ) : (
                   <span className="tl__head-gap" aria-hidden="true" />

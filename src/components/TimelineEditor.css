@@ -139,10 +139,11 @@
   order: 1;
 }
 
+/* A small picture button, the size of the track buttons beside it (its name is in the tooltip). */
 .tl__head .tl__cover {
   order: 2;
-  width: 36px;
-  height: min(44px, calc(100% - 10px));
+  width: 26px;
+  height: 22px;
 }
 
 .tl__head-more {
