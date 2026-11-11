@@ -4,6 +4,10 @@
 
 **New**
 
+- **Settings panels for effects, filters and transitions**: click one on the timeline and its settings open in their own
+  panel (Back to the tiles, X to close): Duration, Strength or Speed, Adjust sliders, or a transition's Type, Duration and
+  Apply to all cuts, each with Remove. Edit is now only about the clip itself. A transition clicked in Transitions with a
+  clip selected goes on that clip's cut (it used to cut the clip at the playhead, leaving the join a +).
 - **Sound panel**: click a clip's sound wave on the timeline to open its Volume and sound Fade in/out on the right, with
   Back (to where you were) and X (close the panel). The dots on the clip's sound wave are gone. Track rows are shorter and
   the main track's Cover is a small picture button.

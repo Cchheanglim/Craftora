@@ -314,7 +314,7 @@ export function FxPanel({
         <>
           <p className="fx-panel__hint">Drag a filter onto the timeline, or click one to add it at the playhead. It lands as a block over your clips and colours every picture under it (not text): drag its edges to set how long, and click it on the timeline for its settings.</p>
           <div className="fx__grid">
-            {/* Its own sliders (Edit → Adjust) for every picture under it; the tile hints at a change. */}
+            {/* Its own Adjust sliders (its settings panel) for every picture under it; the tile hints at a change. */}
             {tile({ kind: "adjust", id: "layer" }, "Adjust layer", "brightness(1.1) contrast(1.1) saturate(1.3)")}
             {LOOKS.map((look) => tile({ kind: "filter", id: look.id }, look.label, lookFilter(look.id)))}
           </div>
@@ -342,7 +342,7 @@ export function FxPanel({
       {tab === "transitions" && (
         <>
           <h3 className="section-label">Between clips</h3>
-          <p className="fx-panel__hint">Click one to add it at the playhead: in the middle of a clip it cuts the clip there. Or drag one onto a join. Click a transition on the timeline for its settings.</p>
+          <p className="fx-panel__hint">Click one to put it on the selected clip's cut (with no clip selected, at the playhead: in the middle of a clip it cuts the clip there), or drag one onto a join. Click a transition on the timeline for its settings.</p>
           <div className="fx__grid">{TRANSITION_KINDS.map((t) => tile({ kind: "transition", id: t.kind }, t.label))}</div>
           <h3 className="section-label">In & out</h3>
           <p className="fx-panel__hint">Drop on a clip: it fades in from black at its start, or out at its end.</p>
