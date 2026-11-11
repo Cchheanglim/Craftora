@@ -4,6 +4,10 @@
 
 **New**
 
+- **Voice-over**: the microphone button on the timeline opens a recorder: pick the microphone, see its level, press
+  Record, and after a 3-2-1 count talk while the video plays from the playhead (muted, so the speakers don't get into
+  the microphone; can be turned off). Stop puts the take on its own track where it started, saved as an .m4a in the
+  export folder. Craftora uses the microphone without asking each time (its own window only).
 - **Settings panels for effects, filters and transitions**: click one on the timeline and its settings open in their own
   panel (Back to the tiles, X to close): Duration, Strength or Speed, Adjust sliders, or a transition's Type, Duration and
   Apply to all cuts, each with Remove. Edit is now only about the clip itself. A transition clicked in Transitions with a
