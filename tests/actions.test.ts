@@ -181,6 +181,19 @@ test("an image clip can be extended to any duration on the timeline", () => {
   expect(p.clips[0].out).toBe(25);
 });
 
+test("a picture added with a length fits a gap of that length on its track (freeze frame)", () => {
+  const video = mediaFromSource(source("video"));
+  const still = mediaFromSource(source("image"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: video });
+  p = applyEdit(p, { type: "importMedia", item: still });
+  p = applyEdit(p, { type: "addClip", clipId: "a", mediaId: video.id, at: 0 });
+  const track = p.clips[0].trackId;
+  p = applyEdit(p, { type: "addClip", clipId: "b", mediaId: video.id, trackId: track, at: 13 });
+  // A 3 s gap from 10 s: a 3 s still goes in it, on the same track.
+  p = applyEdit(p, { type: "addClip", clipId: "s", mediaId: still.id, trackId: track, at: 10, length: 3 });
+  expect(p.clips.find((c) => c.id === "s")).toMatchObject({ trackId: track, start: 10, out: 3 });
+});
+
 test("a link that must download first can't export until it's on this PC", async () => {
   const { planExport } = await import("../src/project/exportPlan");
   const media = mediaFromSource({ ...source("video"), url: "https://shop.example/v.m3u8", local: false, downloadFirst: true });

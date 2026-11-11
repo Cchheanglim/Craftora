@@ -372,7 +372,7 @@ export function FxPanel({
       {tab === "transitions" && (
         <>
           <h3 className="section-label">Between clips</h3>
-          <p className="fx-panel__hint">Drag one onto a clip or a cut: it goes on that clip's cut with the clip before it (or after it). Clicking one puts it on the selected clip's cut. Click a transition on the timeline for its settings.</p>
+          <p className="fx-panel__hint">Drag one onto a clip or a cut, or click one to add it at the playhead. Click a transition on the timeline for its settings.</p>
           <div className="fx__grid">{TRANSITION_KINDS.map((t) => tile({ kind: "transition", id: t.kind }, t.label))}</div>
           <h3 className="section-label">In & out</h3>
           <p className="fx-panel__hint">Drop on a clip: it fades in from black at its start, or out at its end.</p>

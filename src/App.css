@@ -3,11 +3,11 @@
   height: 100%;
   min-width: 1100px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: var(--toolbar-h) minmax(0, 1fr);
   grid-template-areas:
-    "toolbar toolbar toolbar"
-    "side work panel";
+    "toolbar toolbar"
+    "side work";
 }
 
 .app__work {
@@ -25,6 +25,19 @@
   flex-direction: column;
   gap: 12px;
   padding: 14px var(--space-4) 12px;
+}
+
+/* The preview and the right panel side by side; the timeline spans the full width under both (like the popular
+   editor). */
+.app__top {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+}
+
+.app__top > .preview {
+  min-width: 0;
 }
 
 /* Between the preview and the timeline, in the gap between them: drag to share the height. */
@@ -85,10 +98,10 @@
   margin-right: -4px;
 }
 
+/* In the gap between the preview and the panel, adding no width of its own. */
 .app__edge.is-panel {
-  grid-area: panel;
-  justify-self: start;
-  margin-left: -4px;
+  flex-shrink: 0;
+  margin: 0 -10px;
 }
 
 .app__edge::after {
@@ -110,20 +123,22 @@
 
 /* The right panel: clip and export settings, or the assistant. */
 .app__panel {
-  grid-area: panel;
+  flex-shrink: 0;
   width: var(--panel-w);
   min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-panel);
-  border-left: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
   transition: margin-right var(--dur) var(--ease-out);
 }
 
-/* Closed: slides out past the window's edge (the negative margin shrinks its grid column to 0,
-   so the editor widens with it), then hides once the slide ends. */
+/* Closed: slides out past the window's edge (the negative margin, with the gap before it, gives its room to the
+   preview), then hides once the slide ends. */
 .app__panel.is-closed {
-  margin-right: calc(-1 * var(--panel-w));
+  margin-right: calc(-1 * var(--panel-w) - 12px);
   visibility: hidden;
   transition: margin-right var(--dur) var(--ease-out), visibility 0s var(--dur);
 }
@@ -133,17 +148,24 @@
   animation: rise-in var(--dur) var(--ease-out) backwards;
 }
 
+/* Everything in the panel a size smaller (owner: "make everything smaller here"), the panel's own width unchanged so
+   its edge still drags one to one. */
+.app__panel > * {
+  zoom: 0.88;
+}
+
+/* Under the tabs, a line and a little room: the settings scroll beneath that edge, not up against the tabs. */
+.app__panel > .app__tabs + :not(.app__tabs) {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
 .app__panel > :not(.app__tabs) {
   animation: fade-in var(--dur) linear backwards;
 }
 
 .app__tabs {
   margin: var(--space-3) var(--space-5) 0;
-}
-
-/* The second row of tabs (Filters, Effects, Transitions) sits close under the first. */
-.app__tabs.is-second {
-  margin-top: var(--space-2);
 }
 
 /* Shown while files are dragged over the window. */

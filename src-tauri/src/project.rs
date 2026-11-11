@@ -558,7 +558,10 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             || clip.sound_fade_in + clip.sound_fade_out > clip.length() + 0.01
             || !(0.0..=clip.length() / 2.0 + 0.01).contains(&clip.transition_in)
             || !(0.0..=clip.length() / 2.0 + 0.01).contains(&clip.transition_out)
-            || !clip.crop.iter().all(|side| (0.0..=0.45).contains(side))
+            // At least 5% of the picture kept each way (crop.ts `MIN_KEEP`); the box may sit anywhere.
+            || !clip.crop.iter().all(|side| (0.0..=0.95).contains(side))
+            || l + r > 0.9501
+            || t + b > 0.9501
             || !(0.0..=2.0).contains(&clip.volume)
             || !(0.01..=1.0).contains(&clip.size)
             || !(0.0..=1.0).contains(&clip.x)

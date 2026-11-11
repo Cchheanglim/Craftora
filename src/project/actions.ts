@@ -26,6 +26,7 @@ import {
   type Track,
   type Transition,
 } from "./model";
+import { boxOf, cropOf } from "./crop";
 import { newShapeClip, type ShapeId } from "./shapes";
 
 export type ClipPatch = Partial<
@@ -70,7 +71,7 @@ export type EditAction =
    * Without a track: videos and pictures go to the main track, sound to a free track below it. On
    * a magnetic track `at` picks the slot; elsewhere it's the start time (playhead).
    */
-  | { type: "addClip"; clipId: string; mediaId: string; trackId?: string; at?: number }
+  | { type: "addClip"; clipId: string; mediaId: string; trackId?: string; at?: number; /** A picture's length (seconds); 5 s when missing. */ length?: number }
   | { type: "addText"; clipId: string; at: number; text?: string }
   /** The project's cover picture (a JPEG data URL), or none. */
   | { type: "setCover"; cover: string | null }
@@ -107,7 +108,7 @@ export type EditAction =
   /** Magnetic tracks: how the clip takes over from the one before it; null for a straight cut. */
   | { type: "setTransition"; clipId: string; transition: Transition | null }
   /** A new empty track at the top. */
-  | { type: "addTrack"; trackId: string }
+  | { type: "addTrack"; trackId: string; /** Under every other track instead of on top. */ below?: boolean }
   /** Removes a track and every clip on it. */
   | { type: "removeTrack"; trackId: string }
   /** Magnet on: the track's clips close up and stay back to back. */
@@ -348,7 +349,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const media = p.media.find((m) => m.id === action.mediaId);
       if (!media) return p;
       const track = p.tracks.find((t) => t.id === action.trackId) ?? (media.hasVideo ? mainTrack(p) : undefined);
-      const length = media.source.image ? DEFAULT_IMAGE_LENGTH : media.source.duration;
+      const length = media.source.image ? (action.length ?? DEFAULT_IMAGE_LENGTH) : media.source.duration;
       const clip = newClip({ id: action.clipId, trackId: track?.id ?? "", mediaId: media.id, start: 0, in: 0, out: length });
       return place(p, track, clip, action.at);
     }
@@ -593,7 +594,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
       const patch = { ...action.patch };
       if (patch.crop) {
         const c = patch.crop;
-        patch.crop = { left: clamp(c.left, 0, MAX_CROP), top: clamp(c.top, 0, MAX_CROP), right: clamp(c.right, 0, MAX_CROP), bottom: clamp(c.bottom, 0, MAX_CROP) };
+        // Inside the picture, keeping at least 5% of it each way (a side pushed past the other gives way).
+        patch.crop = cropOf(boxOf({ left: clamp(c.left, 0, MAX_CROP), top: clamp(c.top, 0, MAX_CROP), right: clamp(c.right, 0, MAX_CROP), bottom: clamp(c.bottom, 0, MAX_CROP) }));
       }
       if (patch.x !== undefined) patch.x = clamp(patch.x, 0, 1);
       if (patch.y !== undefined) patch.y = clamp(patch.y, 0, 1);
@@ -624,7 +626,7 @@ export function applyEdit(p: Project, action: EditAction): Project {
 
     case "addTrack":
       if (p.tracks.some((t) => t.id === action.trackId)) return p;
-      return withTrack(p, false, action.trackId).project;
+      return withTrack(p, Boolean(action.below), action.trackId).project;
 
     case "removeTrack":
       if (!p.tracks.some((t) => t.id === action.trackId)) return p;

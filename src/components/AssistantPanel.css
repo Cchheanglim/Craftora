@@ -12,9 +12,19 @@
   border-bottom: 1px solid var(--line);
 }
 
+/* The AI picker, the message box and Send in the panel's text size, not the larger one of other forms (owner: the
+   letters were too big). */
+.asst__head select,
+.asst__head .btn,
+.asst__compose textarea,
+.asst__actions .btn {
+  font-size: 12.5px;
+}
+
 .asst__head select {
   flex: 1;
   min-width: 0;
+  height: 32px;
 }
 
 .asst__log {
@@ -68,7 +78,7 @@
 .asst__msg {
   display: flex;
   gap: 6px;
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

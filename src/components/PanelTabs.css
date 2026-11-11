@@ -1,0 +1,70 @@
+/* One scrolling row of panel tabs, in the .segmented box look (not .segmented itself: its highlight assumes equal columns). */
+.ptabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-input);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.ptabs__strip {
+  /* The offset parent of the tabs, so their offsetLeft is measured from the strip. */
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+/* The ‹ › buttons show there is more; a scrollbar would only add height. */
+.ptabs__strip::-webkit-scrollbar {
+  display: none;
+}
+
+.ptabs__strip button {
+  /* Natural width: the row scrolls instead of cutting labels. */
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  white-space: nowrap;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  transition: background-color var(--dur-fast) linear, color var(--dur-fast) linear;
+}
+
+.ptabs__strip button:hover {
+  color: var(--text);
+}
+
+.ptabs__strip button[aria-pressed="true"] {
+  background: var(--line-strong);
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Hidden with visibility (set inline), not display, so the strip keeps its place when one disappears. */
+.ptabs__arrow {
+  flex: none;
+  width: 22px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  transition: color var(--dur-fast) linear;
+}
+
+.ptabs__arrow:hover {
+  color: var(--text);
+}

@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { shapeLabel } from "../project/shapes";
-import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, mediaTimeAt, previousOnTrack, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
+import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, showsPicture, mediaTimeAt, previousOnTrack, trackLabel, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
 import { LOOKS, PICTURE_EFFECTS, blockLabel, type FxItem } from "../project/effects";
 import { packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
@@ -91,8 +91,6 @@ interface TimelineEditorProps {
   canPaste: boolean;
   /** Cover on the main track: from the frame at the playhead, a picture, or none. */
   onCover: (choice: "frame" | "picture" | "remove") => void;
-  /** The + on the join before `clip` (where a clip was split or two clips meet). */
-  onJoin: (clip: Clip) => void;
   /**
    * A voice-over being recorded: drawn as a growing clip from `start` to `end` (seconds on the timeline) on track
    * `trackId`, the track the take will land on; null: a new row below all the tracks (the take gets a new track).
@@ -112,11 +110,19 @@ type Gesture =
   | { kind: "clip"; clipId: string; mode: DragMode; originX: number; originStart: number; originEdge: number; moved: boolean; onWave: boolean }
   | { kind: "transition"; clipId: string; originX: number; origin: number };
 
+/** The track buttons' widths: full, and compact (only ⋯ and Cover), dragged between by the line beside them. */
+const HEADS_FULL = 158;
+const HEADS_COMPACT = 76;
+/** Where the track buttons being compact is remembered on this PC. */
+const HEADS_COMPACT_KEY = "craftora.trackHeadsCompact";
+
 /** Where a clip being moved is drawn; the project only changes on release. */
 interface Ghost {
   clipId: string;
   start: number;
   trackId: string;
+  /** Over the empty space above the top track or below the bottom one: let go, and it gets a new track there. */
+  newTrack?: "top" | "bottom";
 }
 
 /** Track height and waveform size choices (the header's … menu). */
@@ -156,7 +162,6 @@ export function TimelineEditor({
   onClipCommand,
   canPaste,
   onCover,
-  onJoin,
   recording,
 }: TimelineEditorProps) {
   const sectionRef = useRef<HTMLElement>(null);
@@ -171,6 +176,46 @@ export function TimelineEditor({
     setGhostState(g);
   };
   const [pps, setPps] = useState(40);
+  // The track buttons compact (only ⋯ and Cover), remembered on this PC; `headsDrag` is the width while the line
+  // beside them is dragged.
+  const [headsCompact, setHeadsCompact] = useState(() => {
+    try {
+      return localStorage.getItem(HEADS_COMPACT_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [headsDrag, setHeadsDrag] = useState<number | null>(null);
+  const headsWidth = headsDrag ?? (headsCompact ? HEADS_COMPACT : HEADS_FULL);
+  const compactHeads = (compact: boolean) => {
+    setHeadsCompact(compact);
+    try {
+      localStorage.setItem(HEADS_COMPACT_KEY, compact ? "1" : "0");
+    } catch {
+      /* not remembered: full next time */
+    }
+  };
+  // Like the popular editor: drag the line left to make the track buttons compact, right to bring them back; let go
+  // and it settles on the nearer of the two.
+  const dragHeads = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const bar = e.currentTarget;
+    bar.setPointerCapture(e.pointerId);
+    const [startX, start] = [e.clientX, headsWidth];
+    const width = (x: number) => Math.min(HEADS_FULL, Math.max(HEADS_COMPACT, start + x - startX));
+    const move = (ev: PointerEvent) => setHeadsDrag(width(ev.clientX));
+    const end = (ev: PointerEvent) => {
+      bar.removeEventListener("pointermove", move);
+      bar.removeEventListener("pointerup", end);
+      bar.removeEventListener("pointercancel", end);
+      setHeadsDrag(null);
+      compactHeads(width(ev.clientX) < (HEADS_FULL + HEADS_COMPACT) / 2);
+    };
+    bar.addEventListener("pointermove", move);
+    bar.addEventListener("pointerup", end);
+    bar.addEventListener("pointercancel", end);
+  };
   // 0 until measured, so the first automatic fit uses the real width.
   const [viewWidth, setViewWidth] = useState(0);
   const [scrollbar, setScrollbar] = useState(0);
@@ -272,6 +317,28 @@ export function TimelineEditor({
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  /** Zoom to `next` about the playhead when it's in view, else the middle of the view (the buttons and the slider). */
+  const zoomTo = (next: number) => {
+    const el = scrollRef.current;
+    const to = Math.min(MAX_PPS, Math.max(minPps, next));
+    const from = ppsNow.current;
+    if (!el || to === from) return;
+    const scroll = scrollTo.current ?? el.scrollLeft;
+    const playhead = playback.time * from - scroll;
+    const x = playhead >= 0 && playhead <= el.clientWidth ? playhead : el.clientWidth / 2;
+    scrollTo.current = ((scroll + x) / from) * to - x;
+    ppsNow.current = to;
+    setPps(to);
+  };
+  // Shift+Z (App's shortcuts) zooms to fit.
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
+  useEffect(() => {
+    const onFit = () => fitRef.current();
+    window.addEventListener("craftora:fit-timeline", onFit);
+    return () => window.removeEventListener("craftora:fit-timeline", onFit);
+  }, []);
+
   // Fit the first time something lands on the timeline.
   useEffect(() => {
     if (!fitted && duration > 0 && viewWidth > 0) {
@@ -345,7 +412,7 @@ export function TimelineEditor({
   // the pointer leaves the clip or the clip moves to another track. These read the latest
   // props through refs that are refreshed on every render.
   const onPointerMove = useRef<(e: PointerEvent) => void>(() => {});
-  const onPointerUp = useRef<() => void>(() => {});
+  const onPointerUp = useRef<(e: PointerEvent) => void>(() => {});
 
   /** Near the timeline's left or right edge, a drag scrolls it along. */
   const scrollAtEdge = (clientX: number) => {
@@ -401,17 +468,18 @@ export function TimelineEditor({
       const endSnaps = snappedEnd !== start;
       if (startSnaps && (!endSnaps || Math.abs(snappedStart - start) <= Math.abs(snappedEnd - start))) start = snappedStart;
       else if (endSnaps) start = snappedEnd;
-      // Any track takes any clip, unless it's locked.
+      // Any track takes any clip, unless it's locked; the empty space above or below the tracks makes a new one.
       const lane = project.tracks.find((t) => t.id === laneAt(e.clientY));
-      const trackId = lane && !lane.locked ? lane.id : (ghostRef.current?.trackId ?? clip.trackId);
-      setGhost({ clipId: clip.id, start: Math.max(0, start), trackId });
+      const newTrack = lane ? undefined : edgeAt(e.clientY);
+      const trackId = lane && !lane.locked ? lane.id : newTrack ? clip.trackId : (ghostRef.current?.trackId ?? clip.trackId);
+      setGhost({ clipId: clip.id, start: Math.max(0, start), trackId, newTrack });
     } else {
       scrollAtEdge(e.clientX);
       api.editLive({ type: "trimClip", clipId: clip.id, edge: g.mode, time: snap(getTimeAt(e.clientX, g), clip.id) });
     }
   };
 
-  onPointerUp.current = () => {
+  onPointerUp.current = (e) => {
     const g = gestureRef.current;
     gestureRef.current = null;
     setScrubbing(false);
@@ -426,6 +494,33 @@ export function TimelineEditor({
     if (g.kind !== "clip" || !g.moved) return;
     const final = ghostRef.current;
     setGhost(null);
+    // A filter or effect block let go over a video or picture goes inside it (like dropping one from the panel).
+    const block = project.clips.find((c) => c.id === g.clipId);
+    const lane = laneAt(e.clientY);
+    const time = contentRef.current ? timeAt(e.clientX) : -1;
+    const into =
+      g.mode === "move" && block && isBlock(block) && (block.look || block.effect) && lane
+        ? project.clips.find((c) => c.trackId === lane && c.mediaId && showsPicture(project, c) && time >= c.start && time < clipEnd(c))
+        : undefined;
+    if (block && into) {
+      api.checkpoint();
+      api.editLive({
+        type: "updateClip",
+        clipId: into.id,
+        patch: block.look ? { look: block.look, lookAmount: block.lookAmount ?? 1 } : { effect: block.effect, effectStrength: block.effectStrength, effectSpeed: block.effectSpeed },
+      });
+      api.editLive({ type: "deleteClip", clipId: block.id });
+      onSelect(into.id);
+      return;
+    }
+    if (g.mode === "move" && final?.newTrack) {
+      const trackId = `track-${crypto.randomUUID().slice(0, 8)}`;
+      api.checkpoint();
+      api.editLive({ type: "addTrack", trackId, below: final.newTrack === "bottom" });
+      api.editLive({ type: "moveClip", clipId: final.clipId, start: final.start, trackId });
+      api.editLive({ type: "settle" });
+      return;
+    }
     if (g.mode === "move" && final) {
       api.edit({ type: "moveClip", clipId: final.clipId, start: final.start, trackId: final.trackId });
     }
@@ -435,14 +530,24 @@ export function TimelineEditor({
   const laneChanged = (clipId: string, clientY: number) => {
     const clip = project.clips.find((c) => c.id === clipId);
     const lane = laneAt(clientY);
-    return Boolean(clip && lane && lane !== clip.trackId);
+    return Boolean(clip && ((lane && lane !== clip.trackId) || (!lane && edgeAt(clientY))));
+  };
+
+  /** Above the top track or below the bottom one, within the timeline: where a dragged clip gets a new track. */
+  const edgeAt = (clientY: number): "top" | "bottom" | undefined => {
+    const lanes = [...laneRefs.current.values()].map((el) => el.getBoundingClientRect());
+    const box = scrollRef.current?.getBoundingClientRect();
+    if (!lanes.length || !box) return undefined;
+    if (clientY >= box.top && clientY < Math.min(...lanes.map((r) => r.top))) return "top";
+    if (clientY >= Math.max(...lanes.map((r) => r.bottom)) && clientY <= box.bottom) return "bottom";
+    return undefined;
   };
 
   const startGesture = (g: Gesture) => {
     gestureRef.current = g;
     const move = (e: PointerEvent) => onPointerMove.current(e);
-    const up = () => {
-      onPointerUp.current();
+    const up = (e: PointerEvent) => {
+      onPointerUp.current(e);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
@@ -453,6 +558,8 @@ export function TimelineEditor({
   };
 
   const beginDrag = (clip: Clip, mode: DragMode) => (e: ReactPointerEvent<HTMLElement>) => {
+    // A right-click only opens the clip's menu: it never reaches the lane, which would move the playhead there.
+    if (e.button === 2) return e.stopPropagation();
     // On a locked track a press just moves the playhead (the lane does that).
     if (e.button !== 0 || project.tracks.find((t) => t.id === clip.trackId)?.locked) return;
     e.stopPropagation();
@@ -514,7 +621,8 @@ export function TimelineEditor({
   // clips close up behind it and open a gap where it would land.
   const isMagnetic = (trackId: string) => Boolean(project.tracks.find((t) => t.id === trackId)?.magnetic);
   const placed = new Map<string, { start: number; trackId: string }>();
-  if (ghost) {
+  // Headed for a new track: the clip stays put (dimmed) and the dashed "New track" outline shows where it goes.
+  if (ghost && !ghost.newTrack) {
     const dragged = project.clips.find((c) => c.id === ghost.clipId);
     if (dragged) {
       for (const trackId of new Set([ghost.trackId, dragged.trackId])) {
@@ -587,21 +695,32 @@ export function TimelineEditor({
           <Icon name="plus" size={14} />
           Track
         </button>
+        {/* Like the popular editor: fit, then out, a slider, in; all but fit zoom about the playhead. */}
         <div className="tl__zoom">
-          <button type="button" className="btn btn--icon" aria-label="Zoom out" onClick={() => setPps((p) => Math.max(minPps, p / 1.5))}>
-            <Icon name="minus" size={14} />
-          </button>
-          <button type="button" className="btn btn--icon" aria-label="Fit timeline" title="Fit" onClick={fit}>
+          <button type="button" className="btn btn--icon" aria-label="Zoom to fit timeline" title="Zoom to fit timeline (Shift+Z)" onClick={fit}>
             <Icon name="fit" size={14} />
           </button>
-          <button type="button" className="btn btn--icon" aria-label="Zoom in" onClick={() => setPps((p) => Math.min(MAX_PPS, p * 1.5))}>
+          <button type="button" className="btn btn--icon" aria-label="Zoom out" title="Zoom out" onClick={() => zoomTo(pps / 1.5)}>
+            <Icon name="minus" size={14} />
+          </button>
+          <input
+            type="range"
+            className="tl__zoom-slider"
+            aria-label="Zoom"
+            min={0}
+            max={100}
+            step={0.5}
+            value={(100 * Math.log(pps / minPps)) / Math.log(MAX_PPS / minPps)}
+            onChange={(e) => zoomTo(minPps * (MAX_PPS / minPps) ** (Number(e.target.value) / 100))}
+          />
+          <button type="button" className="btn btn--icon" aria-label="Zoom in" title="Zoom in" onClick={() => zoomTo(pps * 1.5)}>
             <Icon name="plus" size={14} />
           </button>
         </div>
       </div>
 
       <div className="tl__body">
-        <div className="tl__heads" style={{ paddingBottom: scrollbar }}>
+        <div className={headsWidth < (HEADS_FULL + HEADS_COMPACT) / 2 ? "tl__heads is-compact" : "tl__heads"} style={{ width: headsWidth, paddingBottom: scrollbar }}>
           <div className="tl__ruler-spacer" />
           <div className="tl__lanes">
           {project.tracks.map((track) => {
@@ -631,7 +750,7 @@ export function TimelineEditor({
                 {track.id === main?.id && <span className="tl__head-gap" aria-hidden="true" />}
                 <button
                   type="button"
-                  className="tl__head-btn"
+                  className="tl__head-btn is-state"
                   aria-pressed={Boolean(track.locked)}
                   aria-label={track.locked ? `Unlock ${name}` : `Lock ${name}`}
                   title={track.locked ? "Locked: its clips can't be moved or changed. Click to unlock." : "Lock this track"}
@@ -642,7 +761,7 @@ export function TimelineEditor({
                 {/* Every track has the same three buttons. */}
                 <button
                   type="button"
-                  className="tl__head-btn"
+                  className="tl__head-btn is-state"
                   aria-pressed={Boolean(track.hidden)}
                   aria-label={track.hidden ? `Show ${name}` : `Hide ${name}`}
                   title={track.hidden ? "Hidden from the preview and the export. Click to show." : "Hide its pictures, text and effects (the sound still plays)"}
@@ -652,7 +771,7 @@ export function TimelineEditor({
                 </button>
                 <button
                   type="button"
-                  className="tl__head-btn"
+                  className="tl__head-btn is-state"
                   aria-pressed={Boolean(track.muted)}
                   aria-label={track.muted ? `Unmute ${name}` : `Mute ${name}`}
                   title={track.muted ? "Track is muted. Click to unmute." : "Mute this track"}
@@ -754,13 +873,29 @@ export function TimelineEditor({
           {recording?.trackId === null && <div className="tl__head is-recording" style={{ height: ROW_PX.m }} role="group" aria-label="Voice-over" />}
           </div>
         </div>
+        {/* The line between the track buttons and the clips: drag it to make them compact, and back. */}
+        <div
+          className={headsDrag === null ? "tl__heads-toggle" : "tl__heads-toggle is-dragging"}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Track buttons: drag, or press the left and right arrows, to make them compact or full"
+          title={headsCompact ? "Expand panel" : "Hide panel"}
+          tabIndex={0}
+          onPointerDown={dragHeads}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+              e.preventDefault();
+              compactHeads(e.key === "ArrowLeft");
+            }
+          }}
+        />
 
         <div
           ref={scrollRef}
           className="tl__scroll"
         >
           {/* A press anywhere here (a track, or the empty space above and below them) moves the playhead;
-              the ruler, clips and the join + handle their own presses. */}
+              the ruler and clips handle their own presses. */}
           <div
             ref={contentRef}
             className="tl__content"
@@ -782,6 +917,17 @@ export function TimelineEditor({
             </div>
 
             <div className="tl__lanes">
+            {ghost?.newTrack &&
+              (() => {
+                const dragged = project.clips.find((c) => c.id === ghost.clipId);
+                return (
+                  dragged && (
+                    <div className={`tl__new-track is-${ghost.newTrack}`} style={{ left: ghost.start * pps, width: Math.max(4, clipLength(dragged) * pps) }} aria-hidden="true">
+                      New track
+                    </div>
+                  )
+                );
+              })()}
             {project.tracks.map((track) => (
               <div
                 key={track.id}
@@ -895,10 +1041,31 @@ export function TimelineEditor({
                         <span className="tl__label">
                           <span className="tl__name truncate">
                             {isBlock(clip) && <Icon name={clip.effect ? "sparkle" : clip.look ? "blend" : "sliders"} size={12} />}
+                            {/* A filter and an effect inside the clip (dropped on it): small badges in its name bar, so the
+                                clip itself stays free to click; each opens its settings. */}
+                            {clip.mediaId &&
+                              ([
+                                ["filters", "blend", LOOKS.find((l) => l.id === clip.look)?.label],
+                                ["effects", "sparkle", PICTURE_EFFECTS.find((f) => f.id === clip.effect)?.label],
+                              ] as const).map(
+                                ([tab, icon, name]) =>
+                                  name && (
+                                    <button
+                                      key={tab}
+                                      type="button"
+                                      className="tl__badge"
+                                      title={`${tab === "filters" ? "Filter" : "Effect"}: ${name} (click for its settings)`}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      onClick={() => onOpenFx?.(clip.id, tab)}
+                                    >
+                                      <Icon name={icon} size={12} />
+                                    </button>
+                                  ),
+                              )}
                             {media?.hasAudio && !media.source.image && clip.volume <= 0 && (
                               <button
                                 type="button"
-                                className="tl__mute"
+                                className="tl__badge"
                                 title="Sound off: click for volume"
                                 aria-label="Sound off: open the sound settings"
                                 onPointerDown={(e) => e.stopPropagation()}
@@ -912,31 +1079,11 @@ export function TimelineEditor({
                           </span>
                           {(media || isBlock(clip)) && <span className="tl__length mono">{media ? formatTimecode(length) : fadeLength(length)}</span>}
                         </span>
-                        {(clip.speed !== 1 || clip.reverse || (clip.mediaId && (clip.look || clip.effect))) && (
+                        {(clip.speed !== 1 || clip.reverse) && (
                           <span className="tl__tag mono">
                             {clip.reverse ? "◀ " : ""}
                             {clip.speed !== 1 ? `${clip.speed}×` : ""}
                             {clip.smooth && clip.speed < 1 ? " smooth" : ""}
-                            {/* A filter and an effect inside the clip (dropped on it): each opens its settings. */}
-                            {clip.mediaId &&
-                              ([
-                                ["filters", LOOKS.find((l) => l.id === clip.look)?.label],
-                                ["effects", PICTURE_EFFECTS.find((f) => f.id === clip.effect)?.label],
-                              ] as const).map(
-                                ([tab, name]) =>
-                                  name && (
-                                    <button
-                                      key={tab}
-                                      type="button"
-                                      className="tl__fx"
-                                      title={`${name}: click for its settings`}
-                                      onPointerDown={(e) => e.stopPropagation()}
-                                      onClick={() => onOpenFx?.(clip.id, tab)}
-                                    >
-                                      ✦ {name}
-                                    </button>
-                                  ),
-                              )}
                           </span>
                         )}
                         {trimTip?.clipId === clip.id && <span className={`tl__fade-tip mono tl__trim-tip is-${trimTip.edge}`}>{fadeLength(length)}</span>}
@@ -944,30 +1091,6 @@ export function TimelineEditor({
                       </div>
                     );
                   })}
-                {/* A + where two clips meet (a split, or clips back to back): transitions there. */}
-                {!ghost &&
-                  trackOrder(project, track.id)
-                    .filter((c) => c.mediaId)
-                    .filter((c, i, order) => i > 0 && c.start <= clipEnd(order[i - 1]) + 0.05)
-                    .map((clip) => {
-                      const kind = TRANSITION_KINDS.find((t) => t.kind === clip.transition?.kind);
-                      if (kind && overlap(clip) > 0) return null;
-                      return (
-                        <button
-                          key={`join-${clip.id}`}
-                          type="button"
-                          className={kind ? "tl__join is-set" : "tl__join"}
-                          style={{ left: (clip.start + overlap(clip) / 2) * pps }}
-                          aria-label={kind ? `${kind.label} at ${formatClock(clip.start)}: change it` : `Add a transition at ${formatClock(clip.start)}`}
-                          title={kind ? `${kind.label}: click to change it` : "Add a transition here"}
-                          disabled={track.locked}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={() => (kind && onSelectTransition ? onSelectTransition(clip.id) : onJoin(clip))}
-                        >
-                          <Icon name={kind ? "check" : "plus"} size={8} />
-                        </button>
-                      );
-                    })}
                 {recording && recording.trackId === track.id && <RecordingClip recording={recording} pps={pps} />}
               </div>
             ))}
@@ -981,11 +1104,19 @@ export function TimelineEditor({
 
             {coverMenu && createPortal(
               <>
-                <div className="tl__menu-catcher" onPointerDown={() => setCoverMenu(null)} />
+                {/* Presses stop here: through the portal they'd still reach the timeline, moving the playhead. */}
+                <div
+                  className="tl__menu-catcher"
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    setCoverMenu(null);
+                  }}
+                />
                 <div
                   className="tl__menu tl__clip-menu"
                   role="menu"
                   aria-label="Cover"
+                  onPointerDown={(e) => e.stopPropagation()}
                   style={{ position: "fixed", left: coverMenu.x, top: Math.min(coverMenu.y, window.innerHeight - 140) }}
                   onKeyDown={(e) => {
                     if (e.key === "Escape") setCoverMenu(null);
@@ -1178,9 +1309,14 @@ function ClipMenu({
   const media = Boolean(clip.mediaId);
   return createPortal(
     <>
+      {/* Presses stop here: React passes them through the portal to the timeline, which would move the playhead and
+          drop the selection (Paste and Freeze frame then used the wrong time). */}
       <div
         className="tl__menu-catcher"
-        onPointerDown={onClose}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           onClose();
@@ -1190,6 +1326,7 @@ function ClipMenu({
         className="tl__menu tl__clip-menu"
         role="menu"
         aria-label="Clip"
+        onPointerDown={(e) => e.stopPropagation()}
         style={{ position: "fixed", left: x, top: y }}
         onKeyDown={(e) => {
           if (e.key === "Escape") onClose();

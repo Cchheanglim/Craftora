@@ -104,8 +104,8 @@ export interface Crop {
 }
 
 export const NO_CROP: Crop = { left: 0, top: 0, right: 0, bottom: 0 };
-/** The most a crop may take from one side, so something always remains. */
-export const MAX_CROP = 0.45;
+/** The most a crop may take from one side: 5% of the picture always remains each way (crop.ts `MIN_KEEP`). */
+export const MAX_CROP = 0.95;
 
 /** How a clip on a magnetic track takes over from the one before it. Both overlap for `duration`. */
 export interface Transition {

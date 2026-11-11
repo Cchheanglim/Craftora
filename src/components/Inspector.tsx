@@ -58,6 +58,8 @@ interface InspectorProps {
   onFormat: (format: { videoFormat?: string; audioFormat?: string }) => void;
   onSplit: () => void;
   onDuplicate: () => void;
+  /** Opens the crop window (CropDialog) for this clip. */
+  onOpenCrop?: () => void;
   onCutSilences?: () => void;
   cuttingSilences?: boolean;
   onSplitChapters?: () => void;
@@ -83,6 +85,7 @@ export function Inspector({
   onFormat,
   onSplit,
   onDuplicate,
+  onOpenCrop,
   onCutSilences,
   cuttingSilences,
   onSplitChapters,
@@ -312,6 +315,11 @@ export function Inspector({
               </button>
             )}
           </legend>
+          {onOpenCrop && (
+            <button type="button" className="btn btn--secondary" onClick={onOpenCrop}>
+              <Icon name="crop" size={13} /> Crop on the picture…
+            </button>
+          )}
           {CROP_SIDES.map(({ side, label }) => (
             <Slider
               key={side}

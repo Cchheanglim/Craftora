@@ -50,7 +50,14 @@
 .tl__zoom {
   margin-left: auto;
   display: flex;
+  align-items: center;
   gap: 2px;
+}
+
+.tl__zoom-slider {
+  width: 96px;
+  margin: 0 4px;
+  accent-color: var(--text);
 }
 
 .tl__body {
@@ -60,13 +67,45 @@
 }
 
 /* The tracks (and their heads beside them) sit in the middle when there's room, as one block. */
+/* Its width comes from TimelineEditor (full or compact, or where the line beside it is being dragged). */
 .tl__heads {
-  width: 158px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--line);
+  overflow: hidden;
   background: var(--bg-panel);
+}
+
+/* Compact: only ⋯ and Cover (lock, show and mute are in reach again when it's dragged back). */
+.tl__heads.is-compact .tl__head-btn.is-state {
+  display: none;
+}
+
+/* The line between the track buttons and the clips: drag it (a wider strip to grab), the line brightening. */
+.tl__heads-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.tl__heads-toggle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: var(--line);
+}
+
+.tl__heads-toggle:hover::before,
+.tl__heads-toggle:focus-visible::before,
+.tl__heads-toggle.is-dragging::before {
+  left: 2px;
+  width: 2px;
+  background: var(--text-2);
 }
 
 .tl__ruler-spacer {
@@ -81,7 +120,6 @@
   align-items: center;
   gap: 4px;
   padding: 0 8px;
-  border-bottom: 1px solid var(--line-soft);
   font-size: var(--text-xs);
   color: var(--text-2);
 }
@@ -125,12 +163,39 @@
 .tl__lanes {
   flex-shrink: 0;
   margin: auto 0;
+  /* Room above and below the tracks even when they fill the timeline: a clip dragged there gets a new track. The same
+     on both sides, so the heads stay level with their rows. */
+  padding: 28px 0;
 }
 
-/* The main track: a line above it, set apart from the tracks over it. */
-.tl__head.is-main,
-.tl__lane.is-main {
-  border-top: 1px solid var(--line);
+/* A clip dragged into the empty space above or below the tracks: the dashed outline of where its new track goes. */
+.tl__content > .tl__lanes {
+  position: relative;
+}
+
+.tl__new-track {
+  position: absolute;
+  z-index: 5;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px dashed var(--text);
+  border-radius: var(--radius-sm);
+  background: rgb(255 255 255 / 0.08);
+  color: var(--text);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tl__new-track.is-top {
+  bottom: calc(100% + 6px);
+}
+
+.tl__new-track.is-bottom {
+  top: calc(100% + 6px);
 }
 
 /* The buttons on the left, Cover (main track) on the right next to the clips. */
@@ -376,29 +441,25 @@
 .tl__lane {
   position: relative;
   height: 44px;
-  border-bottom: 1px solid var(--line-soft);
 }
 
-/* Each track is a visible row, the same on both sides, so the empty space around the tracks reads as empty and every
-   track shows its real height. */
+/* Each track is a band across the whole timeline, the same on both sides (its buttons and its clips), a small gap
+   from the next (the transparent borders), like the popular editor; clips fill its height. */
 .tl__lane,
 .tl__head {
-  background: rgb(255 255 255 / 0.025);
-}
-
-.tl__lanes > :first-child:not(.is-main) {
-  border-top: 1px solid var(--line-soft);
+  border-block: 2px solid transparent;
+  background: rgb(255 255 255 / 0.05) padding-box;
 }
 
 .tl__lane:hover {
-  background: rgb(255 255 255 / 0.045);
+  background-color: rgb(255 255 255 / 0.07);
 }
 
 /* Clips: colour tells videos, sound, text and effects apart; white outline marks the selection. */
 .tl__clip {
   position: absolute;
-  top: 4px;
-  bottom: 4px;
+  top: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
   border: 1px solid;
@@ -439,38 +500,6 @@
   outline: 2px solid var(--text);
   outline-offset: -1px;
   z-index: 1;
-}
-
-/* The + where two clips meet: opens Transitions for that join (a tick once it has one). Above the
-   playhead, which stands right on it after a split at the playhead. */
-.tl__join {
-  position: absolute;
-  top: 50%;
-  z-index: 5;
-  display: grid;
-  place-items: center;
-  width: 14px;
-  height: 14px;
-  padding: 0;
-  transform: translate(-50%, -50%);
-  border: 0;
-  border-radius: var(--radius-sm);
-  /* A dark ring keeps it apart from the clips' frames on either side. */
-  box-shadow: 0 0 0 2px var(--bg-canvas);
-  background: var(--text);
-  color: var(--bg-canvas);
-  opacity: 0.85;
-  cursor: pointer;
-}
-
-.tl__join:hover,
-.tl__join:focus-visible,
-.tl__join.is-set {
-  opacity: 1;
-}
-
-.tl__join:disabled {
-  display: none;
 }
 
 /* Being moved: drawn above the rest, slightly see-through so the gap below shows. */
@@ -516,8 +545,9 @@
   vertical-align: -2px;
 }
 
-/* A clip with its sound at 0%: a crossed speaker before its name, opening the Sound panel. */
-.tl__mute {
+/* Badges before a clip name: its filter and effect (each opens its settings) and a crossed speaker when its sound is at
+   0% (opens the Sound panel). In the name bar, so they never cover the clip. */
+.tl__badge {
   margin-right: 5px;
   padding: 0 3px;
   border: 0;
@@ -529,11 +559,11 @@
   pointer-events: auto;
 }
 
-.tl__mute:hover {
+.tl__badge:hover {
   background: rgb(0 0 0 / 0.9);
 }
 
-.tl__name .tl__mute svg {
+.tl__name .tl__badge svg {
   margin: 0;
   vertical-align: -2px;
 }
@@ -657,24 +687,6 @@
   color: #fff;
 }
 
-/* A filter or effect inside the clip: click for its settings. */
-.tl__fx {
-  padding: 0 4px;
-  border: 0;
-  border-radius: 2px;
-  background: rgb(0 0 0 / 0.72);
-  color: #fff;
-  font: inherit;
-  line-height: 14px;
-  white-space: nowrap;
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.tl__fx:hover {
-  background: rgb(0 0 0 / 0.9);
-}
-
 /* A transition: a chip on the cut over the overlapping part of the incoming clip; drag to change its length (above the start trim handle). */
 .tl__trans {
   position: absolute;
@@ -750,7 +762,8 @@
   right: 0;
 }
 
-/* The grab area stays 10 px wide; a thin line shows on hover, a solid bar with a grip when selected. */
+/* The grab area stays 10 px wide; a thin line shows on hover. Selected, the clip's plain white outline is all
+   (owner: like the popular editor, no thick ends or grips). */
 .tl__trim::after {
   content: "";
   position: absolute;
@@ -767,32 +780,8 @@
   right: 0;
 }
 
-.tl__clip:hover .tl__trim::after {
+.tl__clip:not(.is-selected):hover .tl__trim::after {
   background: rgb(255 255 255 / 0.35);
-}
-
-.tl__clip.is-selected .tl__trim::after {
-  width: 6px;
-  background: var(--text);
-}
-
-.tl__clip.is-selected .tl__trim::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  translate: 0 -50%;
-  z-index: 1;
-  width: 2px;
-  height: 12px;
-  background: var(--bg-canvas);
-}
-
-.tl__clip.is-selected .tl__trim.is-start::before {
-  left: 2px;
-}
-
-.tl__clip.is-selected .tl__trim.is-end::before {
-  right: 2px;
 }
 
 /* The playhead: the one accent on the timeline; the red line and its head are drawn inside it. Presses go through
