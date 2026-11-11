@@ -4,6 +4,9 @@
 
 **New**
 
+- **Sound panel**: click a clip's sound wave on the timeline to open its Volume and sound Fade in/out on the right, with
+  Back (to where you were) and X (close the panel). The dots on the clip's sound wave are gone. Track rows are shorter and
+  the main track's Cover is a small picture button.
 - **Lengths you can see and grab on the timeline**: the selected clip, effect or filter has solid white handles at both
   ends, and its new length shows while you drag one. Effect and filter blocks show an icon and how long they last. A
   transition is a small block on the cut: click it to select it, drag it left to make it longer. Clicking an effect or

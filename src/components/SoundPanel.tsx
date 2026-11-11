@@ -4,6 +4,26 @@ import { Icon } from "./Icon";
 import { Slider } from "./Inspector";
 import "./SoundPanel.css";
 
+/** A settings panel's head: Back, its title over what it belongs to, and X. */
+export function PanelHead({ id, title, sub, onBack, onClose }: { id: string; title: string; sub: string; onBack: () => void; onClose: () => void }) {
+  return (
+    <div className="panel-head">
+      <button type="button" className="btn btn--icon" aria-label="Back" title="Back" onClick={onBack}>
+        <Icon name="chevronLeft" />
+      </button>
+      <div>
+        <h2 id={id} className="panel-head__title">
+          {title}
+        </h2>
+        <p className="panel-head__sub truncate">{sub}</p>
+      </div>
+      <button type="button" className="btn btn--icon" aria-label="Close" title="Close" onClick={onClose}>
+        <Icon name="x" />
+      </button>
+    </div>
+  );
+}
+
 /** The selected clip's sound: volume and fades, opened by clicking its sound wave on the timeline. */
 export function SoundPanel({
   clip,
@@ -25,20 +45,7 @@ export function SoundPanel({
 
   return (
     <section className="sound-panel" aria-labelledby="sound-title">
-      <div className="sound-panel__head">
-        <button type="button" className="btn btn--icon" aria-label="Back" title="Back" onClick={onBack}>
-          <Icon name="chevronLeft" />
-        </button>
-        <div>
-          <h2 id="sound-title" className="sound-panel__title">
-            Sound
-          </h2>
-          <p className="sound-panel__clip truncate">{media?.name ?? "Clip"}</p>
-        </div>
-        <button type="button" className="btn btn--icon" aria-label="Close" title="Close" onClick={onClose}>
-          <Icon name="x" />
-        </button>
-      </div>
+      <PanelHead id="sound-title" title="Sound" sub={media?.name ?? "Clip"} onBack={onBack} onClose={onClose} />
       {!media?.hasAudio || media.source.image ? (
         <p className="insp__note">This clip has no sound.</p>
       ) : (

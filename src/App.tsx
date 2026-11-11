@@ -298,8 +298,10 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** A block just added from the right panel, for the timeline to zoom in to (`at` makes each one new). */
   const [revealed, setRevealed] = useState<{ clipId: string; at: number } | null>(null);
-  /** The clip whose transition is selected on the timeline (its controls show at the top of Transitions). */
+  /** The clip whose transition is selected on the timeline. */
   const [selectedTransition, setSelectedTransition] = useState<string | null>(null);
+  /** The effect, filter or transition (its clip id) whose settings panel is open in its tab, instead of the tiles. */
+  const [fxDetail, setFxDetail] = useState<string | null>(null);
   // Settings page: how many jobs run at once.
   const [maxRunning, setMaxRunning] = useState(() => rememberedCount("craftora.maxRunning", MAX_RUNNING));
   const [timelineHeight, setTimelineHeight] = useState(() => rememberedSize("craftora.timelineHeight"));
@@ -1255,6 +1257,12 @@ export default function App() {
       if (i > 0 && meets(order[i - 1], c)) api.editLive({ type: "setTransition", clipId: c.id, transition: transitionClip.transition! });
     });
   };
+  /** Open an effect, filter or transition's settings panel (id = its clip) in its tab. */
+  const openFx = (id: string, tab: FxTab) => {
+    setFxDetail(id);
+    setRightTab(tab);
+    if (!rightOpen) toggleRight();
+  };
   const applyFx = (item: FxItem, trackId: string | undefined | null, time: number) => {
     const done = dropEdits(project, item, trackId, time, [crypto.randomUUID(), crypto.randomUUID()]);
     if (!done) {
@@ -1271,12 +1279,15 @@ export default function App() {
     api.checkpoint();
     for (const edit of done.edits) api.editLive(edit);
     if (done.select) setSelectedId(done.select);
-    // A transition just added is the one selected, its controls on top of Transitions.
+    // A transition just added is the one selected (a tile clicked next swaps it).
     setSelectedTransition(item.kind === "transition" ? (done.select ?? null) : null);
     // A new block or shape: the timeline zooms in to it if it's too small to see at its zoom.
     if (done.select && done.edits.some((e) => e.type === "addBlock" || e.type === "addShape")) setRevealed({ clipId: done.select, at: Date.now() });
-    // An Adjust layer does nothing until its sliders move: show them.
-    if (item.kind === "adjust") setRightTab("edit");
+    // An Adjust layer does nothing until its sliders move: open its settings.
+    if (item.kind === "adjust" && done.select) {
+      setRightTab("filters");
+      setFxDetail(done.select);
+    }
     return done.select;
   };
   const duplicate = () => {
@@ -1836,9 +1847,9 @@ export default function App() {
               onSelect={(id) => {
                 setSelectedTransition(null);
                 setSelectedId(id);
-                // Like a transition: a filter or effect block picked while those tabs are open shows its controls in its own tab.
+                // Like a transition: a filter or effect block opens its settings panel in its own tab (Edit is only for clips).
                 const clip = project.clips.find((c) => c.id === id);
-                if (clip && isBlock(clip) && ["filters", "effects", "transitions", "shapes"].includes(rightTab)) setRightTab(clip.effect ? "effects" : "filters");
+                if (clip && isBlock(clip)) openFx(clip.id, clip.effect ? "effects" : "filters");
               }}
               selectedTransition={transitionClip?.id ?? null}
               onOpenSound={(id) => {
@@ -1850,8 +1861,7 @@ export default function App() {
               onSelectTransition={(id) => {
                 setSelectedId(id);
                 setSelectedTransition(id);
-                setRightTab("transitions");
-                if (!rightOpen) toggleRight();
+                openFx(id, "transitions");
               }}
               onSplit={split}
               onDuplicate={duplicate}
@@ -1933,15 +1943,31 @@ export default function App() {
               }}
               onApplyToAll={applyTransitionToAll}
               onCheckpoint={api.checkpoint}
+              detail={fxDetail !== null && fxDetail === selectedId}
+              onBack={() => {
+                setFxDetail(null);
+                // Back at the tiles, a tile clicked adds a new transition rather than swapping this one.
+                setSelectedTransition(null);
+              }}
+              onClose={() => {
+                setFxDetail(null);
+                toggleRight();
+              }}
               onPick={(item) => {
                 // A transition tile with a transition selected swaps it, keeping its length.
                 if (item.kind === "transition" && transitionClip?.transition) {
                   api.edit({ type: "setTransition", clipId: transitionClip.id, transition: { kind: item.id, duration: transitionClip.transition.duration } });
                   return;
                 }
-                // At the playhead, on the selected clip's track (a transition there cuts the clip at the playhead);
-                // with the playhead off the selected clip, at its start (a transition on the join before it).
                 if (!selected) return applyFx(item, undefined, playback.time);
+                // A transition goes on the selected clip's own cut: from the clip before it, else into the clip after it.
+                if (item.kind === "transition" && selected.mediaId) {
+                  const next = trackOrder(project, selected.trackId).find((c) => c.mediaId && c.start > selected.start && meets(selected, c));
+                  const join = previousOnTrack(project, selected) ? selected : next;
+                  if (join) return applyFx(item, selected.trackId, join.start);
+                }
+                // At the playhead, on the selected clip's track (a transition there, on a clip with no cut, cuts it at the
+                // playhead); with the playhead off the selected clip, at its start.
                 const inside = playback.time >= selected.start && playback.time < clipEnd(selected);
                 applyFx(item, selected.trackId, inside ? playback.time : selected.start);
               }}
@@ -2006,7 +2032,15 @@ export default function App() {
                   onOpenCaptions={inDesktopApp ? () => void openCaptions() : undefined}
                 />
               )}
-              {selected && selectedTrack && (
+              {selected && isBlock(selected) && (
+                <p className="export__hint">
+                  {selected.effect ? "Effects" : "Filters"} have their own settings.{" "}
+                  <button type="button" className="btn btn--ghost" onClick={() => openFx(selected.id, selected.effect ? "effects" : "filters")}>
+                    Open its settings
+                  </button>
+                </p>
+              )}
+              {selected && selectedTrack && !isBlock(selected) && (
                 <Inspector
                   key={selected.id}
                   clip={selected}
@@ -2027,11 +2061,6 @@ export default function App() {
                       : undefined
                   }
                   onSpeed={(speed) => api.edit({ type: "setSpeed", clipId: selected.id, speed })}
-                  onTransition={
-                    previousOnTrack(project, selected)
-                      ? (transition, live) => (live ? api.editLive : api.edit)({ type: "setTransition", clipId: selected.id, transition })
-                      : undefined
-                  }
                   onCheckpoint={api.checkpoint}
                   onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
                   onSplit={split}
