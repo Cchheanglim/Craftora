@@ -855,21 +855,8 @@ export function TimelineEditor({
                           const fadingOut = fadeDrag?.clipId === clip.id && fadeDrag.edge === "out";
                           return (
                             <div className="tl__wave-band" style={media.hasVideo ? { height: `${waveBand}px` } : undefined}>
+                              {/* A fade shows as the wave itself getting smaller (model.ts `clipPeaks`), no lines drawn over it. */}
                               <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={trackSilent(track)} />
-                              {soundFadeIn > 0 && (
-                                <span className="tl__sound-fade is-in" style={{ width: soundFadeIn * pps }} aria-hidden="true">
-                                  <svg preserveAspectRatio="none">
-                                    <line x1="0" y1="100%" x2="100%" y2="0" />
-                                  </svg>
-                                </span>
-                              )}
-                              {soundFadeOut > 0 && (
-                                <span className="tl__sound-fade is-out" style={{ width: soundFadeOut * pps }} aria-hidden="true">
-                                  <svg preserveAspectRatio="none">
-                                    <line x1="0" y1="0" x2="100%" y2="100%" />
-                                  </svg>
-                                </span>
-                              )}
                               {!track.locked && isSelected && length * pps >= 56 && (
                                 <>
                                   <span

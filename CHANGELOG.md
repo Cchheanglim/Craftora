@@ -9,7 +9,9 @@
   effect's or transition's controls (Duration, Strength, Speed, Remove, and **Apply to all cuts** for transitions) show at
   the top of the Effects, Filters or Transitions tab; click another transition to swap it. A transition added between
   clips keeps the clips after it together (no gap opens further on).
-- Sound fade handles show only on the selected clip, clear of its edges, and their length reads over the clip.
+- Sound fade handles show only on the selected clip, clear of its edges, and their length reads over the clip; a fade
+  shows as the sound wave getting smaller (no line drawn over it). Each track is a visible row, so a new track shows its
+  real height.
 - **Effects you can tune, and four new ones**: Strength and Speed sliders in Edit for effects that have them; Shake keeps
   shaking for its whole length and Zoom punch hits on a beat (they used to fade out or hit once). New: **Vignette**,
   **Strobe**, **RGB split** and **Film grain**.

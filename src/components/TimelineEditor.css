@@ -378,8 +378,19 @@
   border-bottom: 1px solid var(--line-soft);
 }
 
+/* Each track is a visible row, the same on both sides, so the empty space around the tracks reads as empty and every
+   track shows its real height. */
+.tl__lane,
+.tl__head {
+  background: rgb(255 255 255 / 0.025);
+}
+
+.tl__lanes > :first-child:not(.is-main) {
+  border-top: 1px solid var(--line-soft);
+}
+
 .tl__lane:hover {
-  background: rgb(255 255 255 / 0.015);
+  background: rgb(255 255 255 / 0.045);
 }
 
 /* Clips: colour tells videos, sound, text and effects apart; white outline marks the selection. */
@@ -768,50 +779,6 @@ body.is-dragging-media .tl__lane:hover {
 }
 
 /* A sound fade: the quiet part shaded down to the clip's edge, a line along the slope. */
-.tl__sound-fade {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  pointer-events: none;
-}
-
-.tl__sound-fade.is-in {
-  left: 0;
-}
-
-.tl__sound-fade.is-out {
-  right: 0;
-}
-
-.tl__sound-fade::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgb(0 0 0 / 0.45);
-}
-
-.tl__sound-fade.is-in::before {
-  clip-path: polygon(0 0, 100% 0, 0 100%);
-}
-
-.tl__sound-fade.is-out::before {
-  clip-path: polygon(0 0, 100% 0, 100% 100%);
-}
-
-.tl__sound-fade svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.tl__sound-fade line {
-  stroke: #fff;
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-
 /* Dots on the band's top corners (kept clear of the trim handles): drag one to set a sound fade. */
 .tl__fade-dot {
   position: absolute;
