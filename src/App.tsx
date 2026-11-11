@@ -1268,7 +1268,7 @@ export default function App() {
     if (!done) {
       setError(
         item.kind === "transition"
-          ? "Put the playhead on a clip first: the transition goes there."
+          ? "A transition goes where two clips meet: use it on a clip with another one right before or after it."
           : item.kind === "fade"
             ? "Drop a fade on a clip: it fades that clip's start or end."
             : "Drop it on a video or sound clip (pictures have no speed).",
@@ -1852,6 +1852,11 @@ export default function App() {
                 if (clip && isBlock(clip)) openFx(clip.id, clip.effect ? "effects" : "filters");
               }}
               selectedTransition={transitionClip?.id ?? null}
+              onOpenFx={(id, tab) => {
+                setSelectedTransition(null);
+                setSelectedId(id);
+                openFx(id, tab);
+              }}
               onOpenSound={(id) => {
                 if (rightTab !== "sound") soundBack.current = rightTab;
                 setSelectedId(id);
@@ -1917,7 +1922,8 @@ export default function App() {
               project={project}
               time={playback.time}
               playing={playback.playing}
-              block={selected && isBlock(selected) ? selected : undefined}
+              // A filter or effect block, or a clip with a filter or effect inside it.
+              block={selected && (isBlock(selected) || (selected.mediaId && (selected.look || selected.effect))) ? selected : undefined}
               transition={
                 transitionClip
                   ? {
@@ -1960,14 +1966,8 @@ export default function App() {
                   return;
                 }
                 if (!selected) return applyFx(item, undefined, playback.time);
-                // A transition goes on the selected clip's own cut: from the clip before it, else into the clip after it.
-                if (item.kind === "transition" && selected.mediaId) {
-                  const next = trackOrder(project, selected.trackId).find((c) => c.mediaId && c.start > selected.start && meets(selected, c));
-                  const join = previousOnTrack(project, selected) ? selected : next;
-                  if (join) return applyFx(item, selected.trackId, join.start);
-                }
-                // At the playhead, on the selected clip's track (a transition there, on a clip with no cut, cuts it at the
-                // playhead); with the playhead off the selected clip, at its start.
+                // At the playhead on the selected clip (a filter or effect goes inside it, a transition on its cut);
+                // with the playhead off the selected clip, at its start.
                 const inside = playback.time >= selected.start && playback.time < clipEnd(selected);
                 applyFx(item, selected.trackId, inside ? playback.time : selected.start);
               }}

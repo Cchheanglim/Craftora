@@ -624,6 +624,35 @@
   pointer-events: none;
 }
 
+/* On a video or sound clip: over the top of its frames, under the name bar. */
+.tl__clip.is-media .tl__tag {
+  position: absolute;
+  top: 16px;
+  left: 12px;
+  z-index: 2;
+  display: flex;
+  gap: 3px;
+  color: #fff;
+}
+
+/* A filter or effect inside the clip: click for its settings. */
+.tl__fx {
+  padding: 0 4px;
+  border: 0;
+  border-radius: 2px;
+  background: rgb(0 0 0 / 0.72);
+  color: #fff;
+  font: inherit;
+  line-height: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.tl__fx:hover {
+  background: rgb(0 0 0 / 0.9);
+}
+
 /* A transition: a chip on the cut over the overlapping part of the incoming clip; drag to change its length (above the start trim handle). */
 .tl__trans {
   position: absolute;

@@ -80,6 +80,8 @@ interface TimelineEditorProps {
   onSelectTransition?: (clipId: string) => void;
   /** A click on a clip's sound wave: open its Sound panel. */
   onOpenSound?: (clipId: string) => void;
+  /** A click on the filter or effect inside a clip: open its settings in that tab. */
+  onOpenFx?: (clipId: string, tab: "filters" | "effects") => void;
   /** A pick from a clip's right-click menu; `time`: the playhead if it's on the clip, else where it was clicked. */
   onClipCommand: (command: ClipCommand, clip: Clip, time: number) => void;
   /** Something has been copied, so Paste can put it at the playhead. */
@@ -140,6 +142,7 @@ export function TimelineEditor({
   selectedTransition,
   onSelectTransition,
   onOpenSound,
+  onOpenFx,
   onClipCommand,
   canPaste,
   onCover,
@@ -867,16 +870,30 @@ export function TimelineEditor({
                           {(media || isBlock(clip)) && <span className="tl__length mono">{media ? formatTimecode(length) : fadeLength(length)}</span>}
                         </span>
                         {(clip.speed !== 1 || clip.reverse || (clip.mediaId && (clip.look || clip.effect))) && (
-                          <span className="tl__tag mono" aria-hidden="true">
+                          <span className="tl__tag mono">
                             {clip.reverse ? "◀ " : ""}
                             {clip.speed !== 1 ? `${clip.speed}×` : ""}
                             {clip.smooth && clip.speed < 1 ? " smooth" : ""}
-                            {/* A filter and an effect carried inside the clip (dropped on it). */}
+                            {/* A filter and an effect inside the clip (dropped on it): each opens its settings. */}
                             {clip.mediaId &&
-                              [LOOKS.find((l) => l.id === clip.look)?.label, PICTURE_EFFECTS.find((f) => f.id === clip.effect)?.label]
-                                .filter(Boolean)
-                                .map((name) => ` ✦ ${name}`)
-                                .join("")}
+                              ([
+                                ["filters", LOOKS.find((l) => l.id === clip.look)?.label],
+                                ["effects", PICTURE_EFFECTS.find((f) => f.id === clip.effect)?.label],
+                              ] as const).map(
+                                ([tab, name]) =>
+                                  name && (
+                                    <button
+                                      key={tab}
+                                      type="button"
+                                      className="tl__fx"
+                                      title={`${name}: click for its settings`}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      onClick={() => onOpenFx?.(clip.id, tab)}
+                                    >
+                                      ✦ {name}
+                                    </button>
+                                  ),
+                              )}
                           </span>
                         )}
                         {trimTip?.clipId === clip.id && <span className={`tl__fade-tip mono tl__trim-tip is-${trimTip.edge}`}>{fadeLength(length)}</span>}

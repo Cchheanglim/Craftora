@@ -170,7 +170,7 @@ export type FxItem =
 /** A new filter, effect, Adjust layer or shape block lasts this long (Zoom punch hits in its first half second); drag its edges to change it. */
 export const BLOCK_LENGTH = 5;
 
-/** A transition this close to a join (seconds) goes on that join; further into a clip, it cuts the clip there. */
+/** A transition this close to a join (seconds) goes on that join; further into a clip, on that clip's own cut. */
 const JOIN_REACH = 0.5;
 
 /** A filter or effect block's name on the timeline and in Edit. */
@@ -206,8 +206,14 @@ export function dropEdits(
   }
   if (item.kind === "filter" || item.kind === "effect") {
     const block = item.kind === "filter" ? { look: item.id } : { effect: item.id };
-    // Always a block of its own where it lands, to move and stretch; on a clip's spot it goes on a free track above
-    // (actions.ts `place`). Never hidden inside the clip.
+    // Dropped on a video or picture: inside that clip, for its whole length (one filter and one effect each; a new one
+    // replaces it, its settings back to their defaults).
+    const clip = clipAt(mediaOn(dropped?.id).filter((c) => showsPicture(p, c)));
+    if (clip) {
+      const patch = item.kind === "filter" ? { look: item.id, lookAmount: 1 } : { effect: item.id, effectStrength: undefined, effectSpeed: undefined };
+      return { edits: [{ type: "updateClip", clipId: clip.id, patch }], select: clip.id };
+    }
+    // On an empty spot: a block of its own, to stretch over several clips.
     return { edits: [...ownTrack, { type: "addBlock", clipId: newIds[0], at: time, length: BLOCK_LENGTH, trackId: ownTrack.length ? trackId : dropped?.id, ...block }], select: newIds[0] };
   }
   if (item.kind === "shape") {
@@ -232,15 +238,17 @@ export function dropEdits(
   }
   const kind = TRANSITION_KINDS.find((t) => t.kind === item.id)?.kind ?? "crossfade";
   const edits: EditAction[] = [];
-  // Over the middle of a clip: cut it there and put the transition on the cut (no splitting by hand first).
+  // Over the middle of a clip: on that clip's own cut, from the clip before it, else into the clip after it (never cuts it).
   const under = order.filter((c) => time >= c.start && time < clipEnd(c));
   const nearJoin = order.some((c) => Math.abs(time - c.start) <= JOIN_REACH || Math.abs(time - clipEnd(c)) <= JOIN_REACH);
   // One clip only: inside a transition two clips overlap, and that one is changed on its join instead.
   const inside = under.length === 1 && !nearJoin ? under[0] : undefined;
   if (inside) {
-    edits.push({ type: "splitClip", clipId: inside.id, newClipId: newIds[0], at: time });
-    edits.push({ type: "setTransition", clipId: newIds[0], transition: { kind, duration: 1 } });
-    return { edits, select: newIds[0] };
+    const i = order.indexOf(inside);
+    const join = meets(order[i - 1], inside) ? inside : order[i + 1] && meets(inside, order[i + 1]) ? order[i + 1] : undefined;
+    if (!join) return null;
+    edits.push({ type: "setTransition", clipId: join.id, transition: { kind, duration: 1 } });
+    return { edits, select: join.id };
   }
   // Near a join (or between clips): on the join nearest to where it was dropped (clips set apart have none).
   const joins = order.filter((c, i) => i > 0 && meets(order[i - 1], c));
