@@ -78,7 +78,7 @@ import { applyTheme, saveTheme, savedTheme, type Theme } from "./lib/theme";
 import { preference } from "./lib/preferences";
 import { useGlideScroll } from "./lib/glide";
 import { useProject } from "./project/useProject";
-import { applyEdit, SHOWN_CAPTIONS, timelineCaptions, withShownCaptions } from "./project/actions";
+import { applyEdit, SHOWN_CAPTIONS, timelineCaptions, voiceTrack, withShownCaptions } from "./project/actions";
 import { usePlayback } from "./project/usePlayback";
 import { cutModeApplies, formatSize, frameOf, planExport, type ExportPlan } from "./project/exportPlan";
 import {
@@ -115,7 +115,8 @@ import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/Edge
 import { dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, type FxTab } from "./components/FxPanel";
 import { SoundPanel } from "./components/SoundPanel";
-import { VoicePanel } from "./components/VoicePanel";
+import { LEVEL_STEP, VoicePanel } from "./components/VoicePanel";
+import { Tooltip } from "./components/Tooltip";
 import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
 import { TimelineEditor, type ClipCommand } from "./components/TimelineEditor";
@@ -359,6 +360,8 @@ export default function App() {
   // A voice-over take: where on the timeline it started, and the preview kept quiet while it records.
   const voiceAt = useRef(0);
   const [voiceSilent, setVoiceSilent] = useState(false);
+  // The take's microphone levels so far (VoicePanel `onLevel`), for its live clip on the timeline; null when not recording.
+  const [voiceLevels, setVoiceLevels] = useState<number[] | null>(null);
   /** How much of each link preview is cached on disk (by cache id), 0–100. */
   const [cached, setCached] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -538,10 +541,18 @@ export default function App() {
   const toExport = useMemo(() => (showCaptions ? withShownCaptions(project) : project), [project, showCaptions]);
   const plan = useMemo(() => planExport(toExport, effective), [toExport, effective]);
   const selected = project.clips.find((c) => c.id === selectedId) ?? null;
-  // The Sound panel belongs to a clip: with none selected, it goes back to where it was opened from.
+  // The Sound panel belongs to a clip: with none selected, it goes back to where it was opened from, and comes back when
+  // a clip with sound is selected again, until it's closed or another tab is picked (`soundOpen`).
+  const [soundOpen, setSoundOpen] = useState(false);
+  const selectedHasSound = Boolean(selected?.mediaId && project.media.find((m) => m.id === selected.mediaId)?.hasAudio);
   useEffect(() => {
     if (rightTab === "sound" && !selected?.mediaId) setRightTab(panelBack.current);
-  }, [rightTab, selected]);
+    else if (soundOpen && selectedHasSound && rightTab === panelBack.current) setRightTab("sound");
+  }, [rightTab, selected, soundOpen, selectedHasSound]);
+  const pickTab = (tab: typeof rightTab) => {
+    setSoundOpen(false);
+    setRightTab(tab);
+  };
   // A selected transition belongs to the selected clip, while it still has one.
   const transitionClip = selected && selectedTransition === selected.id && selected.transition ? selected : null;
 
@@ -1256,7 +1267,7 @@ export default function App() {
   /** The selected transition on every cut of its track (clips set apart have no cut). */
   const applyTransitionToAll = () => {
     if (!transitionClip?.transition) return;
-    const order = trackOrder(project, transitionClip.trackId).filter((c) => c.mediaId);
+    const order = trackOrder(project, transitionClip.trackId).filter((c) => !isBlock(c));
     api.checkpoint();
     order.forEach((c, i) => {
       if (i > 0 && meets(order[i - 1], c)) api.editLive({ type: "setTransition", clipId: c.id, transition: transitionClip.transition! });
@@ -1275,6 +1286,8 @@ export default function App() {
       throw new Error(errorText(err));
     }
   };
+  const voiceEnd = voiceAt.current + (voiceLevels?.length ?? 0) * LEVEL_STEP;
+  const recording = voiceLevels && { start: voiceAt.current, end: voiceEnd, trackId: voiceTrack(project, voiceAt.current, voiceEnd), levels: voiceLevels };
   const openVoice = () => {
     if (rightTab !== "sound" && rightTab !== "voice") panelBack.current = rightTab;
     setRightTab("voice");
@@ -1291,7 +1304,7 @@ export default function App() {
     if (!done) {
       setError(
         item.kind === "transition"
-          ? "A transition goes where two clips meet: use it on a clip with another one right before or after it."
+          ? "Put the playhead inside a clip (not at its very start or end) to add a transition there."
           : item.kind === "fade"
             ? "Drop a fade on a clip: it fades that clip's start or end."
             : "Drop it on a video or sound clip (pictures have no speed).",
@@ -1302,7 +1315,7 @@ export default function App() {
     api.checkpoint();
     for (const edit of done.edits) api.editLive(edit);
     if (done.select) setSelectedId(done.select);
-    // A transition just added is the one selected (a tile clicked next swaps it).
+    // A transition just added is the one selected.
     setSelectedTransition(item.kind === "transition" ? (done.select ?? null) : null);
     // A new block or shape: the timeline zooms in to it if it's too small to see at its zoom.
     if (done.select && done.edits.some((e) => e.type === "addBlock" || e.type === "addShape")) setRevealed({ clipId: done.select, at: Date.now() });
@@ -1659,6 +1672,7 @@ export default function App() {
   return (
     <div className="app" data-left={leftOpen ? "open" : "closed"} style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen ? sideWidth : 56, PANEL_WIDTH)}px` } as CSSProperties}>
       <Ambient active={theme !== "classic"} />
+      <Tooltip />
       {fetchReview.dialog}
       <Toolbar
         queue={<QueueDock queue={queue} freshId={freshId} />}
@@ -1884,6 +1898,7 @@ export default function App() {
               onOpenSound={(id) => {
                 if (rightTab !== "sound" && rightTab !== "voice") panelBack.current = rightTab;
                 setSelectedId(id);
+                setSoundOpen(true);
                 setRightTab("sound");
                 if (!rightOpen) toggleRight();
               }}
@@ -1899,6 +1914,7 @@ export default function App() {
               onDelete={remove}
               onAddText={addText}
               onRecordVoice={inDesktopApp ? openVoice : undefined}
+              recording={recording}
               onDropFx={applyFx}
               onClipCommand={clipCommand}
               canPaste={canPaste}
@@ -1921,22 +1937,22 @@ export default function App() {
         // Stays mounted when closed so it can slide away; inert keeps it out of Tab and clicks.
         <div className={`app__panel${rightOpen ? "" : " is-closed"}`} inert={!rightOpen}>
           <div className="segmented app__tabs" role="group" aria-label="Right panel">
-            <button type="button" aria-pressed={rightTab === "edit"} onClick={() => setRightTab("edit")}>
+            <button type="button" aria-pressed={rightTab === "edit"} onClick={() => pickTab("edit")}>
               Edit
             </button>
-            <button type="button" aria-pressed={rightTab === "export"} onClick={() => setRightTab("export")}>
+            <button type="button" aria-pressed={rightTab === "export"} onClick={() => pickTab("export")}>
               Export
             </button>
-            <button type="button" aria-pressed={rightTab === "transcript"} onClick={() => setRightTab("transcript")}>
+            <button type="button" aria-pressed={rightTab === "transcript"} onClick={() => pickTab("transcript")}>
               Transcript
             </button>
-            <button type="button" aria-pressed={rightTab === "assistant"} onClick={() => setRightTab("assistant")}>
+            <button type="button" aria-pressed={rightTab === "assistant"} onClick={() => pickTab("assistant")}>
               Assistant
             </button>
           </div>
           <div className="segmented app__tabs is-second" role="group" aria-label="Filters, effects, transitions and shapes">
             {(["filters", "effects", "transitions", "shapes"] as const).map((tab) => (
-              <button key={tab} type="button" aria-pressed={rightTab === tab} onClick={() => setRightTab(tab)}>
+              <button key={tab} type="button" aria-pressed={rightTab === tab} onClick={() => pickTab(tab)}>
                 {tab[0].toUpperCase() + tab.slice(1)}
               </button>
             ))}
@@ -1985,12 +2001,8 @@ export default function App() {
                 toggleRight();
               }}
               onPick={(item) => {
-                // A transition tile with a transition selected swaps it, keeping its length.
-                if (item.kind === "transition" && transitionClip?.transition) {
-                  api.edit({ type: "setTransition", clipId: transitionClip.id, transition: { kind: item.id, duration: transitionClip.transition.duration } });
-                  return;
-                }
-                if (!selected) return applyFx(item, undefined, playback.time);
+                // A transition tile always adds one at the playhead (never swaps the selected one: its Type does that).
+                if (!selected || item.kind === "transition") return applyFx(item, selected?.trackId, playback.time);
                 // At the playhead on the selected clip (a filter or effect goes inside it, a transition on its cut);
                 // with the playhead off the selected clip, at its start.
                 const inside = playback.time >= selected.start && playback.time < clipEnd(selected);
@@ -2016,9 +2028,9 @@ export default function App() {
               media={project.media.find((m) => m.id === selected.mediaId)}
               onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
               onCheckpoint={api.checkpoint}
-              onBack={() => setRightTab(panelBack.current)}
+              onBack={() => pickTab(panelBack.current)}
               onClose={() => {
-                setRightTab(panelBack.current);
+                pickTab(panelBack.current);
                 toggleRight();
               }}
             />
@@ -2027,14 +2039,17 @@ export default function App() {
               startAt={formatClock(playback.time)}
               onStart={(mute) => {
                 voiceAt.current = playback.time;
+                setVoiceLevels([]);
                 setVoiceSilent(mute);
                 if (!playback.playing) playback.toggle();
               }}
               onStop={(take) => {
                 playback.pause();
                 setVoiceSilent(false);
-                return placeVoice(take);
+                // The live clip stays until the take is on the timeline in its place.
+                return placeVoice(take).finally(() => setVoiceLevels(null));
               }}
+              onLevel={(level) => setVoiceLevels((levels) => levels && [...levels, level])}
               onBack={() => setRightTab(panelBack.current)}
               onClose={() => {
                 setRightTab(panelBack.current);

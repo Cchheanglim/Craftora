@@ -1,4 +1,4 @@
-/* The voice-over panel (VoicePanel.tsx): microphone, level meter, countdown and Record/Stop. */
+/* The voice-over panel (VoicePanel.tsx): microphone, level meter, Test your mic, countdown and Record/Stop. */
 .voice-panel {
   display: flex;
   flex-direction: column;
@@ -19,6 +19,17 @@
   height: 100%;
   width: 0;
   background: var(--ok);
+}
+
+/* Test your mic: the button, and what it's doing beside it. */
+.voice__test {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.voice__test .btn {
+  flex: none;
 }
 
 .voice__hint {

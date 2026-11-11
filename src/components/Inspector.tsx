@@ -24,7 +24,7 @@ import {
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
-import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustSteps, blockLabel } from "../project/effects";
+import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustMin, adjustSteps, blockLabel } from "../project/effects";
 import { SHAPES, shapeLabel } from "../project/shapes";
 import "./Inspector.css";
 
@@ -361,7 +361,7 @@ export function Inspector({
               key={id}
               id={`insp-adjust-${id}`}
               label={label}
-              min={-100}
+              min={adjustMin(id)}
               max={100}
               step={1}
               value={clip.adjust?.[id] ?? 0}

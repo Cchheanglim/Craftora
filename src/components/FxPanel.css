@@ -48,6 +48,7 @@
 }
 
 .fx-tile {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -66,6 +67,25 @@
 .fx-tile:focus-visible {
   border-color: var(--line-hover);
   color: var(--text);
+}
+
+/* The "+" on a hovered tile, in the stage's corner: clicking the tile adds it at the playhead. */
+.fx-tile__add {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-fill);
+  color: var(--text-on-accent);
+}
+
+.fx-tile:hover .fx-tile__add,
+.fx-tile:focus-visible .fx-tile__add {
+  display: grid;
 }
 
 .fx-tile__stage {

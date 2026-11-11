@@ -6,7 +6,7 @@
  * - Time effects (slow motion, speed up, reverse) change the clip (or piece) they're dropped on.
  * - Transitions go on the join between two clips.
  */
-import { MIN_CLIP, TRANSITION_KINDS, clipEnd, meets, clipLength, isStill, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
+import { MIN_CLIP, TRANSITION_KINDS, clipEnd, isBlock, meets, clipLength, isStill, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
 import type { ClipPatch, EditAction } from "./actions";
 import type { ShapeId } from "./shapes";
 import type { CSSProperties } from "react";
@@ -15,7 +15,10 @@ import type { CSSProperties } from "react";
  * One colour step of a filter: a CSS filter function and its amount (degrees for hue-rotate). The
  * preview applies the steps in order; the export draws the same maths (project.rs `look_filter`).
  */
-export type LookStep = readonly ["grayscale" | "sepia" | "saturate" | "hue-rotate" | "brightness" | "contrast" | "invert" | "warmth", number];
+export type LookStep = readonly [
+  "grayscale" | "sepia" | "saturate" | "hue-rotate" | "brightness" | "contrast" | "invert" | "warmth" | ToneOp | "sharpen",
+  number,
+];
 
 export const LOOKS = [
   { id: "bw", label: "Black & white", steps: [["grayscale", 1]] },
@@ -48,25 +51,56 @@ export function lookSteps(id?: string, amount = 1): LookStep[] {
   ]);
 }
 
-/** Edit → Adjust: sliders from -100 to 100, 0 = unchanged. */
+/** Edit → Adjust: sliders from `adjustMin` to 100, 0 = unchanged. */
 export const ADJUSTMENTS = [
   { id: "brightness", label: "Brightness" },
   { id: "contrast", label: "Contrast" },
   { id: "saturation", label: "Saturation" },
+  { id: "exposure", label: "Exposure" },
+  { id: "highlights", label: "Highlights" },
+  { id: "shadows", label: "Shadows" },
   { id: "warmth", label: "Warmth" },
+  { id: "sharpen", label: "Sharpen" },
 ] as const;
 export type Adjust = Partial<Record<(typeof ADJUSTMENTS)[number]["id"], number>>;
 
+/** Where an Adjust slider starts: Sharpen only sharpens. */
+export const adjustMin = (id: keyof Adjust) => (id === "sharpen" ? 0 : -100);
+
 /** A clip's adjustments as colour steps, drawn after its filter; none for all at 0. */
 export function adjustSteps(adjust?: Adjust): LookStep[] {
-  const v = (id: keyof Adjust) => Math.round(clamp(adjust?.[id] ?? 0, -100, 100)) / 100;
+  const v = (id: keyof Adjust) => Math.round(clamp(adjust?.[id] ?? 0, adjustMin(id), 100)) / 100;
   const steps: LookStep[] = [];
+  if (v("exposure")) steps.push(["exposure", v("exposure")]);
   if (v("brightness")) steps.push(["brightness", round4(1 + v("brightness") / 2)]);
   if (v("contrast")) steps.push(["contrast", round4(1 + v("contrast") / 2)]);
+  if (v("highlights")) steps.push(["highlights", v("highlights")]);
+  if (v("shadows")) steps.push(["shadows", v("shadows")]);
   if (v("saturation")) steps.push(["saturate", round4(1 + v("saturation"))]);
   if (v("warmth")) steps.push(["warmth", v("warmth")]);
+  if (v("sharpen")) steps.push(["sharpen", v("sharpen")]);
   return steps;
 }
+
+/** Adjust's tone curves, the same on red, green and blue. */
+export type ToneOp = "exposure" | "highlights" | "shadows";
+
+/**
+ * A tone curve at `v` (-1 to 1) for a value `x` (0 to 1); black and white stay put and it never folds back
+ * (project.rs `look_filter` draws the same maths with lutrgb):
+ * - Exposure: gain 2^(1.5 v) on the darks that eases off towards white, so brighter never burns the highlights out.
+ * - Highlights: moves the bright tones (most at two thirds up); Shadows: the dark ones (most at a third).
+ */
+export function toneCurve(op: ToneOp, v: number, x: number): number {
+  if (op === "exposure") {
+    const g = 2 ** (1.5 * v);
+    return (g * x) / (1 + (g - 1) * x);
+  }
+  return op === "highlights" ? x + v * x * x * (1 - x) : x + v * x * (1 - x) ** 2;
+}
+
+/** Sharpen at `v` (0 to 1): the 3×3 kernel's weight on each of the four neighbours, taken away (the middle gets 1 + 4×). */
+export const sharpenWeight = (v: number) => 0.5 * v;
 
 /** How much Warmth 100 changes red and blue (project.rs `look_filter` uses the same). */
 const WARMTH = 0.2;
@@ -76,12 +110,16 @@ export function warmthMatrix(w: number): string {
   return `${round4(1 + WARMTH * w)} 0 0 0 0 0 1 0 0 0 0 0 ${round4(1 - WARMTH * w)} 0 0 0 0 0 1 0`;
 }
 
+/** Adjust's steps that CSS has no function for: the preview draws them as SVG filters with ids `<op>-<slider value>`. */
+export const SVG_STEPS = ["warmth", "exposure", "highlights", "shadows", "sharpen"] as const;
+const isSvgStep = (op: LookStep[0]): op is (typeof SVG_STEPS)[number] => (SVG_STEPS as readonly string[]).includes(op);
+
 /**
- * Colour steps as CSS, for the preview; undefined for none. CSS has no warmth function: it points at the SVG filter
- * the preview draws for each Warmth value (Preview.tsx `WARMTH_FILTERS`).
+ * Colour steps as CSS, for the preview; undefined for none. Warmth, the tone curves and Sharpen point at the SVG
+ * filter the preview draws for their value (Preview.tsx `WARMTH_FILTERS`, `AdjustFilters`).
  */
 export function stepsFilter(steps: LookStep[]): string | undefined {
-  const css = ([op, a]: LookStep) => (op === "warmth" ? `url(#warmth-${Math.round(a * 100)})` : `${op}(${op === "hue-rotate" ? `${a}deg` : a})`);
+  const css = ([op, a]: LookStep) => (isSvgStep(op) ? `url(#${op}-${Math.round(a * 100)})` : `${op}(${op === "hue-rotate" ? `${a}deg` : a})`);
   return steps.length ? steps.map(css).join(" ") : undefined;
 }
 
@@ -238,20 +276,29 @@ export function dropEdits(
   }
   const kind = TRANSITION_KINDS.find((t) => t.kind === item.id)?.kind ?? "crossfade";
   const edits: EditAction[] = [];
-  // Over the middle of a clip: on that clip's own cut, from the clip before it, else into the clip after it (never cuts it).
-  const under = order.filter((c) => time >= c.start && time < clipEnd(c));
-  const nearJoin = order.some((c) => Math.abs(time - c.start) <= JOIN_REACH || Math.abs(time - clipEnd(c)) <= JOIN_REACH);
+  // Any clip but a filter/effect block can take one: a video into a shape or text works like the preview and export.
+  const pieces = trackOrder(p, track.id).filter((c) => !isBlock(c));
+  // Over the middle of a clip: on that clip's own cut from the clip before it, else into the clip after it, while that
+  // cut has no transition yet. Otherwise (one long video, or both cuts taken) the clip is cut right there, so a new
+  // transition never replaces one already there; dropping on a cut does that.
+  const under = pieces.filter((c) => time >= c.start && time < clipEnd(c));
+  const nearJoin = pieces.some((c) => Math.abs(time - c.start) <= JOIN_REACH || Math.abs(time - clipEnd(c)) <= JOIN_REACH);
   // One clip only: inside a transition two clips overlap, and that one is changed on its join instead.
   const inside = under.length === 1 && !nearJoin ? under[0] : undefined;
   if (inside) {
-    const i = order.indexOf(inside);
-    const join = meets(order[i - 1], inside) ? inside : order[i + 1] && meets(inside, order[i + 1]) ? order[i + 1] : undefined;
-    if (!join) return null;
+    const i = pieces.indexOf(inside);
+    const next = pieces[i + 1];
+    const join = meets(pieces[i - 1], inside) && !inside.transition ? inside : next && meets(inside, next) && !next.transition ? next : undefined;
+    if (!join) {
+      edits.push({ type: "splitClip", clipId: inside.id, newClipId: newIds[0], at: time });
+      edits.push({ type: "setTransition", clipId: newIds[0], transition: { kind, duration: 1 } });
+      return { edits, select: newIds[0] };
+    }
     edits.push({ type: "setTransition", clipId: join.id, transition: { kind, duration: 1 } });
     return { edits, select: join.id };
   }
   // Near a join (or between clips): on the join nearest to where it was dropped (clips set apart have none).
-  const joins = order.filter((c, i) => i > 0 && meets(order[i - 1], c));
+  const joins = pieces.filter((c, i) => i > 0 && meets(pieces[i - 1], c));
   if (joins.length === 0) return null;
   const clip = joins.reduce((best, c) => (Math.abs(c.start - time) < Math.abs(best.start - time) ? c : best));
   edits.push({ type: "setTransition", clipId: clip.id, transition: { kind, duration: 1 } });

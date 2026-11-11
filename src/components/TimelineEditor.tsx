@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
+import { shapeLabel } from "../project/shapes";
 import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, mediaTimeAt, previousOnTrack, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
 import { LOOKS, PICTURE_EFFECTS, blockLabel, type FxItem } from "../project/effects";
 import { packedTrack, slotOn } from "../project/actions";
@@ -92,6 +93,12 @@ interface TimelineEditorProps {
   onCover: (choice: "frame" | "picture" | "remove") => void;
   /** The + on the join before `clip` (where a clip was split or two clips meet). */
   onJoin: (clip: Clip) => void;
+  /**
+   * A voice-over being recorded: drawn as a growing clip from `start` to `end` (seconds on the timeline) on track
+   * `trackId`, the track the take will land on; null: a new row below all the tracks (the take gets a new track).
+   * `levels`: the microphone's loudness, 0 to 1, one value per 0.1 s of the take so far, oldest first.
+   */
+  recording?: { start: number; end: number; trackId: string | null; levels: number[] } | null;
 }
 
 /** What a clip's right-click menu can do (App `clipCommand` does it). */
@@ -150,6 +157,7 @@ export function TimelineEditor({
   canPaste,
   onCover,
   onJoin,
+  recording,
 }: TimelineEditorProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -235,17 +243,30 @@ export function TimelineEditor({
   const minPpsRef = useRef(minPps);
   minPpsRef.current = minPps;
 
-  // Ctrl + wheel and a touchpad pinch (which arrives as Ctrl + wheel) zoom the timeline. Our own listener: React's can't
-  // stop the window zooming itself instead.
+  // Where to scroll once a new zoom is drawn (the layout effect below applies it).
+  const scrollTo = useRef<number | null>(null);
+  // The zoom asked for last, which may not be drawn yet (a pinch sends many steps a frame).
+  const ppsNow = useRef(pps);
+  ppsNow.current = pps;
+  // Ctrl + wheel and a touchpad pinch (which arrives as Ctrl + wheel) zoom the timeline about the pointer: the moment
+  // under it stays under it. Our own listener: React's can't stop the window zooming itself instead.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey) return;
+      if (!e.ctrlKey || !contentRef.current) return;
       e.preventDefault();
       // A pinch follows the fingers (its steps add up to the pinch's scale); a wheel notch (about 100) zooms 1.2×.
       const delta = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY * 33 : e.deltaY;
-      setPps((p) => Math.min(MAX_PPS, Math.max(minPpsRef.current, p * Math.min(1.2, Math.max(1 / 1.2, Math.exp(-delta / 100))))));
+      const from = ppsNow.current;
+      const next = Math.min(MAX_PPS, Math.max(minPpsRef.current, from * Math.min(1.2, Math.max(1 / 1.2, Math.exp(-delta / 100)))));
+      if (next === from) return;
+      // The pointer's place in the view, and the scroll still waiting to be applied (from an earlier step this frame).
+      const x = e.clientX - contentRef.current.getBoundingClientRect().left - el.scrollLeft;
+      const at = ((scrollTo.current ?? el.scrollLeft) + x) / from;
+      scrollTo.current = at * next - x;
+      ppsNow.current = next;
+      setPps(next);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -263,7 +284,6 @@ export function TimelineEditor({
 
   // A new block narrower than this at the current zoom (a 5 s effect on a zoomed-out long video is a sliver): zoom in so
   // it's a fifth of the view, centred, with room for its name and edges.
-  const scrollTo = useRef<number | null>(null);
   useEffect(() => {
     const clip = revealed && project.clips.find((c) => c.id === revealed.clipId);
     if (!clip || viewWidth === 0 || clipLength(clip) * pps >= REVEAL_PX) return;
@@ -288,7 +308,7 @@ export function TimelineEditor({
     else if (x < el.scrollLeft) el.scrollLeft = Math.max(0, x - 80);
   }, [playback.time, playback.playing, pps]);
 
-  const contentWidth = Math.max(viewWidth, (Math.max(duration, 10, playback.time) + 10) * pps);
+  const contentWidth = Math.max(viewWidth, (Math.max(duration, 10, playback.time, recording?.end ?? 0) + 10) * pps);
   const timeAt = (clientX: number) => {
     const rect = contentRef.current!.getBoundingClientRect();
     return Math.max(0, (clientX - rect.left) / pps);
@@ -354,7 +374,7 @@ export function TimelineEditor({
       api.editLive({
         type: "setTransition",
         clipId: clip.id,
-        transition: { kind: clip.transition.kind, duration },
+        transition: { ...clip.transition, duration },
       });
       return;
     }
@@ -730,6 +750,8 @@ export function TimelineEditor({
               </div>
             );
           })}
+          {/* The new track a voice-over being recorded will get: an empty head (tracks are unnamed). */}
+          {recording?.trackId === null && <div className="tl__head is-recording" style={{ height: ROW_PX.m }} role="group" aria-label="Voice-over" />}
           </div>
         </div>
 
@@ -777,7 +799,7 @@ export function TimelineEditor({
                   .sort((a, b) => where(a).start - where(b).start)
                   .map((clip) => {
                     const media = project.media.find((m) => m.id === clip.mediaId);
-                    const label = isBlock(clip) ? blockLabel(clip) : (clip.text ?? media?.name ?? "Clip");
+                    const label = isBlock(clip) ? blockLabel(clip) : clip.shape ? shapeLabel(clip.shape) : (clip.text ?? media?.name ?? "Clip");
                     // With its transition selected, only the transition shows as selected (App keeps the clip as selectedId).
                     const isSelected = clip.id === selectedId && selectedTransition !== clip.id;
                     const isGhost = clip.id === ghost?.clipId;
@@ -873,6 +895,18 @@ export function TimelineEditor({
                         <span className="tl__label">
                           <span className="tl__name truncate">
                             {isBlock(clip) && <Icon name={clip.effect ? "sparkle" : clip.look ? "blend" : "sliders"} size={12} />}
+                            {media?.hasAudio && !media.source.image && clip.volume <= 0 && (
+                              <button
+                                type="button"
+                                className="tl__mute"
+                                title="Sound off: click for volume"
+                                aria-label="Sound off: open the sound settings"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={() => onOpenSound?.(clip.id)}
+                              >
+                                <Icon name="volumeOff" size={12} />
+                              </button>
+                            )}
                             {media?.missing && "Missing · "}
                             {label}
                           </span>
@@ -934,8 +968,15 @@ export function TimelineEditor({
                         </button>
                       );
                     })}
+                {recording && recording.trackId === track.id && <RecordingClip recording={recording} pps={pps} />}
               </div>
             ))}
+            {/* Not a real track yet: no laneRefs entry, takes no drops. */}
+            {recording?.trackId === null && (
+              <div className="tl__lane is-recording" style={{ height: ROW_PX.m }}>
+                <RecordingClip recording={recording} pps={pps} />
+              </div>
+            )}
             </div>
 
             {coverMenu && createPortal(
@@ -1024,6 +1065,36 @@ const ClipWave = memo(function ClipWave({ clip, media, bars, muted, height }: { 
     </span>
   );
 });
+
+/**
+ * A voice-over being recorded: a red clip from where the take started to now, the microphone's wave growing inside
+ * it. Not a real clip: nothing to press (CSS lets clicks through).
+ */
+function RecordingClip({ recording, pps }: { recording: NonNullable<TimelineEditorProps["recording"]>; pps: number }) {
+  const { levels } = recording;
+  const length = recording.end - recording.start;
+  const width = Math.max(4, length * pps);
+  // At most 1,500 bars, and no more than fit at 2 px each (1 px bar + 1 px gap, .tl__wave's grid), so the wave never
+  // runs past the clip's end: neighbours merge into their loudest.
+  const group = Math.ceil(levels.length / Math.min(1500, Math.max(1, Math.floor(width / 2))));
+  const bars = group <= 1 ? levels : Array.from({ length: Math.ceil(levels.length / group) }, (_, i) => Math.max(...levels.slice(i * group, (i + 1) * group)));
+  return (
+    <div className="tl__clip is-audio is-recording" style={{ left: recording.start * pps, width }} aria-label="Voice-over, recording">
+      <span className="tl__label">
+        <span className="tl__name truncate">
+          <span className="tl__rec-dot" aria-hidden="true" />
+          Recording
+        </span>
+        <span className="tl__length mono">{formatTimecode(length)}</span>
+      </span>
+      <span className="tl__wave" aria-hidden="true">
+        {bars.map((level, i) => (
+          <span key={i} style={{ height: `${Math.max(4, level * 100)}%` }} />
+        ))}
+      </span>
+    </div>
+  );
+}
 
 /**
  * A video clip's frames along it: as many as fit at their own shape, each the frame

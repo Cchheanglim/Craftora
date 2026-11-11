@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEdit, type EditAction } from "../src/project/actions";
-import { adjustSteps, blockLabel, blocksStyle, dropEdits, lookFilter, lookSteps, stepsFilter, warmthMatrix } from "../src/project/effects";
+import { adjustSteps, blockLabel, blocksStyle, dropEdits, lookFilter, lookSteps, stepsFilter, toneCurve, warmthMatrix } from "../src/project/effects";
 import { clipEnd, emptyProject, isBlock, mediaFromSource, trackLabel, type Clip, type Project } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
@@ -68,6 +68,34 @@ test("Adjust adds colour steps after the filter, Warmth through its SVG filter, 
   p = applyEdit(p, { type: "updateClip", clipId: "c", patch: { adjust: { warmth: 250.4 } } });
   expect(p.clips[0].adjust).toEqual({ warmth: 100 });
   expect(blocksStyle(p.clips, 0, 1280).filter).toBe("url(#warmth-100)");
+});
+
+test("Exposure, Highlights, Shadows and Sharpen are SVG steps in a set order; Sharpen only sharpens", () => {
+  expect(adjustSteps({ sharpen: 40, shadows: 20, contrast: 10, exposure: -50, highlights: -100, warmth: 5 })).toEqual([
+    ["exposure", -0.5],
+    ["contrast", 1.05],
+    ["highlights", -1],
+    ["shadows", 0.2],
+    ["warmth", 0.05],
+    ["sharpen", 0.4],
+  ]);
+  expect(adjustSteps({ sharpen: -30 })).toEqual([]);
+  expect(stepsFilter(adjustSteps({ exposure: 50, sharpen: 100 }))).toBe("url(#exposure-50) url(#sharpen-100)");
+});
+
+test("the tone curves keep black and white, never fold back, and Exposure down undoes Exposure up", () => {
+  for (const op of ["exposure", "highlights", "shadows"] as const) {
+    for (const v of [-1, -0.5, 0.5, 1]) {
+      expect(toneCurve(op, v, 0)).toBe(0);
+      expect(toneCurve(op, v, 1)).toBeCloseTo(1, 12);
+      for (let i = 1; i <= 100; i++) expect(toneCurve(op, v, i / 100)).toBeGreaterThanOrEqual(toneCurve(op, v, (i - 1) / 100));
+    }
+  }
+  expect(toneCurve("exposure", 1, 0.5)).toBeGreaterThan(0.7);
+  expect(toneCurve("exposure", -0.6, toneCurve("exposure", 0.6, 0.3))).toBeCloseTo(0.3, 12);
+  // Shadows move the dark tones most, Highlights the bright ones.
+  expect(toneCurve("shadows", 1, 0.25) - 0.25).toBeGreaterThan(toneCurve("shadows", 1, 0.75) - 0.75);
+  expect(toneCurve("highlights", 1, 0.75) - 0.75).toBeGreaterThan(toneCurve("highlights", 1, 0.25) - 0.25);
 });
 
 test("a filter or effect dropped on a video goes inside it; off any clip it's a 5 s block of its own", () => {
@@ -183,10 +211,34 @@ test("an effect dropped in the empty space around the tracks gets a track of its
   expect(p.clips.find((c) => c.id === "c")?.effect).toBeUndefined();
 });
 
-test("a transition in the middle of a clip goes on that clip's own cut and never cuts it", () => {
+test("a transition on a clip with no cut cuts it there", () => {
   let p = withClip();
-  // One clip alone has no cut: nowhere to go (it used to cut the clip there).
-  expect(dropEdits(p, { kind: "transition", id: "dip" }, undefined, 4, ["x", "y"])).toBeNull();
+  const done = dropEdits(p, { kind: "transition", id: "dip" }, undefined, 4, ["x", "y"])!;
+  expect(done.select).toBe("x");
+  p = run(p, done.edits);
+  expect(p.clips.length).toBe(2);
+  expect(p.clips.find((c) => c.id === "x")?.transition).toEqual({ kind: "dip", duration: 1 });
+  // At its very start: no cut, nowhere to go.
+  expect(dropEdits(withClip(), { kind: "transition", id: "dip" }, undefined, 0.2, ["x", "y"])).toBeNull();
+});
+
+test("a second transition in a clip whose cut already has one cuts it there, keeping the first", () => {
+  let p = withClip();
+  p = run(p, dropEdits(p, { kind: "transition", id: "dip" }, undefined, 3, ["x", "y"])!.edits);
+  const later = p.clips.find((c) => c.id === "x")!;
+  // Well inside the piece after the dip: a new flash there, the dip untouched.
+  const done = dropEdits(p, { kind: "transition", id: "flash" }, later.trackId, later.start + 4, ["f", "g"])!;
+  expect(done.edits[0]).toMatchObject({ type: "splitClip", clipId: "x" });
+  p = run(p, done.edits);
+  expect(p.clips.find((c) => c.id === "x")?.transition?.kind).toBe("dip");
+  expect(p.clips.find((c) => c.id === "f")?.transition?.kind).toBe("flash");
+  // Dropped on the dip's cut: that one changes.
+  const swap = dropEdits(p, { kind: "transition", id: "wipe" }, later.trackId, later.start + 0.5, ["h", "i"])!;
+  expect(swap.edits).toEqual([{ type: "setTransition", clipId: "x", transition: { kind: "wipe", duration: 1 } }]);
+});
+
+test("a transition in the middle of a clip with a cut goes on that cut and doesn't cut it", () => {
+  let p = withClip();
   p = applyEdit(p, { type: "splitClip", clipId: "c", newClipId: "b", at: 4 });
   p = applyEdit(p, { type: "splitClip", clipId: "b", newClipId: "d", at: 7 });
   // In the middle of the first clip: into the clip after it.
@@ -197,6 +249,17 @@ test("a transition in the middle of a clip goes on that clip's own cut and never
   p = run(p, done.edits);
   expect(p.clips.find((c) => c.id === "d")?.transition).toEqual({ kind: "dip", duration: 1 });
   expect(p.clips.length).toBe(3);
+});
+
+test("a transition goes between a video and a shape right after it (no split needed)", () => {
+  let p = withClip();
+  p = applyEdit(p, { type: "addShape", clipId: "s", shape: "rect", at: 10, length: 5, trackId: mainTrack(p) });
+  expect(p.clips.find((c) => c.id === "s")).toMatchObject({ trackId: mainTrack(p), start: 10 });
+  // Over the middle of the shape: on its cut with the video.
+  const done = dropEdits(p, { kind: "transition", id: "crossfade" }, mainTrack(p), 12.5, ["x", "y"])!;
+  expect(done.select).toBe("s");
+  p = run(p, done.edits);
+  expect(p.clips.find((c) => c.id === "s")?.transition).toEqual({ kind: "crossfade", duration: 1 });
 });
 
 test("a fade dropped on a clip fades its start or end; off any clip it does nothing", () => {

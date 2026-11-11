@@ -214,8 +214,7 @@ const soundOnly = (p: Project, c: Clip) => Boolean(c.mediaId) && !showsPicture(p
  * A track without the magnet where `probe` fits without overlapping: `preferred` if it's free
  * there, else the nearest one above the main track (below it for sound), else a new one.
  */
-function freeTrack(p: Project, probe: Clip, preferred?: string): { project: Project; trackId: string } {
-  const sound = soundOnly(p, probe);
+function freeTrack(p: Project, probe: Clip, preferred?: string, sound = soundOnly(p, probe)): { project: Project; trackId: string } {
   const main = mainTrack(p);
   const at = main ? p.tracks.indexOf(main) : p.tracks.length;
   const side = sound ? p.tracks.slice(at + 1) : p.tracks.slice(0, at).reverse();
@@ -225,6 +224,13 @@ function freeTrack(p: Project, probe: Clip, preferred?: string): { project: Proj
     if (!busy) return { project: p, trackId: track.id };
   }
   return withTrack(p, sound);
+}
+
+/** The track a sound take from `start` to `end` lands on (as `addClip` places it); null: a new track below the others. */
+export function voiceTrack(p: Project, start: number, end: number): string | null {
+  const probe = newClip({ id: "", trackId: "", start: floorMs(Math.max(0, start)), in: 0, out: Math.max(MIN_CLIP, end - start) });
+  const placed = freeTrack(p, probe, undefined, true);
+  return placed.project === p ? placed.trackId : null;
 }
 
 /** Places a new clip on `track` (or a free track). Only videos, pictures and sound join a magnetic track's row. */
@@ -610,7 +616,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
     case "setTransition": {
       const clip = p.clips.find((c) => c.id === action.clipId);
       if (!clip) return p;
-      const transition = action.transition ? { kind: action.transition.kind, duration: clamp(action.transition.duration, 0.1, 5) } : undefined;
+      const t = action.transition;
+      const transition = t ? { kind: t.kind, duration: clamp(t.duration, 0.1, 5), ...(t.volume !== undefined && { volume: clamp(t.volume, 0, 1) }) } : undefined;
       // On any track: a magnetic one packs, a free one moves only this clip to overlap the one it meets.
       return settle({ ...p, clips: p.clips.map((c) => (c.id === clip.id ? { ...c, transition } : c)) });
     }

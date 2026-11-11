@@ -2,9 +2,10 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { inDesktopApp } from "../lib/engine";
 import { captureThumbnail, draw } from "../lib/thumbnail";
 import type { ClipPatch } from "../project/actions";
-import { ADJUSTMENTS, EFFECT_SETTINGS, LOOKS, PICTURE_EFFECTS, TIME_EFFECTS, blockLabel, lookFilter, type FxItem } from "../project/effects";
+import { ADJUSTMENTS, EFFECT_SETTINGS, adjustMin, LOOKS, PICTURE_EFFECTS, TIME_EFFECTS, blockLabel, lookFilter, type FxItem } from "../project/effects";
 import { TRANSITION_KINDS, clipEnd, clipLength, mediaTimeAt, showsPicture, type Clip, type Project, type Transition } from "../project/model";
 import { SHAPES } from "../project/shapes";
+import { Icon } from "./Icon";
 import { Slider } from "./Inspector";
 import { PanelHead } from "./SoundPanel";
 import { beginFxDrag } from "./TimelineEditor";
@@ -168,6 +169,9 @@ export function FxPanel({
         )}
       </span>
       <span className="fx-tile__name">{label}</span>
+      <span className="fx-tile__add" aria-hidden="true">
+        <Icon name="plus" size={14} />
+      </span>
     </button>
   );
 
@@ -206,7 +210,7 @@ export function FxPanel({
                 id="fx-trans-kind"
                 className="field"
                 value={activeTransition.kind}
-                onChange={(e) => onTransitionChange?.({ kind: e.target.value as Transition["kind"], duration: activeTransition.duration })}
+                onChange={(e) => onTransitionChange?.({ ...activeTransition, kind: e.target.value as Transition["kind"] })}
               >
                 {TRANSITION_KINDS.map((t) => (
                   <option key={t.kind} value={t.kind}>
@@ -224,7 +228,19 @@ export function FxPanel({
               value={Math.min(transition.max, activeTransition.duration)}
               format={sec}
               onCheckpoint={checkpoint}
-              onChange={(duration) => onTransitionChange?.({ kind: activeTransition.kind, duration }, true)}
+              onChange={(duration) => onTransitionChange?.({ ...activeTransition, duration }, true)}
+            />
+            {/* How loud the sound stays in the middle of the transition (model.ts `transitionGain`). */}
+            <Slider
+              id="fx-trans-volume"
+              label="Volume"
+              min={0}
+              max={1}
+              step={0.01}
+              value={activeTransition.volume ?? 1}
+              format={(v) => `${Math.round(v * 100)}%`}
+              onCheckpoint={checkpoint}
+              onChange={(volume) => onTransitionChange?.({ ...activeTransition, volume }, true)}
             />
             <button type="button" className="btn btn--secondary" onClick={onApplyToAll}>
               Apply to all cuts
@@ -296,7 +312,7 @@ export function FxPanel({
                   key={id}
                   id={`fx-adjust-${id}`}
                   label={label}
-                  min={-100}
+                  min={adjustMin(id)}
                   max={100}
                   step={1}
                   value={selectedBlock.adjust?.[id] ?? 0}
