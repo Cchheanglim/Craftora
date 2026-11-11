@@ -210,7 +210,7 @@ export function FxPanel({
                 id="fx-trans-kind"
                 className="field"
                 value={activeTransition.kind}
-                onChange={(e) => onTransitionChange?.({ kind: e.target.value as Transition["kind"], duration: activeTransition.duration })}
+                onChange={(e) => onTransitionChange?.({ ...activeTransition, kind: e.target.value as Transition["kind"] })}
               >
                 {TRANSITION_KINDS.map((t) => (
                   <option key={t.kind} value={t.kind}>
@@ -228,7 +228,19 @@ export function FxPanel({
               value={Math.min(transition.max, activeTransition.duration)}
               format={sec}
               onCheckpoint={checkpoint}
-              onChange={(duration) => onTransitionChange?.({ kind: activeTransition.kind, duration }, true)}
+              onChange={(duration) => onTransitionChange?.({ ...activeTransition, duration }, true)}
+            />
+            {/* How loud the sound stays in the middle of the transition (model.ts `transitionGain`). */}
+            <Slider
+              id="fx-trans-volume"
+              label="Volume"
+              min={0}
+              max={1}
+              step={0.01}
+              value={activeTransition.volume ?? 1}
+              format={(v) => `${Math.round(v * 100)}%`}
+              onCheckpoint={checkpoint}
+              onChange={(volume) => onTransitionChange?.({ ...activeTransition, volume }, true)}
             />
             <button type="button" className="btn btn--secondary" onClick={onApplyToAll}>
               Apply to all cuts

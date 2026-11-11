@@ -616,7 +616,8 @@ export function applyEdit(p: Project, action: EditAction): Project {
     case "setTransition": {
       const clip = p.clips.find((c) => c.id === action.clipId);
       if (!clip) return p;
-      const transition = action.transition ? { kind: action.transition.kind, duration: clamp(action.transition.duration, 0.1, 5) } : undefined;
+      const t = action.transition;
+      const transition = t ? { kind: t.kind, duration: clamp(t.duration, 0.1, 5), ...(t.volume !== undefined && { volume: clamp(t.volume, 0, 1) }) } : undefined;
       // On any track: a magnetic one packs, a free one moves only this clip to overlap the one it meets.
       return settle({ ...p, clips: p.clips.map((c) => (c.id === clip.id ? { ...c, transition } : c)) });
     }

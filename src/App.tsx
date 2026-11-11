@@ -1994,7 +1994,7 @@ export default function App() {
               onPick={(item) => {
                 // A transition tile with a transition selected swaps it, keeping its length.
                 if (item.kind === "transition" && transitionClip?.transition) {
-                  api.edit({ type: "setTransition", clipId: transitionClip.id, transition: { kind: item.id, duration: transitionClip.transition.duration } });
+                  api.edit({ type: "setTransition", clipId: transitionClip.id, transition: { ...transitionClip.transition, kind: item.id } });
                   return;
                 }
                 if (!selected) return applyFx(item, undefined, playback.time);

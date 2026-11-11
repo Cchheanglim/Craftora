@@ -177,6 +177,9 @@ export interface RenderClip {
   /** The same for the clip after it, which overlaps this clip's end. */
   transitionOut: number;
   transitionOutKind: TransitionKind;
+  /** How loud the sound stays in the middle of each transition, 0–1 (model.ts `transitionGain`). */
+  transitionInVolume: number;
+  transitionOutVolume: number;
   /** Video: scale where 1 fills the frame as far as the shape allows. Text: height / frame height. */
   size: number;
   x: number;

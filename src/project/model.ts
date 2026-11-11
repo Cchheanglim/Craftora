@@ -127,6 +127,18 @@ export interface Transition {
     | "spin";
   /** Seconds, as set; the real overlap may be shorter for short clips (see `transitionLength`). */
   duration: number;
+  /** How loud the sound stays in the middle of it, 0–1 (`transitionGain`); full when missing. */
+  volume?: number;
+}
+
+/**
+ * How loud a clip is `p` (0–1) of the way through a transition, matching the export (project.rs `transition_sound`):
+ * the incoming clip rises and the outgoing one falls as an equal-power crossfade, so together they stay as loud, dipped
+ * in the middle down to `volume`.
+ */
+export function transitionGain(p: number, incoming: boolean, volume = 1): number {
+  const turn = (Math.PI / 2) * p;
+  return (incoming ? Math.sin(turn) : Math.cos(turn)) * (1 - (1 - volume) * Math.sin(Math.PI * p));
 }
 
 export const TRANSITION_KINDS: { kind: Transition["kind"]; label: string }[] = [
@@ -378,7 +390,7 @@ export function transitionMix(
     } else if (kind === "circle") {
       if (p < 1) reveal = `circle(${70.711 * p}% at 50% 50%)`;
     } else picture = p;
-    sound = kind === "dip" || kind === "flash" ? Math.max(0, 2 * p - 1) : p;
+    sound = transitionGain(p, true, clip.transition!.volume);
   }
   const next = order[i + 1];
   const outgoing = next && meets(clip, next) ? transitionLength(clip, next) : 0;
@@ -397,7 +409,7 @@ export function transitionMix(
       zoom = 1 + 0.5 * e(p);
       turn = 90 * e(p);
     }
-    sound = Math.min(sound, kind === "dip" || kind === "flash" ? Math.max(0, 1 - 2 * p) : 1 - p);
+    sound = Math.min(sound, transitionGain(p, false, next.transition!.volume));
   }
   return { picture, sound, white, shift, lift, zoom, turn, reveal };
 }

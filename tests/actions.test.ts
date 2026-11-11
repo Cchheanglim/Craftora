@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEdit, voiceTrack } from "../src/project/actions";
-import { captionLines, emptyProject, mainTrack, mediaFromSource, sameFormat, soundFadeAt, trackOrder, transitionMix, upgradeProject, type Project, type Transition } from "../src/project/model";
+import { captionLines, emptyProject, mainTrack, mediaFromSource, sameFormat, soundFadeAt, trackOrder, transitionGain, transitionMix, upgradeProject, type Project, type Transition } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
 const source = (kind: "video" | "audio" | "image"): MediaSource => ({
@@ -335,8 +335,20 @@ test("a flash whitens the outgoing clip, then brings the incoming one up from wh
   // A quarter in: the outgoing clip half white, the incoming one not shown yet.
   expect(transitionMix(order, a, at(0.25))).toMatchObject({ picture: 1, white: 0.5 });
   expect(transitionMix(order, b, at(0.25)).picture).toBe(0);
-  // Three quarters in: the incoming clip shown, half white; the sound dips like Dip to black.
-  expect(transitionMix(order, b, at(0.75))).toMatchObject({ picture: 1, white: 0.5, sound: 0.5 });
+  // Three quarters in: the incoming clip shown, half white; the sound crossfades like every transition's.
+  expect(transitionMix(order, b, at(0.75))).toMatchObject({ picture: 1, white: 0.5 });
+  expect(transitionMix(order, b, at(0.75)).sound).toBeCloseTo(Math.sin((3 * Math.PI) / 8));
+});
+
+test("a transition's sound stays as loud through it, or dips in the middle to its Volume", () => {
+  // Equal power: the two clips' loudness (squared gains) adds up to full all the way through.
+  for (const p of [0, 0.25, 0.5, 0.75, 1]) expect(transitionGain(p, true) ** 2 + transitionGain(p, false) ** 2).toBeCloseTo(1);
+  expect(transitionGain(0, false)).toBe(1);
+  expect(transitionGain(1, true)).toBe(1);
+  // Volume 0: both silent in the middle; full again at the ends.
+  expect(transitionGain(0.5, true, 0)).toBeCloseTo(0);
+  expect(transitionGain(0.5, false, 0.5) ** 2 + transitionGain(0.5, true, 0.5) ** 2).toBeCloseTo(0.25);
+  expect(transitionGain(1, true, 0)).toBeCloseTo(1);
 });
 
 test("a slide moves the outgoing clip left while the incoming one comes in from the right", () => {
@@ -352,9 +364,11 @@ test("a slide moves the outgoing clip left while the incoming one comes in from 
   const at = (share: number) => b.start + share;
   expect(transitionMix(order, a, 0)).toMatchObject({ shift: 0, lift: 0, zoom: 1, turn: 0, reveal: "" });
   const [out, into] = [a, b].map((c) => transitionMix(order, c, at(0.5)));
-  expect(out).toMatchObject({ picture: 1, sound: 0.5 });
+  expect(out).toMatchObject({ picture: 1 });
+  expect(out.sound).toBeCloseTo(Math.SQRT1_2);
   expect(out.shift).toBeCloseTo(-0.5);
-  expect(into).toMatchObject({ picture: 1, sound: 0.5 });
+  expect(into).toMatchObject({ picture: 1 });
+  expect(into.sound).toBeCloseTo(Math.SQRT1_2);
   expect(into.shift).toBeCloseTo(0.5);
 });
 
@@ -369,8 +383,10 @@ test("a zoom scales the outgoing clip up while the incoming one fades in from 1.
   const order = trackOrder(p, track);
   const [a, b] = ["a", "b"].map((id) => order.find((c) => c.id === id)!);
   const at = (share: number) => b.start + share;
-  expect(transitionMix(order, a, at(0.5))).toMatchObject({ picture: 1, zoom: 1.25, sound: 0.5 });
-  expect(transitionMix(order, b, at(0.5))).toMatchObject({ picture: 0.5, zoom: 1.25, sound: 0.5 });
+  expect(transitionMix(order, a, at(0.5))).toMatchObject({ picture: 1, zoom: 1.25 });
+  expect(transitionMix(order, a, at(0.5)).sound).toBeCloseTo(Math.SQRT1_2);
+  expect(transitionMix(order, b, at(0.5))).toMatchObject({ picture: 0.5, zoom: 1.25 });
+  expect(transitionMix(order, b, at(0.5)).sound).toBeCloseTo(Math.SQRT1_2);
 });
 
 test("a wipe reveals the incoming clip from left to right over the outgoing one", () => {
@@ -384,8 +400,10 @@ test("a wipe reveals the incoming clip from left to right over the outgoing one"
   const order = trackOrder(p, track);
   const [a, b] = ["a", "b"].map((id) => order.find((c) => c.id === id)!);
   const at = (share: number) => b.start + share;
-  expect(transitionMix(order, a, at(0.25))).toMatchObject({ picture: 1, reveal: "", sound: 0.75 });
-  expect(transitionMix(order, b, at(0.25))).toMatchObject({ picture: 1, reveal: "inset(0 75% 0 0)", sound: 0.25 });
+  expect(transitionMix(order, a, at(0.25))).toMatchObject({ picture: 1, reveal: "" });
+  expect(transitionMix(order, a, at(0.25)).sound).toBeCloseTo(Math.cos(Math.PI / 8));
+  expect(transitionMix(order, b, at(0.25))).toMatchObject({ picture: 1, reveal: "inset(0 75% 0 0)" });
+  expect(transitionMix(order, b, at(0.25)).sound).toBeCloseTo(Math.sin(Math.PI / 8));
 });
 
 test("directional slides and wipes, circle, and spin mix incoming and outgoing clips", () => {

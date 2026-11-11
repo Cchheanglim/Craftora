@@ -243,17 +243,30 @@ export function TimelineEditor({
   const minPpsRef = useRef(minPps);
   minPpsRef.current = minPps;
 
-  // Ctrl + wheel and a touchpad pinch (which arrives as Ctrl + wheel) zoom the timeline. Our own listener: React's can't
-  // stop the window zooming itself instead.
+  // Where to scroll once a new zoom is drawn (the layout effect below applies it).
+  const scrollTo = useRef<number | null>(null);
+  // The zoom asked for last, which may not be drawn yet (a pinch sends many steps a frame).
+  const ppsNow = useRef(pps);
+  ppsNow.current = pps;
+  // Ctrl + wheel and a touchpad pinch (which arrives as Ctrl + wheel) zoom the timeline about the pointer: the moment
+  // under it stays under it. Our own listener: React's can't stop the window zooming itself instead.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey) return;
+      if (!e.ctrlKey || !contentRef.current) return;
       e.preventDefault();
       // A pinch follows the fingers (its steps add up to the pinch's scale); a wheel notch (about 100) zooms 1.2×.
       const delta = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY * 33 : e.deltaY;
-      setPps((p) => Math.min(MAX_PPS, Math.max(minPpsRef.current, p * Math.min(1.2, Math.max(1 / 1.2, Math.exp(-delta / 100))))));
+      const from = ppsNow.current;
+      const next = Math.min(MAX_PPS, Math.max(minPpsRef.current, from * Math.min(1.2, Math.max(1 / 1.2, Math.exp(-delta / 100)))));
+      if (next === from) return;
+      // The pointer's place in the view, and the scroll still waiting to be applied (from an earlier step this frame).
+      const x = e.clientX - contentRef.current.getBoundingClientRect().left - el.scrollLeft;
+      const at = ((scrollTo.current ?? el.scrollLeft) + x) / from;
+      scrollTo.current = at * next - x;
+      ppsNow.current = next;
+      setPps(next);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -271,7 +284,6 @@ export function TimelineEditor({
 
   // A new block narrower than this at the current zoom (a 5 s effect on a zoomed-out long video is a sliver): zoom in so
   // it's a fifth of the view, centred, with room for its name and edges.
-  const scrollTo = useRef<number | null>(null);
   useEffect(() => {
     const clip = revealed && project.clips.find((c) => c.id === revealed.clipId);
     if (!clip || viewWidth === 0 || clipLength(clip) * pps >= REVEAL_PX) return;
@@ -362,7 +374,7 @@ export function TimelineEditor({
       api.editLive({
         type: "setTransition",
         clipId: clip.id,
-        transition: { kind: clip.transition.kind, duration },
+        transition: { ...clip.transition, duration },
       });
       return;
     }
