@@ -8,7 +8,7 @@ const GAP = 6;
 
 /**
  * Every `title` in the app, shown in Craftora's own look instead of the white Windows tooltip. On hover the title moves
- * to `data-tip` (so Windows doesn't draw its own), and the tip shows under the thing (over it near the bottom edge).
+ * to `data-tip` (so Windows doesn't draw its own) until the pointer leaves, and the tip shows under the thing (over it near the bottom edge).
  * A thing with no other name gets the title as its `aria-label`, so screen readers still read it. The tip is a popover,
  * so it shows over open dialogs too.
  */
@@ -27,14 +27,19 @@ export function Tooltip() {
     });
     const hide = () => {
       window.clearTimeout(timer);
-      watch.disconnect();
-      target = null;
       setTip(null);
+    };
+    // The pointer left `target`: its title goes back, so the app's later changes to it (or its removal) still count.
+    const release = () => {
+      hide();
+      watch.disconnect();
+      if (target) give(target);
+      target = null;
     };
     const over = (e: PointerEvent) => {
       const el = e.target instanceof Element ? e.target.closest("[title], [data-tip]") : null;
       if (el === target) return;
-      hide();
+      release();
       if (!el || !take(el)) return;
       target = el;
       watch.observe(el, { attributes: true, attributeFilter: ["title"] });
@@ -44,15 +49,16 @@ export function Tooltip() {
       }, DELAY);
     };
     const out = (e: PointerEvent) => {
-      if (!e.relatedTarget) hide();
+      if (!e.relatedTarget) release();
     };
     document.addEventListener("pointerover", over, true);
     document.addEventListener("pointerout", out, true);
-    // Like the Windows tooltip: gone on a press, a key, a scroll or leaving the window.
+    // Like the Windows tooltip: gone on a press, a key, a scroll or leaving the window. The title stays taken until the
+    // pointer leaves the thing, or Windows would show its own tip on the next move.
     for (const name of ["pointerdown", "keydown", "wheel", "scroll"]) window.addEventListener(name, hide, true);
     window.addEventListener("blur", hide);
     return () => {
-      hide();
+      release();
       document.removeEventListener("pointerover", over, true);
       document.removeEventListener("pointerout", out, true);
       for (const name of ["pointerdown", "keydown", "wheel", "scroll"]) window.removeEventListener(name, hide, true);
@@ -94,4 +100,16 @@ function take(el: Element): string | null {
     }
   }
   return el.getAttribute("data-tip");
+}
+
+/** Undoes `take`: the tip goes back to being `el`'s title. */
+function give(el: Element) {
+  const tip = el.getAttribute("data-tip");
+  if (tip === null) return;
+  if (!el.hasAttribute("title")) el.setAttribute("title", tip);
+  el.removeAttribute("data-tip");
+  if (el.hasAttribute("data-tip-name")) {
+    el.removeAttribute("aria-label");
+    el.removeAttribute("data-tip-name");
+  }
 }

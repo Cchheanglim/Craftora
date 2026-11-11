@@ -11,6 +11,8 @@
   clip grows on the timeline from where the take started, with your voice's wave drawn in as you talk, on the track the
   take will land on. **Test your mic** records 3 seconds (the video stays still) and plays them back, keeping nothing;
   it says so when it heard nothing.
+- **Hover tips in Craftora's own look**: resting the pointer on a button shows its tip in the app's theme (dark, light
+  or glass) instead of the white Windows box, also over open windows like the Welcome guide.
 - **Settings panels for effects, filters and transitions**: click one on the timeline and its settings open in their own
   panel (Back to the tiles, X to close): Duration, Strength or Speed, Adjust sliders, or a transition's Type, Duration and
   Apply to all cuts, each with Remove. Edit is now only about the clip itself. A transition clicked in Transitions with a
