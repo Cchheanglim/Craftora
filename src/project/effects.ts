@@ -6,7 +6,7 @@
  * - Time effects (slow motion, speed up, reverse) change the clip (or piece) they're dropped on.
  * - Transitions go on the join between two clips.
  */
-import { MIN_CLIP, TRANSITION_KINDS, clipEnd, meets, clipLength, isStill, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
+import { MIN_CLIP, TRANSITION_KINDS, clipEnd, isBlock, meets, clipLength, isStill, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
 import type { ClipPatch, EditAction } from "./actions";
 import type { ShapeId } from "./shapes";
 import type { CSSProperties } from "react";
@@ -276,20 +276,22 @@ export function dropEdits(
   }
   const kind = TRANSITION_KINDS.find((t) => t.kind === item.id)?.kind ?? "crossfade";
   const edits: EditAction[] = [];
+  // Any clip but a filter/effect block can take one: a video into a shape or text works like the preview and export.
+  const pieces = trackOrder(p, track.id).filter((c) => !isBlock(c));
   // Over the middle of a clip: on that clip's own cut, from the clip before it, else into the clip after it (never cuts it).
-  const under = order.filter((c) => time >= c.start && time < clipEnd(c));
-  const nearJoin = order.some((c) => Math.abs(time - c.start) <= JOIN_REACH || Math.abs(time - clipEnd(c)) <= JOIN_REACH);
+  const under = pieces.filter((c) => time >= c.start && time < clipEnd(c));
+  const nearJoin = pieces.some((c) => Math.abs(time - c.start) <= JOIN_REACH || Math.abs(time - clipEnd(c)) <= JOIN_REACH);
   // One clip only: inside a transition two clips overlap, and that one is changed on its join instead.
   const inside = under.length === 1 && !nearJoin ? under[0] : undefined;
   if (inside) {
-    const i = order.indexOf(inside);
-    const join = meets(order[i - 1], inside) ? inside : order[i + 1] && meets(inside, order[i + 1]) ? order[i + 1] : undefined;
+    const i = pieces.indexOf(inside);
+    const join = meets(pieces[i - 1], inside) ? inside : pieces[i + 1] && meets(inside, pieces[i + 1]) ? pieces[i + 1] : undefined;
     if (!join) return null;
     edits.push({ type: "setTransition", clipId: join.id, transition: { kind, duration: 1 } });
     return { edits, select: join.id };
   }
   // Near a join (or between clips): on the join nearest to where it was dropped (clips set apart have none).
-  const joins = order.filter((c, i) => i > 0 && meets(order[i - 1], c));
+  const joins = pieces.filter((c, i) => i > 0 && meets(pieces[i - 1], c));
   if (joins.length === 0) return null;
   const clip = joins.reduce((best, c) => (Math.abs(c.start - time) < Math.abs(best.start - time) ? c : best));
   edits.push({ type: "setTransition", clipId: clip.id, transition: { kind, duration: 1 } });

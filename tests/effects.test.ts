@@ -227,6 +227,17 @@ test("a transition in the middle of a clip goes on that clip's own cut and never
   expect(p.clips.length).toBe(3);
 });
 
+test("a transition goes between a video and a shape right after it (no split needed)", () => {
+  let p = withClip();
+  p = applyEdit(p, { type: "addShape", clipId: "s", shape: "rect", at: 10, length: 5, trackId: mainTrack(p) });
+  expect(p.clips.find((c) => c.id === "s")).toMatchObject({ trackId: mainTrack(p), start: 10 });
+  // Over the middle of the shape: on its cut with the video.
+  const done = dropEdits(p, { kind: "transition", id: "crossfade" }, mainTrack(p), 12.5, ["x", "y"])!;
+  expect(done.select).toBe("s");
+  p = run(p, done.edits);
+  expect(p.clips.find((c) => c.id === "s")?.transition).toEqual({ kind: "crossfade", duration: 1 });
+});
+
 test("a fade dropped on a clip fades its start or end; off any clip it does nothing", () => {
   let p = withClip();
   const doneIn = dropEdits(p, { kind: "fade", id: "in" }, mainTrack(p), 2, ["x", "y"])!;

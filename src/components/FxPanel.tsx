@@ -5,6 +5,7 @@ import type { ClipPatch } from "../project/actions";
 import { ADJUSTMENTS, EFFECT_SETTINGS, adjustMin, LOOKS, PICTURE_EFFECTS, TIME_EFFECTS, blockLabel, lookFilter, type FxItem } from "../project/effects";
 import { TRANSITION_KINDS, clipEnd, clipLength, mediaTimeAt, showsPicture, type Clip, type Project, type Transition } from "../project/model";
 import { SHAPES } from "../project/shapes";
+import { Icon } from "./Icon";
 import { Slider } from "./Inspector";
 import { PanelHead } from "./SoundPanel";
 import { beginFxDrag } from "./TimelineEditor";
@@ -168,6 +169,9 @@ export function FxPanel({
         )}
       </span>
       <span className="fx-tile__name">{label}</span>
+      <span className="fx-tile__add" aria-hidden="true">
+        <Icon name="plus" size={14} />
+      </span>
     </button>
   );
 

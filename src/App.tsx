@@ -1259,7 +1259,7 @@ export default function App() {
   /** The selected transition on every cut of its track (clips set apart have no cut). */
   const applyTransitionToAll = () => {
     if (!transitionClip?.transition) return;
-    const order = trackOrder(project, transitionClip.trackId).filter((c) => c.mediaId);
+    const order = trackOrder(project, transitionClip.trackId).filter((c) => !isBlock(c));
     api.checkpoint();
     order.forEach((c, i) => {
       if (i > 0 && meets(order[i - 1], c)) api.editLive({ type: "setTransition", clipId: c.id, transition: transitionClip.transition! });

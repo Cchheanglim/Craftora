@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
+import { shapeLabel } from "../project/shapes";
 import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, mediaTimeAt, previousOnTrack, trackLabel, trackOrder, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
 import { LOOKS, PICTURE_EFFECTS, blockLabel, type FxItem } from "../project/effects";
 import { packedTrack, slotOn } from "../project/actions";
@@ -786,7 +787,7 @@ export function TimelineEditor({
                   .sort((a, b) => where(a).start - where(b).start)
                   .map((clip) => {
                     const media = project.media.find((m) => m.id === clip.mediaId);
-                    const label = isBlock(clip) ? blockLabel(clip) : (clip.text ?? media?.name ?? "Clip");
+                    const label = isBlock(clip) ? blockLabel(clip) : clip.shape ? shapeLabel(clip.shape) : (clip.text ?? media?.name ?? "Clip");
                     // With its transition selected, only the transition shows as selected (App keeps the clip as selectedId).
                     const isSelected = clip.id === selectedId && selectedTransition !== clip.id;
                     const isGhost = clip.id === ghost?.clipId;
