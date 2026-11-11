@@ -60,29 +60,27 @@
 }
 
 /* The tracks (and their heads beside them) sit in the middle when there's room, as one block. */
+/* Its width comes from TimelineEditor (full or compact, or where the line beside it is being dragged). */
 .tl__heads {
-  width: 158px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--bg-panel);
 }
 
-/* Folded away by the line beside it: still there for the rows' heights, just no width. */
-.tl__heads.is-hidden {
-  width: 0;
-  overflow: hidden;
+/* Compact: only ⋯ and Cover (lock, show and mute are in reach again when it's dragged back). */
+.tl__heads.is-compact .tl__head-btn.is-state {
+  display: none;
 }
 
-/* The line between the track buttons and the clips; a wider strip to click, the line brightening on hover. */
+/* The line between the track buttons and the clips: drag it (a wider strip to grab), the line brightening. */
 .tl__heads-toggle {
   position: relative;
   flex-shrink: 0;
   width: 6px;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
+  cursor: col-resize;
+  touch-action: none;
 }
 
 .tl__heads-toggle::before {
@@ -96,7 +94,8 @@
 }
 
 .tl__heads-toggle:hover::before,
-.tl__heads-toggle:focus-visible::before {
+.tl__heads-toggle:focus-visible::before,
+.tl__heads-toggle.is-dragging::before {
   left: 2px;
   width: 2px;
   background: var(--text-2);
@@ -114,7 +113,6 @@
   align-items: center;
   gap: 4px;
   padding: 0 8px;
-  border-bottom: 1px solid var(--line-soft);
   font-size: var(--text-xs);
   color: var(--text-2);
 }
@@ -191,12 +189,6 @@
 
 .tl__new-track.is-bottom {
   top: calc(100% + 6px);
-}
-
-/* The main track: a line above it, set apart from the tracks over it. */
-.tl__head.is-main,
-.tl__lane.is-main {
-  border-top: 1px solid var(--line);
 }
 
 /* The buttons on the left, Cover (main track) on the right next to the clips. */
@@ -442,29 +434,25 @@
 .tl__lane {
   position: relative;
   height: 44px;
-  border-bottom: 1px solid var(--line-soft);
 }
 
-/* Each track is a visible row, the same on both sides, so the empty space around the tracks reads as empty and every
-   track shows its real height. */
+/* Each track is a band across the whole timeline, the same on both sides (its buttons and its clips), a small gap
+   from the next (the transparent borders), like the popular editor; clips fill its height. */
 .tl__lane,
 .tl__head {
-  background: rgb(255 255 255 / 0.025);
-}
-
-.tl__lanes > :first-child:not(.is-main) {
-  border-top: 1px solid var(--line-soft);
+  border-block: 2px solid transparent;
+  background: rgb(255 255 255 / 0.05) padding-box;
 }
 
 .tl__lane:hover {
-  background: rgb(255 255 255 / 0.045);
+  background-color: rgb(255 255 255 / 0.07);
 }
 
 /* Clips: colour tells videos, sound, text and effects apart; white outline marks the selection. */
 .tl__clip {
   position: absolute;
-  top: 4px;
-  bottom: 4px;
+  top: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
   border: 1px solid;

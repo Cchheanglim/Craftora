@@ -23,7 +23,8 @@
 - **Hide the track buttons**: the line between the track buttons and the clips folds them away ("Hide panel") and back
   ("Show panel"), remembered on this PC.
 - **Cleaner timeline**: no "+" on the cuts between clips (add a transition by dragging or clicking one in Transitions),
-  and a selected clip has a plain white outline, without thick ends or grip lines (its ends still trim).
+  and a selected clip has a plain white outline, without thick ends or grip lines (its ends still trim). Each track is
+  a band across the whole timeline (its buttons too), a small gap from the next, with clips filling its height.
 - **Crop window**: Crop… (right-click a clip → Edit, or "Crop on the picture…" in Edit) opens the clip's picture with a
   box to drag and resize, shape buttons (Free, Original, 16:9, 9:16, 1:1, 4:3, 3:4), Reset, Cancel and Done. The crop
   can now keep any part of the picture, a corner too (it used to take at most 45% off each side).

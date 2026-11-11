@@ -131,11 +131,6 @@
   color: var(--text);
 }
 
-/* Closed, the panel also takes the gap before it along. */
-:root[data-theme] .app__panel.is-closed {
-  margin-right: calc(-1 * var(--panel-w) - 12px);
-}
-
 :root[data-theme] :is(.confirm, .welcome, .crop-dialog, .text-menu, .export__more, .tl__menu, .queue__panel, .tooltip) {
   border-color: var(--glass-edge);
   -webkit-backdrop-filter: blur(30px) saturate(170%);
@@ -203,8 +198,12 @@
   background: rgb(15 23 42 / 0.22);
 }
 
+:root[data-theme="light"] :is(.tl__lane, .tl__head) {
+  background-color: rgb(15 23 42 / 0.04);
+}
+
 :root[data-theme="light"] .tl__lane:hover {
-  background: rgb(15 23 42 / 0.02);
+  background-color: rgb(15 23 42 / 0.06);
 }
 
 :root[data-theme="light"] .tl__wave > span {

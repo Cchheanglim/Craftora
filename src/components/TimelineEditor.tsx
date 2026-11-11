@@ -110,10 +110,13 @@ type Gesture =
   | { kind: "clip"; clipId: string; mode: DragMode; originX: number; originStart: number; originEdge: number; moved: boolean; onWave: boolean }
   | { kind: "transition"; clipId: string; originX: number; origin: number };
 
-/** Where a clip being moved is drawn; the project only changes on release. */
-/** Where the track buttons being folded away is remembered on this PC. */
-const HEADS_HIDDEN = "craftora.trackHeadsHidden";
+/** The track buttons' widths: full, and compact (only ⋯ and Cover), dragged between by the line beside them. */
+const HEADS_FULL = 158;
+const HEADS_COMPACT = 76;
+/** Where the track buttons being compact is remembered on this PC. */
+const HEADS_COMPACT_KEY = "craftora.trackHeadsCompact";
 
+/** Where a clip being moved is drawn; the project only changes on release. */
 interface Ghost {
   clipId: string;
   start: number;
@@ -173,14 +176,46 @@ export function TimelineEditor({
     setGhostState(g);
   };
   const [pps, setPps] = useState(40);
-  // The track buttons folded away (the line between them and the clips), remembered on this PC.
-  const [headsHidden, setHeadsHidden] = useState(() => {
+  // The track buttons compact (only ⋯ and Cover), remembered on this PC; `headsDrag` is the width while the line
+  // beside them is dragged.
+  const [headsCompact, setHeadsCompact] = useState(() => {
     try {
-      return localStorage.getItem(HEADS_HIDDEN) === "1";
+      return localStorage.getItem(HEADS_COMPACT_KEY) === "1";
     } catch {
       return false;
     }
   });
+  const [headsDrag, setHeadsDrag] = useState<number | null>(null);
+  const headsWidth = headsDrag ?? (headsCompact ? HEADS_COMPACT : HEADS_FULL);
+  const compactHeads = (compact: boolean) => {
+    setHeadsCompact(compact);
+    try {
+      localStorage.setItem(HEADS_COMPACT_KEY, compact ? "1" : "0");
+    } catch {
+      /* not remembered: full next time */
+    }
+  };
+  // Like the popular editor: drag the line left to make the track buttons compact, right to bring them back; let go
+  // and it settles on the nearer of the two.
+  const dragHeads = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const bar = e.currentTarget;
+    bar.setPointerCapture(e.pointerId);
+    const [startX, start] = [e.clientX, headsWidth];
+    const width = (x: number) => Math.min(HEADS_FULL, Math.max(HEADS_COMPACT, start + x - startX));
+    const move = (ev: PointerEvent) => setHeadsDrag(width(ev.clientX));
+    const end = (ev: PointerEvent) => {
+      bar.removeEventListener("pointermove", move);
+      bar.removeEventListener("pointerup", end);
+      bar.removeEventListener("pointercancel", end);
+      setHeadsDrag(null);
+      compactHeads(width(ev.clientX) < (HEADS_FULL + HEADS_COMPACT) / 2);
+    };
+    bar.addEventListener("pointermove", move);
+    bar.addEventListener("pointerup", end);
+    bar.addEventListener("pointercancel", end);
+  };
   // 0 until measured, so the first automatic fit uses the real width.
   const [viewWidth, setViewWidth] = useState(0);
   const [scrollbar, setScrollbar] = useState(0);
@@ -652,7 +687,7 @@ export function TimelineEditor({
       </div>
 
       <div className="tl__body">
-        <div className={headsHidden ? "tl__heads is-hidden" : "tl__heads"} style={{ paddingBottom: scrollbar }} inert={headsHidden}>
+        <div className={headsWidth < (HEADS_FULL + HEADS_COMPACT) / 2 ? "tl__heads is-compact" : "tl__heads"} style={{ width: headsWidth, paddingBottom: scrollbar }}>
           <div className="tl__ruler-spacer" />
           <div className="tl__lanes">
           {project.tracks.map((track) => {
@@ -682,7 +717,7 @@ export function TimelineEditor({
                 {track.id === main?.id && <span className="tl__head-gap" aria-hidden="true" />}
                 <button
                   type="button"
-                  className="tl__head-btn"
+                  className="tl__head-btn is-state"
                   aria-pressed={Boolean(track.locked)}
                   aria-label={track.locked ? `Unlock ${name}` : `Lock ${name}`}
                   title={track.locked ? "Locked: its clips can't be moved or changed. Click to unlock." : "Lock this track"}
@@ -693,7 +728,7 @@ export function TimelineEditor({
                 {/* Every track has the same three buttons. */}
                 <button
                   type="button"
-                  className="tl__head-btn"
+                  className="tl__head-btn is-state"
                   aria-pressed={Boolean(track.hidden)}
                   aria-label={track.hidden ? `Show ${name}` : `Hide ${name}`}
                   title={track.hidden ? "Hidden from the preview and the export. Click to show." : "Hide its pictures, text and effects (the sound still plays)"}
@@ -703,7 +738,7 @@ export function TimelineEditor({
                 </button>
                 <button
                   type="button"
-                  className="tl__head-btn"
+                  className="tl__head-btn is-state"
                   aria-pressed={Boolean(track.muted)}
                   aria-label={track.muted ? `Unmute ${name}` : `Mute ${name}`}
                   title={track.muted ? "Track is muted. Click to unmute." : "Mute this track"}
@@ -805,20 +840,20 @@ export function TimelineEditor({
           {recording?.trackId === null && <div className="tl__head is-recording" style={{ height: ROW_PX.m }} role="group" aria-label="Voice-over" />}
           </div>
         </div>
-        {/* The line between the track buttons and the clips: click it to fold the buttons away (and back). */}
-        <button
-          type="button"
-          className="tl__heads-toggle"
-          title={headsHidden ? "Show panel" : "Hide panel"}
-          aria-label={headsHidden ? "Show the track buttons" : "Hide the track buttons"}
-          aria-expanded={!headsHidden}
-          onClick={() => {
-            try {
-              localStorage.setItem(HEADS_HIDDEN, headsHidden ? "0" : "1");
-            } catch {
-              /* not remembered: shown next time */
+        {/* The line between the track buttons and the clips: drag it to make them compact, and back. */}
+        <div
+          className={headsDrag === null ? "tl__heads-toggle" : "tl__heads-toggle is-dragging"}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Track buttons: drag, or press the left and right arrows, to make them compact or full"
+          title={headsCompact ? "Expand panel" : "Hide panel"}
+          tabIndex={0}
+          onPointerDown={dragHeads}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+              e.preventDefault();
+              compactHeads(e.key === "ArrowLeft");
             }
-            setHeadsHidden(!headsHidden);
           }}
         />
 
