@@ -17,11 +17,11 @@
   filter block while Filters, Effects, Transitions or Shapes is open switches to its own tab with its controls. The
   playhead no longer gets in the way of a clip edge or transition right under it (move it from the ruler or empty
   space), and a clip dragged next to another snaps exactly onto its edge, so the join (and its transition) is there.
-- **Effects and transitions you can control**: an effect or filter always lands as its own block over your clips (drag its
-  edges to set how long), never hidden inside a clip. Click a transition on the timeline to select it. The selected
-  effect's or transition's controls (Duration, Strength, Speed, Remove, and **Apply to all cuts** for transitions) show at
-  the top of the Effects, Filters or Transitions tab; click another transition to swap it. A transition added between
-  clips keeps the clips after it together (no gap opens further on).
+- **Effects and transitions you can control**: a filter or effect dropped on a video goes inside that clip (a ✦ tag on
+  the clip opens its settings); dropped on empty track space it's a block of its own to stretch over several clips. A
+  transition dropped on a clip goes on that clip's cut, never cutting the clip. Click a transition on the timeline to
+  select it; click another transition to swap it. A transition added between clips keeps the clips after it together
+  (no gap opens further on).
 - Sound fade handles show only on the selected clip, clear of its edges, and their length reads over the clip; a fade
   shows as the sound wave getting smaller (no line drawn over it). Each track is a visible row, so a new track shows its
   real height.
@@ -40,8 +40,7 @@
 - **More transitions**: Slide right, up and down; Wipe left, up and down; **Circle** (the next clip opens in a growing
   circle) and **Spin** (both clips turn and zoom as they cross). Exports with a Wipe are also faster: only the wipe's own
   seconds go through the extra step.
-- **Transitions without splitting first**: click one (or drop it) in the middle of a clip and Craftora cuts the clip
-  there and adds it; dropped next to a cut it goes on that cut, however far the timeline is zoomed out.
+- **Transitions on the right cut**: dropped next to a cut it goes on that cut, however far the timeline is zoomed out.
 - **Sound fades**: drag the dots on a clip's sound wave (or use Edit → Sound fade) to fade only its sound in or out, as
   long as you like; the picture stays.
 - **Transitions on any track**, not only the main one; clips on other tracks stay where you put them. Drag a

@@ -50,6 +50,8 @@ interface PreviewProps {
   quality?: { height?: number; heights: number[]; onChange: (height?: number) => void };
   /** Downloads a link for editing, so it plays from this PC (`downloadForEditing`); absent in the browser preview. */
   onDownload?: (mediaId: string) => void;
+  /** No sound while a voice-over records (its speakers would get into the microphone). */
+  silent?: boolean;
 }
 
 const WAVE_BARS = 140;
@@ -145,8 +147,9 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : {};
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape }: PreviewProps) {
-  const [muted, setMuted] = useState(false);
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, silent }: PreviewProps) {
+  const [mutedByHand, setMuted] = useState(false);
+  const muted = mutedByHand || Boolean(silent);
   // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
   const [level, setLevel] = useState(1);
   const [levelShown, setLevelShown] = useState(false);

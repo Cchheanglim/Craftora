@@ -33,6 +33,7 @@ import {
   allowLocal,
   pickFolder,
   saveSnapshot,
+  saveVoice,
   saveSrt,
   openCaptionsFile,
   pickMediaFiles,
@@ -114,6 +115,7 @@ import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/Edge
 import { dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, type FxTab } from "./components/FxPanel";
 import { SoundPanel } from "./components/SoundPanel";
+import { VoicePanel } from "./components/VoicePanel";
 import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
 import { TimelineEditor, type ClipCommand } from "./components/TimelineEditor";
@@ -351,9 +353,12 @@ export default function App() {
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const [cuttingSilences, setCuttingSilences] = useState(false);
-  const [rightTab, setRightTab] = useState<"edit" | "export" | "transcript" | "assistant" | "sound" | FxTab>("edit");
-  // Where the Sound panel's Back button goes: the tab it was opened from.
-  const soundBack = useRef<typeof rightTab>("edit");
+  const [rightTab, setRightTab] = useState<"edit" | "export" | "transcript" | "assistant" | "sound" | "voice" | FxTab>("edit");
+  // Where the Sound or Voice-over panel's Back button goes: the tab it was opened from.
+  const panelBack = useRef<typeof rightTab>("edit");
+  // A voice-over take: where on the timeline it started, and the preview kept quiet while it records.
+  const voiceAt = useRef(0);
+  const [voiceSilent, setVoiceSilent] = useState(false);
   /** How much of each link preview is cached on disk (by cache id), 0–100. */
   const [cached, setCached] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -535,7 +540,7 @@ export default function App() {
   const selected = project.clips.find((c) => c.id === selectedId) ?? null;
   // The Sound panel belongs to a clip: with none selected, it goes back to where it was opened from.
   useEffect(() => {
-    if (rightTab === "sound" && !selected?.mediaId) setRightTab(soundBack.current);
+    if (rightTab === "sound" && !selected?.mediaId) setRightTab(panelBack.current);
   }, [rightTab, selected]);
   // A selected transition belongs to the selected clip, while it still has one.
   const transitionClip = selected && selectedTransition === selected.id && selected.transition ? selected : null;
@@ -1257,6 +1262,24 @@ export default function App() {
       if (i > 0 && meets(order[i - 1], c)) api.editLive({ type: "setTransition", clipId: c.id, transition: transitionClip.transition! });
     });
   };
+  /** A finished voice-over take: saved as a file in the export folder, then on the timeline where it started. */
+  const placeVoice = async (take: Blob) => {
+    try {
+      const path = await saveVoice(new Uint8Array(await take.arrayBuffer()));
+      const item = importSource(await openLocal(path), false);
+      const clipId = crypto.randomUUID();
+      // A sound clip with no track given goes on a free track below the main one (actions.ts `place`).
+      api.edit({ type: "addClip", clipId, mediaId: item.id, at: voiceAt.current });
+      setSelectedId(clipId);
+    } catch (err) {
+      throw new Error(errorText(err));
+    }
+  };
+  const openVoice = () => {
+    if (rightTab !== "sound" && rightTab !== "voice") panelBack.current = rightTab;
+    setRightTab("voice");
+    if (!rightOpen) toggleRight();
+  };
   /** Open an effect, filter or transition's settings panel (id = its clip) in its tab. */
   const openFx = (id: string, tab: FxTab) => {
     setFxDetail(id);
@@ -1805,6 +1828,7 @@ export default function App() {
             style={timelineHeight ? ({ "--tl-h": `${timelineHeight}px` } as CSSProperties) : undefined}
           >
             <Preview
+              silent={voiceSilent}
               project={project}
               api={api}
               playback={playback}
@@ -1858,7 +1882,7 @@ export default function App() {
                 openFx(id, tab);
               }}
               onOpenSound={(id) => {
-                if (rightTab !== "sound") soundBack.current = rightTab;
+                if (rightTab !== "sound" && rightTab !== "voice") panelBack.current = rightTab;
                 setSelectedId(id);
                 setRightTab("sound");
                 if (!rightOpen) toggleRight();
@@ -1874,6 +1898,7 @@ export default function App() {
               cuttingSilences={cuttingSilences}
               onDelete={remove}
               onAddText={addText}
+              onRecordVoice={inDesktopApp ? openVoice : undefined}
               onDropFx={applyFx}
               onClipCommand={clipCommand}
               canPaste={canPaste}
@@ -1991,9 +2016,28 @@ export default function App() {
               media={project.media.find((m) => m.id === selected.mediaId)}
               onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
               onCheckpoint={api.checkpoint}
-              onBack={() => setRightTab(soundBack.current)}
+              onBack={() => setRightTab(panelBack.current)}
               onClose={() => {
-                setRightTab(soundBack.current);
+                setRightTab(panelBack.current);
+                toggleRight();
+              }}
+            />
+          ) : rightTab === "voice" ? (
+            <VoicePanel
+              startAt={formatClock(playback.time)}
+              onStart={(mute) => {
+                voiceAt.current = playback.time;
+                setVoiceSilent(mute);
+                if (!playback.playing) playback.toggle();
+              }}
+              onStop={(take) => {
+                playback.pause();
+                setVoiceSilent(false);
+                return placeVoice(take);
+              }}
+              onBack={() => setRightTab(panelBack.current)}
+              onClose={() => {
+                setRightTab(panelBack.current);
                 toggleRight();
               }}
             />

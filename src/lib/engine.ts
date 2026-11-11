@@ -517,6 +517,8 @@ export const onSpeechProgress = (handler: (progress: SpeechProgress) => void): P
   listen<SpeechProgress>("speech-progress", (e) => handler(e.payload));
 export const detectSilences = (path: string, start: number, end: number) => invoke<[number, number][]>("detect_silences", { path, start, end });
 export const saveSnapshot = (bytes: number[], title: string) => invoke<string>("save_snapshot", { bytes, title });
+/** Saves a voice-over take (the recorder's WebM, sent as raw bytes) as an .m4a in the export folder; its path. */
+export const saveVoice = (take: Uint8Array) => invoke<string>("save_voice", take);
 
 /** Makes the app window fill the screen (desktop app only). */
 export async function setWindowFullscreen(on: boolean): Promise<void> {

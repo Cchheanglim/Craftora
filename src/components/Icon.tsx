@@ -73,6 +73,12 @@ const paths = {
       <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
     </>
   ),
+  mic: (
+    <>
+      <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" />
+      <path d="M19 11a7 7 0 0 1-14 0M12 18v3" />
+    </>
+  ),
   volumeOff: (
     <>
       <path d="M11 5 6 9H2v6h4l5 4Z" />

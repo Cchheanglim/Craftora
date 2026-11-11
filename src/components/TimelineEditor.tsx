@@ -70,6 +70,8 @@ interface TimelineEditorProps {
   cuttingSilences?: boolean;
   onDelete: () => void;
   onAddText: () => void;
+  /** Opens the Voice-over recorder (desktop app only). */
+  onRecordVoice?: () => void;
   /** A filter, effect or transition dropped on track `trackId` at `time`. */
   /** `trackId` null: dropped in the empty space around the tracks (a filter, effect or shape gets its own track). */
   onDropFx: (item: FxItem, trackId: string | null, time: number) => void;
@@ -137,6 +139,7 @@ export function TimelineEditor({
   cuttingSilences,
   onDelete,
   onAddText,
+  onRecordVoice,
   onDropFx,
   revealed,
   selectedTransition,
@@ -549,6 +552,12 @@ export function TimelineEditor({
           <Icon name="text" size={14} />
           Text
         </button>
+        {onRecordVoice && (
+          <button type="button" className="btn btn--ghost" title="Record your voice over the video, from the playhead" onClick={onRecordVoice}>
+            <Icon name="mic" size={14} />
+            Voice-over
+          </button>
+        )}
         <button
           type="button"
           className="btn btn--ghost"
