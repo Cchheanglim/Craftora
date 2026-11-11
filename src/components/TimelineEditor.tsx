@@ -317,6 +317,28 @@ export function TimelineEditor({
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  /** Zoom to `next` about the playhead when it's in view, else the middle of the view (the buttons and the slider). */
+  const zoomTo = (next: number) => {
+    const el = scrollRef.current;
+    const to = Math.min(MAX_PPS, Math.max(minPps, next));
+    const from = ppsNow.current;
+    if (!el || to === from) return;
+    const scroll = scrollTo.current ?? el.scrollLeft;
+    const playhead = playback.time * from - scroll;
+    const x = playhead >= 0 && playhead <= el.clientWidth ? playhead : el.clientWidth / 2;
+    scrollTo.current = ((scroll + x) / from) * to - x;
+    ppsNow.current = to;
+    setPps(to);
+  };
+  // Shift+Z (App's shortcuts) zooms to fit.
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
+  useEffect(() => {
+    const onFit = () => fitRef.current();
+    window.addEventListener("craftora:fit-timeline", onFit);
+    return () => window.removeEventListener("craftora:fit-timeline", onFit);
+  }, []);
+
   // Fit the first time something lands on the timeline.
   useEffect(() => {
     if (!fitted && duration > 0 && viewWidth > 0) {
@@ -673,14 +695,25 @@ export function TimelineEditor({
           <Icon name="plus" size={14} />
           Track
         </button>
+        {/* Like the popular editor: fit, then out, a slider, in; all but fit zoom about the playhead. */}
         <div className="tl__zoom">
-          <button type="button" className="btn btn--icon" aria-label="Zoom out" onClick={() => setPps((p) => Math.max(minPps, p / 1.5))}>
-            <Icon name="minus" size={14} />
-          </button>
-          <button type="button" className="btn btn--icon" aria-label="Fit timeline" title="Fit" onClick={fit}>
+          <button type="button" className="btn btn--icon" aria-label="Zoom to fit timeline" title="Zoom to fit timeline (Shift+Z)" onClick={fit}>
             <Icon name="fit" size={14} />
           </button>
-          <button type="button" className="btn btn--icon" aria-label="Zoom in" onClick={() => setPps((p) => Math.min(MAX_PPS, p * 1.5))}>
+          <button type="button" className="btn btn--icon" aria-label="Zoom out" title="Zoom out" onClick={() => zoomTo(pps / 1.5)}>
+            <Icon name="minus" size={14} />
+          </button>
+          <input
+            type="range"
+            className="tl__zoom-slider"
+            aria-label="Zoom"
+            min={0}
+            max={100}
+            step={0.5}
+            value={(100 * Math.log(pps / minPps)) / Math.log(MAX_PPS / minPps)}
+            onChange={(e) => zoomTo(minPps * (MAX_PPS / minPps) ** (Number(e.target.value) / 100))}
+          />
+          <button type="button" className="btn btn--icon" aria-label="Zoom in" title="Zoom in" onClick={() => zoomTo(pps * 1.5)}>
             <Icon name="plus" size={14} />
           </button>
         </div>

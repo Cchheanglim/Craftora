@@ -148,6 +148,12 @@
   animation: rise-in var(--dur) var(--ease-out) backwards;
 }
 
+/* Everything in the panel a size smaller (owner: "make everything smaller here"), the panel's own width unchanged so
+   its edge still drags one to one. */
+.app__panel > * {
+  zoom: 0.88;
+}
+
 .app__panel > :not(.app__tabs) {
   animation: fade-in var(--dur) linear backwards;
 }

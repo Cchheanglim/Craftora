@@ -1624,6 +1624,7 @@ export default function App() {
     if (ctrl || e.altKey) return;
     // Already used where it was pressed: arrows in a menu, or on a panel edge being resized.
     if (e.defaultPrevented) return;
+    if (e.shiftKey && key === "z") return (e.preventDefault(), void window.dispatchEvent(new Event("craftora:fit-timeline")));
     const target = e.target as HTMLElement;
     const onButton = target.tagName === "BUTTON" || target.getAttribute("role") === "button";
     const t = playback.time;

@@ -20,8 +20,12 @@
 - **Drag a clip to make a new track**: drag it into the empty space above the top track or below the bottom one (a
   dashed "New track" outline shows where) and let go: it gets a new track there. There's always a little room above
   and below the tracks for this.
-- **Hide the track buttons**: the line between the track buttons and the clips folds them away ("Hide panel") and back
-  ("Show panel"), remembered on this PC.
+- **Compact track buttons**: drag the line between the track buttons and the clips to the left and they shrink to just
+  ⋯ (and Cover on the main track); drag it back to bring lock, show and mute back. Remembered on this PC.
+- **New editor layout**: the right panel sits beside the preview, and the timeline runs the full width of the window
+  under both (like the popular editor). Everything in the right panel is a size smaller.
+- **Timeline zoom controls**: Zoom to fit (also Shift+Z), zoom out, a zoom slider and zoom in. The buttons and the
+  slider zoom around the playhead (they used to zoom from the timeline's left edge).
 - **Cleaner timeline**: no "+" on the cuts between clips (add a transition by dragging or clicking one in Transitions),
   and a selected clip has a plain white outline, without thick ends or grip lines (its ends still trim). Each track is
   a band across the whole timeline (its buttons too), a small gap from the next, with clips filling its height.

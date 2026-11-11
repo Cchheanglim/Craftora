@@ -50,7 +50,14 @@
 .tl__zoom {
   margin-left: auto;
   display: flex;
+  align-items: center;
   gap: 2px;
+}
+
+.tl__zoom-slider {
+  width: 96px;
+  margin: 0 4px;
+  accent-color: var(--text);
 }
 
 .tl__body {
