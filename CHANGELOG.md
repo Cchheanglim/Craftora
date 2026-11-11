@@ -4,6 +4,12 @@
 
 **New**
 
+- **Lengths you can see and grab on the timeline**: the selected clip, effect or filter has solid white handles at both
+  ends, and its new length shows while you drag one. Effect and filter blocks show an icon and how long they last. A
+  transition is a small block on the cut: click it to select it, drag it left to make it longer. Clicking an effect or
+  filter block while Filters, Effects, Transitions or Shapes is open switches to its own tab with its controls. The
+  playhead no longer gets in the way of a clip edge or transition right under it (move it from the ruler or empty
+  space), and a clip dragged next to another snaps exactly onto its edge, so the join (and its transition) is there.
 - **Effects and transitions you can control**: an effect or filter always lands as its own block over your clips (drag its
   edges to set how long), never hidden inside a clip. Click a transition on the timeline to select it. The selected
   effect's or transition's controls (Duration, Strength, Speed, Remove, and **Apply to all cuts** for transitions) show at

@@ -743,16 +743,15 @@
   right: 2px;
 }
 
-/* The playhead: the one accent on the timeline. The element is a wide, invisible grab
-   strip above the clips; the red line and its head are drawn inside it. */
+/* The playhead: the one accent on the timeline; the red line and its head are drawn inside it. Presses go through
+   it to what's below (a clip's edge or transition right at the playhead); the ruler and empty track space move it. */
 .tl__playhead {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 17px;
   margin-left: -8.5px;
-  cursor: ew-resize;
-  touch-action: none;
+  pointer-events: none;
   z-index: 4;
 }
 

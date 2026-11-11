@@ -1027,13 +1027,7 @@ export function TimelineEditor({
               );
             })()}
 
-            <div
-              className="tl__playhead"
-              style={{ left: playback.time * pps }}
-              onPointerDown={beginScrub}
-              title="Drag to move through the video (← → step, Shift for seconds)"
-              aria-hidden="true"
-            />
+            <div className="tl__playhead" style={{ left: playback.time * pps }} aria-hidden="true" />
             {project.clips.length === 0 && (
               <p className="tl__empty">Drag media here from the left, or press + on a file to add it.</p>
             )}
