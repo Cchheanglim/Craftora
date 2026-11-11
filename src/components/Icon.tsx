@@ -99,6 +99,7 @@ const paths = {
     </>
   ),
   chevronDown: <path d="m6 9 6 6 6-6" />,
+  chevronLeft: <path d="m15 6-6 6 6 6" />,
   terminal: <path d="m4 17 6-6-6-6M12 19h8" />,
   // A video camera: the film-strip drawing read as a window grid at 13 px.
   film: (

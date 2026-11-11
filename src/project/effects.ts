@@ -9,6 +9,7 @@
 import { MIN_CLIP, TRANSITION_KINDS, clipEnd, meets, clipLength, isStill, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
 import type { ClipPatch, EditAction } from "./actions";
 import type { ShapeId } from "./shapes";
+import type { CSSProperties } from "react";
 
 /**
  * One colour step of a filter: a CSS filter function and its amount (degrees for hue-rotate). The
@@ -102,8 +103,44 @@ export const PICTURE_EFFECTS = [
   { id: "punch", label: "Zoom punch", category: "camera" },
   { id: "shake", label: "Shake", category: "camera" },
   { id: "bars", label: "Cinema bars", category: "style" },
+  { id: "vignette", label: "Vignette", category: "style" },
+  { id: "strobe", label: "Strobe", category: "style" },
+  { id: "rgb-split", label: "RGB split", category: "style" },
+  { id: "grain", label: "Film grain", category: "style" },
 ] as const satisfies readonly { id: string; label: string; category: "camera" | "style" | "old" }[];
 export type PictureEffectId = (typeof PICTURE_EFFECTS)[number]["id"];
+
+/** Which effects have Edit's Strength (0–100, 50 as made) and Speed (0.5–3×) sliders. */
+export const EFFECT_SETTINGS: Partial<Record<PictureEffectId, readonly ("strength" | "speed")[]>> = {
+  blur: ["strength"],
+  "zoom-in": ["strength"],
+  "zoom-out": ["strength"],
+  punch: ["strength", "speed"],
+  shake: ["strength", "speed"],
+  vignette: ["strength"],
+  strobe: ["strength", "speed"],
+  "rgb-split": ["strength"],
+  grain: ["strength"],
+};
+
+/** An effect's strength as a multiple of how it was made (0–2, 1 at the slider's middle) and its speed (0.5–3×). */
+export const effectStrength = (c: Pick<Clip, "effectStrength">) => clamp(c.effectStrength ?? 50, 0, 100) / 50;
+export const effectSpeed = (c: Pick<Clip, "effectSpeed">) => clamp(c.effectSpeed ?? 1, 0.5, 3);
+
+/** RGB split: red moved left and blue right by this share of the width at strength 1 (project.rs `rgbashift`). */
+export const RGB_SHARE = 0.008;
+
+/** Vignette: FFmpeg's lens falloff, cos(angle × distance / half-diagonal)⁴, as a black see-through gradient over the picture. */
+export function vignetteGradient(s: number): string {
+  const angle = Math.min(Math.PI / 2, (Math.PI / 5) * s);
+  const stops = Array.from({ length: 11 }, (_, i) => `rgba(0,0,0,${round4(1 - Math.cos((angle * i) / 10) ** 4)}) ${i * 10}%`);
+  return `radial-gradient(circle farthest-corner at 50% 50%, ${stops.join(", ")})`;
+}
+
+/** Film grain's texture for the preview (the export draws FFmpeg's own noise): grey fractal noise, tiled. */
+const GRAIN = `url("data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter><rect width="160" height="160" filter="url(#n)"/></svg>`,
+)}")`;
 
 /** Blur's strength: its standard deviation as a share of the frame width (CSS blur and FFmpeg gblur both use one). */
 export const BLUR_SHARE = 0.006;
@@ -169,13 +206,8 @@ export function dropEdits(
   }
   if (item.kind === "filter" || item.kind === "effect") {
     const block = item.kind === "filter" ? { look: item.id } : { effect: item.id };
-    // Dropped on a video or picture: it goes inside that clip (one filter and one effect each; a new one replaces it).
-    const clip = clipAt(mediaOn(dropped?.id).filter((c) => showsPicture(p, c)));
-    if (clip) {
-      const patch = item.kind === "filter" ? { look: item.id, lookAmount: 1 } : { effect: item.id };
-      return { edits: [{ type: "updateClip", clipId: clip.id, patch }], select: clip.id };
-    }
-    // On an empty spot: a block of its own, to stretch over several clips.
+    // Always a block of its own where it lands, to move and stretch; on a clip's spot it goes on a free track above
+    // (actions.ts `place`). Never hidden inside the clip.
     return { edits: [...ownTrack, { type: "addBlock", clipId: newIds[0], at: time, length: BLOCK_LENGTH, trackId: ownTrack.length ? trackId : dropped?.id, ...block }], select: newIds[0] };
   }
   if (item.kind === "shape") {
@@ -255,10 +287,10 @@ export function blocksStyle(
   time: number,
   width: number,
   height = (width * 9) / 16,
-): { filter?: string; mirror: boolean; transform?: string; bars: number; layers: { color: string; opacity: number }[] } {
+): { filter?: string; mirror: boolean; transform?: string; bars: number; layers: { color: string; opacity: number; blend?: CSSProperties["mixBlendMode"] }[] } {
   const filters: string[] = [];
   const transforms: string[] = [];
-  const layers: { color: string; opacity: number }[] = [];
+  const layers: { color: string; opacity: number; blend?: CSSProperties["mixBlendMode"] }[] = [];
   let mirror = false;
   let bars = 0;
   for (const b of blocks) {
@@ -268,22 +300,37 @@ export function blocksStyle(
     const d = Math.max(0.001, clipEnd(b) - b.start);
     // How far through the block: 0 at its start, 1 at its end.
     const through = clamp(u / d, 0, 1);
-    if (b.effect === "blur") filters.push(`blur(${(BLUR_SHARE * width).toFixed(2)}px)`);
+    const s = effectStrength(b);
+    const v = effectSpeed(b);
+    if (b.effect === "blur") filters.push(`blur(${(BLUR_SHARE * width * s).toFixed(2)}px)`);
     else if (b.effect === "mirror") mirror = !mirror;
     else if (b.effect === "fade-in") layers.push({ color: "#000", opacity: 1 - through });
     else if (b.effect === "fade-out") layers.push({ color: "#000", opacity: through });
     else if (b.effect === "flash") layers.push({ color: "#fff", opacity: 1 - through });
-    else if (b.effect === "zoom-in") transforms.unshift(`translate(0%, 0%) scale(${round4(1 + 0.3 * ease(through))})`);
-    else if (b.effect === "zoom-out") transforms.unshift(`translate(0%, 0%) scale(${round4(1.3 - 0.3 * ease(through))})`);
+    else if (b.effect === "zoom-in") transforms.unshift(`translate(0%, 0%) scale(${round4(1 + 0.3 * s * ease(through))})`);
+    else if (b.effect === "zoom-out") transforms.unshift(`translate(0%, 0%) scale(${round4(1 + 0.3 * s - 0.3 * s * ease(through))})`);
     else if (b.effect === "punch") {
-      const k = u < 0.1 ? ease(clamp(u / 0.1, 0, 1)) : 1 - ease(clamp((u - 0.1) / 0.4, 0, 1));
-      transforms.unshift(`translate(0%, 0%) scale(${round4(1 + 0.2 * k)})`);
+      // A hit every 1/speed seconds for the whole block (quicker hits when they come faster than 0.5 s apart).
+      const period = 1 / v;
+      const f = Math.min(1, period / 0.5);
+      const w = u % period;
+      const k = w < 0.1 * f ? ease(clamp(w / (0.1 * f), 0, 1)) : 1 - ease(clamp((w - 0.1 * f) / (0.4 * f), 0, 1));
+      transforms.unshift(`translate(0%, 0%) scale(${round4(1 + 0.2 * s * k)})`);
     } else if (b.effect === "shake") {
-      const a = (1 - through) * (1 - through);
-      const x = (2 * a * (Math.sin(2 * Math.PI * 7.3 * u) + 0.5 * Math.sin(2 * Math.PI * 13.1 * u))) / 1.5;
-      const y = (2 * a * (Math.sin(2 * Math.PI * 9.1 * u + 1) + 0.5 * Math.sin(2 * Math.PI * 5.7 * u + 2))) / 1.5;
-      // The zoom that hides the edges dies away with the shake, so it ends without a jump.
-      transforms.unshift(`translate(${round4(x)}%, ${round4(y)}%) scale(${round4(1 + 0.06 * a)})`);
+      // Steady for the whole block; Speed makes it faster, Strength wider (with the zoom that hides the edges).
+      const x = (2 * s * (Math.sin(2 * Math.PI * 7.3 * v * u) + 0.5 * Math.sin(2 * Math.PI * 13.1 * v * u))) / 1.5;
+      const y = (2 * s * (Math.sin(2 * Math.PI * 9.1 * v * u + 1) + 0.5 * Math.sin(2 * Math.PI * 5.7 * v * u + 2))) / 1.5;
+      transforms.unshift(`translate(${round4(x)}%, ${round4(y)}%) scale(${round4(1 + 0.06 * s)})`);
+    } else if (b.effect === "vignette") layers.push({ color: vignetteGradient(s), opacity: 1 });
+    else if (b.effect === "strobe") {
+      // A white flash every 0.5/speed seconds, gone by 60% of the way to the next.
+      const period = 0.5 / v;
+      layers.push({ color: "#fff", opacity: round4(Math.min(1, 0.6 * s) * Math.max(0, 1 - (u % period) / (0.6 * period)) ** 2) });
+    } else if (b.effect === "rgb-split") filters.push(`url(#rgb-${Math.round(s * 50)})`);
+    else if (b.effect === "grain") {
+      // A new spot in the texture every frame, so it crawls like film.
+      const n = Math.floor(u * 30);
+      layers.push({ color: `${GRAIN} ${(n * 73) % 160}px ${(n * 151) % 160}px / 160px 160px`, opacity: round4(Math.min(1, 0.35 * s)), blend: "overlay" });
     } else if (b.effect === "bars") {
       // On for the whole block, no slide: the export's drawbox has no clock to animate them with.
       bars = Math.max(bars, width > height ? Math.max(0, (1 - width / height / 2.39) / 2) : 0.1);

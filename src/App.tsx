@@ -94,6 +94,10 @@ import {
   mediaFromSource,
   sameFormat,
   previousOnTrack,
+  clipLength,
+  isBlock,
+  meets,
+  trackOrder,
   projectDuration,
   projectName,
   silencesFromPeaks,
@@ -293,6 +297,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** A block just added from the right panel, for the timeline to zoom in to (`at` makes each one new). */
   const [revealed, setRevealed] = useState<{ clipId: string; at: number } | null>(null);
+  /** The clip whose transition is selected on the timeline (its controls show at the top of Transitions). */
+  const [selectedTransition, setSelectedTransition] = useState<string | null>(null);
   // Settings page: how many jobs run at once.
   const [maxRunning, setMaxRunning] = useState(() => rememberedCount("craftora.maxRunning", MAX_RUNNING));
   const [timelineHeight, setTimelineHeight] = useState(() => rememberedSize("craftora.timelineHeight"));
@@ -342,7 +348,9 @@ export default function App() {
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const [cuttingSilences, setCuttingSilences] = useState(false);
-  const [rightTab, setRightTab] = useState<"edit" | "export" | "transcript" | "assistant" | FxTab>("edit");
+  const [rightTab, setRightTab] = useState<"edit" | "export" | "transcript" | "assistant" | "sound" | FxTab>("edit");
+  // Where the Sound panel's Back button goes: the tab it was opened from.
+  const soundBack = useRef<typeof rightTab>("edit");
   /** How much of each link preview is cached on disk (by cache id), 0–100. */
   const [cached, setCached] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -522,6 +530,12 @@ export default function App() {
   const toExport = useMemo(() => (showCaptions ? withShownCaptions(project) : project), [project, showCaptions]);
   const plan = useMemo(() => planExport(toExport, effective), [toExport, effective]);
   const selected = project.clips.find((c) => c.id === selectedId) ?? null;
+  // The Sound panel belongs to a clip: with none selected, it goes back to where it was opened from.
+  useEffect(() => {
+    if (rightTab === "sound" && !selected?.mediaId) setRightTab(soundBack.current);
+  }, [rightTab, selected]);
+  // A selected transition belongs to the selected clip, while it still has one.
+  const transitionClip = selected && selectedTransition === selected.id && selected.transition ? selected : null;
 
   /** Makes the preview copy for a file the player can't open, then swaps it in. */
   const prepare = useCallback(
@@ -1231,6 +1245,15 @@ export default function App() {
    * clicked: at the playhead, on the selected clip's track). One undo step.
    */
   /** Puts a dropped tile on the timeline; the clip it made (and selected), if any. */
+  /** The selected transition on every cut of its track (clips set apart have no cut). */
+  const applyTransitionToAll = () => {
+    if (!transitionClip?.transition) return;
+    const order = trackOrder(project, transitionClip.trackId).filter((c) => c.mediaId);
+    api.checkpoint();
+    order.forEach((c, i) => {
+      if (i > 0 && meets(order[i - 1], c)) api.editLive({ type: "setTransition", clipId: c.id, transition: transitionClip.transition! });
+    });
+  };
   const applyFx = (item: FxItem, trackId: string | undefined | null, time: number) => {
     const done = dropEdits(project, item, trackId, time, [crypto.randomUUID(), crypto.randomUUID()]);
     if (!done) {
@@ -1247,6 +1270,8 @@ export default function App() {
     api.checkpoint();
     for (const edit of done.edits) api.editLive(edit);
     if (done.select) setSelectedId(done.select);
+    // A transition just added is the one selected, its controls on top of Transitions.
+    setSelectedTransition(item.kind === "transition" ? (done.select ?? null) : null);
     // A new block or shape: the timeline zooms in to it if it's too small to see at its zoom.
     if (done.select && done.edits.some((e) => e.type === "addBlock" || e.type === "addShape")) setRevealed({ clipId: done.select, at: Date.now() });
     // An Adjust layer does nothing until its sliders move: show them.
@@ -1807,7 +1832,26 @@ export default function App() {
               playback={playback}
               duration={duration}
               selectedId={selectedId}
-              onSelect={setSelectedId}
+              onSelect={(id) => {
+                setSelectedTransition(null);
+                setSelectedId(id);
+                // Like a transition: a filter or effect block picked while those tabs are open shows its controls in its own tab.
+                const clip = project.clips.find((c) => c.id === id);
+                if (clip && isBlock(clip) && ["filters", "effects", "transitions", "shapes"].includes(rightTab)) setRightTab(clip.effect ? "effects" : "filters");
+              }}
+              selectedTransition={transitionClip?.id ?? null}
+              onOpenSound={(id) => {
+                if (rightTab !== "sound") soundBack.current = rightTab;
+                setSelectedId(id);
+                setRightTab("sound");
+                if (!rightOpen) toggleRight();
+              }}
+              onSelectTransition={(id) => {
+                setSelectedId(id);
+                setSelectedTransition(id);
+                setRightTab("transitions");
+                if (!rightOpen) toggleRight();
+              }}
               onSplit={split}
               onDuplicate={duplicate}
               onCutSilences={() => void cutSilences()}
@@ -1862,7 +1906,38 @@ export default function App() {
               project={project}
               time={playback.time}
               playing={playback.playing}
+              block={selected && isBlock(selected) ? selected : undefined}
+              transition={
+                transitionClip
+                  ? {
+                      clip: transitionClip,
+                      // At most half of either clip (model.ts `transitionLength`), and 5 s.
+                      max: Math.min(5, clipLength(transitionClip) / 2, clipLength(previousOnTrack(project, transitionClip) ?? transitionClip) / 2),
+                    }
+                  : undefined
+              }
+              onBlockChange={(patch, live) => selected && (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
+              onBlockDuration={(seconds, live) =>
+                selected && (live ? api.editLive : api.edit)({ type: "trimClip", clipId: selected.id, edge: "end", time: selected.start + Math.max(0.2, seconds) })
+              }
+              onRemoveBlock={() => {
+                if (!selected) return;
+                api.edit({ type: "deleteClip", clipId: selected.id });
+                setSelectedId(null);
+              }}
+              onTransitionChange={(transition, live) => {
+                if (!transitionClip) return;
+                (live ? api.editLive : api.edit)({ type: "setTransition", clipId: transitionClip.id, transition });
+                if (!transition) setSelectedTransition(null);
+              }}
+              onApplyToAll={applyTransitionToAll}
+              onCheckpoint={api.checkpoint}
               onPick={(item) => {
+                // A transition tile with a transition selected swaps it, keeping its length.
+                if (item.kind === "transition" && transitionClip?.transition) {
+                  api.edit({ type: "setTransition", clipId: transitionClip.id, transition: { kind: item.id, duration: transitionClip.transition.duration } });
+                  return;
+                }
                 // At the playhead, on the selected clip's track (a transition there cuts the clip at the playhead);
                 // with the playhead off the selected clip, at its start (a transition on the join before it).
                 if (!selected) return applyFx(item, undefined, playback.time);
@@ -1883,6 +1958,18 @@ export default function App() {
             />
           ) : rightTab === "assistant" ? (
             <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} />
+          ) : rightTab === "sound" && selected?.mediaId ? (
+            <SoundPanel
+              clip={selected}
+              media={project.media.find((m) => m.id === selected.mediaId)}
+              onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
+              onCheckpoint={api.checkpoint}
+              onBack={() => setRightTab(soundBack.current)}
+              onClose={() => {
+                setRightTab(soundBack.current);
+                toggleRight();
+              }}
+            />
           ) : rightTab === "export" ? (
             <ExportPanel
               settings={effective}

@@ -444,23 +444,29 @@ test("sound fades ramp the sound, stay on the outer pieces when split, and fit w
 });
 
 
-test("a transition works on a track without the magnet: only the clip after the join moves", () => {
+test("a transition works on a track without the magnet: the clips after the join move along, clips set apart stay", () => {
   const media = mediaFromSource(source("video"));
   let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
   p = applyEdit(p, { type: "addTrack", trackId: "t2" });
   p = applyEdit(p, { type: "addClip", clipId: "a", mediaId: media.id, at: 20, trackId: "t2" });
   p = applyEdit(p, { type: "splitClip", clipId: "a", newClipId: "b", at: 25 });
+  p = applyEdit(p, { type: "splitClip", clipId: "b", newClipId: "c", at: 28 });
   p = applyEdit(p, { type: "addClip", clipId: "far", mediaId: media.id, at: 60, trackId: "t2" });
   p = applyEdit(p, { type: "setTransition", clipId: "b", transition: { kind: "slide", duration: 1 } });
   const at = (id: string) => p.clips.find((c) => c.id === id)!.start;
-  // No magnet switched on, nothing packed to 0:00: the clip after the join overlaps the one before by the transition.
+  // No magnet switched on, nothing packed to 0:00: the clip after the join overlaps the one before by the transition,
+  // and the piece touching it comes along (its cut stays a cut), while the clip set apart stays.
   expect(p.tracks.find((t) => t.id === "t2")?.magnetic).toBeFalsy();
-  expect([at("a"), at("b"), at("far")]).toEqual([20, 24, 60]);
+  expect([at("a"), at("b"), at("c"), at("far")]).toEqual([20, 24, 27, 60]);
+  // So a transition on the next cut still has its join.
+  p = applyEdit(p, { type: "setTransition", clipId: "c", transition: { kind: "slide", duration: 1 } });
+  expect([at("b"), at("c")]).toEqual([24, 26]);
+  p = applyEdit(p, { type: "setTransition", clipId: "c", transition: null });
   const order = trackOrder(p, "t2");
   expect(transitionMix(order, order.find((c) => c.id === "b")!, 24.5).shift).toBeCloseTo(0.5);
   // A clip set apart from the one before has no join, so its transition waits.
   expect(transitionMix(order, order.find((c) => c.id === "far")!, 60.2).shift).toBe(0);
-  // Taken off again, the clip goes back to the cut.
+  // Taken off again, the clip goes back to the cut, and the one after it too.
   p = applyEdit(p, { type: "setTransition", clipId: "b", transition: null });
-  expect(at("b")).toBe(25);
+  expect([at("b"), at("c"), at("far")]).toEqual([25, 28, 60]);
 });

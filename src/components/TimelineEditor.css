@@ -378,8 +378,19 @@
   border-bottom: 1px solid var(--line-soft);
 }
 
+/* Each track is a visible row, the same on both sides, so the empty space around the tracks reads as empty and every
+   track shows its real height. */
+.tl__lane,
+.tl__head {
+  background: rgb(255 255 255 / 0.025);
+}
+
+.tl__lanes > :first-child:not(.is-main) {
+  border-top: 1px solid var(--line-soft);
+}
+
 .tl__lane:hover {
-  background: rgb(255 255 255 / 0.015);
+  background: rgb(255 255 255 / 0.045);
 }
 
 /* Clips: colour tells videos, sound, text and effects apart; white outline marks the selection. */
@@ -483,8 +494,25 @@
   z-index: 1;
   flex: 1;
   min-width: 0;
+  /* One line: a length that doesn't fit wraps onto a hidden second line, so it never shows cut in half. */
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  column-gap: 6px;
+  height: 16px;
+  line-height: 16px;
+  overflow: hidden;
   padding: 0 8px;
   pointer-events: none;
+}
+
+.tl__name {
+  min-width: 0;
+}
+
+.tl__name svg {
+  margin-right: 5px;
+  vertical-align: -2px;
 }
 
 /* The audio wave along the bottom of video and audio clips. */
@@ -549,7 +577,7 @@
 }
 
 .tl__length {
-  margin-left: 6px;
+  flex-shrink: 0;
   opacity: 0.75;
 }
 
@@ -595,17 +623,27 @@
   pointer-events: none;
 }
 
-/* A transition: the part of a clip that overlaps the clip before it; drag to change its length (below the 8 px trim handle). */
+/* A transition: a chip on the cut over the overlapping part of the incoming clip; drag to change its length (above the start trim handle). */
 .tl__trans {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: 50%;
+  bottom: auto;
   left: 0;
-  z-index: 2;
-  background: rgb(255 255 255 / 0.14);
-  border-right: 1px dashed rgb(255 255 255 / 0.5);
+  height: min(26px, 70%);
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  background: rgb(14 16 20 / 0.85);
+  border: 1px solid rgb(255 255 255 / 0.6);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  z-index: 4;
   cursor: ew-resize;
   touch-action: none;
+}
+
+.tl__trans:hover {
+  border-color: var(--text);
 }
 
 .tl__clip.is-fading {
@@ -648,7 +686,7 @@
   top: 0;
   bottom: 0;
   z-index: 3;
-  width: 8px;
+  width: 10px;
   cursor: ew-resize;
 }
 
@@ -660,7 +698,7 @@
   right: 0;
 }
 
-/* The grab area stays 8 px wide; only a thin line of it shows. */
+/* The grab area stays 10 px wide; a thin line shows on hover, a solid bar with a grip when selected. */
 .tl__trim::after {
   content: "";
   position: absolute;
@@ -682,19 +720,38 @@
 }
 
 .tl__clip.is-selected .tl__trim::after {
-  background: rgb(255 255 255 / 0.85);
+  width: 6px;
+  background: var(--text);
 }
 
-/* The playhead: the one accent on the timeline. The element is a wide, invisible grab
-   strip above the clips; the red line and its head are drawn inside it. */
+.tl__clip.is-selected .tl__trim::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  z-index: 1;
+  width: 2px;
+  height: 12px;
+  background: var(--bg-canvas);
+}
+
+.tl__clip.is-selected .tl__trim.is-start::before {
+  left: 2px;
+}
+
+.tl__clip.is-selected .tl__trim.is-end::before {
+  right: 2px;
+}
+
+/* The playhead: the one accent on the timeline; the red line and its head are drawn inside it. Presses go through
+   it to what's below (a clip's edge or transition right at the playhead); the ruler and empty track space move it. */
 .tl__playhead {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 17px;
   margin-left: -8.5px;
-  cursor: ew-resize;
-  touch-action: none;
+  pointer-events: none;
   z-index: 4;
 }
 
@@ -750,11 +807,12 @@ body.is-dragging-media .tl__lane:hover {
   background: var(--accent-wash);
 }
 
-/* The sound wave's band: the wave, its sound fades and their drag dots. */
+/* The sound wave's band (its fades shown by the wave shrinking): a click opens the Sound panel. */
 .tl__clip.is-media .tl__wave-band {
   position: relative;
   order: 2;
   flex: none;
+  cursor: pointer;
 }
 
 .tl__clip.is-media.is-audio .tl__wave-band {
@@ -767,85 +825,13 @@ body.is-dragging-media .tl__lane:hover {
   height: auto;
 }
 
-/* A sound fade: the quiet part shaded down to the clip's edge, a line along the slope. */
-.tl__sound-fade {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  pointer-events: none;
-}
-
-.tl__sound-fade.is-in {
-  left: 0;
-}
-
-.tl__sound-fade.is-out {
-  right: 0;
-}
-
-.tl__sound-fade::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgb(0 0 0 / 0.45);
-}
-
-.tl__sound-fade.is-in::before {
-  clip-path: polygon(0 0, 100% 0, 0 100%);
-}
-
-.tl__sound-fade.is-out::before {
-  clip-path: polygon(0 0, 100% 0, 100% 100%);
-}
-
-.tl__sound-fade svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.tl__sound-fade line {
-  stroke: #fff;
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-
-/* Dots on the band's top corners (kept clear of the trim handles): drag one to set a sound fade. */
-.tl__fade-dot {
-  position: absolute;
-  top: 0;
-  z-index: 4;
-  width: 9px;
-  height: 9px;
-  border: 1px solid rgb(0 0 0 / 0.6);
-  border-radius: 50%;
-  background: #fff;
-  cursor: ew-resize;
-  touch-action: none;
-  opacity: 0;
-}
-
-.tl__fade-dot.is-in {
-  translate: -50% -50%;
-}
-
-.tl__fade-dot.is-out {
-  translate: 50% -50%;
-}
-
-.tl__clip:hover .tl__fade-dot,
-.tl__clip.is-selected .tl__fade-dot,
-.tl__clip.is-fading .tl__fade-dot {
-  opacity: 1;
-}
-
+/* A length or name read out while dragging (trim, transition). */
 .tl__fade-tip {
   position: absolute;
   bottom: calc(100% + 4px);
   left: 50%;
   translate: -50% 0;
+  z-index: 6;
   padding: 2px 6px;
   border-radius: 2px;
   background: rgb(0 0 0 / 0.85);
@@ -854,4 +840,44 @@ body.is-dragging-media .tl__lane:hover {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
+}
+
+.tl__trim-tip {
+  top: 50%;
+  bottom: auto;
+  translate: 0 -50%;
+}
+
+.tl__trim-tip.is-start {
+  left: 14px;
+}
+
+.tl__trim-tip.is-end {
+  left: auto;
+  right: 14px;
+}
+
+/* The transition's own label sits to the right of the chip, still inside the clip. */
+.tl__trans .tl__fade-tip {
+  top: 50%;
+  bottom: auto;
+  left: calc(100% + 4px);
+  translate: 0 -50%;
+}
+
+/* A selected transition: outlined like a selected clip, with a white grab bar on its left edge. */
+.tl__trans.is-selected {
+  outline: 2px solid var(--text);
+  outline-offset: -1px;
+  background: rgb(14 16 20 / 0.95);
+}
+
+.tl__trans.is-selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--text);
 }

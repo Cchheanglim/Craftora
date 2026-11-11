@@ -8,7 +8,7 @@ import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
-import { adjustSteps, blocksStyle, warmthMatrix } from "../project/effects";
+import { RGB_SHARE, adjustSteps, blocksStyle, warmthMatrix } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
 import { SyncedMedia } from "./SyncedMedia";
@@ -566,7 +566,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             );
           })}
           {blocks.layers.map((layer, i) => (
-            <span key={i} className="preview__fx-layer" style={{ background: layer.color, opacity: layer.opacity }} aria-hidden="true" />
+            <span key={i} className="preview__fx-layer" style={{ background: layer.color, opacity: layer.opacity, mixBlendMode: layer.blend }} aria-hidden="true" />
           ))}
           </div>
           {blocks.bars > 0 && (
@@ -818,7 +818,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
 }
 
 /**
- * Warmth (Edit → Adjust) has no CSS filter function: one SVG colour matrix per value, -100 to 100, that the colour steps
+ * Warmth (Edit → Adjust) and RGB split have no CSS filter function: SVG filters for each value, that the colour steps
  * point at (effects.ts `stepsFilter`). In sRGB like the CSS functions and the export; hidden by size, not `display: none`
  * (that would switch the filters off).
  */
@@ -829,6 +829,22 @@ const WARMTH_FILTERS = (
         <feColorMatrix type="matrix" values={warmthMatrix(w / 100)} />
       </filter>
     ))}
+    {/* RGB split, by Strength 0–100: red moved left and blue right by a share of the picture's own width (the export's
+        rgbashift), green kept, added back together. */}
+    {Array.from({ length: 101 }, (_, k) => {
+      const dx = (RGB_SHARE * k) / 50;
+      return (
+        <filter key={`rgb-${k}`} id={`rgb-${k}`} colorInterpolationFilters="sRGB" primitiveUnits="objectBoundingBox">
+          <feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0" result="r" />
+          <feOffset in="r" dx={-dx} result="red" />
+          <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0" result="green" />
+          <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0" result="b" />
+          <feOffset in="b" dx={dx} result="blue" />
+          <feComposite in="red" in2="green" operator="arithmetic" k2={1} k3={1} result="rg" />
+          <feComposite in="rg" in2="blue" operator="arithmetic" k2={1} k3={1} />
+        </filter>
+      );
+    })}
   </svg>
 );
 
@@ -954,7 +970,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
       {/* A flash transition whitens the clip itself (the export fades its picture to white). */}
       {white > 0 && <span className="preview__fx-layer" style={{ background: "#fff", opacity: white }} aria-hidden="true" />}
       {fx?.layers.map((layer, i) => (
-        <span key={i} className="preview__fx-layer" style={{ background: layer.color, opacity: layer.opacity }} aria-hidden="true" />
+        <span key={i} className="preview__fx-layer" style={{ background: layer.color, opacity: layer.opacity, mixBlendMode: layer.blend }} aria-hidden="true" />
       ))}
       {fx && fx.bars > 0 && (
         <>

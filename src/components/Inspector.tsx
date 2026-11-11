@@ -26,7 +26,7 @@ import {
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
-import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustSteps, blockLabel } from "../project/effects";
+import { ADJUSTMENTS, EFFECT_SETTINGS, LOOKS, PICTURE_EFFECTS, adjustSteps, blockLabel } from "../project/effects";
 import { SHAPES, shapeLabel } from "../project/shapes";
 import "./Inspector.css";
 
@@ -174,6 +174,45 @@ export function Inspector({
           onCheckpoint={onCheckpoint}
           onChange={(lookAmount) => onChange({ lookAmount }, true)}
         />
+      )}
+
+      {clip.effect && EFFECT_SETTINGS[clip.effect] && (
+        <fieldset className="insp__group">
+          <legend>
+            Effect
+            {(clip.effectStrength !== undefined || clip.effectSpeed !== undefined) && (
+              <button type="button" className="insp__reset" onClick={() => onChange({ effectStrength: undefined, effectSpeed: undefined })}>
+                Reset
+              </button>
+            )}
+          </legend>
+          {EFFECT_SETTINGS[clip.effect]?.includes("strength") && (
+            <Slider
+              id="insp-effect-strength"
+              label="Strength"
+              min={0}
+              max={100}
+              step={1}
+              value={clip.effectStrength ?? 50}
+              format={(v) => String(Math.round(v))}
+              onCheckpoint={onCheckpoint}
+              onChange={(effectStrength) => onChange({ effectStrength }, true)}
+            />
+          )}
+          {EFFECT_SETTINGS[clip.effect]?.includes("speed") && (
+            <Slider
+              id="insp-effect-speed"
+              label="Speed"
+              min={0.5}
+              max={3}
+              step={0.1}
+              value={clip.effectSpeed ?? 1}
+              format={(v) => `${v.toFixed(1)}×`}
+              onCheckpoint={onCheckpoint}
+              onChange={(effectSpeed) => onChange({ effectSpeed }, true)}
+            />
+          )}
+        </fieldset>
       )}
 
       {onDuration && (
@@ -663,7 +702,7 @@ export function CaptionStyle({
   );
 }
 
-function Slider({
+export function Slider({
   id,
   label,
   min,

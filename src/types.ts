@@ -160,6 +160,9 @@ export interface RenderClip {
   look: LookStep[];
   /** Effect blocks: effects.ts `PICTURE_EFFECTS` id; empty otherwise. */
   effect: string;
+  /** Strength as a multiple of how it was made (0–2) and Speed (0.5–3×): effects.ts `effectStrength`, `effectSpeed`. */
+  effectStrength: number;
+  effectSpeed: number;
   /** Cover the frame instead of fitting inside it. */
   fill: boolean;
   fadeIn: number;

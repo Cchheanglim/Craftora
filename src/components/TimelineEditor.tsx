@@ -54,7 +54,7 @@ const MIN_PPS = 2;
 const MAX_PPS = 400;
 /** Pixels the pointer must travel before a press on a clip becomes a drag. */
 const DRAG_THRESHOLD = 3;
-/** A sound fade's length: seconds, or minutes and seconds once it's a minute or more. */
+/** A length on the timeline: seconds, or minutes and seconds once it's a minute or more. */
 const fadeLength = (s: number) => (s < 60 ? `${s.toFixed(1)} s` : formatClock(s));
 
 interface TimelineEditorProps {
@@ -75,6 +75,11 @@ interface TimelineEditorProps {
   onDropFx: (item: FxItem, trackId: string | null, time: number) => void;
   /** A block just added from the right panel: zoomed in to when it's too small to see or grab. */
   revealed?: { clipId: string; at: number } | null;
+  /** The clip whose transition (from the clip before it) is selected: outlined, its controls in the right panel. */
+  selectedTransition?: string | null;
+  onSelectTransition?: (clipId: string) => void;
+  /** A click on a clip's sound wave: open its Sound panel. */
+  onOpenSound?: (clipId: string) => void;
   /** A pick from a clip's right-click menu; `time`: the playhead if it's on the clip, else where it was clicked. */
   onClipCommand: (command: ClipCommand, clip: Clip, time: number) => void;
   /** Something has been copied, so Paste can put it at the playhead. */
@@ -93,8 +98,7 @@ type DragMode = "move" | "start" | "end";
 /** What the pointer is doing between press and release. */
 type Gesture =
   | { kind: "scrub" }
-  | { kind: "clip"; clipId: string; mode: DragMode; originX: number; originStart: number; originEdge: number; moved: boolean }
-  | { kind: "soundFade"; clipId: string; edge: "in" | "out"; originX: number; origin: number }
+  | { kind: "clip"; clipId: string; mode: DragMode; originX: number; originStart: number; originEdge: number; moved: boolean; onWave: boolean }
   | { kind: "transition"; clipId: string; originX: number; origin: number };
 
 /** Where a clip being moved is drawn; the project only changes on release. */
@@ -111,8 +115,8 @@ const SIZES: { size: TrackSize; label: string }[] = [
   { size: "l", label: "Large" },
 ];
 const ROW_PX: Record<TrackSize, number> = { s: 30, m: 48, l: 62 };
-/** A track's row size: as set in its menu, else large for the main track and medium for the others. */
-const rowSize = (t: Track, main: boolean): TrackSize => t.height ?? (main ? "l" : "m");
+/** A track's row size: as set in its menu, else large for the main track and the tracks over it (as tall as each other), medium for the sound below. */
+const rowSize = (t: Track, large: boolean): TrackSize => t.height ?? (large ? "l" : "m");
 /** Share of a video clip's row its sound-wave band takes, by the track's Waveform size. */
 const WAVE_SHARE: Record<TrackSize, number> = { s: 0.1, m: 0.17, l: 0.28 };
 /** The name bar along the top of a video or sound clip. */
@@ -133,6 +137,9 @@ export function TimelineEditor({
   onAddText,
   onDropFx,
   revealed,
+  selectedTransition,
+  onSelectTransition,
+  onOpenSound,
   onClipCommand,
   canPaste,
   onCover,
@@ -155,7 +162,8 @@ export function TimelineEditor({
   const [scrollbar, setScrollbar] = useState(0);
   const [fitted, setFitted] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
-  const [fadeDrag, setFadeDrag] = useState<{ clipId: string; edge: "in" | "out" | "trans" } | null>(null);
+  const [fadeDrag, setFadeDrag] = useState<{ clipId: string; edge: "trans" } | null>(null);
+  const [trimTip, setTrimTip] = useState<{ clipId: string; edge: "start" | "end" } | null>(null);
   // Each video's filmstrip, made in the background (by preview address); until then its clips show its picture.
   const [strips, setStrips] = useState<Record<string, Strip>>({});
   useEffect(() => {
@@ -170,6 +178,8 @@ export function TimelineEditor({
   const [clipMenu, setClipMenu] = useState<{ clipId: string; x: number; y: number; time: number } | null>(null);
   const [coverMenu, setCoverMenu] = useState<{ x: number; y: number } | null>(null);
   const main = mainTrack(project);
+  /** The main track or one above it (pictures, text, effects). */
+  const overMain = (t: Track) => !main || project.tracks.indexOf(t) <= project.tracks.indexOf(main);
   /** The track whose … menu is open, and where to draw it. */
   const [menu, setMenu] = useState<{ trackId: string; x: number; y: number; up: boolean } | null>(null);
   // The menus sit at a fixed place on screen: they close when the timeline moves under them
@@ -329,22 +339,6 @@ export function TimelineEditor({
       playback.seek(snap(timeAt(e.clientX), "", false));
       return;
     }
-    if (g.kind === "soundFade") {
-      scrollAtEdge(e.clientX);
-      const clip = project.clips.find((c) => c.id === g.clipId);
-      if (!clip || !contentRef.current) return;
-      // From where the dot was, by how far the pointer moved: the dot may sit a little inside the clip's edge.
-      const moved = (e.clientX - g.originX) / pps;
-      const raw = g.origin + (g.edge === "in" ? moved : -moved);
-      const other = (g.edge === "in" ? clip.soundFadeOut : clip.soundFadeIn) ?? 0;
-      const v = Math.min(Math.max(0, clipLength(clip) - other), Math.max(0, Math.round(raw * 10) / 10));
-      api.editLive({
-        type: "updateClip",
-        clipId: clip.id,
-        patch: g.edge === "in" ? { soundFadeIn: v } : { soundFadeOut: v },
-      });
-      return;
-    }
     if (g.kind === "transition") {
       scrollAtEdge(e.clientX);
       const clip = project.clips.find((c) => c.id === g.clipId);
@@ -363,7 +357,10 @@ export function TimelineEditor({
       if (Math.abs(dx) < DRAG_THRESHOLD && !laneChanged(g.clipId, e.clientY)) return;
       g.moved = true;
       // Trims change the project live; moves only on release (see onPointerUp).
-      if (g.mode !== "move") api.checkpoint();
+      if (g.mode !== "move") {
+        api.checkpoint();
+        setTrimTip({ clipId: g.clipId, edge: g.mode });
+      }
     }
     const dt = dx / pps;
     const clip = project.clips.find((c) => c.id === g.clipId);
@@ -373,7 +370,11 @@ export function TimelineEditor({
       // Snap either edge of the clip.
       const snappedStart = snap(start, clip.id);
       const snappedEnd = snap(start + clipLength(clip), clip.id) - clipLength(clip);
-      start = Math.abs(snappedStart - start) <= Math.abs(snappedEnd - start) ? snappedStart : snappedEnd;
+      // An edge that found nothing comes back unmoved (0 away): the other edge's snap still wins.
+      const startSnaps = snappedStart !== start;
+      const endSnaps = snappedEnd !== start;
+      if (startSnaps && (!endSnaps || Math.abs(snappedStart - start) <= Math.abs(snappedEnd - start))) start = snappedStart;
+      else if (endSnaps) start = snappedEnd;
       // Any track takes any clip, unless it's locked.
       const lane = project.tracks.find((t) => t.id === laneAt(e.clientY));
       const trackId = lane && !lane.locked ? lane.id : (ghostRef.current?.trackId ?? clip.trackId);
@@ -389,11 +390,13 @@ export function TimelineEditor({
     gestureRef.current = null;
     setScrubbing(false);
     setFadeDrag(null);
+    setTrimTip(null);
     if (!g) return;
-    if (g.kind === "soundFade" || g.kind === "transition") {
+    if (g.kind === "transition") {
       api.editLive({ type: "settle" });
       return;
     }
+    if (g.kind === "clip" && !g.moved && g.onWave) onOpenSound?.(g.clipId);
     if (g.kind !== "clip" || !g.moved) return;
     const final = ghostRef.current;
     setGhost(null);
@@ -437,17 +440,8 @@ export function TimelineEditor({
       originStart: clip.start,
       originEdge: mode === "end" ? clipEnd(clip) : clip.start,
       moved: false,
+      onWave: mode === "move" && Boolean((e.target as Element).closest(".tl__wave-band")),
     });
-  };
-
-  const beginSoundFade = (clip: Clip, edge: "in" | "out") => (e: ReactPointerEvent<HTMLElement>) => {
-    if (e.button !== 0 || project.tracks.find((t) => t.id === clip.trackId)?.locked) return;
-    e.stopPropagation();
-    e.preventDefault();
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-    api.checkpoint();
-    setFadeDrag({ clipId: clip.id, edge });
-    startGesture({ kind: "soundFade", clipId: clip.id, edge, originX: e.clientX, origin: (edge === "in" ? clip.soundFadeIn : clip.soundFadeOut) ?? 0 });
   };
 
   const beginTransition = (clip: Clip) => (e: ReactPointerEvent<HTMLElement>) => {
@@ -455,6 +449,7 @@ export function TimelineEditor({
     e.stopPropagation();
     e.preventDefault();
     e.currentTarget.setPointerCapture?.(e.pointerId);
+    onSelectTransition?.(clip.id);
     api.checkpoint();
     setFadeDrag({ clipId: clip.id, edge: "trans" });
     startGesture({ kind: "transition", clipId: clip.id, originX: e.clientX, origin: clip.transition.duration });
@@ -582,7 +577,7 @@ export function TimelineEditor({
             const name = trackLabel(project, track);
             const menuOpen = menu?.trackId === track.id;
             return (
-              <div key={track.id} className={track.id === main?.id ? "tl__head is-main" : "tl__head"} style={{ height: ROW_PX[rowSize(track, track.id === main?.id)] }} role="group" aria-label={name}>
+              <div key={track.id} className={track.id === main?.id ? "tl__head is-main" : "tl__head"} style={{ height: ROW_PX[rowSize(track, overMain(track))] }} role="group" aria-label={name}>
                 {track.id === main?.id ? (
                   <button
                     type="button"
@@ -670,8 +665,8 @@ export function TimelineEditor({
                             key={size}
                             type="button"
                             role="menuitemradio"
-                            aria-checked={rowSize(track, track.id === main?.id) === size}
-                            autoFocus={rowSize(track, track.id === main?.id) === size}
+                            aria-checked={rowSize(track, overMain(track)) === size}
+                            autoFocus={rowSize(track, overMain(track)) === size}
                             onClick={() => api.edit({ type: "updateTrack", trackId: track.id, patch: { height: size } })}
                           >
                             {label}
@@ -762,7 +757,7 @@ export function TimelineEditor({
                   else laneRefs.current.delete(track.id);
                 }}
                 className={["tl__lane", track.id === main?.id && "is-main", track.locked && "is-locked", track.hidden && "is-hidden"].filter(Boolean).join(" ")}
-                style={{ height: ROW_PX[rowSize(track, track.id === main?.id)] }}
+                style={{ height: ROW_PX[rowSize(track, overMain(track))] }}
                 onPointerUp={onMediaDrop(track)}
               >
                 {project.clips
@@ -772,7 +767,8 @@ export function TimelineEditor({
                   .map((clip) => {
                     const media = project.media.find((m) => m.id === clip.mediaId);
                     const label = isBlock(clip) ? blockLabel(clip) : (clip.text ?? media?.name ?? "Clip");
-                    const isSelected = clip.id === selectedId;
+                    // With its transition selected, only the transition shows as selected (App keeps the clip as selectedId).
+                    const isSelected = clip.id === selectedId && selectedTransition !== clip.id;
                     const isGhost = clip.id === ghost?.clipId;
                     const { start } = where(clip);
                     const length = clipLength(clip);
@@ -780,7 +776,7 @@ export function TimelineEditor({
                     const picture = media?.hasVideo ? (media.source.image ? media.source.previewUrl : media.source.thumbnail) : undefined;
                     const strip = media?.hasVideo ? (strips[media.source.previewUrl] ?? (picture ? { url: picture, frames: 1 } : undefined)) : undefined;
                     // Video clips: a name bar, the frames, then a band for the sound wave.
-                    const rowPx = ROW_PX[rowSize(track, track.id === main?.id)];
+                    const rowPx = ROW_PX[rowSize(track, overMain(track))];
                     const waveBand = media?.hasAudio && !media.source.image ? Math.max(6, Math.round(rowPx * WAVE_SHARE[track.wave ?? "m"])) : 0;
                     const classes = [
                       "tl__clip",
@@ -789,6 +785,7 @@ export function TimelineEditor({
                       isSelected && "is-selected",
                       isGhost && "is-dragging",
                       fadeDrag?.clipId === clip.id && "is-fading",
+                      trimTip?.clipId === clip.id && "is-fading",
                       media?.missing && "is-missing",
                       strip && "has-frames",
                     ].filter(Boolean);
@@ -825,66 +822,26 @@ export function TimelineEditor({
                         {clip.fadeOut > 0 && <span className="tl__fade is-out" style={{ width: clip.fadeOut * pps }} aria-hidden="true" />}
                         {overlap(clip) > 0 && clip.transition && (
                           <span
-                            className="tl__trans"
-                            style={{ width: overlap(clip) * pps }}
-                            title="Drag left or right to change the transition's length"
+                            className={selectedTransition === clip.id ? "tl__trans is-selected" : "tl__trans"}
+                            style={{ width: Math.max(14, overlap(clip) * pps) }}
+                            title="Click to set it up; drag left or right to change its length"
                             onPointerDown={beginTransition(clip)}
                             aria-hidden="true"
                           >
-                            {fadeDrag?.clipId === clip.id && fadeDrag.edge === "trans" && (
+                            <Icon name="transition" size={12} />
+                            {(selectedTransition === clip.id || (fadeDrag?.clipId === clip.id && fadeDrag.edge === "trans")) && (
                               <span className="tl__fade-tip mono">
                                 {TRANSITION_KINDS.find((t) => t.kind === clip.transition?.kind)?.label} {fadeLength(clip.transition.duration)}
                               </span>
                             )}
                           </span>
                         )}
-                        {media?.hasAudio && !media.source.image && (() => {
-                          const soundFadeIn = clip.soundFadeIn ?? 0;
-                          const soundFadeOut = clip.soundFadeOut ?? 0;
-                          const fadingIn = fadeDrag?.clipId === clip.id && fadeDrag.edge === "in";
-                          const fadingOut = fadeDrag?.clipId === clip.id && fadeDrag.edge === "out";
-                          return (
-                            <div className="tl__wave-band" style={media.hasVideo ? { height: `${waveBand}px` } : undefined}>
-                              <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={trackSilent(track)} />
-                              {soundFadeIn > 0 && (
-                                <span className="tl__sound-fade is-in" style={{ width: soundFadeIn * pps }} aria-hidden="true">
-                                  <svg preserveAspectRatio="none">
-                                    <line x1="0" y1="100%" x2="100%" y2="0" />
-                                  </svg>
-                                </span>
-                              )}
-                              {soundFadeOut > 0 && (
-                                <span className="tl__sound-fade is-out" style={{ width: soundFadeOut * pps }} aria-hidden="true">
-                                  <svg preserveAspectRatio="none">
-                                    <line x1="0" y1="0" x2="100%" y2="100%" />
-                                  </svg>
-                                </span>
-                              )}
-                              {!track.locked && (
-                                <>
-                                  <span
-                                    className={fadingIn ? "tl__fade-dot is-in is-dragging" : "tl__fade-dot is-in"}
-                                    style={{ left: Math.max(9, soundFadeIn * pps) }}
-                                    title="Drag to fade the sound in"
-                                    aria-label="Drag to fade the sound in"
-                                    onPointerDown={beginSoundFade(clip, "in")}
-                                  >
-                                    {fadingIn && <span className="tl__fade-tip mono">Fade in {fadeLength(soundFadeIn)}</span>}
-                                  </span>
-                                  <span
-                                    className={fadingOut ? "tl__fade-dot is-out is-dragging" : "tl__fade-dot is-out"}
-                                    style={{ right: Math.max(9, soundFadeOut * pps) }}
-                                    title="Drag to fade the sound out"
-                                    aria-label="Drag to fade the sound out"
-                                    onPointerDown={beginSoundFade(clip, "out")}
-                                  >
-                                    {fadingOut && <span className="tl__fade-tip mono">Fade out {fadeLength(soundFadeOut)}</span>}
-                                  </span>
-                                </>
-                              )}
-                            </div>
-                          );
-                        })()}
+                        {media?.hasAudio && !media.source.image && (
+                          // Clicked (not dragged), it opens the Sound panel (onPointerUp); a fade shows as the wave itself getting smaller.
+                          <div className="tl__wave-band" style={media.hasVideo ? { height: `${waveBand}px` } : undefined} title="Click for volume and sound fades">
+                            <ClipWave clip={clip} media={media} bars={Math.min(1500, Math.max(8, Math.round((length * pps) / 4)))} muted={trackSilent(track)} />
+                          </div>
+                        )}
                         {media?.source.chapters
                           ?.filter((ch) => ch.start > clip.in + 0.2 && ch.start < clip.out - 0.2)
                           .map((ch) => {
@@ -902,10 +859,13 @@ export function TimelineEditor({
                             aria-hidden="true"
                           />
                         )}
-                        <span className="tl__label truncate">
-                          {media?.missing && "Missing · "}
-                          {label}
-                          {media && <span className="tl__length mono">{formatTimecode(length)}</span>}
+                        <span className="tl__label">
+                          <span className="tl__name truncate">
+                            {isBlock(clip) && <Icon name={clip.effect ? "sparkle" : clip.look ? "blend" : "sliders"} size={12} />}
+                            {media?.missing && "Missing · "}
+                            {label}
+                          </span>
+                          {(media || isBlock(clip)) && <span className="tl__length mono">{media ? formatTimecode(length) : fadeLength(length)}</span>}
                         </span>
                         {(clip.speed !== 1 || clip.reverse || (clip.mediaId && (clip.look || clip.effect))) && (
                           <span className="tl__tag mono" aria-hidden="true">
@@ -920,6 +880,7 @@ export function TimelineEditor({
                                 .join("")}
                           </span>
                         )}
+                        {trimTip?.clipId === clip.id && <span className={`tl__fade-tip mono tl__trim-tip is-${trimTip.edge}`}>{fadeLength(length)}</span>}
                         <span className="tl__trim is-end" title="Drag to change duration" onPointerDown={beginDrag(clip, "end")} aria-hidden="true" />
                       </div>
                     );
@@ -931,6 +892,7 @@ export function TimelineEditor({
                     .filter((c, i, order) => i > 0 && c.start <= clipEnd(order[i - 1]) + 0.05)
                     .map((clip) => {
                       const kind = TRANSITION_KINDS.find((t) => t.kind === clip.transition?.kind);
+                      if (kind && overlap(clip) > 0) return null;
                       return (
                         <button
                           key={`join-${clip.id}`}
@@ -941,7 +903,7 @@ export function TimelineEditor({
                           title={kind ? `${kind.label}: click to change it` : "Add a transition here"}
                           disabled={track.locked}
                           onPointerDown={(e) => e.stopPropagation()}
-                          onClick={() => onJoin(clip)}
+                          onClick={() => (kind && onSelectTransition ? onSelectTransition(clip.id) : onJoin(clip))}
                         >
                           <Icon name={kind ? "check" : "plus"} size={8} />
                         </button>
@@ -1013,13 +975,7 @@ export function TimelineEditor({
               );
             })()}
 
-            <div
-              className="tl__playhead"
-              style={{ left: playback.time * pps }}
-              onPointerDown={beginScrub}
-              title="Drag to move through the video (← → step, Shift for seconds)"
-              aria-hidden="true"
-            />
+            <div className="tl__playhead" style={{ left: playback.time * pps }} aria-hidden="true" />
             {project.clips.length === 0 && (
               <p className="tl__empty">Drag media here from the left, or press + on a file to add it.</p>
             )}
