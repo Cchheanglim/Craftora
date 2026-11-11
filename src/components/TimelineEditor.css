@@ -494,8 +494,25 @@
   z-index: 1;
   flex: 1;
   min-width: 0;
+  /* One line: a length that doesn't fit wraps onto a hidden second line, so it never shows cut in half. */
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  column-gap: 6px;
+  height: 16px;
+  line-height: 16px;
+  overflow: hidden;
   padding: 0 8px;
   pointer-events: none;
+}
+
+.tl__name {
+  min-width: 0;
+}
+
+.tl__name svg {
+  margin-right: 5px;
+  vertical-align: -2px;
 }
 
 /* The audio wave along the bottom of video and audio clips. */
@@ -560,7 +577,7 @@
 }
 
 .tl__length {
-  margin-left: 6px;
+  flex-shrink: 0;
   opacity: 0.75;
 }
 
@@ -606,17 +623,27 @@
   pointer-events: none;
 }
 
-/* A transition: the part of a clip that overlaps the clip before it; drag to change its length (below the 8 px trim handle). */
+/* A transition: a chip on the cut over the overlapping part of the incoming clip; drag to change its length (above the start trim handle). */
 .tl__trans {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: 50%;
+  bottom: auto;
   left: 0;
-  z-index: 2;
-  background: rgb(255 255 255 / 0.14);
-  border-right: 1px dashed rgb(255 255 255 / 0.5);
+  height: min(26px, 70%);
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  background: rgb(14 16 20 / 0.85);
+  border: 1px solid rgb(255 255 255 / 0.6);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  z-index: 4;
   cursor: ew-resize;
   touch-action: none;
+}
+
+.tl__trans:hover {
+  border-color: var(--text);
 }
 
 .tl__clip.is-fading {
@@ -659,7 +686,7 @@
   top: 0;
   bottom: 0;
   z-index: 3;
-  width: 8px;
+  width: 10px;
   cursor: ew-resize;
 }
 
@@ -671,7 +698,7 @@
   right: 0;
 }
 
-/* The grab area stays 8 px wide; only a thin line of it shows. */
+/* The grab area stays 10 px wide; a thin line shows on hover, a solid bar with a grip when selected. */
 .tl__trim::after {
   content: "";
   position: absolute;
@@ -693,7 +720,27 @@
 }
 
 .tl__clip.is-selected .tl__trim::after {
-  background: rgb(255 255 255 / 0.85);
+  width: 6px;
+  background: var(--text);
+}
+
+.tl__clip.is-selected .tl__trim::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  z-index: 1;
+  width: 2px;
+  height: 12px;
+  background: var(--bg-canvas);
+}
+
+.tl__clip.is-selected .tl__trim.is-start::before {
+  left: 2px;
+}
+
+.tl__clip.is-selected .tl__trim.is-end::before {
+  right: 2px;
 }
 
 /* The playhead: the one accent on the timeline. The element is a wide, invisible grab
@@ -836,18 +883,42 @@ body.is-dragging-media .tl__lane:hover {
   translate: none;
 }
 
-/* The transition's own label sits inside its shaded part, at the top. */
-.tl__trans .tl__fade-tip {
-  top: 2px;
+.tl__trim-tip {
+  top: 50%;
   bottom: auto;
-  left: 2px;
-  translate: none;
+  translate: 0 -50%;
 }
 
-/* A selected transition: outlined like a selected clip; its settings are in the right panel. */
+.tl__trim-tip.is-start {
+  left: 14px;
+}
+
+.tl__trim-tip.is-end {
+  left: auto;
+  right: 14px;
+}
+
+/* The transition's own label sits to the right of the chip, still inside the clip. */
+.tl__trans .tl__fade-tip {
+  top: 50%;
+  bottom: auto;
+  left: calc(100% + 4px);
+  translate: 0 -50%;
+}
+
+/* A selected transition: outlined like a selected clip, with a white grab bar on its left edge. */
 .tl__trans.is-selected {
-  background: rgb(255 255 255 / 0.22);
   outline: 2px solid var(--text);
-  outline-offset: -2px;
-  z-index: 4;
+  outline-offset: -1px;
+  background: rgb(14 16 20 / 0.95);
+}
+
+.tl__trans.is-selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--text);
 }

@@ -1829,6 +1829,9 @@ export default function App() {
               onSelect={(id) => {
                 setSelectedTransition(null);
                 setSelectedId(id);
+                // Like a transition: a filter or effect block picked while those tabs are open shows its controls in its own tab.
+                const clip = project.clips.find((c) => c.id === id);
+                if (clip && isBlock(clip) && ["filters", "effects", "transitions", "shapes"].includes(rightTab)) setRightTab(clip.effect ? "effects" : "filters");
               }}
               selectedTransition={transitionClip?.id ?? null}
               onSelectTransition={(id) => {
