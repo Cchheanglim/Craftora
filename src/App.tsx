@@ -115,6 +115,7 @@ import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/Edge
 import { dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, type FxTab } from "./components/FxPanel";
 import { CropDialog } from "./components/CropDialog";
+import { PanelTabs } from "./components/PanelTabs";
 import { SoundPanel } from "./components/SoundPanel";
 import { LEVEL_STEP, VoicePanel } from "./components/VoicePanel";
 import { Tooltip } from "./components/Tooltip";
@@ -142,8 +143,16 @@ import { Ambient } from "./components/Ambient";
 import "./App.css";
 
 const DEMO = DEMO_SOURCES[0];
-/** The right panel's second row of tabs: tiles to add to the timeline. */
+/** The right panel's tiles to add to the timeline (Filters … Shapes). */
 const FX_TABS = ["filters", "effects", "transitions", "shapes"] as const;
+/** The right panel's tabs, in their one scrolling row. */
+const PANEL_TABS: { id: "edit" | "export" | "transcript" | "assistant" | (typeof FX_TABS)[number]; label: string }[] = [
+  { id: "edit", label: "Edit" },
+  { id: "export", label: "Export" },
+  { id: "transcript", label: "Transcript" },
+  { id: "assistant", label: "Assistant" },
+  ...FX_TABS.map((id) => ({ id, label: id[0].toUpperCase() + id.slice(1) })),
+];
 /** Quiet time after the last edit before the project is saved. */
 const AUTOSAVE_MS = 600;
 /** The label of captions Craftora made from the sound (whisper). */
@@ -1895,26 +1904,9 @@ export default function App() {
               {rightOpen && <EdgeResizer edge="left" width={panelWidth} limits={PANEL_WIDTH} label="Right panel width" onResize={resizePanel} />}
               {/* Stays mounted when closed so it can slide away; inert keeps it out of Tab and clicks. */}
               <div className={`app__panel${rightOpen ? "" : " is-closed"}`} inert={!rightOpen}>
-                <div className="segmented app__tabs" role="group" aria-label="Right panel">
-                  <button type="button" aria-pressed={rightTab === "edit"} onClick={() => pickTab("edit")}>
-                    Edit
-                  </button>
-                  <button type="button" aria-pressed={rightTab === "export"} onClick={() => pickTab("export")}>
-                    Export
-                  </button>
-                  <button type="button" aria-pressed={rightTab === "transcript"} onClick={() => pickTab("transcript")}>
-                    Transcript
-                  </button>
-                  <button type="button" aria-pressed={rightTab === "assistant"} onClick={() => pickTab("assistant")}>
-                    Assistant
-                  </button>
-                </div>
-                <div className="segmented app__tabs is-second" role="group" aria-label="Filters, effects, transitions and shapes">
-                  {FX_TABS.map((tab) => (
-                    <button key={tab} type="button" aria-pressed={rightTab === tab} onClick={() => pickTab(tab)}>
-                      {tab[0].toUpperCase() + tab.slice(1)}
-                    </button>
-                  ))}
+                {/* All eight in one row that scrolls sideways, ‹ › at its ends (like the popular editor). */}
+                <div className="app__tabs">
+                  <PanelTabs tabs={PANEL_TABS} value={rightTab === "sound" || rightTab === "voice" ? null : rightTab} onPick={pickTab} label="Right panel" />
                 </div>
                 {rightTab === "filters" || rightTab === "effects" || rightTab === "transitions" || rightTab === "shapes" ? (
                   <FxPanel

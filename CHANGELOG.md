@@ -23,7 +23,9 @@
 - **Compact track buttons**: drag the line between the track buttons and the clips to the left and they shrink to just
   ⋯ (and Cover on the main track); drag it back to bring lock, show and mute back. Remembered on this PC.
 - **New editor layout**: the right panel sits beside the preview, and the timeline runs the full width of the window
-  under both (like the popular editor). Everything in the right panel is a size smaller.
+  under both (like the popular editor). Everything in the right panel is a size smaller, its eight tabs are one row
+  that scrolls sideways (‹ › at its ends, or the mouse wheel), a line under them where the settings scroll, and the
+  Assistant's text matches the rest of the panel.
 - **Timeline zoom controls**: Zoom to fit (also Shift+Z), zoom out, a zoom slider and zoom in. The buttons and the
   slider zoom around the playhead (they used to zoom from the timeline's left edge).
 - **Cleaner timeline**: no "+" on the cuts between clips (add a transition by dragging or clicking one in Transitions),
