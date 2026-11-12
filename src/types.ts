@@ -77,8 +77,12 @@ export interface Frame {
 
 export interface ExportSettings {
   output: OutputKind;
-  /** Image projects: the picture's file type; PNG when absent. */
+  /** Image projects: the picture's file type (PNG when absent); a PNG see-through where no layer covers it; JPG quality
+   * 1–100; the size, times the image's (1 when absent). */
   imageContainer?: ImageContainer;
+  transparent?: boolean;
+  imageQuality?: number;
+  imageScale?: number;
   videoContainer: VideoContainer;
   audioContainer: AudioContainer;
   /** Only used for a single untouched clip; everything else is re-encoded. */
@@ -125,8 +129,10 @@ export interface RenderSpec {
   container: VideoContainer | AudioContainer | ImageContainer;
   fileName: string;
   quality: RenderQuality;
-  /** Images: the colour under every layer (#rrggbb); black when absent. */
+  /** Images: the colour under every layer (#rrggbb); black when absent. A PNG's see-through background; JPG quality. */
   background?: string;
+  transparent?: boolean;
+  imageQuality?: number;
 }
 
 export type TransitionKind =
@@ -201,6 +207,8 @@ export interface RenderClip {
   /** Text style presets (model.ts `Clip`): the edge's colour and strength. */
   edgeColor?: string;
   edgeSize?: number;
+  /** Pictures and text: an Image editor layer's opacity (shapes draw theirs into `picture`). */
+  opacity?: number;
   /** Text animations (textMotion.ts), drawn by project.rs as the preview draws them. */
   motion?: TextMotion;
   /** Shapes: how to draw it (shapes.ts `shapeSvg`); `startRender` turns it into `picture`. */

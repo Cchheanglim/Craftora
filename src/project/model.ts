@@ -70,6 +70,8 @@ export interface MediaItem {
   id: string;
   name: string;
   source: MediaSource;
+  /** Remove background: the photo before its cut-out (`source`), for Restore. */
+  original?: MediaSource;
   hasVideo: boolean;
   hasAudio: boolean;
   /** Links: the yt-dlp format used when the picture is needed. */
@@ -195,7 +197,7 @@ export interface Clip {
   effectSpeed?: number;
   /** A shape clip: shapes.ts `SHAPES`. */
   shape?: ShapeId;
-  /** Shape clips: 0–1 (1 when absent). */
+  /** Shapes, pictures and text (an Image editor layer's opacity): 0–1 (1 when absent). */
   opacity?: number;
   /** Shape clips: 0 or absent = filled; > 0 = outline only, its thickness as a share of the frame height. */
   outline?: number;
@@ -231,6 +233,8 @@ export interface Clip {
    * longer shadow; 1 when absent). Absent both, text draws exactly as before them. */
   edgeColor?: string;
   edgeSize?: number;
+  /** A layer's own name (Image editor); its text, shape or file name when absent. */
+  name?: string;
   /** Text animations (Text tab → Animation; drawn by textMotion.ts); still text when absent. */
   anim?: TextAnim;
 }

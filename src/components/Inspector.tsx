@@ -85,6 +85,9 @@ interface InspectorProps {
   onAddText?: (size?: number) => void;
   /** Plays `seconds` of the timeline from `from` once, to show a text animation just picked. */
   onPreview?: (from: number, seconds: number) => void;
+  /** Remove background (a photo on this PC): runs the AI, saying what it's doing; Restore brings the photo back. */
+  onCutOut?: (onStatus: (text: string) => void) => Promise<void>;
+  onRestore?: () => void;
   /** The Image editor: nothing about time (fades, sound, animations, Split). */
   still?: boolean;
   /** What the editor calls the clip's track ("Track 2"). */
@@ -116,6 +119,8 @@ export function Inspector({
   onAddText,
   onPreview,
   still,
+  onCutOut,
+  onRestore,
   trackName,
   canSplit,
 }: InspectorProps) {
@@ -195,7 +200,12 @@ export function Inspector({
         <p className="insp__hint">Clearer, brighter and more vivid in one click: dark parts lifted, bright parts held back, a little more colour and sharpness.</p>
       </>
     ),
-    background: isPicture && <RemoveColour clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} onPick={onPickColour} />,
+    background: isPicture && (
+      <>
+        {media && (media.original || onCutOut) && <RemoveBackground cutOut={Boolean(media.original)} onCutOut={onCutOut} onRestore={onRestore} />}
+        <RemoveColour clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} onPick={onPickColour} />
+      </>
+    ),
     speed: moving && (
       <>
         <div className="insp__field">
@@ -745,6 +755,38 @@ const KEY_COLOURS = [
 export const KEY_START = { strength: 50, softness: 20 };
 
 /** Remove a colour (chroma key): a green or blue screen, or any colour picked on the preview, and how much goes. */
+/** Background tab, for a photo: the AI finds its subject and the rest turns see-through (lib/cutout.ts). */
+function RemoveBackground({ cutOut, onCutOut, onRestore }: { cutOut: boolean; onCutOut?: (onStatus: (text: string) => void) => Promise<void>; onRestore?: () => void }) {
+  const [status, setStatus] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const run = () => {
+    setFailed(null);
+    setStatus("Getting ready…");
+    onCutOut?.(setStatus)
+      .catch((err) => setFailed(err instanceof Error ? err.message : String(err)))
+      .finally(() => setStatus(null));
+  };
+  return (
+    <fieldset className="insp__group">
+      <legend>Remove background</legend>
+      {cutOut ? (
+        <button type="button" className="btn btn--secondary" onClick={onRestore}>
+          <Icon name="undo" size={14} />
+          Restore the original
+        </button>
+      ) : (
+        <button type="button" className="btn btn--secondary" disabled={status !== null} onClick={run}>
+          <Icon name="wand" size={14} />
+          Remove background
+        </button>
+      )}
+      {status && <p className="insp__hint">{status}</p>}
+      {failed && <p className="insp__hint">Couldn't remove the background: {failed}</p>}
+      {!cutOut && !status && <p className="insp__hint">Finds the subject and makes the rest see-through, on this PC. The AI model (170 MB) downloads the first time.</p>}
+    </fieldset>
+  );
+}
+
 function RemoveColour({ clip, onChange, onCheckpoint, onPick }: { clip: Clip; onChange: (patch: ClipPatch, live?: boolean) => void; onCheckpoint: () => void; onPick?: () => void }) {
   const key = clip.chroma;
   return (

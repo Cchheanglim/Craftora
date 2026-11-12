@@ -54,6 +54,24 @@ test("an image exports as one still picture at its own size, without anything ti
   expect(planExport(p, { ...settings, imageContainer: "jpg" }).kind === "render" && (planExport(p, { ...settings, imageContainer: "jpg" }) as { spec: { container: string } }).spec.container).toBe("jpg");
 });
 
+test("an image exports at 2×, see-through as a PNG only, with its JPG quality and layer opacity", () => {
+  let p = applyEdit(imageProject(), { type: "updateClip", clipId: "photo", patch: { opacity: 0.5 } });
+  p = applyEdit(p, { type: "updateClip", clipId: "title", patch: { name: "Headline" } });
+  const spec = (s: Partial<ExportSettings>) => {
+    const plan = planExport(p, { ...settings, ...s });
+    if (plan.kind !== "render") throw new Error(plan.kind);
+    return plan.spec;
+  };
+  const png = spec({ imageScale: 2, transparent: true });
+  expect([png.width, png.height, png.transparent]).toEqual([2160, 2700, true]);
+  expect(png.clips.find((c) => c.mediaId)?.opacity).toBe(0.5);
+  expect(p.clips.find((c) => c.id === "title")?.name).toBe("Headline");
+  const jpg = spec({ imageContainer: "jpg", transparent: true, imageQuality: 80 });
+  expect([jpg.transparent, jpg.imageQuality]).toEqual([undefined, 80]);
+  // Never past the export's largest side.
+  expect(Math.max(spec({ imageScale: 99 }).width, spec({ imageScale: 99 }).height)).toBe(8192);
+});
+
 test("a video project is untouched by the image rules", () => {
   let p: Project = emptyProject();
   p = applyEdit(p, { type: "addText", clipId: "a", at: 5, text: "Hi" });

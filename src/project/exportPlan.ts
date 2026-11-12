@@ -7,7 +7,7 @@ import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../
 import { formatClock, formatTimecode } from "../lib/timecode";
 import { adjustSteps, effectSpeed, effectStrength, keyLine, lookSteps } from "./effects";
 import { textMotion } from "./textMotion";
-import { isBlock, clipLength, isCropped, meets, projectDuration, showsPicture, trackOrder, trackSilent, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
+import { MAX_IMAGE_SIDE, isBlock, clipLength, isCropped, meets, projectDuration, showsPicture, trackOrder, trackSilent, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
   { id: "1080p", label: "16:9 · 1920 × 1080", width: 1920, height: 1080 },
@@ -158,7 +158,9 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   }
 
   // Everything else: one render of the whole timeline.
-  const frame = still ?? frameOf(settings);
+  // An image at 0.5×, 1× or 2× its size: every layer is placed in shares of the frame, so it just scales.
+  const scale = still ? Math.min(settings.imageScale ?? 1, MAX_IMAGE_SIDE / Math.max(still.width, still.height)) : 1;
+  const frame = still ? { width: Math.round(still.width * scale), height: Math.round(still.height * scale) } : frameOf(settings);
   const used = project.media.filter((m) => project.clips.some((c) => c.mediaId === m.id));
   const hidden = new Set(project.tracks.filter((t) => t.hidden).map((t) => t.id));
   // An Adjust layer with every slider at 0 changes nothing (and the export refuses a block with nothing to draw).
@@ -205,6 +207,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       // A shape's size is drawn into its picture; it may be wider than the frame, which the export's check refuses.
       size: c.shape ? 1 : c.size,
       fill: Boolean(c.fill),
+      opacity: c.shape ? undefined : c.opacity,
       x: c.x,
       y: c.y,
       text: textLines(c.text ?? "", c.size, frame, c.font),
@@ -286,6 +289,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       fileName,
       quality: settings.quality,
       background: still?.background,
+      transparent: still && container === "png" && settings.transparent ? true : undefined,
+      imageQuality: still && container === "jpg" ? settings.imageQuality : undefined,
       cover: isVideo ? project.cover : undefined,
     },
     sizeMb,

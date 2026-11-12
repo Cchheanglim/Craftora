@@ -513,7 +513,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 stageAspect={stageAspect}
                 stageWidth={stageRef.current?.clientWidth ?? frame.width}
                 visible={t !== null && !trackHidden(clip)}
-                opacity={t === null ? 0 : mix(clip).picture}
+                opacity={t === null ? 0 : mix(clip).picture * (clip.opacity ?? 1)}
                 white={t === null ? 0 : mix(clip).white}
                 shift={t === null ? 0 : mix(clip).shift}
                 lift={t === null ? 0 : mix(clip).lift}
@@ -643,7 +643,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   scale: pose.scale,
                   fontSize: `${clip.size * 100}cqh`,
                   color: clip.color,
-                  opacity: fadeAt(clip, time) * pose.alpha,
+                  opacity: fadeAt(clip, time) * pose.alpha * (clip.opacity ?? 1),
                   ...textFont(clip),
                 }}
                 onPointerDown={beginGesture(clip, "move")}

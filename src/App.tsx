@@ -113,6 +113,7 @@ import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { MediaPanel } from "./components/MediaPanel";
 import { LayersPanel } from "./components/LayersPanel";
+import { removeBackground } from "./lib/cutout";
 import { ImageSizePanel } from "./components/ImageSizePanel";
 import { Home, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
@@ -2215,6 +2216,15 @@ export default function App() {
                         onPickColour={() => startPick(selected)}
                         onAddText={addText}
                         still={imageMode}
+                        onCutOut={(() => {
+                          const photo = project.media.find((m) => m.id === selected.mediaId);
+                          if (!photo?.source.image || !photo.source.local || !inDesktopApp) return undefined;
+                          return async (onStatus: (text: string) => void) => {
+                            const path = await removeBackground(photo.source.url, onStatus);
+                            api.edit({ type: "cutOut", mediaId: photo.id, source: await openLocal(path) });
+                          };
+                        })()}
+                        onRestore={() => selected.mediaId && api.edit({ type: "cutOut", mediaId: selected.mediaId })}
                         onPreview={(from, seconds) => {
                           const back = playback.time;
                           playback.seek(from);

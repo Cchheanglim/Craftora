@@ -47,6 +47,12 @@ pub struct RenderSpec {
     /// Images: the colour under every layer (#rrggbb); black when empty.
     #[serde(default)]
     background: String,
+    /// PNG images: see-through where no layer covers it, instead of the background colour.
+    #[serde(default)]
+    transparent: bool,
+    /// JPG images: 1–100 (high when absent).
+    #[serde(default)]
+    image_quality: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -233,6 +239,9 @@ struct ClipSpec {
     /// Text animations (textMotion.ts `TextMotion`), drawn as the preview draws them; still text when absent.
     #[serde(default)]
     motion: Option<Motion>,
+    /// Pictures and text (an Image editor layer's opacity), 0–1.
+    #[serde(default = "one")]
+    opacity: f64,
 }
 
 /// A text's animation (textMotion.ts `TextMotion`): [seconds from the clip's start, value] points joined by straight lines.
@@ -425,9 +434,10 @@ impl ClipSpec {
         let (bw, bh) = (((w as f64) * self.size).round().max(2.0), ((h as f64) * self.size).round().max(2.0));
         let fit = if self.fill { "increase" } else { "decrease" };
         format!(
-            "setpts=PTS-STARTPTS{},scale=w={bw}:h={bh}:force_original_aspect_ratio={fit}:force_divisible_by=2,setsar=1{}",
+            "setpts=PTS-STARTPTS{},scale=w={bw}:h={bh}:force_original_aspect_ratio={fit}:force_divisible_by=2,setsar=1{}{}",
             self.picture_edits(),
-            self.smooth_frames(fps)
+            self.smooth_frames(fps),
+            if self.opacity < 1.0 { format!(",format=rgba,colorchannelmixer=aa={:.3}", self.opacity) } else { String::new() }
         )
     }
 
@@ -608,6 +618,9 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
     if !(16..=most).contains(&spec.width) || !(16..=most).contains(&spec.height) || !(1..=120).contains(&spec.fps) {
         return Err("The video size is out of range.".into());
     }
+    if spec.transparent && spec.container != Container::Png || spec.image_quality.is_some_and(|q| !(1..=100).contains(&q)) {
+        return Err("That image setting isn't one Craftora offers.".into());
+    }
     // It goes into the filter graph.
     let bg = &spec.background;
     if !bg.is_empty() && !(bg.len() == 7 && bg.starts_with('#') && bg[1..].chars().all(|c| c.is_ascii_hexdigit())) {
@@ -665,6 +678,9 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
         let hex = |c: &str| c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
         if clip.edge_color.as_deref().is_some_and(|c| !hex(c)) || clip.edge_size.is_some_and(|k| !(0.5..=6.0).contains(&k)) {
             return Err("A text on the timeline has an invalid style.".into());
+        }
+        if !(0.0..=1.0).contains(&clip.opacity) {
+            return Err("A layer on the timeline has an invalid opacity.".into());
         }
         if clip.motion.as_ref().is_some_and(|m| !m.valid(clip.length(), &clip.text)) {
             return Err("A text on the timeline has an invalid animation.".into());
@@ -766,7 +782,7 @@ async fn render(app: &AppHandle, spec: &RenderSpec) -> Result<PathBuf, String> {
     let ext = spec.container.ext();
     // Rendered inside the working folder; only a finished file reaches the export folder.
     let temp = work.join(format!("output.{ext}"));
-    let result = match render_in(app, spec, &work, &temp).await {
+    let result = match if spec.transparent { see_through(app, spec, &work, &temp).await } else { render_in(app, spec, &work, &temp, None).await } {
         Ok(()) => deliver(&temp, &dir, &safe_stem(&spec.file_name), ext),
         Err(e) => Err(e),
     };
@@ -774,7 +790,33 @@ async fn render(app: &AppHandle, spec: &RenderSpec) -> Result<PathBuf, String> {
     result
 }
 
-async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Path) -> Result<(), String> {
+/// A see-through PNG: drawtext can't draw onto see-through pixels, so the image is drawn on black and on white, and
+/// each pixel's opacity is what those two differ by (1 − (white − black)), its colour the black one divided by it.
+async fn see_through(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Path) -> Result<(), String> {
+    let (black, white) = (work.join("on-black.png"), work.join("on-white.png"));
+    render_in(app, spec, work, &black, Some("black")).await?;
+    render_in(app, spec, work, &white, Some("white")).await?;
+    let colour = |c: char| format!("{c}='if(alpha(X\\,Y)\\,min(255\\,{c}(X\\,Y)*255/alpha(X\\,Y))\\,0)'");
+    let merge = format!(
+        "[0:v]format=gbrp,split[a1][a2];[1:v]format=gbrp[b];[b][a1]blend=all_mode=difference,extractplanes=g,negate[al];[a2][al]alphamerge,format=rgba,geq={}:{}:{}:a='alpha(X\\,Y)',format=rgba",
+        colour('r'),
+        colour('g'),
+        colour('b')
+    );
+    let mut args: Vec<String> = ["-y", "-hide_banner", "-nostats", "-progress", "pipe:1", "-i"].map(String::from).to_vec();
+    args.extend([black.to_string_lossy().into_owned(), "-i".into(), white.to_string_lossy().into_owned(), "-filter_complex".into(), merge]);
+    args.extend(["-frames:v", "1", "-update", "1"].map(String::from));
+    args.push(output.to_string_lossy().into_owned());
+    crate::jobs::run_ffmpeg(app, &spec.id, args, 0.04, "encoding", Some(work)).await
+}
+
+/// JPG quality 1–100 as FFmpeg's `-q:v` (2 best … 31 smallest).
+fn jpg_q(quality: Option<u32>) -> u32 {
+    2 + (100 - quality.unwrap_or(95).clamp(1, 100)) * 29 / 99
+}
+
+/// `background`: the colour under every layer instead of the spec's (a see-through PNG draws on black and on white).
+async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Path, background: Option<&str>) -> Result<(), String> {
     // 1. Every media file used, as a local path (links: just the part the clips use).
     let mut sources: HashMap<&str, Source> = HashMap::new();
     for (n, media) in spec.media.iter().enumerate() {
@@ -943,7 +985,11 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
     // 3. The filter graph.
     let mut graph: Vec<String> = Vec::new();
     if is_video {
-        let background = if spec.background.is_empty() { "black".to_string() } else { format!("0x{}", &spec.background[1..]) };
+        let background = match background {
+            Some(colour) => colour.to_string(),
+            None if spec.background.is_empty() => "black".to_string(),
+            None => format!("0x{}", &spec.background[1..]),
+        };
         // An image keeps every pixel's colour (4:2:0 video colour blurs coloured edges, e.g. red text on blue).
         let (pixels, mix) = if still { ("yuv444p", ":format=yuv444") } else { ("yuv420p", "") };
         graph.push(format!("color={background}:s={w}x{h}:r={fps}:d={},format={pixels}[base]", secs(total)));
@@ -1028,7 +1074,8 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                     });
                     let scale = [lerp(&motion.scale, &u), cycle_scale].into_iter().flatten().collect::<Vec<_>>();
                     let dy = [lerp(&motion.dy, &u), cycle_dy].into_iter().flatten().collect::<Vec<_>>();
-                    let alpha = [clip.text_alpha(), lerp(&motion.alpha, &u)].into_iter().flatten().collect::<Vec<_>>();
+                    let opacity = (clip.opacity < 1.0).then(|| format!("{:.3}", clip.opacity));
+                    let alpha = [clip.text_alpha(), lerp(&motion.alpha, &u), opacity].into_iter().flatten().collect::<Vec<_>>();
                     let alpha = if alpha.is_empty() { String::new() } else { format!(":alpha='{}'", alpha.join("*")) };
                     let (x, y) = (clip.x, clip.y);
                     let place = if scale.is_empty() && dy.is_empty() {
@@ -1143,7 +1190,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
             // One picture: the first frame; a JPEG at high quality.
             args.extend(["-map".into(), "[outv]".into(), "-frames:v".into(), "1".into(), "-update".into(), "1".into()]);
             if spec.container == Container::Jpg {
-                args.extend(["-q:v".into(), "2".into()]);
+                args.extend(["-q:v".into(), jpg_q(spec.image_quality).to_string()]);
             }
         } else if is_video {
             args.extend(["-map".into(), "[outv]".into()]);
@@ -1476,9 +1523,14 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cover_bytes, effect_filter, frame_step, gpu_picture, key_filter, lerp, look_filter, piece_frames, pieces, timed, ClipSpec, Motion, RenderSpec, Source};
+    use super::{cover_bytes, effect_filter, frame_step, gpu_picture, jpg_q, key_filter, lerp, look_filter, piece_frames, pieces, timed, ClipSpec, Motion, RenderSpec, Source};
     use crate::local::ProbeInfo;
     use std::collections::HashMap;
+
+    #[test]
+    fn jpg_quality_maps_onto_ffmpeg_q() {
+        assert_eq!([jpg_q(Some(100)), jpg_q(Some(1)), jpg_q(None), jpg_q(Some(500))], [2, 31, 3, 2]);
+    }
 
     #[test]
     fn text_animation_points_become_one_expression_and_bad_ones_are_refused() {
