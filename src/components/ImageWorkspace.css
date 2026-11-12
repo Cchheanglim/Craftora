@@ -1,0 +1,349 @@
+/* Image editor layout */
+
+.image-ws {
+  height: 100%;
+  display: grid;
+  grid-template-rows: 34px 1fr;
+  grid-template-columns: 44px auto 1fr auto;
+  position: relative;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* Tab hides panels to give picture the whole window */
+.image-ws.image-ws--immersive {
+  grid-template-columns: 0 0 1fr 0;
+}
+
+.image-ws.image-ws--immersive .image-ws__tool-strip,
+.image-ws.image-ws--immersive .image-ws__flyout,
+.image-ws.image-ws--immersive .image-ws__sidebar {
+  display: none;
+}
+
+.image-ws.image-ws--immersive .image-ws__work-area {
+  grid-column: 1 / -1;
+}
+
+/* 1. Options bar (row 1, all columns) */
+.image-ws__options-bar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+  padding: 0 8px;
+  box-sizing: border-box;
+  min-width: 0;
+  z-index: 3;
+}
+
+.image-ws__options-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.image-ws__history {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.image-ws__opt-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.image-ws__opt-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.image-ws__opt-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 2. Tool strip (44px) */
+.image-ws__tool-strip {
+  grid-column: 1;
+  grid-row: 2;
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--line);
+  padding: 6px 0;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+.image-ws__tool-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.image-ws__tool-btn {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.image-ws__tool-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.image-ws__tool-btn.is-active,
+.image-ws__tool-btn[aria-pressed="true"] {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.image-ws__tool-sep {
+  width: 24px;
+  height: 1px;
+  background: var(--line);
+  margin: 6px auto;
+  flex-shrink: 0;
+}
+
+/* 3. Flyout (280px) */
+.image-ws__flyout {
+  grid-column: 2;
+  grid-row: 2;
+  width: 280px;
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 12px;
+  border-right: 1px solid var(--line);
+  background: var(--bg-panel);
+}
+
+/* 4. Work area */
+/* The owner asked for a grey work area so a white picture's edges are easy to see */
+.image-ws__work-area {
+  grid-column: 3;
+  grid-row: 2;
+  background: #3a3a3f;
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  user-select: none;
+  touch-action: none;
+  box-sizing: border-box;
+}
+
+.image-ws__work-area.is-grab {
+  cursor: grab;
+}
+
+.image-ws__work-area.is-grabbing {
+  cursor: grabbing;
+}
+
+.image-ws__camera {
+  position: absolute;
+  top: 32px;
+  left: 32px;
+  right: 32px;
+  bottom: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center;
+  box-sizing: border-box;
+}
+
+.image-ws__zoom-box {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  height: 24px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--text);
+  font-size: 12px;
+  z-index: 2;
+  box-sizing: border-box;
+}
+
+.image-ws__zoom-btn {
+  width: 24px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-2);
+  cursor: pointer;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.image-ws__zoom-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.image-ws__zoom-pct {
+  padding: 0 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  min-width: 42px;
+  text-align: center;
+  line-height: 24px;
+}
+
+.image-ws__zoom-fit {
+  height: 100%;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.image-ws__zoom-fit:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* 5. Right sidebar (264px) */
+.image-ws__sidebar {
+  grid-column: 4;
+  grid-row: 2;
+  width: 264px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--line);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.image-ws__section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.image-ws__sidebar-hdr {
+  height: 28px;
+  min-height: 28px;
+  width: 100%;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-panel);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.image-ws__sidebar-hdr:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.image-ws__sidebar-title {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.image-ws__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+}
+
+.image-ws__chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.image-ws__section--props {
+  flex-shrink: 0;
+  max-height: calc(45% + 28px);
+}
+
+.image-ws__section--props.is-expanded {
+  flex: 1;
+  max-height: 100%;
+}
+
+.image-ws__prop-body {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  flex: 1;
+  min-height: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.image-ws__section--layers {
+  flex: 1;
+}
+
+.image-ws__section--layers.is-collapsed {
+  flex: 0 0 auto;
+}
+
+.image-ws__layers-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}

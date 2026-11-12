@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AudioContainer, ExportSettings, VideoContainer } from "../types";
 import { FRAMES, formatSize, type ExportPlan } from "../project/exportPlan";
 import { Icon } from "./Icon";
+import { ImageExportOptions } from "./ImageExportOptions";
 import { useConfirm } from "./ConfirmDialog";
 import { Select } from "./Select";
 import { BrandIcon, type Brand } from "./BrandIcon";
@@ -28,8 +29,8 @@ interface ExportPanelProps {
   fastEncoder: string | null;
   /** A preset: picks the frame and sets every picture to fill it (or to fit). */
   onPreset: (frameId: string, fill: boolean) => void;
-  /** An image (Image editor): PNG or JPG, nothing about video or cutting. */
-  still?: boolean;
+  /** An image (Image editor), its size: PNG or JPG options, nothing about video or cutting. */
+  still?: { width: number; height: number };
   /** The selected clip's settings, shown above the export settings. */
 }
 
@@ -134,17 +135,11 @@ export function ExportPanel({
       <div ref={bodyRef} className="export__body">
         <h2 className="export__title">Export</h2>
 
+        {still ? (
+          <ImageExportOptions settings={settings} onChange={onChange} image={still} />
+        ) : (
         <fieldset>
           <legend className="section-label">Output</legend>
-          {still ? (
-            <div className="segmented" role="group" aria-label="File type">
-              {(["png", "jpg"] as const).map((c) => (
-                <button key={c} type="button" aria-pressed={(settings.imageContainer ?? "png") === c} onClick={() => onChange({ imageContainer: c })}>
-                  {c === "png" ? "PNG (sharpest)" : "JPG (smaller)"}
-                </button>
-              ))}
-            </div>
-          ) : (
           <div className="export__output">
             <div className="segmented" role="group" aria-label="Output type">
               <button type="button" aria-pressed={isVideo} disabled={!hasPicture} onClick={() => onChange({ output: "video" })}>
@@ -175,8 +170,8 @@ export function ExportPanel({
               />
             )}
           </div>
-          )}
         </fieldset>
+        )}
 
         {isVideo && hasPicture && (
           <fieldset>

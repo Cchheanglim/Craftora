@@ -179,3 +179,32 @@
   font-size: var(--text-lg);
   font-weight: 500;
 }
+
+/* Image editor's options bar (ImageWorkspace): the selected layer's quick actions as small text buttons. */
+.ws-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.ws-opt:hover:not(:disabled) {
+  border-color: var(--line);
+  background: var(--bg-hover);
+}
+
+.ws-opt__name {
+  margin-right: 6px;
+  font-weight: 600;
+}
+
+.ws-opt__note {
+  margin-left: 6px;
+  color: var(--text-2);
+}

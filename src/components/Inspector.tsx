@@ -88,6 +88,8 @@ interface InspectorProps {
   /** Remove background (a photo on this PC): runs the AI, saying what it's doing; Restore brings the photo back. */
   onCutOut?: (onStatus: (text: string) => void) => Promise<void>;
   onRestore?: () => void;
+  /** While held: the preview shows the photo as it was before its cut-out. */
+  onPeek?: (on: boolean) => void;
   /** The Image editor: nothing about time (fades, sound, animations, Split). */
   still?: boolean;
   /** What the editor calls the clip's track ("Track 2"). */
@@ -121,6 +123,7 @@ export function Inspector({
   still,
   onCutOut,
   onRestore,
+  onPeek,
   trackName,
   canSplit,
 }: InspectorProps) {
@@ -202,7 +205,7 @@ export function Inspector({
     ),
     background: isPicture && (
       <>
-        {media && (media.original || onCutOut) && <RemoveBackground cutOut={Boolean(media.original)} onCutOut={onCutOut} onRestore={onRestore} />}
+        {media && (media.original || onCutOut) && <RemoveBackground cutOut={Boolean(media.original)} onCutOut={onCutOut} onRestore={onRestore} onPeek={onPeek} />}
         <RemoveColour clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} onPick={onPickColour} />
       </>
     ),
@@ -756,7 +759,17 @@ export const KEY_START = { strength: 50, softness: 20 };
 
 /** Remove a colour (chroma key): a green or blue screen, or any colour picked on the preview, and how much goes. */
 /** Background tab, for a photo: the AI finds its subject and the rest turns see-through (lib/cutout.ts). */
-function RemoveBackground({ cutOut, onCutOut, onRestore }: { cutOut: boolean; onCutOut?: (onStatus: (text: string) => void) => Promise<void>; onRestore?: () => void }) {
+function RemoveBackground({
+  cutOut,
+  onCutOut,
+  onRestore,
+  onPeek,
+}: {
+  cutOut: boolean;
+  onCutOut?: (onStatus: (text: string) => void) => Promise<void>;
+  onRestore?: () => void;
+  onPeek?: (on: boolean) => void;
+}) {
   const [status, setStatus] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const run = () => {
@@ -770,10 +783,25 @@ function RemoveBackground({ cutOut, onCutOut, onRestore }: { cutOut: boolean; on
     <fieldset className="insp__group">
       <legend>Remove background</legend>
       {cutOut ? (
-        <button type="button" className="btn btn--secondary" onClick={onRestore}>
-          <Icon name="undo" size={14} />
-          Restore the original
-        </button>
+        <div className="insp__actions">
+          <button
+            type="button"
+            className="btn btn--secondary"
+            onPointerDown={() => onPeek?.(true)}
+            onPointerUp={() => onPeek?.(false)}
+            onPointerLeave={() => onPeek?.(false)}
+            onKeyDown={(e) => (e.key === " " || e.key === "Enter") && onPeek?.(true)}
+            onKeyUp={() => onPeek?.(false)}
+            onBlur={() => onPeek?.(false)}
+          >
+            <Icon name="eye" size={14} />
+            Hold to see the original
+          </button>
+          <button type="button" className="btn btn--secondary" onClick={onRestore}>
+            <Icon name="undo" size={14} />
+            Restore
+          </button>
+        </div>
       ) : (
         <button type="button" className="btn btn--secondary" disabled={status !== null} onClick={run}>
           <Icon name="wand" size={14} />
