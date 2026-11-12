@@ -281,6 +281,18 @@
   font-family: var(--font-mono);
 }
 
+/* The sites' logos over the name; the text colour is TikTok's note (white on dark, dark on light). */
+.export__preset .export__brands {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+
+.export__brands svg {
+  flex: none;
+}
+
 .export__preset:hover {
   border-color: var(--line-hover);
 }

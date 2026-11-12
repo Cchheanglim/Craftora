@@ -4,6 +4,7 @@ import { FRAMES, formatSize, type ExportPlan } from "../project/exportPlan";
 import { Icon } from "./Icon";
 import { useConfirm } from "./ConfirmDialog";
 import { Select } from "./Select";
+import { BrandIcon, type Brand } from "./BrandIcon";
 import "./ExportPanel.css";
 
 interface ExportPanelProps {
@@ -31,10 +32,11 @@ interface ExportPanelProps {
 }
 
 /** One click for the usual places a video goes. */
-const PRESETS = [
-  { label: "YouTube", detail: "16:9", frameId: "1080p", fill: false },
-  { label: "TikTok · Reels · Shorts", detail: "9:16", frameId: "vertical", fill: true },
-  { label: "Instagram post", detail: "1:1", frameId: "square", fill: true },
+const PRESETS: { label: string; detail: string; frameId: string; fill: boolean; brands: Brand[] }[] = [
+  { label: "YouTube", detail: "16:9", frameId: "1080p", fill: false, brands: ["youtube"] },
+  // Reels are Instagram's: its logo stands for them.
+  { label: "TikTok · Reels · Shorts", detail: "9:16", frameId: "vertical", fill: true, brands: ["tiktok", "instagram", "shorts"] },
+  { label: "Instagram post", detail: "1:1", frameId: "square", fill: true, brands: ["instagram"] },
 ];
 
 const VIDEO_CONTAINERS: VideoContainer[] = ["mp4", "mkv"];
@@ -169,6 +171,11 @@ export function ExportPanel({
             <div className="export__presets">
               {PRESETS.map((p) => (
                 <button key={p.frameId} type="button" className="export__preset" aria-pressed={settings.frameId === p.frameId} onClick={() => onPreset(p.frameId, p.fill)}>
+                  <span className="export__brands" aria-hidden="true">
+                    {p.brands.map((b) => (
+                      <BrandIcon key={b} brand={b} />
+                    ))}
+                  </span>
                   <strong>{p.label}</strong>
                   <span>{p.detail}</span>
                 </button>
