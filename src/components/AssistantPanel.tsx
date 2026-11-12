@@ -16,7 +16,7 @@ import {
   type ModelInfo,
 } from "../assistant/useAssistant";
 import { PROVIDERS, providerName, type Provider } from "../assistant/providers";
-import { OWN_MODEL, isKeyed, sourceOf, targetOf, type Found, type Source } from "../assistant/agents";
+import { OWN_MODEL, isKeyed, sourceOf, switchedOff, targetOf, type Found, type Source } from "../assistant/agents";
 import { Icon } from "./Icon";
 import { useConfirm } from "./ConfirmDialog";
 import "./AssistantPanel.css";
@@ -40,7 +40,7 @@ const reportUrl = (name: string, model: string) =>
   })}`;
 const PROVIDER_KEY = "craftora.assistantProvider";
 /** The local AI server address the user connected by hand. */
-const LOCAL_KEY = "craftora.localAddress";
+export const LOCAL_KEY = "craftora.localAddress";
 /** The model list's last entry, which opens the search instead of picking a model. */
 const SEARCH = "__search__";
 /** The AI list's last entry, which opens the setup screen instead of picking an AI. */
@@ -70,9 +70,9 @@ function remember(key: string, value: string) {
 // Gemini keeps the old key, so a model picked before other AIs existed stays picked.
 const modelKey = (source: Source) => (source === "gemini" ? MODEL_KEY : `${MODEL_KEY}.${source}`);
 
-const localServer = (address: string): Found => ({ id: address, name: "Local AI server", kind: "server", ready: true, detail: address });
+export const localServer = (address: string): Found => ({ id: address, name: "Local AI server", kind: "server", ready: true, detail: address });
 /** The scan plus the address connected by hand, which the scan may not try. */
-function withSaved(list: Found[]): Found[] {
+export function withSaved(list: Found[]): Found[] {
   const address = remembered(LOCAL_KEY);
   return address && !list.some((f) => f.kind === "server" && f.id === address) ? [...list, localServer(address)] : list;
 }
@@ -88,6 +88,7 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
   /** AI programs and local servers on this PC; null while scanning. */
   const [found, setFound] = useState<Found[] | null>(null);
   const [provider, setProvider] = useState<Source>(rememberedSource);
+  const [off] = useState(switchedOff);
   const ready = Boolean(keys && found && (isKeyed(provider) ? keys.includes(provider) : found.some((f) => sourceOf(f) === provider && f.ready)));
   /** The setup screen, opened from the chat to connect another AI. */
   const [connecting, setConnecting] = useState(false);
@@ -254,14 +255,15 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
           onChange={(e) => (e.target.value === CONNECT ? setConnecting(true) : chooseProvider(e.target.value as Source))}
           disabled={busy}
         >
-          {PROVIDERS.map((p) => (
+          {/* Switched off in Settings → Assistant: hidden here, unless it's the one in use. */}
+          {PROVIDERS.filter((p) => p.id === provider || !off.includes(p.id)).map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
               {keys.includes(p.id) ? "" : " (add key)"}
             </option>
           ))}
           {found
-            .filter((f) => f.ready)
+            .filter((f) => f.ready && (sourceOf(f) === provider || !off.includes(sourceOf(f))))
             .map((f) => (
               <option key={sourceOf(f)} value={sourceOf(f)}>
                 {f.name}
@@ -553,7 +555,8 @@ function Setup({ found, provider, onUse, onScan, onAddress, onBack, onProvider, 
   );
 }
 
-function KeySetup({ provider, onProvider, onSaved }: { provider: Provider; onProvider: (p: Provider) => void; onSaved: () => void }) {
+/** `picker`: the choice of AI service above the form; off where each service has its own row (Settings). */
+export function KeySetup({ provider, onProvider, onSaved, picker = true }: { provider: Provider; onProvider: (p: Provider) => void; onSaved: () => void; picker?: boolean }) {
   const [key, setKeyText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -583,23 +586,27 @@ function KeySetup({ provider, onProvider, onSaved }: { provider: Provider; onPro
 
   return (
     <form className="asst__form" onSubmit={save}>
-      <p>The assistant works with your own account at one of these AI services. Pick one and paste its API key.</p>
-      <div className="segmented" role="group" aria-label="AI service">
-        {PROVIDERS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            aria-pressed={p.id === provider}
-            onClick={() => {
-              onProvider(p.id);
-              setKeyText("");
-              setError(null);
-            }}
-          >
-            {p.name}
-          </button>
-        ))}
-      </div>
+      {picker && (
+        <>
+          <p>The assistant works with your own account at one of these AI services. Pick one and paste its API key.</p>
+          <div className="segmented" role="group" aria-label="AI service">
+            {PROVIDERS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                aria-pressed={p.id === provider}
+                onClick={() => {
+                  onProvider(p.id);
+                  setKeyText("");
+                  setError(null);
+                }}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       <p className="asst__fine">{info.keyHelp}</p>
       <button type="button" className="btn btn--secondary" onClick={() => void openUrl(info.keyPage)}>
         <Icon name="link" size={13} />

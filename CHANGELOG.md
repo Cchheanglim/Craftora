@@ -4,6 +4,9 @@
 
 **New**
 
+- **Settings → Assistant**: every AI the assistant can use in one list, Connected and Discover and add. Open a row for
+  its details (where it's installed, Remove key), paste a key or connect a local AI server there, and switch an AI off to
+  leave it out of the assistant's list (its key stays saved). Scan again looks for newly installed AI programs.
 - **Voice-over**: the microphone button on the timeline opens a recorder: pick the microphone, see its level, press
   Record, and after a 3-2-1 count talk while the video plays from the playhead (muted, so the speakers don't get into
   the microphone; can be turned off). Stop puts the take on its own track where it started, saved as an .m4a in the

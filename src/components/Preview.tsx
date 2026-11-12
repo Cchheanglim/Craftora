@@ -748,7 +748,12 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               <Icon name="camera" />
             </button>
           )}
-          {captionStatus && <span className="preview__cc-status">{captionStatus}</span>}
+          {/* Only the percent fits in this bar: the whole status shows in Working on and Transcript. */}
+          {captionStatus && /\d+%$/.test(captionStatus) && (
+            <span className="preview__cc-status" title={captionStatus}>
+              {/\d+%$/.exec(captionStatus)?.[0]}
+            </span>
+          )}
           {!hasCaptions && !captionStatus && onMakeCaptions && (
             <button
               type="button"

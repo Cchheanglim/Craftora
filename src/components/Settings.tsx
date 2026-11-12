@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { checkAddress, errorText, getAdBlock, getProxy, inDesktopApp, setAdBlock, setProxy, type ProxyState } from "../lib/engine";
 import { Icon } from "./Icon";
+import { AiConnections } from "./AiConnections";
 import { Links, UpdateControls, type LinkSettings } from "./Home";
 import type { Updates } from "../lib/updates";
 import type { Theme } from "../lib/theme";
@@ -93,6 +94,14 @@ export function Settings({ theme, onTheme, outputDir, onChooseOutputDir, downloa
       </div>
 
       <Preferences />
+
+      {inDesktopApp && (
+        <div className="library__group">
+          <h2 className="section-label">Assistant</h2>
+          <p className="library__muted">The AIs the assistant can use. Switch one off to leave it out of the assistant's list; its key stays saved.</p>
+          <AiConnections />
+        </div>
+      )}
 
       <div className="library__group">
         <h2 className="section-label">Updates</h2>
