@@ -93,7 +93,7 @@ export function MediaPanel({
     );
     if (!onChangePicture) return thumb;
     return (
-      <button type="button" className="media-panel__picture" aria-label={`Change the picture of ${item.name}`} title="Click to change the picture" onClick={() => onChangePicture(item.id)}>
+      <button type="button" className="media-panel__picture" aria-label={`Change the picture of ${item.name}`} onClick={() => onChangePicture(item.id)}>
         {thumb}
       </button>
     );
@@ -162,8 +162,7 @@ export function MediaPanel({
                       key={item.id}
                       className={downloading.has(item.id) ? "media-panel__card is-downloading" : "media-panel__card"}
                       onPointerDown={drag(item)}
-                      title="Drag onto the timeline, or press + to add at the end"
-                    >
+                      >
                       <span className="media-panel__pic">
                         {picture(item)}
                         <span className="media-panel__badge mono">{item.source.image ? "Image" : formatClock(item.source.duration)}</span>
@@ -208,8 +207,7 @@ export function MediaPanel({
                       key={item.id}
                       className={downloading.has(item.id) ? "media-panel__row is-downloading" : "media-panel__row"}
                       onPointerDown={drag(item)}
-                      title="Drag onto the timeline, or press + to add at the end"
-                    >
+                      >
                       <span className="media-panel__tile" aria-hidden="true">
                         <Icon name={item.name.startsWith("Voice-over") ? "mic" : "music"} size={15} />
                       </span>

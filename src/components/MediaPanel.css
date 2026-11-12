@@ -88,10 +88,11 @@
   padding: 0;
 }
 
-/* Small cards whatever the panel's width (owner): a wider panel fits more of them, never bigger ones. */
+/* Small cards whatever the panel's width (owner): two a row even at the narrowest, more as it widens, never bigger. */
 .media-panel__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 112px));
+  /* Columns are counted from the 80 px (a fixed max would be used instead and leave one column): cards stay ~80–125 px. */
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
   gap: 10px 8px;
 }
 
