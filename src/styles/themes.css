@@ -131,7 +131,7 @@
   color: var(--text);
 }
 
-:root[data-theme] :is(.confirm, .welcome, .crop-dialog, .text-menu, .export__more, .tl__menu, .queue__panel, .tooltip) {
+:root[data-theme] :is(.confirm, .welcome, .crop-dialog, .export-dialog, .text-menu, .export__more, .tl__menu, .select__list, .queue__panel, .tooltip) {
   border-color: var(--glass-edge);
   -webkit-backdrop-filter: blur(30px) saturate(170%);
   backdrop-filter: blur(30px) saturate(170%);
@@ -142,12 +142,12 @@
   border-radius: 20px;
 }
 
-/* Pinned over settings that scroll under it: nearly solid, so their text doesn't show through. */
-:root[data-theme="dark"] .export__more {
+/* Pinned over settings that scroll under it (or a list open over them): nearly solid, so their text doesn't show through. */
+:root[data-theme="dark"] :is(.export__more, .select__list) {
   background: rgb(34 34 40 / 0.97);
 }
 
-:root[data-theme="light"] .export__more {
+:root[data-theme="light"] :is(.export__more, .select__list) {
   background: rgb(250 251 253 / 0.97);
 }
 

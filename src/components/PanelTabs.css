@@ -1,8 +1,8 @@
 /* One scrolling row of panel tabs, in the .segmented box look (not .segmented itself: its highlight assumes equal columns). */
 .ptabs {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 2px;
   padding: 2px;
   background: var(--bg-input);
   border: 1px solid var(--line-strong);
@@ -49,9 +49,23 @@
   font-weight: 500;
 }
 
-/* Hidden with visibility (set inline), not display, so the strip keeps its place when one disappears. */
+/* A tab half under an arrow fades out instead of being cut off mid-word. */
+.ptabs.has-left .ptabs__strip {
+  mask-image: linear-gradient(to right, transparent 16px, #000 48px);
+}
+
+.ptabs.has-right .ptabs__strip {
+  mask-image: linear-gradient(to left, transparent 16px, #000 48px);
+}
+
+.ptabs.has-left.has-right .ptabs__strip {
+  mask-image: linear-gradient(to right, transparent 16px, #000 48px, #000 calc(100% - 48px), transparent calc(100% - 16px));
+}
+
+/* Over the strip's ends (not beside it), so the strip keeps its width as they come and go. */
 .ptabs__arrow {
-  flex: none;
+  position: absolute;
+  top: 2px;
   width: 22px;
   height: 26px;
   padding: 0;
@@ -63,6 +77,14 @@
   background: transparent;
   color: var(--text-2);
   transition: color var(--dur-fast) linear;
+}
+
+.ptabs__arrow--left {
+  left: 2px;
+}
+
+.ptabs__arrow--right {
+  right: 2px;
 }
 
 .ptabs__arrow:hover {

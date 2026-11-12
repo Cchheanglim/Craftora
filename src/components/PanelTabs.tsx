@@ -77,16 +77,8 @@ export function PanelTabs<T extends string>({
   };
 
   return (
-    <div className="ptabs">
-      <button
-        type="button"
-        className="ptabs__arrow"
-        aria-label="Earlier tabs"
-        style={{ visibility: canLeft ? "visible" : "hidden" }}
-        onClick={() => page(-1)}
-      >
-        <Icon name="chevronLeft" size={14} />
-      </button>
+    // The ‹ › lie over the strip's ends, only when there is more that way; the strip fades out under them.
+    <div className={`ptabs${canLeft ? " has-left" : ""}${canRight ? " has-right" : ""}`}>
       <div ref={stripRef} className="ptabs__strip" role="group" aria-label={label}>
         {tabs.map((tab) => (
           <button key={tab.id} type="button" aria-pressed={tab.id === value} onClick={() => onPick(tab.id)}>
@@ -94,15 +86,16 @@ export function PanelTabs<T extends string>({
           </button>
         ))}
       </div>
-      <button
-        type="button"
-        className="ptabs__arrow"
-        aria-label="More tabs"
-        style={{ visibility: canRight ? "visible" : "hidden" }}
-        onClick={() => page(1)}
-      >
-        <Icon name="chevronRight" size={14} />
-      </button>
+      {canLeft && (
+        <button type="button" className="ptabs__arrow ptabs__arrow--left" aria-label="Earlier tabs" onClick={() => page(-1)}>
+          <Icon name="chevronLeft" size={14} />
+        </button>
+      )}
+      {canRight && (
+        <button type="button" className="ptabs__arrow ptabs__arrow--right" aria-label="More tabs" onClick={() => page(1)}>
+          <Icon name="chevronRight" size={14} />
+        </button>
+      )}
     </div>
   );
 }

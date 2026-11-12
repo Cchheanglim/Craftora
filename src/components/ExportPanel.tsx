@@ -3,6 +3,7 @@ import type { AudioContainer, ExportSettings, VideoContainer } from "../types";
 import { FRAMES, formatSize, type ExportPlan } from "../project/exportPlan";
 import { Icon } from "./Icon";
 import { useConfirm } from "./ConfirmDialog";
+import { Select } from "./Select";
 import "./ExportPanel.css";
 
 interface ExportPanelProps {
@@ -143,21 +144,21 @@ export function ExportPanel({
               File type
             </label>
             {isVideo ? (
-              <select id="container" className="field mono" value={settings.videoContainer} onChange={(e) => onChange({ videoContainer: e.target.value as VideoContainer })}>
-                {VIDEO_CONTAINERS.map((c) => (
-                  <option key={c} value={c}>
-                    {c.toUpperCase()}
-                  </option>
-                ))}
-              </select>
+              <Select<VideoContainer>
+                id="container"
+                className="mono"
+                value={settings.videoContainer}
+                options={VIDEO_CONTAINERS.map((c) => ({ value: c, label: c.toUpperCase() }))}
+                onChange={(videoContainer) => onChange({ videoContainer })}
+              />
             ) : (
-              <select id="container" className="field mono" value={settings.audioContainer} onChange={(e) => onChange({ audioContainer: e.target.value as AudioContainer })}>
-                {AUDIO_CONTAINERS.map((c) => (
-                  <option key={c} value={c}>
-                    {c.toUpperCase()}
-                  </option>
-                ))}
-              </select>
+              <Select<AudioContainer>
+                id="container"
+                className="mono"
+                value={settings.audioContainer}
+                options={AUDIO_CONTAINERS.map((c) => ({ value: c, label: c.toUpperCase() }))}
+                onChange={(audioContainer) => onChange({ audioContainer })}
+              />
             )}
           </div>
         </fieldset>
@@ -182,13 +183,7 @@ export function ExportPanel({
             <label htmlFor="frame" className="section-label">
               Frame
             </label>
-            <select id="frame" className="field" value={settings.frameId} onChange={(e) => onChange({ frameId: e.target.value })}>
-              {FRAMES.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
+            <Select id="frame" value={settings.frameId} options={FRAMES.map((f) => ({ value: f.id, label: f.label }))} onChange={(frameId) => onChange({ frameId })} />
           </div>
         )}
 

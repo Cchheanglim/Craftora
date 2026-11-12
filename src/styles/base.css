@@ -96,12 +96,8 @@ input[type="checkbox"] {
   flex-shrink: 0;
 }
 
-/* Scrollbars */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
-}
-
+/* Scrollbars: a slim bar with no arrow buttons. Not `scrollbar-width`/`scrollbar-color`: once set, Edge ignores
+   these ::-webkit-scrollbar rules and draws Windows' own bar with arrows. */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -116,6 +112,11 @@ input[type="checkbox"] {
 
 ::-webkit-scrollbar-thumb:hover {
   background-color: var(--line-hover);
+}
+
+/* Where two bars meet (the timeline): white by default once the bars are styled. */
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* Shared utilities */

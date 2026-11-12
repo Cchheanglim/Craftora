@@ -25,6 +25,11 @@
   animation: fade-in var(--dur) linear backwards;
 }
 
+/* In a side panel the panel gives the head its room; here the pop-up's edges would touch Back and X. */
+.export-dialog .panel-head {
+  padding: var(--space-3);
+}
+
 /* The head already says Export. */
 .export-dialog .export__title {
   display: none;
