@@ -102,7 +102,7 @@ export function WelcomeDialog({ onImport, onPasteLink, busy, onClose }: WelcomeD
           </li>
           <li>
             <strong>Export it.</strong>
-            <span>On the right, pick where it's going (YouTube, TikTok…) and click Add to queue.</span>
+            <span>Click Export at the top right, pick where it's going (YouTube, TikTok…) and click Add to queue.</span>
           </li>
         </ol>
         <div className="welcome__actions">

@@ -4,6 +4,8 @@
 
 **New**
 
+- **Export** is a button next to Queue (in the editor) that opens the export settings in a pop-up with Back and X,
+  instead of a tab in the right panel. Add to queue closes it; Ctrl+Enter still adds the project straight away.
 - **Settings → Assistant**: every AI the assistant can use in one list, Connected and Discover and add. Open a row for
   its details (where it's installed, Remove key), paste a key or connect a local AI server there, and switch an AI off to
   leave it out of the assistant's list (its key stays saved). Scan again looks for newly installed AI programs.

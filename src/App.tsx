@@ -125,6 +125,7 @@ import { Preview } from "./components/Preview";
 import { TimelineEditor, type ClipCommand } from "./components/TimelineEditor";
 import { CaptionStyle, Inspector } from "./components/Inspector";
 import { ExportPanel } from "./components/ExportPanel";
+import { ExportDialog } from "./components/ExportDialog";
 import { QueueDock } from "./components/QueueDock";
 import { Library } from "./components/Library";
 import { Projects } from "./components/Projects";
@@ -147,9 +148,8 @@ const DEMO = DEMO_SOURCES[0];
 /** The right panel's tiles to add to the timeline (Filters … Shapes). */
 const FX_TABS = ["filters", "effects", "transitions", "shapes"] as const;
 /** The right panel's tabs, in their one scrolling row. */
-const PANEL_TABS: { id: "edit" | "export" | "transcript" | "assistant" | (typeof FX_TABS)[number]; label: string }[] = [
+const PANEL_TABS: { id: "edit" | "transcript" | "assistant" | (typeof FX_TABS)[number]; label: string }[] = [
   { id: "edit", label: "Edit" },
-  { id: "export", label: "Export" },
   { id: "transcript", label: "Transcript" },
   { id: "assistant", label: "Assistant" },
   ...FX_TABS.map((id) => ({ id, label: id[0].toUpperCase() + id.slice(1) })),
@@ -367,7 +367,9 @@ export default function App() {
   /** Media whose preview copy is being made. */
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const [cuttingSilences, setCuttingSilences] = useState(false);
-  const [rightTab, setRightTab] = useState<"edit" | "export" | "transcript" | "assistant" | "sound" | "voice" | FxTab>("edit");
+  const [rightTab, setRightTab] = useState<"edit" | "transcript" | "assistant" | "sound" | "voice" | FxTab>("edit");
+  /** The export pop-up (Export, next to Queue). */
+  const [exportOpen, setExportOpen] = useState(false);
   // Where the Sound or Voice-over panel's Back button goes: the tab it was opened from.
   const panelBack = useRef<typeof rightTab>("edit");
   // A voice-over take: where on the timeline it started, and the preview kept quiet while it records.
@@ -1714,8 +1716,37 @@ export default function App() {
       <Ambient active={theme !== "classic"} />
       <Tooltip />
       {fetchReview.dialog}
+      {exportOpen && view === "editor" && (
+        <ExportDialog sub={projectName(project)} onClose={() => setExportOpen(false)}>
+          <ExportPanel
+            settings={effective}
+            onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
+            plan={plan}
+            cutModeApplies={cutModeApplies(toExport, effective)}
+            hasPicture={hasPicture}
+            onAddToQueue={() => {
+              addToQueue();
+              // Queued: the Queue button next to Export shows it, so the pop-up's job is done.
+              setExportOpen(false);
+            }}
+            captionsDrawn={showCaptions && project.media.some((m) => m.captions)}
+            onPreset={(frameId, fill) => {
+              setSettings((prev) => ({ ...prev, frameId }));
+              // Every video and picture fits or fills the new frame, as one undo step.
+              const pictures = project.clips.filter((c) => showsPicture(project, c));
+              const next = pictures.reduce((p, c) => applyEdit(p, { type: "updateClip", clipId: c.id, patch: { fill } }), project);
+              if (next !== project) api.commit(next, false);
+            }}
+            queuedCount={queuedCount}
+            outputDir={outputDir}
+            onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
+            fastEncoder={fastEncoder}
+          />
+        </ExportDialog>
+      )}
       <Toolbar
         queue={<QueueDock queue={queue} freshId={freshId} />}
+        onExport={view === "editor" ? () => setExportOpen(true) : undefined}
         url={url}
         onUrlChange={(next) => {
           setUrl(next);
@@ -2028,27 +2059,6 @@ export default function App() {
                       setRightTab(panelBack.current);
                       toggleRight();
                     }}
-                  />
-                ) : rightTab === "export" ? (
-                  <ExportPanel
-                    settings={effective}
-                    onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
-                    plan={plan}
-                    cutModeApplies={cutModeApplies(toExport, effective)}
-                    hasPicture={hasPicture}
-                    onAddToQueue={addToQueue}
-                    captionsDrawn={showCaptions && project.media.some((m) => m.captions)}
-                    onPreset={(frameId, fill) => {
-                      setSettings((prev) => ({ ...prev, frameId }));
-                      // Every video and picture fits or fills the new frame, as one undo step.
-                      const pictures = project.clips.filter((c) => showsPicture(project, c));
-                      const next = pictures.reduce((p, c) => applyEdit(p, { type: "updateClip", clipId: c.id, patch: { fill } }), project);
-                      if (next !== project) api.commit(next, false);
-                    }}
-                    queuedCount={queuedCount}
-                    outputDir={outputDir}
-                    onChooseOutputDir={inDesktopApp ? () => void chooseOutputDir() : undefined}
-                    fastEncoder={fastEncoder}
                   />
                 ) : (
                   // Edit: the selected clip's settings (and the captions' style).
