@@ -25,6 +25,7 @@ import {
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { fontLoaded, loadFont } from "../lib/fonts";
+import { ColorWheel } from "./ColorWheel";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
 import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustMin, blockLabel, keyLine } from "../project/effects";
@@ -133,7 +134,7 @@ export function Inspector({
       ) : (
         <>
           <Slider id="insp-text-size" label="Size" min={0.02} max={0.3} step={0.005} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
-          <ColorField color={clip.color} onChange={(color) => onChange({ color })} />
+          <ColorField color={clip.color} onChange={(color, live) => onChange({ color }, live)} onCheckpoint={onCheckpoint} />
           <fieldset className="insp__field">
             <legend>Edge</legend>
             <div className="segmented" role="group" aria-label="Edge">
@@ -308,7 +309,7 @@ export function Inspector({
 
           {isShape && (
             <>
-              <ColorField color={clip.color} onChange={(color) => onChange({ color })} />
+              <ColorField color={clip.color} onChange={(color, live) => onChange({ color }, live)} onCheckpoint={onCheckpoint} />
               {!isLine && (
                 <fieldset className="insp__field">
                   <legend>Style</legend>
@@ -586,7 +587,10 @@ export function Inspector({
 /** A labelled range with its value; one undo step per drag. */
 type Look = { color?: string; font?: TextFont; edge?: TextEdge };
 
-function ColorField({ color, onChange }: { color?: string; onChange: (color: string) => void }) {
+/** A few quick colours, and any colour on the wheel (open already when the colour is none of the quick ones). */
+function ColorField({ color, onChange, onCheckpoint }: { color?: string; onChange: (color: string, live?: boolean) => void; onCheckpoint?: () => void }) {
+  const current = color ?? "#ffffff";
+  const [wheel, setWheel] = useState(() => !TEXT_COLORS.some((c) => c.value === current));
   return (
     <fieldset className="insp__field">
       <legend>Color</legend>
@@ -602,13 +606,15 @@ function ColorField({ color, onChange }: { color?: string; onChange: (color: str
             onClick={() => onChange(c.value)}
           />
         ))}
+        <button type="button" className="insp__swatch insp__swatch-wheel" aria-label="Any colour" aria-pressed={wheel} onClick={() => setWheel((w) => !w)} />
       </div>
+      {wheel && <ColorWheel color={current} onChange={onChange} onCheckpoint={onCheckpoint} />}
     </fieldset>
   );
 }
 
 /** Font, colour and edge of text: a text clip's own, or every caption's. */
-function TextLook({ id, look, onChange }: { id: string; look: Look; onChange: (patch: Look) => void }) {
+function TextLook({ id, look, onChange, onCheckpoint }: { id: string; look: Look; onChange: (patch: Look, live?: boolean) => void; onCheckpoint?: () => void }) {
   return (
     <>
       <div className="insp__field">
@@ -620,7 +626,7 @@ function TextLook({ id, look, onChange }: { id: string; look: Look; onChange: (p
           onChange={(font) => onChange({ font: (font || undefined) as TextFont | undefined })}
         />
       </div>
-      <ColorField color={look.color} onChange={(color) => onChange({ color })} />
+      <ColorField color={look.color} onChange={(color, live) => onChange({ color }, live)} onCheckpoint={onCheckpoint} />
       <fieldset className="insp__field">
         <legend>Edge</legend>
         <div className="segmented" role="group" aria-label="Edge">
@@ -659,7 +665,7 @@ export function CaptionStyle({
       </header>
       <p className="insp__meta">Changes every caption. Drag them on the preview to move them.</p>
       <Slider id="captions-size" label="Size" min={0.02} max={0.15} step={0.005} value={layout.size} format={(v) => `${Math.round(v * 100)}%`} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
-      <TextLook id="captions" look={layout} onChange={onChange} />
+      <TextLook id="captions" look={layout} onChange={onChange} onCheckpoint={onCheckpoint} />
       {onSaveSrt && (
         <button type="button" className="btn btn--secondary" onClick={onSaveSrt} title="For YouTube and video players: the captions as a file next to the video">
           <Icon name="download" size={14} />

@@ -63,10 +63,42 @@
   gap: 2px;
 }
 
+/* Our own look (a thin line, a small dot), not Windows' slider. */
 .tl__zoom-slider {
-  width: 84px;
-  margin: 0 4px;
-  accent-color: var(--text);
+  width: 150px;
+  height: 16px;
+  margin: 0 6px;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.tl__zoom-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+
+.tl__zoom-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+.tl__zoom-slider:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.tl__zoom-pct {
+  min-width: 46px;
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  text-align: right;
 }
 
 .tl__body {

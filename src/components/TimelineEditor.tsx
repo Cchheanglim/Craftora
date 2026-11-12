@@ -310,8 +310,9 @@ export function TimelineEditor({
   // Zoomed all the way out, the whole edit fits however long it is (a 2-hour video too).
   const minPps = Math.min(MIN_PPS, (viewWidth - 40) / Math.max(duration * 1.5, 15));
   // Fit: the whole edit fills the lanes (a little room after its end), scrolled back to its start.
+  const fitPps = Math.min(MAX_PPS, Math.max(minPps, (viewWidth - 24) / Math.max(duration, 1)));
   const fit = () => {
-    const to = Math.min(MAX_PPS, Math.max(minPps, (viewWidth - 24) / Math.max(duration, 1)));
+    const to = fitPps;
     scrollTo.current = 0;
     ppsNow.current = to;
     setPps(to);
@@ -833,6 +834,8 @@ export function TimelineEditor({
             value={(100 * Math.log(pps / minPps)) / Math.log(MAX_PPS / minPps)}
             onChange={(e) => zoomTo(minPps * (MAX_PPS / minPps) ** (Number(e.target.value) / 100))}
           />
+          {/* 100% = the whole edit fits (the button on the left); more is zoomed in. */}
+          <span className="tl__zoom-pct mono" aria-live="polite">{Math.round((100 * pps) / fitPps)}%</span>
           <button type="button" className="btn btn--icon" aria-label="Zoom in" title="Zoom in" onClick={() => zoomTo(pps * 1.5)}>
             <Icon name="plus" size={14} />
           </button>
