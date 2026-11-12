@@ -9,18 +9,21 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
+  container-type: inline-size;
 }
 
+/* Six tabs: three to a row, or all six in one row when the panel is wide; none is ever hidden or pushed aside. */
 .media-panel__tabs {
   flex-shrink: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   padding: 8px;
   border-bottom: 1px solid var(--line);
 }
 
 .media-panel__tab {
-  flex: 1;
+  min-width: 0;
   height: 44px;
   display: flex;
   flex-direction: column;
@@ -71,8 +74,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 2px;
-  padding: 10px 8px;
+  padding: 7px 8px;
   border: 1px dashed var(--line-strong);
   border-radius: var(--radius);
   background: var(--bg-canvas);
@@ -91,9 +95,15 @@
   gap: 6px;
 }
 
-.media-panel__import-sub {
-  font-size: 11px;
-  color: var(--text-3);
+.media-panel__import-main svg {
+  flex-shrink: 0;
+}
+
+/* Side by side the labels are narrow: icon above, label under it, centred. */
+.media-panel__import-row .media-panel__import-main {
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
 }
 
 .media-panel__label {
@@ -114,9 +124,10 @@
   padding: 0;
 }
 
+/* Two cards a row in the usual width, more as the panel widens. */
 .media-panel__grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   gap: 10px 8px;
 }
 
@@ -254,4 +265,23 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* Filters, Effects, Transitions, Shapes: the tiles (FxPanel), as dense as they were in the right panel. */
+.media-panel__fx {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.media-panel__fx > * {
+  zoom: 0.88;
+}
+
+@container (min-width: 420px) {
+  .media-panel__tabs {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
 }

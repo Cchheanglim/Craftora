@@ -1,9 +1,11 @@
-import { useState, type PointerEvent } from "react";
+import { useState, type PointerEvent, type ReactNode } from "react";
 import type { MediaItem } from "../project/model";
 import { formatClock } from "../lib/timecode";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
 import { beginMediaDrag } from "./TimelineEditor";
+import type { FxTab } from "./FxPanel";
+import type { IconName } from "./Icon";
 import "./MediaPanel.css";
 
 export interface MediaPanelProps {
@@ -28,7 +30,18 @@ export interface MediaPanelProps {
   usedMedia: Set<string>;
   /** Opens the voice-over panel; absent in the browser preview. */
   onRecordVoice?: () => void;
+  /** The Filters, Effects, Transitions and Shapes tiles (FxPanel), drawn in their tabs here. */
+  fx: (tab: FxTab) => ReactNode;
 }
+
+const TABS: { id: "media" | "audio" | FxTab; label: string; icon: IconName }[] = [
+  { id: "media", label: "Media", icon: "film" },
+  { id: "audio", label: "Audio", icon: "music" },
+  { id: "filters", label: "Filters", icon: "blend" },
+  { id: "effects", label: "Effects", icon: "sparkle" },
+  { id: "transitions", label: "Transitions", icon: "transition" },
+  { id: "shapes", label: "Shapes", icon: "star" },
+];
 
 export function MediaPanel({
   media,
@@ -43,8 +56,9 @@ export function MediaPanel({
   onChangePicture,
   usedMedia,
   onRecordVoice,
+  fx,
 }: MediaPanelProps) {
-  const [tab, setTab] = useState<"media" | "audio">("media");
+  const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("media");
   const visuals = media.filter((m) => m.hasVideo);
   const sounds = media.filter((m) => !m.hasVideo);
 
@@ -115,8 +129,9 @@ export function MediaPanel({
     </span>
   );
 
-  const tabButton = (id: "media" | "audio", label: string, icon: "film" | "music") => (
+  const tabButton = ({ id, label, icon }: (typeof TABS)[number]) => (
     <button
+      key={id}
       type="button"
       role="tab"
       id={`media-panel-tab-${id}`}
@@ -133,97 +148,103 @@ export function MediaPanel({
   return (
     <section className="media-panel" aria-label="Media and audio">
       <div className="media-panel__tabs" role="tablist" aria-label="Media and audio">
-        {tabButton("media", "Media", "film")}
-        {tabButton("audio", "Audio", "music")}
+        {TABS.map(tabButton)}
       </div>
 
-      <div className="media-panel__body" id="media-panel-body" role="tabpanel" aria-labelledby={`media-panel-tab-${tab}`}>
-        {tab === "media" ? (
-          <>
-            {onImport && (
-              <button type="button" className="media-panel__import" onClick={onImport}>
-                <span className="media-panel__import-main">
-                  <Icon name="upload" size={14} />
-                  Import
-                </span>
-                <span className="media-panel__import-sub">Videos and pictures, or drop them here</span>
-              </button>
-            )}
-            <h2 className="section-label media-panel__label">In this project · {visuals.length}</h2>
-            {visuals.length === 0 ? (
-              <p className="media-panel__hint">Import videos or pictures from this PC, or paste a link at the top.</p>
-            ) : (
-              <ul className="media-panel__grid">
-                {visuals.map((item) => (
-                  <li
-                    key={item.id}
-                    className={downloading.has(item.id) ? "media-panel__card is-downloading" : "media-panel__card"}
-                    onPointerDown={drag(item)}
-                    title="Drag onto the timeline, or press + to add at the end"
-                  >
-                    <span className="media-panel__pic">
-                      {picture(item)}
-                      <span className="media-panel__badge mono">{item.source.image ? "Image" : formatClock(item.source.duration)}</span>
-                      {actions(item)}
-                    </span>
-                    <span className="media-panel__name truncate">{item.name}</span>
-                    <span className="media-panel__meta">{status(item)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        ) : (
-          <>
-            {(onImport || onRecordVoice) && (
-              <div className="media-panel__import-row">
-                {onImport && (
-                  <button type="button" className="media-panel__import" onClick={onImport}>
-                    <span className="media-panel__import-main">
-                      <Icon name="upload" size={14} />
-                      Import sound
-                    </span>
-                  </button>
-                )}
-                {onRecordVoice && (
-                  <button type="button" className="media-panel__import" onClick={onRecordVoice}>
-                    <span className="media-panel__import-main">
-                      <Icon name="mic" size={14} />
-                      Record voice-over
-                    </span>
-                  </button>
-                )}
-              </div>
-            )}
-            <h2 className="section-label media-panel__label">Sound in this project · {sounds.length}</h2>
-            {sounds.length === 0 ? (
-              <p className="media-panel__hint">Import music, or record a voice-over.</p>
-            ) : (
-              <ul className="media-panel__list">
-                {sounds.map((item) => (
-                  <li
-                    key={item.id}
-                    className={downloading.has(item.id) ? "media-panel__row is-downloading" : "media-panel__row"}
-                    onPointerDown={drag(item)}
-                    title="Drag onto the timeline, or press + to add at the end"
-                  >
-                    <span className="media-panel__tile" aria-hidden="true">
-                      <Icon name={item.name.startsWith("Voice-over") ? "mic" : "music"} size={15} />
-                    </span>
-                    <span className="media-panel__text">
-                      <span className="media-panel__name truncate">{item.name}</span>
-                      <span className="media-panel__meta">
-                        <span className="mono">{formatClock(item.source.duration)}</span> · {status(item)}
+      {tab !== "media" && tab !== "audio" && (
+        <div className="media-panel__fx" id="media-panel-body" role="tabpanel" aria-labelledby={`media-panel-tab-${tab}`}>
+          {fx(tab)}
+        </div>
+      )}
+
+      {(tab === "media" || tab === "audio") && (
+        <div className="media-panel__body" id="media-panel-body" role="tabpanel" aria-labelledby={`media-panel-tab-${tab}`}>
+          {tab === "media" ? (
+            <>
+              {onImport && (
+                <button type="button" className="media-panel__import" title="Videos and pictures from this PC, or drop them here" onClick={onImport}>
+                  <span className="media-panel__import-main">
+                    <Icon name="upload" size={14} />
+                    Import
+                  </span>
+                </button>
+              )}
+              <h2 className="section-label media-panel__label">In this project · {visuals.length}</h2>
+              {visuals.length === 0 ? (
+                <p className="media-panel__hint">Import videos or pictures from this PC, or paste a link at the top.</p>
+              ) : (
+                <ul className="media-panel__grid">
+                  {visuals.map((item) => (
+                    <li
+                      key={item.id}
+                      className={downloading.has(item.id) ? "media-panel__card is-downloading" : "media-panel__card"}
+                      onPointerDown={drag(item)}
+                      title="Drag onto the timeline, or press + to add at the end"
+                    >
+                      <span className="media-panel__pic">
+                        {picture(item)}
+                        <span className="media-panel__badge mono">{item.source.image ? "Image" : formatClock(item.source.duration)}</span>
+                        {actions(item)}
                       </span>
-                    </span>
-                    {actions(item)}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        )}
-      </div>
+                      <span className="media-panel__name truncate">{item.name}</span>
+                      <span className="media-panel__meta">{status(item)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : (
+            <>
+              {(onImport || onRecordVoice) && (
+                <div className="media-panel__import-row">
+                  {onImport && (
+                    <button type="button" className="media-panel__import" onClick={onImport}>
+                      <span className="media-panel__import-main">
+                        <Icon name="upload" size={16} />
+                        Import sound
+                      </span>
+                    </button>
+                  )}
+                  {onRecordVoice && (
+                    <button type="button" className="media-panel__import" onClick={onRecordVoice}>
+                      <span className="media-panel__import-main">
+                        <Icon name="mic" size={16} />
+                        Record voice-over
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+              <h2 className="section-label media-panel__label">Sound in this project · {sounds.length}</h2>
+              {sounds.length === 0 ? (
+                <p className="media-panel__hint">Import music, or record a voice-over.</p>
+              ) : (
+                <ul className="media-panel__list">
+                  {sounds.map((item) => (
+                    <li
+                      key={item.id}
+                      className={downloading.has(item.id) ? "media-panel__row is-downloading" : "media-panel__row"}
+                      onPointerDown={drag(item)}
+                      title="Drag onto the timeline, or press + to add at the end"
+                    >
+                      <span className="media-panel__tile" aria-hidden="true">
+                        <Icon name={item.name.startsWith("Voice-over") ? "mic" : "music"} size={15} />
+                      </span>
+                      <span className="media-panel__text">
+                        <span className="media-panel__name truncate">{item.name}</span>
+                        <span className="media-panel__meta">
+                          <span className="mono">{formatClock(item.source.duration)}</span> · {status(item)}
+                        </span>
+                      </span>
+                      {actions(item)}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </section>
   );
 }

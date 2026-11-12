@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import type { Frame } from "../types";
 import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, soundFadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
 import { newShapeClip, shapeBox, shapeSvg } from "../project/shapes";
@@ -53,6 +53,8 @@ interface PreviewProps {
   onDownload?: (mediaId: string) => void;
   /** No sound while a voice-over records (its speakers would get into the microphone). */
   silent?: boolean;
+  /** Remove a colour → Pick: the next click on this clip's picture gives its colour (#rrggbb); Escape or a click beside it cancels. */
+  picking?: { clipId: string; onPicked: (color: string) => void; onCancel: (unreadable?: boolean) => void };
 }
 
 const WAVE_BARS = 140;
@@ -148,7 +150,7 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : {};
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, silent }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, silent, picking }: PreviewProps) {
   const [mutedByHand, setMuted] = useState(false);
   const muted = mutedByHand || Boolean(silent);
   // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
@@ -466,6 +468,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             onDropShape(item, along((e.clientX - r.left) / r.width, w), along((e.clientY - r.top) / r.height, h));
           }}
         >
+          {picking && <ColourPicker stage={stageRef} picking={picking} />}
           {pictures.some((c) => {
             // A link with nothing playable, or whose preview failed, would otherwise just be black.
             const source = mediaOf(c)?.source;
@@ -820,6 +823,48 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
  * the export's 3×3 kernel. Sharpen works on the preview's own pixels, fewer than the video's, so it looks a little
  * coarser here than in the export.
  */
+/**
+ * Remove a colour → Pick: a crosshair over the stage; a click on the clip's picture reads the colour there (5 × 5 pixels
+ * of the frame the preview shows, averaged, so noise doesn't decide it). Escape or a click beside the picture cancels.
+ */
+function ColourPicker({ stage, picking }: { stage: RefObject<HTMLDivElement | null>; picking: NonNullable<PreviewProps["picking"]> }) {
+  const { clipId, onPicked, onCancel } = picking;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+  const pick = (e: ReactMouseEvent) => {
+    e.stopPropagation();
+    const el = stage.current?.querySelector<HTMLVideoElement | HTMLImageElement>(`[data-clip="${CSS.escape(clipId)}"] :is(video, img)`);
+    if (!el) return onCancel();
+    const r = el.getBoundingClientRect();
+    const mirrored = el.classList.contains("is-mirrored");
+    const fx = (e.clientX - r.left) / r.width;
+    const fy = (e.clientY - r.top) / r.height;
+    if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return onCancel();
+    const [w, h] = el instanceof HTMLVideoElement ? [el.videoWidth, el.videoHeight] : [el.naturalWidth, el.naturalHeight];
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 5;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!w || !h || !ctx) return onCancel(true);
+    try {
+      ctx.drawImage(el, (mirrored ? 1 - fx : fx) * w - 2, fy * h - 2, 5, 5, 0, 0, 5, 5);
+      const d = ctx.getImageData(0, 0, 5, 5).data;
+      const avg = [0, 1, 2].map((c) => Math.round(Array.from({ length: 25 }, (_, i) => d[i * 4 + c]).reduce((a, b) => a + b) / 25));
+      onPicked(`#${avg.map((v) => v.toString(16).padStart(2, "0")).join("")}`);
+    } catch {
+      // A video from another site the preview may show but not read.
+      onCancel(true);
+    }
+  };
+  return (
+    <div className="preview__picker" onClick={pick} onPointerDown={(e) => e.stopPropagation()} role="button" aria-label="Click the colour to remove">
+      <span className="preview__picker-hint">Click the colour to remove · Esc to cancel</span>
+    </div>
+  );
+}
+
 /** Remove a colour: one filter per keyed clip, `key-<clip id>`, effects.ts `keyLine` drawn as the export draws it. */
 function KeyFilters({ clips }: { clips: Clip[] }) {
   const keyed = clips.flatMap((c) => {
@@ -992,6 +1037,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
   return (
     <div
       className={selected ? "preview__picture is-selected" : "preview__picture"}
+      data-clip={clip.id}
       style={{ ...box, visibility: visible ? "visible" : "hidden", opacity }}
       onPointerDown={onPointerDown}
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
