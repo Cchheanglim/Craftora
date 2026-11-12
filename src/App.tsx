@@ -147,12 +147,12 @@ import "./App.css";
 const DEMO = DEMO_SOURCES[0];
 /** The right panel's tiles to add to the timeline (Filters … Shapes). */
 const FX_TABS = ["filters", "effects", "transitions", "shapes"] as const;
-/** The right panel's tabs, in their one scrolling row. */
+/** The right panel's tabs, in the owner's order (2026-11-12); those that don't fit go under More. */
 const PANEL_TABS: { id: "edit" | "transcript" | "assistant" | (typeof FX_TABS)[number]; label: string }[] = [
   { id: "edit", label: "Edit" },
+  ...FX_TABS.map((id) => ({ id, label: id[0].toUpperCase() + id.slice(1) })),
   { id: "transcript", label: "Transcript" },
   { id: "assistant", label: "Assistant" },
-  ...FX_TABS.map((id) => ({ id, label: id[0].toUpperCase() + id.slice(1) })),
 ];
 /** Quiet time after the last edit before the project is saved. */
 const AUTOSAVE_MS = 600;
