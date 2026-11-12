@@ -18,6 +18,7 @@ import {
   type Crop,
   type MediaItem,
   type Position,
+  type TextAnim,
   type TextEdge,
   type TextFont,
   type Track,
@@ -30,6 +31,7 @@ import { Icon } from "./Icon";
 import { Select } from "./Select";
 import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustMin, blockLabel, keyLine } from "../project/effects";
 import { SHAPES, shapeLabel } from "../project/shapes";
+import { TEXT_IN, TEXT_OUT, TEXT_LOOP } from "../project/textMotion";
 import "./Inspector.css";
 
 const TEXT_COLORS = [
@@ -81,6 +83,8 @@ interface InspectorProps {
   onPickColour?: () => void;
   /** Text tab with something else picked: a new text at the playhead (its letter height, or the usual). */
   onAddText?: (size?: number) => void;
+  /** Plays `seconds` of the timeline from `from` once, to show a text animation just picked. */
+  onPreview?: (from: number, seconds: number) => void;
   /** What the editor calls the clip's track ("Track 2"). */
   trackName: string;
   canSplit: boolean;
@@ -108,6 +112,7 @@ export function Inspector({
   onRelink,
   onPickColour,
   onAddText,
+  onPreview,
   trackName,
   canSplit,
 }: InspectorProps) {
@@ -134,6 +139,7 @@ export function Inspector({
       ) : (
         <>
           <TextStyles clip={clip} onChange={onChange} />
+          <TextAnimations clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} onPreview={onPreview} />
           <Slider id="insp-text-size" label="Size" min={0.02} max={0.3} step={0.005} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
           <ColorField color={clip.color} onChange={(color, live) => onChange({ color }, live)} onCheckpoint={onCheckpoint} />
           <fieldset className="insp__field">
@@ -813,6 +819,79 @@ function TextStyles({ clip, onChange }: { clip: Clip; onChange: (patch: ClipPatc
           </button>
         ))}
       </div>
+    </fieldset>
+  );
+}
+
+/** Text tab: how the text comes in, goes out and moves while shown (textMotion.ts), as tiles that show each move. */
+function TextAnimations({
+  clip,
+  onChange,
+  onCheckpoint,
+  onPreview,
+}: {
+  clip: Clip;
+  onChange: (patch: ClipPatch, live?: boolean) => void;
+  onCheckpoint: () => void;
+  onPreview?: (from: number, seconds: number) => void;
+}) {
+  const [part, setPart] = useState<keyof TextAnim>("in");
+  const anim = clip.anim ?? {};
+  // No part left: no `anim` at all, as before any was picked.
+  const set = (next: TextAnim, live?: boolean) => onChange({ anim: next.in || next.out || next.loop ? next : undefined }, live);
+  const on = anim[part];
+  const items = part === "in" ? TEXT_IN : part === "out" ? TEXT_OUT : TEXT_LOOP;
+  const sec = (v: number) => `${v.toFixed(1)} s`;
+  // A new pick plays once in the preview, as the popular editor does: the in or a loop from the start, the out to the end.
+  const pick = (item?: (typeof items)[number]) => {
+    if (on?.kind === item?.kind) return;
+    set({ ...anim, [part]: item && ("period" in item ? { kind: item.kind, period: item.period } : { kind: item.kind, length: item.length }) } as TextAnim);
+    if (!item) return;
+    const seconds = Math.min(clipLength(clip), "period" in item ? item.period : item.length);
+    onPreview?.(part === "out" ? clipEnd(clip) - seconds : clip.start, seconds);
+  };
+  return (
+    <fieldset className="insp__group">
+      <legend>Animation</legend>
+      <div className="segmented" role="group" aria-label="Animation">
+        {(["in", "out", "loop"] as const).map((p) => (
+          <button key={p} type="button" aria-pressed={part === p} onClick={() => setPart(p)}>
+            {{ in: "In", out: "Out", loop: "Loop" }[p]}
+            {anim[p] && " •"}
+          </button>
+        ))}
+      </div>
+      <div className="insp__styles">
+        {[undefined, ...items].map((item) => (
+          <button
+            key={item?.kind ?? "none"}
+            type="button"
+            className="insp__style"
+            aria-pressed={on?.kind === item?.kind}
+            // A new kind starts at its own length (typewriter's is longer).
+            onClick={() => pick(item)}
+          >
+            <span className={`insp__anim-sample${item ? ` is-${part}-${item.kind}` : ""}`}>Aa</span>
+            <span>{item?.label ?? "None"}</span>
+          </button>
+        ))}
+      </div>
+      {on &&
+        ("period" in on ? (
+          <Slider id="insp-anim-period" label="Speed" min={0.3} max={3} step={0.1} value={on.period} format={sec} onCheckpoint={onCheckpoint} onChange={(period) => set({ ...anim, loop: { ...on, period } }, true)} />
+        ) : (
+          <Slider
+            id="insp-anim-length"
+            label="Length"
+            min={0.1}
+            max={Math.max(0.1, Math.floor(clipLength(clip) * 10) / 10)}
+            step={0.1}
+            value={on.length}
+            format={sec}
+            onCheckpoint={onCheckpoint}
+            onChange={(length) => set({ ...anim, [part]: { ...on, length } } as TextAnim, true)}
+          />
+        ))}
     </fieldset>
   );
 }

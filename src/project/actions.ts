@@ -58,6 +58,7 @@ export type ClipPatch = Partial<
     | "edge"
     | "edgeColor"
     | "edgeSize"
+    | "anim"
     | "fadeIn"
     | "fadeOut"
     | "soundFadeIn"
@@ -500,9 +501,9 @@ export function applyEdit(p: Project, action: EditAction): Project {
         first = { ...clip, out: cut };
         second = { ...clip, id: action.newClipId, start: round(action.at), in: cut };
       }
-      // The fade in stays with the first part, the fade out with the second.
-      first = fitFades({ ...first, fadeOut: 0, soundFadeOut: 0 });
-      second = fitFades({ ...second, fadeIn: 0, soundFadeIn: 0, transition: undefined });
+      // The fade in (and a text's in-animation) stays with the first part, the fade out with the second.
+      first = fitFades({ ...first, fadeOut: 0, soundFadeOut: 0, anim: clip.anim && { ...clip.anim, out: undefined } });
+      second = fitFades({ ...second, fadeIn: 0, soundFadeIn: 0, transition: undefined, anim: clip.anim && { ...clip.anim, in: undefined } });
       return { ...p, clips: p.clips.flatMap((c) => (c.id === clip.id ? [first, second] : [c])) };
     }
 

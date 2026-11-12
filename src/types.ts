@@ -1,5 +1,6 @@
 import type { LookStep } from "./project/effects";
 import type { Clip } from "./project/model";
+import type { TextMotion } from "./project/textMotion";
 export type OutputKind = "video" | "audio";
 export type VideoContainer = "mp4" | "mkv";
 export type AudioContainer = "mp3" | "wav" | "flac";
@@ -195,6 +196,8 @@ export interface RenderClip {
   /** Text style presets (model.ts `Clip`): the edge's colour and strength. */
   edgeColor?: string;
   edgeSize?: number;
+  /** Text animations (textMotion.ts), drawn by project.rs as the preview draws them. */
+  motion?: TextMotion;
   /** Shapes: how to draw it (shapes.ts `shapeSvg`); `startRender` turns it into `picture`. */
   shape?: Partial<Pick<Clip, "shape" | "color" | "size" | "aspect" | "x" | "y" | "rotate" | "opacity" | "outline">>;
   /** Shapes: the whole frame as a PNG data URL with the shape drawn on it, laid over the video. */

@@ -2185,6 +2185,16 @@ export default function App() {
                         onRelink={(item) => void relink(item)}
                         onPickColour={() => startPick(selected)}
                         onAddText={addText}
+                        onPreview={(from, seconds) => {
+                          const back = playback.time;
+                          playback.seek(from);
+                          if (!playback.playing) playback.toggle();
+                          window.setTimeout(() => {
+                            playback.pause();
+                            // After the clock's last ticks (it stops a frame or two late), which would move the playhead on again.
+                            requestAnimationFrame(() => requestAnimationFrame(() => playback.seek(back)));
+                          }, seconds * 1000 + 150);
+                        }}
                         trackName={trackLabel(project, selectedTrack)}
                         onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
                         onDuration={

@@ -231,6 +231,19 @@ export interface Clip {
    * longer shadow; 1 when absent). Absent both, text draws exactly as before them. */
   edgeColor?: string;
   edgeSize?: number;
+  /** Text animations (Text tab → Animation; drawn by textMotion.ts); still text when absent. */
+  anim?: TextAnim;
+}
+
+export type TextIn = "fade" | "pop" | "slide-up" | "typewriter";
+export type TextOut = "fade" | "shrink";
+export type TextLoop = "bounce" | "pulse";
+
+/** How a text comes in and goes out (each over `length` seconds), and how it moves while shown (once every `period` seconds). */
+export interface TextAnim {
+  in?: { kind: TextIn; length: number };
+  out?: { kind: TextOut; length: number };
+  loop?: { kind: TextLoop; period: number };
 }
 
 /** The colour a clip's picture loses (#rrggbb), how much of it goes and how soft its edges are (0–100 each; effects.ts `keyLine`). */

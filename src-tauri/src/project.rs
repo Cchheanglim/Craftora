@@ -227,6 +227,70 @@ struct ClipSpec {
     edge_color: Option<String>,
     #[serde(default)]
     edge_size: Option<f64>,
+    /// Text animations (textMotion.ts `TextMotion`), drawn as the preview draws them; still text when absent.
+    #[serde(default)]
+    motion: Option<Motion>,
+}
+
+/// A text's animation (textMotion.ts `TextMotion`): [seconds from the clip's start, value] points joined by straight lines.
+#[derive(Deserialize, Default)]
+struct Motion {
+    #[serde(default)]
+    alpha: Vec<(f64, f64)>,
+    #[serde(default)]
+    scale: Vec<(f64, f64)>,
+    /// Moved down by this share of the frame's height.
+    #[serde(default)]
+    dy: Vec<(f64, f64)>,
+    #[serde(default, rename = "loop")]
+    cycle: Option<Cycle>,
+    #[serde(default)]
+    typing: Vec<Typed>,
+}
+
+/// A looping move: one cycle of points over `period` seconds, repeated from the clip's start.
+#[derive(Deserialize)]
+struct Cycle {
+    period: f64,
+    #[serde(default)]
+    scale: Vec<(f64, f64)>,
+    #[serde(default)]
+    dy: Vec<(f64, f64)>,
+}
+
+/// Typewriter: `text` shows until `until` seconds after the clip's start.
+#[derive(Deserialize)]
+struct Typed {
+    text: String,
+    until: f64,
+}
+
+impl Motion {
+    /// Numbers that go into the filter graph: finite, in range, a few points each, times in order within the clip.
+    fn valid(&self, length: f64, text: &str) -> bool {
+        let points = |p: &[(f64, f64)], span: f64, lo: f64, hi: f64| {
+            p.len() <= 64
+                && p.iter().all(|&(t, v)| (0.0..=span + 0.01).contains(&t) && (lo..=hi).contains(&v))
+                && p.windows(2).all(|w| w[1].0 - w[0].0 > 0.00005)
+        };
+        points(&self.alpha, length, 0.0, 1.0)
+            && points(&self.scale, length, 0.0, 2.0)
+            && points(&self.dy, length, -1.0, 1.0)
+            && self.cycle.as_ref().is_none_or(|c| (0.1..=10.0).contains(&c.period) && points(&c.scale, c.period, 0.0, 2.0) && points(&c.dy, c.period, -1.0, 1.0))
+            && self.typing.len() <= 64
+            && self.typing.iter().all(|s| (0.0..=length + 0.01).contains(&s.until) && s.text.len() <= text.len() + 1)
+            && self.typing.windows(2).all(|w| w[1].until > w[0].until)
+    }
+}
+
+/// Animation points (`Motion`) as an FFmpeg expression of `u` seconds: straight lines between them, the first and last
+/// values held outside them (textMotion.ts `pointsAt`). None without points.
+fn lerp(points: &[(f64, f64)], u: &str) -> Option<String> {
+    let &(_, last) = points.last()?;
+    Some(points.windows(2).rev().fold(format!("{last:.4}"), |rest, w| {
+        let ((t0, v0), (t1, v1)) = (w[0], w[1]);
+        format!("if(lt({u},{t1:.4}),{v0:.4}+({:.4})*clip(({u}-{t0:.4})/{:.4},0,1),{rest})", v1 - v0, t1 - t0)
+    }))
 }
 
 /// A fade over the clip's own time: `fade_in` from `start` for `length`, or out.
@@ -472,10 +536,10 @@ impl ClipSpec {
     }
 
     /// drawtext's opacity over time for faded text, or nothing.
-    fn text_alpha(&self) -> String {
+    fn text_alpha(&self) -> Option<String> {
         let ramps = self.ramps(false);
         if ramps.is_empty() {
-            return String::new();
+            return None;
         }
         // The lowest of all ramps, each 0–1 in timeline time.
         let terms: Vec<String> = ramps
@@ -489,8 +553,7 @@ impl ClipSpec {
                 }
             })
             .collect();
-        let expr = terms.iter().skip(1).fold(terms[0].clone(), |acc, t| format!("min({acc},{t})"));
-        format!(":alpha='{expr}'")
+        Some(terms.iter().skip(1).fold(terms[0].clone(), |acc, t| format!("min({acc},{t})")))
     }
 }
 
@@ -587,6 +650,9 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
         let hex = |c: &str| c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
         if clip.edge_color.as_deref().is_some_and(|c| !hex(c)) || clip.edge_size.is_some_and(|k| !(0.5..=6.0).contains(&k)) {
             return Err("A text on the timeline has an invalid style.".into());
+        }
+        if clip.motion.as_ref().is_some_and(|m| !m.valid(clip.length(), &clip.text)) {
+            return Err("A text on the timeline has an invalid animation.".into());
         }
         // A library font is downloaded when it's picked (fonts.rs): without its file, the text would come out in another font.
         if clip.role == Role::Text && !["", "arial", "impact", "georgia", "comic"].contains(&clip.font.as_str()) && crate::fonts::installed(&clip.font).is_none() {
@@ -915,9 +981,6 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                     picture = format!("p{i}");
                 }
                 Role::Text => {
-                    // The text goes in a file so no character can break the filter syntax.
-                    let file = format!("text{i}.txt");
-                    std::fs::write(work.join(&file), clip.text.as_bytes()).map_err(|e| format!("Couldn't prepare text: {e}"))?;
                     let size = ((h as f64) * clip.size).round().max(8.0) as u32;
                     let color = clip.color.trim_start_matches('#');
                     let font = font_path(&clip.text, &clip.font);
@@ -934,12 +997,45 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                             format!("shadowcolor={}:shadowx={off}:shadowy={off}", tint.as_deref().unwrap_or("black@0.6"))
                         }
                     };
-                    graph.push(format!(
-                        "[{picture}]drawtext=fontfile='{font}':textfile='{file}':expansion=none:text_align=C:fontsize={size}:fontcolor=0x{color}:{edge}:x='(w-text_w)*{x}':y='(h-text_h)*{y}'{alpha}:enable='between(t,{start},{end})'[p{i}]",
-                        x = clip.x,
-                        y = clip.y,
-                        alpha = clip.text_alpha()
-                    ));
+                    // Its animation (textMotion.ts), at `u` seconds into the clip: opacity times the fades, size about the
+                    // text's middle (`text_w/s` is its width at full size), and a move down by a share of the frame.
+                    let still = Motion::default();
+                    let motion = clip.motion.as_ref().unwrap_or(&still);
+                    let u = format!("(t-{})", secs(clip.start));
+                    let (cycle_scale, cycle_dy) = motion.cycle.as_ref().map_or((None, None), |c| {
+                        let u = format!("mod(t-{},{:.4})", secs(clip.start), c.period);
+                        (lerp(&c.scale, &u), lerp(&c.dy, &u))
+                    });
+                    let scale = [lerp(&motion.scale, &u), cycle_scale].into_iter().flatten().collect::<Vec<_>>();
+                    let dy = [lerp(&motion.dy, &u), cycle_dy].into_iter().flatten().collect::<Vec<_>>();
+                    let alpha = [clip.text_alpha(), lerp(&motion.alpha, &u)].into_iter().flatten().collect::<Vec<_>>();
+                    let alpha = if alpha.is_empty() { String::new() } else { format!(":alpha='{}'", alpha.join("*")) };
+                    let (x, y) = (clip.x, clip.y);
+                    let place = if scale.is_empty() && dy.is_empty() {
+                        format!("fontsize={size}:fontcolor=0x{color}:{edge}:x='(w-text_w)*{x}':y='(h-text_h)*{y}'")
+                    } else {
+                        let s = if scale.is_empty() { "1".into() } else { format!("max(0.01,{})", scale.join("*")) };
+                        let dy = if dy.is_empty() { "0".into() } else { dy.join("+") };
+                        format!("fontsize='max(1,{size}*{s})':fontcolor=0x{color}:{edge}:x='(w-text_w/{s})*{x}+(text_w/{s}-text_w)/2':y='(h-text_h/{s})*{y}+(text_h/{s}-text_h)/2+({dy})*h'")
+                    };
+                    // Typewriter: each typed part for its time, then the whole text. Each goes in a file so no character
+                    // can break the filter syntax.
+                    let mut from = clip.start;
+                    let mut draws = Vec::new();
+                    for (k, typed) in motion.typing.iter().enumerate() {
+                        let until = clip.start + typed.until;
+                        if !typed.text.is_empty() {
+                            let file = format!("text{i}-{k}.txt");
+                            std::fs::write(work.join(&file), typed.text.as_bytes()).map_err(|e| format!("Couldn't prepare text: {e}"))?;
+                            draws.push(format!("drawtext=fontfile='{font}':textfile='{file}':expansion=none:text_align=C:{place}{alpha}:enable='gte(t,{})*lt(t,{})'", secs(from), secs(until)));
+                        }
+                        from = until;
+                    }
+                    let file = format!("text{i}.txt");
+                    std::fs::write(work.join(&file), clip.text.as_bytes()).map_err(|e| format!("Couldn't prepare text: {e}"))?;
+                    let start = if motion.typing.is_empty() { start.clone() } else { secs(from) };
+                    draws.push(format!("drawtext=fontfile='{font}':textfile='{file}':expansion=none:text_align=C:{place}{alpha}:enable='between(t,{start},{end})'"));
+                    graph.push(format!("[{picture}]{}[p{i}]", draws.join(",")));
                     picture = format!("p{i}");
                 }
                 Role::Effect => {
@@ -1354,9 +1450,27 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cover_bytes, effect_filter, frame_step, gpu_picture, key_filter, look_filter, piece_frames, pieces, timed, ClipSpec, RenderSpec, Source};
+    use super::{cover_bytes, effect_filter, frame_step, gpu_picture, key_filter, lerp, look_filter, piece_frames, pieces, timed, ClipSpec, Motion, RenderSpec, Source};
     use crate::local::ProbeInfo;
     use std::collections::HashMap;
+
+    #[test]
+    fn text_animation_points_become_one_expression_and_bad_ones_are_refused() {
+        assert_eq!(lerp(&[], "u"), None);
+        assert_eq!(lerp(&[(0.0, 0.5)], "u").unwrap(), "0.5000");
+        assert_eq!(
+            lerp(&[(0.0, 0.0), (0.5, 1.0), (1.0, 0.0)], "u").unwrap(),
+            "if(lt(u,0.5000),0.0000+(1.0000)*clip((u-0.0000)/0.5000,0,1),if(lt(u,1.0000),1.0000+(-1.0000)*clip((u-0.5000)/0.5000,0,1),0.0000))"
+        );
+        let motion = |json: &str| serde_json::from_str::<Motion>(json).unwrap();
+        assert!(motion(r#"{"alpha":[[0,0],[0.5,1]],"loop":{"period":1,"dy":[[0,0],[1,-0.04]]},"typing":[{"text":"H","until":0.5}]}"#).valid(3.0, "Hi"));
+        // Out of order, past the clip, too big, a typed text longer than the text.
+        assert!(!motion(r#"{"alpha":[[0.5,0],[0.2,1]]}"#).valid(3.0, "Hi"));
+        assert!(!motion(r#"{"scale":[[0,1],[9,1]]}"#).valid(3.0, "Hi"));
+        assert!(!motion(r#"{"scale":[[0,50]]}"#).valid(3.0, "Hi"));
+        assert!(!motion(r#"{"loop":{"period":0,"scale":[]}}"#).valid(3.0, "Hi"));
+        assert!(!motion(r#"{"typing":[{"text":"Hello","until":0.5}]}"#).valid(3.0, "Hi"));
+    }
 
     #[test]
     fn draws_only_a_plain_full_clip_on_the_graphics_card() {

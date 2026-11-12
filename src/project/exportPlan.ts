@@ -6,6 +6,7 @@
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
 import { adjustSteps, effectSpeed, effectStrength, keyLine, lookSteps } from "./effects";
+import { textMotion } from "./textMotion";
 import { isBlock, clipLength, isCropped, meets, projectDuration, showsPicture, trackOrder, trackSilent, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
@@ -203,6 +204,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       x: c.x,
       y: c.y,
       text: textLines(c.text ?? "", c.size, frame, c.font),
+      motion: role === "text" ? textMotion(c, textLines(c.text ?? "", c.size, frame, c.font)) : undefined,
       shape: c.shape ? { shape: c.shape, color: c.color, size: c.size, aspect: c.aspect, x: c.x, y: c.y, rotate: c.rotate, opacity: c.opacity, outline: c.outline } : undefined,
       color: c.color ?? "#ffffff",
       font: c.font,

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEve
 import type { Frame } from "../types";
 import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, soundFadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
 import { newShapeClip, shapeBox, shapeSvg } from "../project/shapes";
+import { motionAt, textMotion } from "../project/textMotion";
 import type { FxItem } from "../project/effects";
 import { fxDrag } from "./TimelineEditor";
 import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
@@ -625,23 +626,28 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 />
               );
             }
+            // Its animation at this moment, as the export draws it (textMotion.ts). Picked and paused, it shows as set: a
+            // text added at the playhead would otherwise sit at its own first moment, invisible, and couldn't be dragged.
+            const lines = textLines(clip.text ?? "", clip.size, frame, clip.font);
+            const pose = motionAt(isSelected && !playing ? undefined : textMotion(clip, lines), time - clip.start, lines);
             return (
               <div
                 key={clip.id}
                 className={textClass(clip, isSelected)}
                 style={{
                   left: `${clip.x * 100}%`,
-                  top: `${clip.y * 100}%`,
+                  top: `calc(${clip.y * 100}% + ${pose.dy * 100}cqh)`,
                   translate: `${-clip.x * 100}% ${-clip.y * 100}%`,
+                  scale: pose.scale,
                   fontSize: `${clip.size * 100}cqh`,
                   color: clip.color,
-                  opacity: fadeAt(clip, time),
+                  opacity: fadeAt(clip, time) * pose.alpha,
                   ...textFont(clip),
                 }}
                 onPointerDown={beginGesture(clip, "move")}
                 onClick={(e) => e.stopPropagation()}
               >
-                {textLines(clip.text ?? "", clip.size, frame, clip.font)}
+                {pose.text}
                 {isSelected && handles(clip)}
               </div>
             );
