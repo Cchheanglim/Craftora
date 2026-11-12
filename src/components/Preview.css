@@ -127,7 +127,7 @@
   line-height: 1.15;
   white-space: pre;
   text-align: center;
-  text-shadow: 0.06em 0.06em 0 rgb(0 0 0 / 0.6);
+  text-shadow: calc(0.06em * var(--edge-k, 1)) calc(0.06em * var(--edge-k, 1)) 0 var(--edge-color, rgb(0 0 0 / 0.6));
   cursor: move;
   touch-action: none;
 }
@@ -138,14 +138,14 @@
 /* Edges as the export draws them (project.rs): an outline about 5% of the letter height, or a box. */
 .preview__text.is-outline {
   text-shadow: none;
-  -webkit-text-stroke: 0.1em #000;
+  -webkit-text-stroke: calc(0.1em * var(--edge-k, 1)) var(--edge-color, #000);
   paint-order: stroke fill;
 }
 
 .preview__text.is-box {
   text-shadow: none;
-  background: rgb(0 0 0 / 0.6);
-  box-shadow: 0 0 0 0.2em rgb(0 0 0 / 0.6);
+  background: var(--edge-color, rgb(0 0 0 / 0.6));
+  box-shadow: 0 0 0 0.2em var(--edge-color, rgb(0 0 0 / 0.6));
 }
 
 .preview__shape-box.is-selected,

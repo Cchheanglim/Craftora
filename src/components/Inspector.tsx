@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { ClipPatch } from "../project/actions";
 import {
   MAX_CROP,
@@ -25,6 +25,7 @@ import {
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { fontLoaded, loadFont } from "../lib/fonts";
+import { ColorWheel } from "./ColorWheel";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
 import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustMin, blockLabel, keyLine } from "../project/effects";
@@ -78,6 +79,8 @@ interface InspectorProps {
   onRelink: (media: MediaItem) => void;
   /** Remove a colour → Pick: the next click on the preview picks the colour (App `pickColour`). */
   onPickColour?: () => void;
+  /** Text tab with something else picked: a new text at the playhead (its letter height, or the usual). */
+  onAddText?: (size?: number) => void;
   /** What the editor calls the clip's track ("Track 2"). */
   trackName: string;
   canSplit: boolean;
@@ -104,6 +107,7 @@ export function Inspector({
   onDelete,
   onRelink,
   onPickColour,
+  onAddText,
   trackName,
   canSplit,
 }: InspectorProps) {
@@ -129,8 +133,9 @@ export function Inspector({
         <p className="insp__hint">Captions are styled all together: select the captions track's clips in Edit to change them.</p>
       ) : (
         <>
+          <TextStyles clip={clip} onChange={onChange} />
           <Slider id="insp-text-size" label="Size" min={0.02} max={0.3} step={0.005} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
-          <ColorField color={clip.color} onChange={(color) => onChange({ color })} />
+          <ColorField color={clip.color} onChange={(color, live) => onChange({ color }, live)} onCheckpoint={onCheckpoint} />
           <fieldset className="insp__field">
             <legend>Edge</legend>
             <div className="segmented" role="group" aria-label="Edge">
@@ -234,13 +239,16 @@ export function Inspector({
 
       {section !== "edit" &&
         (ownTab || (
-          <p className="insp__hint">
-            {section === "speed"
-              ? "Select a video or sound clip on the timeline to change its speed."
-              : section === "text"
-                ? "Select a text on the timeline to change its font and style."
-                : "Select a video or picture on the timeline."}
-          </p>
+          <>
+            <p className="insp__hint">
+              {section === "speed"
+                ? "Select a video or sound clip on the timeline to change its speed."
+                : section === "text"
+                  ? "Select a text on the timeline to change its font and style, or add one."
+                  : "Select a video or picture on the timeline."}
+            </p>
+            {section === "text" && onAddText && <AddText onAdd={onAddText} />}
+          </>
         ))}
       {section === "edit" && (
         <>
@@ -302,7 +310,7 @@ export function Inspector({
 
           {isShape && (
             <>
-              <ColorField color={clip.color} onChange={(color) => onChange({ color })} />
+              <ColorField color={clip.color} onChange={(color, live) => onChange({ color }, live)} onCheckpoint={onCheckpoint} />
               {!isLine && (
                 <fieldset className="insp__field">
                   <legend>Style</legend>
@@ -580,7 +588,10 @@ export function Inspector({
 /** A labelled range with its value; one undo step per drag. */
 type Look = { color?: string; font?: TextFont; edge?: TextEdge };
 
-function ColorField({ color, onChange }: { color?: string; onChange: (color: string) => void }) {
+/** A few quick colours, and any colour on the wheel (open already when the colour is none of the quick ones). */
+function ColorField({ color, onChange, onCheckpoint }: { color?: string; onChange: (color: string, live?: boolean) => void; onCheckpoint?: () => void }) {
+  const current = color ?? "#ffffff";
+  const [wheel, setWheel] = useState(() => !TEXT_COLORS.some((c) => c.value === current));
   return (
     <fieldset className="insp__field">
       <legend>Color</legend>
@@ -596,13 +607,15 @@ function ColorField({ color, onChange }: { color?: string; onChange: (color: str
             onClick={() => onChange(c.value)}
           />
         ))}
+        <button type="button" className="insp__swatch insp__swatch-wheel" aria-label="Any colour" aria-pressed={wheel} onClick={() => setWheel((w) => !w)} />
       </div>
+      {wheel && <ColorWheel color={current} onChange={onChange} onCheckpoint={onCheckpoint} />}
     </fieldset>
   );
 }
 
 /** Font, colour and edge of text: a text clip's own, or every caption's. */
-function TextLook({ id, look, onChange }: { id: string; look: Look; onChange: (patch: Look) => void }) {
+function TextLook({ id, look, onChange, onCheckpoint }: { id: string; look: Look; onChange: (patch: Look, live?: boolean) => void; onCheckpoint?: () => void }) {
   return (
     <>
       <div className="insp__field">
@@ -614,7 +627,7 @@ function TextLook({ id, look, onChange }: { id: string; look: Look; onChange: (p
           onChange={(font) => onChange({ font: (font || undefined) as TextFont | undefined })}
         />
       </div>
-      <ColorField color={look.color} onChange={(color) => onChange({ color })} />
+      <ColorField color={look.color} onChange={(color, live) => onChange({ color }, live)} onCheckpoint={onCheckpoint} />
       <fieldset className="insp__field">
         <legend>Edge</legend>
         <div className="segmented" role="group" aria-label="Edge">
@@ -653,7 +666,7 @@ export function CaptionStyle({
       </header>
       <p className="insp__meta">Changes every caption. Drag them on the preview to move them.</p>
       <Slider id="captions-size" label="Size" min={0.02} max={0.15} step={0.005} value={layout.size} format={(v) => `${Math.round(v * 100)}%`} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
-      <TextLook id="captions" look={layout} onChange={onChange} />
+      <TextLook id="captions" look={layout} onChange={onChange} onCheckpoint={onCheckpoint} />
       {onSaveSrt && (
         <button type="button" className="btn btn--secondary" onClick={onSaveSrt} title="For YouTube and video players: the captions as a file next to the video">
           <Icon name="download" size={14} />
@@ -766,6 +779,59 @@ function RemoveColour({ clip, onChange, onCheckpoint, onPick }: { clip: Clip; on
         </>
       )}
     </fieldset>
+  );
+}
+
+/** Text style presets: the letters' colour and their edge (Preview.css draws them, project.rs the same in the export). */
+const TEXT_STYLES: { label: string; patch: Pick<Clip, "color" | "edge" | "edgeColor" | "edgeSize"> }[] = [
+  { label: "Classic", patch: { color: "#ffffff", edge: undefined, edgeColor: undefined, edgeSize: undefined } },
+  { label: "Outline", patch: { color: "#ffffff", edge: "outline", edgeColor: undefined, edgeSize: undefined } },
+  { label: "Bold", patch: { color: "#ffd60a", edge: "outline", edgeColor: "#000000", edgeSize: 2 } },
+  { label: "Pop", patch: { color: "#ffffff", edge: "outline", edgeColor: "#ff2d78", edgeSize: 2 } },
+  { label: "3D", patch: { color: "#ffffff", edge: undefined, edgeColor: "#d81e3a", edgeSize: 1.5 } },
+  { label: "Retro", patch: { color: "#ffd60a", edge: undefined, edgeColor: "#2b59c3", edgeSize: 2 } },
+  { label: "Label", patch: { color: "#111111", edge: "box", edgeColor: "#ffd60a", edgeSize: undefined } },
+  { label: "Sticker", patch: { color: "#ffffff", edge: "box", edgeColor: "#d81e3a", edgeSize: undefined } },
+];
+
+/** Text tab: the style presets as tiles, each "Aa" drawn in its style. */
+function TextStyles({ clip, onChange }: { clip: Clip; onChange: (patch: ClipPatch) => void }) {
+  const same = (p: (typeof TEXT_STYLES)[number]["patch"]) => (clip.color ?? "#ffffff") === p.color && clip.edge === p.edge && clip.edgeColor === p.edgeColor && clip.edgeSize === p.edgeSize;
+  return (
+    <fieldset className="insp__group">
+      <legend>Style</legend>
+      <div className="insp__styles">
+        {TEXT_STYLES.map(({ label, patch }) => (
+          <button key={label} type="button" className="insp__style" aria-pressed={same(patch)} onClick={() => onChange(patch)}>
+            <span
+              className={`insp__style-sample${patch.edge ? ` is-${patch.edge}` : ""}`}
+              style={{ color: patch.color, ...(patch.edgeColor && { "--edge-color": patch.edgeColor }), ...(patch.edgeSize && { "--edge-k": patch.edgeSize }) } as CSSProperties}
+            >
+              Aa
+            </span>
+            <span>{label}</span>
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/** Text tab with no text picked: a new one at the playhead, in three sizes (letter height over the frame's). */
+export function AddText({ onAdd }: { onAdd: (size?: number) => void }) {
+  return (
+    <div className="insp__add-text">
+      <button type="button" className="insp__add-title" onClick={() => onAdd(0.12)}>
+        Add a title
+      </button>
+      <button type="button" className="insp__add-subtitle" onClick={() => onAdd(0.07)}>
+        Add a subtitle
+      </button>
+      <button type="button" onClick={() => onAdd(0.045)}>
+        Add body text
+      </button>
+      <p className="insp__hint">It goes on the timeline at the red playhead.</p>
+    </div>
   );
 }
 

@@ -275,3 +275,89 @@
   font-size: var(--text-xs);
   color: var(--text-3);
 }
+
+/* Text tab, nothing picked: add a text at the playhead (dashed, like the Media panel's Import). */
+.insp__add-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.insp__add-text button {
+  height: 36px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-canvas);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.insp__add-text button:hover {
+  border-color: var(--line-hover);
+}
+
+.insp__add-text .insp__add-title {
+  height: 44px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.insp__add-text .insp__add-subtitle {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Opens the colour wheel (ColorWheel) for any colour. */
+.insp__swatch-wheel {
+  background: conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+}
+
+/* Text → Style: presets as tiles; the sample draws its edge as the preview does (Preview.css .preview__text). */
+.insp__styles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.insp__style {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-canvas);
+  color: var(--text-3);
+  font-size: var(--text-xs);
+}
+
+.insp__style:hover {
+  background: var(--bg-hover);
+}
+
+.insp__style[aria-pressed="true"] {
+  border-color: var(--line-hover);
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.insp__style-sample {
+  font-family: "Segoe UI", var(--font-ui);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-shadow: calc(0.06em * var(--edge-k, 1)) calc(0.06em * var(--edge-k, 1)) 0 var(--edge-color, rgb(0 0 0 / 0.6));
+}
+
+.insp__style-sample.is-outline {
+  text-shadow: none;
+  -webkit-text-stroke: calc(0.1em * var(--edge-k, 1)) var(--edge-color, #000);
+  paint-order: stroke fill;
+}
+
+.insp__style-sample.is-box {
+  padding: 0 4px;
+  text-shadow: none;
+  background: var(--edge-color, rgb(0 0 0 / 0.6));
+}

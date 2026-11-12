@@ -126,7 +126,7 @@ import { Tooltip } from "./components/Tooltip";
 import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
 import { TimelineEditor, type ClipCommand } from "./components/TimelineEditor";
-import { CaptionStyle, Inspector, KEY_START, type ClipSection } from "./components/Inspector";
+import { AddText, CaptionStyle, Inspector, KEY_START, type ClipSection } from "./components/Inspector";
 import { ExportPanel } from "./components/ExportPanel";
 import { ExportDialog } from "./components/ExportDialog";
 import { QueueDock } from "./components/QueueDock";
@@ -1471,9 +1471,11 @@ export default function App() {
     api.edit({ type: "deleteClip", clipId: selectedId });
     setSelectedId(null);
   };
-  const addText = () => {
+  const addText = (size?: number) => {
     const clipId = crypto.randomUUID();
-    api.edit({ type: "addText", clipId, at: playback.time });
+    api.checkpoint();
+    api.editLive({ type: "addText", clipId, at: playback.time });
+    if (size) api.editLive({ type: "updateClip", clipId, patch: { size } });
     setSelectedId(clipId);
     setView("editor");
   };
@@ -1725,7 +1727,7 @@ export default function App() {
       s: split,
       delete: remove,
       backspace: remove,
-      t: addText,
+      t: () => addText(),
       f: () => window.dispatchEvent(new Event("craftora:toggle-fullscreen")),
       // As in video players: 5 s; Shift steps one frame for exact edits.
       arrowleft: () => playback.seek(t - (e.shiftKey ? 1 / 30 : 5)),
@@ -1823,12 +1825,20 @@ export default function App() {
         toggleRight();
       }}
       onPick={(item) => {
+        // Nothing picked (owner: "add them where the red pin is"): the top picture showing at the playhead takes it, as
+        // if it were picked. A shape always gets a track of its own there.
+        const t = playback.time;
+        const target =
+          selected ??
+          (item.kind === "shape"
+            ? null
+            : (project.tracks.flatMap((tr) => project.clips.filter((c) => c.trackId === tr.id && !isBlock(c) && showsPicture(project, c) && t >= c.start && t < clipEnd(c)))[0] ?? null));
         // A transition tile always adds one at the playhead (never swaps the selected one: its Type does that).
-        if (!selected || item.kind === "transition") return applyFx(item, selected?.trackId, playback.time);
-        // At the playhead on the selected clip (a filter or effect goes inside it, a transition on its cut);
-        // with the playhead off the selected clip, at its start.
-        const inside = playback.time >= selected.start && playback.time < clipEnd(selected);
-        applyFx(item, selected.trackId, inside ? playback.time : selected.start);
+        if (!target || item.kind === "transition") return applyFx(item, target?.trackId, t);
+        // At the playhead on that clip (a filter or effect goes inside it, a transition on its cut); with the playhead
+        // off it, at its start.
+        const inside = t >= target.start && t < clipEnd(target);
+        applyFx(item, target.trackId, inside ? t : target.start);
       }}
     />
   );
@@ -2147,7 +2157,7 @@ export default function App() {
                   // Edit: the selected clip's settings (and the captions' style).
                   <aside className="export" aria-label="Clip settings">
                     <div className="export__body is-edit">
-                    {!selected && selectedId !== SHOWN_CAPTIONS && <p className="export__hint">Click a clip on the timeline to change it here.</p>}
+                    {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} /> : <p className="export__hint">Click a clip on the timeline to change it here.</p>)}
                     {rightTab === "edit" && (selectedId === SHOWN_CAPTIONS || selectedTrack?.name === "Captions") && (
                       <CaptionStyle
                         layout={project.captionLayout ?? CAPTIONS}
@@ -2174,6 +2184,7 @@ export default function App() {
                         media={project.media.find((m) => m.id === selected.mediaId)}
                         onRelink={(item) => void relink(item)}
                         onPickColour={() => startPick(selected)}
+                        onAddText={addText}
                         trackName={trackLabel(project, selectedTrack)}
                         onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
                         onDuration={
@@ -2265,7 +2276,7 @@ export default function App() {
               onCutSilences={() => void cutSilences()}
               cuttingSilences={cuttingSilences}
               onDelete={remove}
-              onAddText={addText}
+              onAddText={() => addText()}
               onRecordVoice={inDesktopApp ? openVoice : undefined}
               recording={recording}
               onDropFx={applyFx}
