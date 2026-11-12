@@ -1,0 +1,257 @@
+/* The editor's left panel: Media / Audio tabs over the project's media (MediaPanel.tsx). */
+.media-panel {
+  width: var(--side-w);
+  flex-shrink: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.media-panel__tabs {
+  flex-shrink: 0;
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.media-panel__tab {
+  flex: 1;
+  height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-3);
+  font-size: var(--text-xs);
+}
+
+.media-panel__tab:hover {
+  background: var(--bg-hover);
+}
+
+.media-panel__tab[aria-selected="true"] {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.media-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+/* Import / Record voice-over: dashed drop-zone style buttons. */
+.media-panel__import-row {
+  display: flex;
+  gap: 8px;
+}
+
+/* Side by side in the Audio tab, sharing the width. */
+.media-panel__import-row > .media-panel__import {
+  flex: 1;
+}
+
+.media-panel__import {
+  flex-shrink: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 8px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-canvas);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.media-panel__import:hover {
+  border-color: var(--line-hover);
+  color: var(--text);
+}
+
+.media-panel__import-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.media-panel__import-sub {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.media-panel__label {
+  margin: 0;
+}
+
+.media-panel__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+
+.media-panel__grid,
+.media-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.media-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 8px;
+}
+
+.media-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.media-panel__card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: grab;
+}
+
+.media-panel__pic {
+  position: relative;
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* The list Thumb is a fixed 64×36: here it fills the card at 16:9. */
+.media-panel__pic .thumb {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border-radius: 0;
+}
+
+.media-panel__picture {
+  width: 100%;
+  display: flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.media-panel__badge {
+  position: absolute;
+  z-index: 2;
+  left: 4px;
+  bottom: 4px;
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-canvas);
+  color: var(--text-2);
+  font-size: 10.5px;
+  pointer-events: none;
+}
+
+.media-panel__actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 2px;
+}
+
+.media-panel__actions .btn--icon {
+  width: 26px;
+  height: 26px;
+}
+
+/* On a card: small round buttons over the picture's top-right corner, shown on hover or focus. */
+.media-panel__pic .media-panel__actions {
+  position: absolute;
+  z-index: 2;
+  top: 4px;
+  right: 4px;
+  /* opacity, not visibility: hidden buttons can't take keyboard focus, so focus-within would never show them. */
+  opacity: 0;
+}
+
+.media-panel__pic .btn--icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-canvas);
+}
+
+.media-panel__pic .btn--icon:hover {
+  background: var(--bg-hover);
+}
+
+.media-panel__card:hover .media-panel__actions,
+.media-panel__card:focus-within .media-panel__actions,
+.media-panel__card.is-downloading .media-panel__actions {
+  opacity: 1;
+}
+
+.media-panel__name {
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+/* One line, cut with … when the panel is narrow. */
+.media-panel__meta {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  cursor: grab;
+}
+
+.media-panel__row:hover {
+  background: var(--bg-hover);
+}
+
+.media-panel__tile {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-3);
+}
+
+.media-panel__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}

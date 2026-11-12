@@ -1,18 +1,29 @@
 .side {
-  grid-area: side;
-  width: var(--side-w);
+  width: 248px;
+  max-height: calc(100vh - 80px);
+  overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-2);
-  background: var(--bg-rail);
-  border-right: 1px solid var(--line);
-  min-height: 0;
-  transition: width var(--dur) var(--ease-out);
+  gap: var(--space-2);
+  padding: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
 }
 
-.side.is-collapsed {
-  width: 56px;
+/* Outside the editor: a column down the left of the page, as the sidebar was. */
+.side.is-rail {
+  grid-area: side;
+  width: 232px;
+  max-height: none;
+  min-height: 0;
+  padding: var(--space-3) var(--space-2);
+  background: var(--bg-rail);
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .side__nav {
@@ -26,11 +37,11 @@
 
 .side__item {
   width: 100%;
-  height: var(--control-h);
+  height: 32px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 0;
   border-radius: var(--radius);
   background: transparent;
@@ -51,7 +62,7 @@
 }
 
 .side__item:hover {
-  background: var(--bg-raised);
+  background: var(--bg-hover);
   color: var(--text);
 }
 
@@ -61,26 +72,16 @@
   font-weight: 500;
 }
 
-.side.is-collapsed .side__text,
-.side.is-collapsed .side__count {
-  display: none;
-}
-
-.side.is-collapsed .side__item {
-  justify-content: center;
-  padding: 0;
-}
-
 /* "Make" and "Library": a few pages each under a small heading. */
 .side__group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .side__group-label {
   margin: 0;
-  padding: 0 10px;
+  padding: 4px 8px 2px;
 }
 
 /* Settings, at the foot: never squeezed out. */
@@ -98,9 +99,8 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 0 2px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--bg-panel);
@@ -188,105 +188,8 @@
   color: var(--text-3);
 }
 
-.side__media {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--line);
-}
-
-.side__media-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-left: 10px;
-}
-
-.side__media-head .section-label {
-  margin: 0;
-}
-
-.side__media-head .btn {
-  height: 26px;
-  padding: 0 var(--space-2);
-  font-size: 12px;
-}
-
-.side__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* A media item's picture: click to change it (Sidebar `picture`). */
-.side__picture {
-  flex-shrink: 0;
-  display: flex;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-}
-
-.side__picture:hover .thumb {
-  outline: 1px solid var(--line-hover);
-}
-
-.side__file {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 6px 4px 6px 10px;
-  border-radius: var(--radius);
-  cursor: grab;
-}
-
-.side__file:hover {
-  background: var(--bg-raised);
-}
-
-/* The page list is longer now: Media keeps room for its hint. */
-.side__media {
-  min-height: 96px;
-  overflow: hidden;
-}
-
-.side__file > svg {
-  flex-shrink: 0;
-  color: var(--text-3);
-}
-
-.side__file-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  font-size: 12.5px;
-}
-
-/* One line, cut with … when the sidebar is narrow (it used to wrap under the buttons). */
-.side__file-meta {
-  font-size: 11px;
-  color: var(--text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.side__file .btn--icon {
-  width: 26px;
-  height: 26px;
-}
-
 .side__hint {
-  padding: 0 10px;
+  padding: 0 8px;
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-3);
@@ -296,14 +199,9 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: var(--space-3) 10px 0;
+  padding: var(--space-2) 8px 0;
   border-top: 1px solid var(--line);
   font-size: 12px;
-}
-
-.side.is-collapsed .side__engines {
-  align-items: center;
-  padding: var(--space-3) 0 0;
 }
 
 .side__engines .section-label {

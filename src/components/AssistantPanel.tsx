@@ -52,6 +52,10 @@ interface AssistantPanelProps {
   current: () => Project;
   playhead: () => number;
   seek: (t: number) => void;
+  /** A request from the timeline's AI edit box: sent once an AI is ready (after it's set up, if it isn't yet). */
+  request?: { id: string; text: string } | null;
+  /** The request was sent: the timeline can forget it. */
+  onRequested?: () => void;
 }
 
 function remembered(key: string): string | null {
@@ -83,7 +87,7 @@ function rememberedSource(): Source {
 }
 
 /** Chat with the AI editing assistant, which edits the timeline with the editor's own actions. */
-export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelProps) {
+export function AssistantPanel({ api, current, playhead, seek, request, onRequested }: AssistantPanelProps) {
   /** The AIs with a saved key; null while checking. */
   const [keys, setKeys] = useState<Provider[] | null>(null);
   /** AI programs and local servers on this PC; null while scanning. */
@@ -105,6 +109,11 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
   // Falling back to another model is for Gemini's free plan; other AIs use the model picked.
   const fallbacks = useMemo(() => (models && provider === "gemini" ? fallbackModels(models) : []), [models, provider]);
   const { entries, busy, send, reset } = useAssistant({ api, current, playhead, seek, provider, model, fallbacks });
+  useEffect(() => {
+    if (!request || !ready || !model || busy) return;
+    onRequested?.();
+    void send(request.text);
+  }, [request, ready, model, busy, send, onRequested]);
   const { ask, dialog } = useConfirm();
   const recommended = models ? (isKeyed(provider) ? recommendedModels(models, provider) : models.map((m) => ({ ...m, why: "" }))) : [];
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);

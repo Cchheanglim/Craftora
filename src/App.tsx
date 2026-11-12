@@ -110,6 +110,7 @@ import {
 } from "./project/model";
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
+import { MediaPanel } from "./components/MediaPanel";
 import { Home, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
 import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/EdgeResizer";
@@ -335,7 +336,7 @@ export default function App() {
     rememberText("craftora.sideWidth", String(width));
   };
   const resizePanel = (dragged: number) => {
-    const width = roomFor(dragged, leftOpen ? sideWidth : 56, PANEL_WIDTH);
+    const width = roomFor(dragged, leftOpen && view === "editor" ? sideWidth : 0, PANEL_WIDTH);
     setPanelWidth(width);
     rememberText("craftora.panelWidth", String(width));
   };
@@ -369,6 +370,8 @@ export default function App() {
   const [preparing, setPreparing] = useState<Set<string>>(() => new Set());
   const [cuttingSilences, setCuttingSilences] = useState(false);
   const [rightTab, setRightTab] = useState<"edit" | "transcript" | "assistant" | "sound" | "voice" | FxTab>("edit");
+  /** "AI edit" from the timeline, waiting for the Assistant tab to send it. */
+  const [aiAsk, setAiAsk] = useState<{ id: string; text: string } | null>(null);
   /** The export pop-up (Export, next to Queue). */
   const [exportOpen, setExportOpen] = useState(false);
   // Where the Sound or Voice-over panel's Back button goes: the tab it was opened from.
@@ -1607,6 +1610,14 @@ export default function App() {
     if (!cover) return setError("Couldn't read that picture for the cover.");
     api.edit({ type: "setCover", cover });
   };
+  /** "AI edit" on the timeline: the picked part of a clip and what to change go to the assistant, in its own tab. */
+  const aiEdit = ({ clipId, start, end, text }: { clipId: string; start: number; end: number; text: string }) => {
+    const clip = project.clips.find((c) => c.id === clipId);
+    const name = project.media.find((m) => m.id === clip?.mediaId)?.name ?? clip?.text ?? "the clip";
+    setAiAsk({ id: crypto.randomUUID(), text: `In “${name}”, only from ${start.toFixed(1)} s to ${end.toFixed(1)} s on the timeline: ${text}` });
+    setRightTab("assistant");
+    setRightOpen(true);
+  };
   const clipCommand = (command: ClipCommand, clip: Clip, time: number) => {
     const media = project.media.find((m) => m.id === clip.mediaId);
     const patch = (p: Partial<Clip>) => api.edit({ type: "updateClip", clipId: clip.id, patch: p });
@@ -1731,8 +1742,45 @@ export default function App() {
     rememberText("craftora.maxRunning", String(count));
   };
 
+  /** The main menu: a pop-up from the toolbar's button in the editor, a column at the left of every other page. */
+  const mainMenu = (rail: boolean) => (
+    <Sidebar
+      rail={rail}
+      view={view}
+      onViewChange={setView}
+      libraryCount={shownExports.length}
+      downloadsCount={downloadsCount}
+      engines={engines}
+      activity={[
+        // Downloads, exports and recordings running now, then captions being made.
+        ...queue.jobs
+          .filter((j) => j.status === "downloading" || j.status === "encoding")
+          .map((j) => ({
+            id: j.id,
+            label: j.record?.live ? "Recording live" : j.prefetch || j.record || j.status === "downloading" ? "Downloading" : "Exporting",
+            detail: j.rename ?? j.title,
+            percent: j.record ? null : j.progress,
+          })),
+        ...project.media
+          .filter((m) => captioning[m.id] && captioning[m.id] !== "couldn't make captions")
+          .map((m) => {
+            const text = captioning[m.id];
+            const percent = /(\d+)%/.exec(text)?.[1];
+            const label = text.replace(/,?\s*\d+%$/, "");
+            return {
+              id: `captions-${m.id}`,
+              label: label[0].toUpperCase() + label.slice(1),
+              detail: m.name,
+              percent: percent ? Number(percent) : null,
+              onCancel: () => stopCaptions([m.id]),
+            };
+          }),
+      ]}
+    />
+  );
+
   return (
-    <div className="app" data-left={leftOpen ? "open" : "closed"} style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen ? sideWidth : 56, PANEL_WIDTH)}px` } as CSSProperties}>
+    <div className="app" style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen && view === "editor" ? sideWidth : 0, PANEL_WIDTH)}px` } as CSSProperties}>
       <Ambient active={theme !== "classic"} />
       <Tooltip />
       {fetchReview.dialog}
@@ -1796,8 +1844,7 @@ export default function App() {
         }
         onImport={inDesktopApp ? () => void importFiles() : undefined}
         inputRef={urlRef}
-        leftOpen={leftOpen}
-        onToggleLeft={toggleLeft}
+        menu={view === "editor" ? mainMenu(false) : undefined}
         update={
           updates.status.kind === "available"
             ? { label: `Update to v${updates.status.version}`, onClick: () => void updates.install() }
@@ -1806,57 +1853,8 @@ export default function App() {
               : undefined
         }
       />
-      <Sidebar
-        view={view}
-        onViewChange={setView}
-        collapsed={!leftOpen}
-        libraryCount={shownExports.length}
-        downloadsCount={downloadsCount}
-        engines={engines}
-        media={project.media}
-        preparing={preparing}
-        captioning={captioning}
-        previewReady={Object.fromEntries(
-          project.media
-            .filter((m) => m.source.previewCacheIds?.some((id) => cached[id] !== undefined))
-            .map((m) => [m.id, Math.min(...(m.source.previewCacheIds ?? []).map((id) => cached[id] ?? 0))]),
-        )}
-        downloading={downloadingIds}
-        onDownload={inDesktopApp ? (mediaId) => {
-          const item = project.media.find((m) => m.id === mediaId);
-          if (item) downloadForEditing(item);
-        } : undefined}
-        onImport={inDesktopApp ? () => void importFiles() : undefined}
-        onAddMedia={addMedia}
-        onRemoveMedia={(mediaId) => api.edit({ type: "removeMedia", mediaId })}
-        onChangePicture={inDesktopApp ? (mediaId) => void changePicture(mediaId) : undefined}
-        usedMedia={usedMedia}
-        activity={[
-          // Downloads, exports and recordings running now, then captions being made.
-          ...queue.jobs
-            .filter((j) => j.status === "downloading" || j.status === "encoding")
-            .map((j) => ({
-              id: j.id,
-              label: j.record?.live ? "Recording live" : j.prefetch || j.record || j.status === "downloading" ? "Downloading" : "Exporting",
-              detail: j.rename ?? j.title,
-              percent: j.record ? null : j.progress,
-            })),
-          ...project.media
-            .filter((m) => captioning[m.id] && captioning[m.id] !== "couldn't make captions")
-            .map((m) => {
-              const text = captioning[m.id];
-              const percent = /(\d+)%/.exec(text)?.[1];
-              const label = text.replace(/,?\s*\d+%$/, "");
-              return {
-                id: `captions-${m.id}`,
-                label: label[0].toUpperCase() + label.slice(1),
-                detail: m.name,
-                percent: percent ? Number(percent) : null,
-                onCancel: () => stopCaptions([m.id]),
-              };
-            }),
-        ]}
-      />
+
+      {view !== "editor" && mainMenu(true)}
 
       <main className="app__work">
         {view === "home" && (
@@ -1937,6 +1935,30 @@ export default function App() {
             style={timelineHeight ? ({ "--tl-h": `${timelineHeight}px` } as CSSProperties) : undefined}
           >
             <div className="app__top">
+              {leftOpen && (
+                <MediaPanel
+                  media={project.media}
+                  preparing={preparing}
+                  captioning={captioning}
+                  previewReady={Object.fromEntries(
+                    project.media
+                      .filter((m) => m.source.previewCacheIds?.some((id) => cached[id] !== undefined))
+                      .map((m) => [m.id, Math.min(...(m.source.previewCacheIds ?? []).map((id) => cached[id] ?? 0))]),
+                  )}
+                  downloading={downloadingIds}
+                  onDownload={inDesktopApp ? (mediaId) => {
+                    const item = project.media.find((m) => m.id === mediaId);
+                    if (item) downloadForEditing(item);
+                  } : undefined}
+                  onImport={inDesktopApp ? () => void importFiles() : undefined}
+                  onAddMedia={addMedia}
+                  onRemoveMedia={(mediaId) => api.edit({ type: "removeMedia", mediaId })}
+                  onChangePicture={inDesktopApp ? (mediaId) => void changePicture(mediaId) : undefined}
+                  usedMedia={usedMedia}
+                  onRecordVoice={inDesktopApp ? openVoice : undefined}
+                />
+              )}
+              {leftOpen && <EdgeResizer edge="right" width={sideWidth} limits={SIDE_WIDTH} label="Media panel width" onResize={resizeSide} />}
               <Preview
                 silent={voiceSilent}
                 project={project}
@@ -2043,7 +2065,7 @@ export default function App() {
                     onOpenCaptions={inDesktopApp ? () => void openCaptions() : undefined}
                   />
                 ) : rightTab === "assistant" ? (
-                  <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} />
+                  <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} request={aiAsk} onRequested={() => setAiAsk(null)} />
                 ) : rightTab === "sound" && selected?.mediaId ? (
                   <SoundPanel
                     clip={selected}
@@ -2205,13 +2227,13 @@ export default function App() {
               onClipCommand={clipCommand}
               canPaste={canPaste}
               canPasteEffects={canPasteEffects}
+              onAiEdit={aiEdit}
               onCover={(choice) => void chooseCover(choice)}
             />
           </div>
         )}
       </main>
 
-      {leftOpen && <EdgeResizer edge="right" width={sideWidth} limits={SIDE_WIDTH} label="Sidebar width" onResize={resizeSide} />}
 
       <TextMenu />
       {closeDialog}

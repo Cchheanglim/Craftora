@@ -93,6 +93,8 @@ interface TimelineEditorProps {
   canPasteEffects: boolean;
   /** Cover on the main track: from the frame at the playhead, a picture, or none. */
   onCover: (choice: "frame" | "picture" | "remove") => void;
+  /** "AI edit": the picked part of a clip (timeline seconds) and what to change there; absent hides the button. */
+  onAiEdit?: (ask: { clipId: string; start: number; end: number; text: string }) => void;
   /**
    * A voice-over being recorded: drawn as a growing clip from `start` to `end` (seconds on the timeline) on track
    * `trackId`, the track the take will land on; null: a new row below all the tracks (the take gets a new track).
@@ -166,6 +168,7 @@ export function TimelineEditor({
   canPasteEffects,
   onCover,
   recording,
+  onAiEdit,
 }: TimelineEditorProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -179,6 +182,24 @@ export function TimelineEditor({
     setGhostState(g);
   };
   const [pps, setPps] = useState(40);
+  const [aiMode, setAiMode] = useState(false);
+  const [aiPick, setAiPick] = useState<{ clipId: string; start: number; end: number } | null>(null);
+  const pickRef = useRef<HTMLDivElement>(null);
+  const turnAiOff = () => {
+    setAiMode(false);
+    setAiPick(null);
+  };
+  useEffect(() => {
+    if (!aiMode) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        turnAiOff();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [aiMode]);
   // The track buttons compact (only ⋯ and Cover), remembered on this PC; `headsDrag` is the width while the line
   // beside them is dragged.
   const [headsCompact, setHeadsCompact] = useState(() => {
@@ -620,6 +641,72 @@ export function TimelineEditor({
   const canSplit = selected && playback.time > selected.start && playback.time < clipEnd(selected);
   const canCutSilences = Boolean(selected && selectedMedia?.hasAudio && !selectedMedia.source.image);
 
+  const toggleAiMode = () => {
+    if (aiMode) {
+      turnAiOff();
+    } else {
+      setAiMode(true);
+      if (selected && !isBlock(selected)) {
+        setAiPick({ clipId: selected.id, start: selected.start, end: clipEnd(selected) });
+      } else {
+        setAiPick(null);
+      }
+    }
+  };
+
+  const beginPick = (clip: Clip) => (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.currentTarget;
+    el.setPointerCapture?.(e.pointerId);
+    onSelect(clip.id);
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const cEnd = clipEnd(clip);
+    const clamp = (t: number) => Math.max(clip.start, Math.min(cEnd, t));
+    const pressTime = clamp(timeAt(e.clientX));
+    let moved = false;
+
+    const move = (ev: PointerEvent) => {
+      scrollAtEdge(ev.clientX);
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) >= 4) {
+        moved = true;
+      }
+      const cur = clamp(timeAt(ev.clientX));
+      setAiPick({
+        clipId: clip.id,
+        start: Math.min(pressTime, cur),
+        end: Math.max(pressTime, cur),
+      });
+    };
+
+    const end = (ev: PointerEvent) => {
+      try {
+        el.releasePointerCapture?.(ev.pointerId);
+      } catch {
+        /* ignore */
+      }
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", end);
+      el.removeEventListener("pointercancel", end);
+
+      if (!moved || Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) {
+        setAiPick({ clipId: clip.id, start: clip.start, end: cEnd });
+      } else {
+        const cur = clamp(timeAt(ev.clientX));
+        const s = Math.min(pressTime, cur);
+        const en = Math.max(pressTime, cur);
+        setAiPick({ clipId: clip.id, start: s === en ? clip.start : s, end: s === en ? cEnd : en });
+      }
+    };
+
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  };
+
   // While a clip is being moved: it follows the pointer, and on a magnetic track the other
   // clips close up behind it and open a gap where it would land.
   const isMagnetic = (trackId: string) => Boolean(project.tracks.find((t) => t.id === trackId)?.magnetic);
@@ -698,6 +785,28 @@ export function TimelineEditor({
           <Icon name="plus" size={14} />
           Track
         </button>
+        {onAiEdit && (
+          <>
+            <span className="tl__sep" aria-hidden="true" />
+            <div className="tl__ai-wrap">
+              <button
+                type="button"
+                className="btn btn--ghost"
+                aria-pressed={aiMode}
+                title="Pick part of a clip and tell the AI what to change"
+                onClick={toggleAiMode}
+              >
+                <Icon name="sparkle" size={14} />
+                AI edit
+              </button>
+              {aiMode && !aiPick && (
+                <div className="tl__ai-hint" role="status">
+                  Drag over a clip to pick the part to edit
+                </div>
+              )}
+            </div>
+          </>
+        )}
         {/* Like the popular editor: fit, then out, a slider, in; all but fit zoom about the playhead. */}
         <div className="tl__zoom">
           <button type="button" className="btn btn--icon" aria-label="Zoom to fit timeline" title="Zoom to fit timeline (Shift+Z)" onClick={fit}>
@@ -980,7 +1089,7 @@ export function TimelineEditor({
                         aria-label={`${label}, ${formatClock(clip.start)} to ${formatClock(clipEnd(clip))}`}
                         className={classes.join(" ")}
                         style={{ left: start * pps, width: Math.max(4, length * pps) }}
-                        onPointerDown={beginDrag(clip, "move")}
+                        onPointerDown={aiMode ? beginPick(clip) : beginDrag(clip, "move")}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           onSelect(clip.id);
@@ -1093,6 +1202,23 @@ export function TimelineEditor({
                     );
                   })}
                 {recording && recording.trackId === track.id && <RecordingClip recording={recording} pps={pps} />}
+                {aiMode && aiPick && (() => {
+                  const c = project.clips.find((cl) => cl.id === aiPick.clipId);
+                  if (!c || where(c).trackId !== track.id) return null;
+                  return (
+                    <div
+                      ref={pickRef}
+                      className="tl__ai-pick"
+                      style={{
+                        left: aiPick.start * pps,
+                        width: Math.max(0, (aiPick.end - aiPick.start) * pps),
+                        top: 2,
+                        bottom: 2,
+                      }}
+                      aria-hidden="true"
+                    />
+                  );
+                })()}
               </div>
             ))}
             {/* Not a real track yet: no laneRefs entry, takes no drops. */}
@@ -1178,6 +1304,19 @@ export function TimelineEditor({
             <div className="tl__playhead" style={{ left: playback.time * pps }} aria-hidden="true" />
             {project.clips.length === 0 && (
               <p className="tl__empty">Drag media here from the left, or press + on a file to add it.</p>
+            )}
+            {aiMode && aiPick && (
+              <AiEditBox
+                pickRef={pickRef}
+                aiPick={aiPick}
+                pps={pps}
+                scrollRef={scrollRef}
+                onClose={turnAiOff}
+                onSend={(text) => {
+                  onAiEdit?.({ ...aiPick, text });
+                  turnAiOff();
+                }}
+              />
             )}
           </div>
         </div>
@@ -1449,6 +1588,132 @@ function ClipMenu({
         {item("reveal", "Open file location", "folder", local)}
       </div>
     </>,
+    document.body,
+  );
+}
+
+/**
+ * AI edit dialog: positioned under the picked range on the timeline, lets user type instructions for the assistant.
+ */
+function AiEditBox({
+  pickRef,
+  aiPick,
+  pps,
+  scrollRef,
+  onClose,
+  onSend,
+}: {
+  pickRef: { current: HTMLDivElement | null };
+  aiPick: { clipId: string; start: number; end: number };
+  pps: number;
+  scrollRef: { current: HTMLDivElement | null };
+  onClose: () => void;
+  onSend: (text: string) => void;
+}) {
+  const [text, setText] = useState("");
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  // Under the picked part when it fits, else above it (the timeline is usually at the foot of the window), never over it.
+  const place = () => {
+    if (!pickRef.current) return { left: 0, top: 0 };
+    const r = pickRef.current.getBoundingClientRect();
+    const h = boxRef.current?.offsetHeight ?? 150;
+    return { left: r.left, top: r.bottom + 8 + h <= window.innerHeight - 8 ? r.bottom + 8 : r.top - 8 - h };
+  };
+  const [pos, setPos] = useState(place);
+  const updatePos = () => setPos(place());
+
+  useLayoutEffect(() => {
+    updatePos();
+  }, [pps, aiPick, pickRef]);
+
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const onScroll = () => updatePos();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [scrollRef, pickRef]);
+
+  useLayoutEffect(() => {
+    if (boxRef.current) keepInside(boxRef.current);
+  });
+
+  const handleSend = () => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    onSend(trimmed);
+    setText("");
+  };
+
+  return createPortal(
+    <div
+      ref={(el) => {
+        boxRef.current = el;
+        keepInside(el);
+      }}
+      className="tl__ai-box"
+      role="dialog"
+      aria-label="AI edit"
+      style={{ position: "fixed", left: pos.left, top: pos.top }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Escape") {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+    >
+      <div className="tl__ai-box-top">
+        <span className="tl__ai-chip mono">
+          {formatClock(aiPick.start)} – {formatClock(aiPick.end)}
+        </span>
+        <button
+          type="button"
+          className="tl__ai-close"
+          aria-label="Close"
+          title="Close"
+          onClick={onClose}
+        >
+          <Icon name="x" size={13} />
+        </button>
+      </div>
+      <textarea
+        className="tl__ai-input"
+        aria-label="Describe your edit"
+        rows={2}
+        autoFocus
+        placeholder="Describe your edit, e.g. make this part slow-mo and add a title"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+          }
+        }}
+      />
+      <div className="tl__ai-box-footer">
+        <span className="tl__ai-note">Edits only the picked part · Ctrl Z undoes it</span>
+        <button
+          type="button"
+          className="tl__ai-send"
+          aria-label="Send"
+          disabled={!text.trim()}
+          onClick={handleSend}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 19V5M6 11l6-6 6 6" />
+          </svg>
+        </button>
+      </div>
+    </div>,
     document.body,
   );
 }

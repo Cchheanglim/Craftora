@@ -22,6 +22,19 @@
   letter-spacing: -0.01em;
 }
 
+.toolbar__nav {
+  position: relative;
+}
+
+.toolbar__nav-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  padding-top: 6px;
+  z-index: 70;
+  animation: pop-in var(--dur-fast) var(--ease-out) backwards;
+}
+
 .toolbar__end {
   margin-left: auto;
   display: flex;

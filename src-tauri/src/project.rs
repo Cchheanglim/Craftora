@@ -158,6 +158,9 @@ struct ClipSpec {
     /// Filter blocks: the colour steps, in order (effects.ts `LookStep`): CSS filter names and amounts.
     #[serde(default)]
     look: Vec<(String, f64)>,
+    /// Remove a colour, before the colour steps: effects.ts `keyLine` ([r, g, b, edge, width]).
+    #[serde(default)]
+    key: Option<[f64; 5]>,
     /// Effect blocks: effects.ts `PICTURE_EFFECTS` id.
     #[serde(default)]
     effect: String,
@@ -571,6 +574,7 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             || !(0.5..=3.0).contains(&clip.effect_speed)
             || clip.look.len() > MAX_LOOK_STEPS
             || !clip.look.iter().all(|(op, amount)| look_filter(op, *amount).is_some())
+            || clip.key.is_some_and(|k| key_filter(k).is_none())
         {
             return Err("A clip on the timeline has an invalid setting.".into());
         }
@@ -860,11 +864,13 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                         Some(&s) => format!("[{s}:v]setpts=PTS-STARTPTS"),
                         None => format!("[{k}:v]{}", clip.picture_chain(w, h, fps)),
                     };
-                    // A filter and an effect dropped on this clip draw on its own picture, timed from its first frame.
+                    // A filter and an effect dropped on this clip draw on its own picture, timed from its first frame;
+                    // a removed colour goes first, from the picture as it comes.
                     let own: String = clip
-                        .look
-                        .iter()
-                        .filter_map(|(op, amount)| look_filter(op, *amount))
+                        .key
+                        .and_then(key_filter)
+                        .into_iter()
+                        .chain(clip.look.iter().filter_map(|(op, amount)| look_filter(op, *amount)))
                         .chain(effect_filter(&clip.effect, 0.0, clip.length(), (w, h, fps), (clip.effect_strength, clip.effect_speed)).map(|f| format!(",{f}")))
                         .collect();
                     // Uncovered before the fades: the circle's sharp edge would cut a fading picture's see-through too.
@@ -1234,6 +1240,14 @@ fn timed(filter: &str, on: &str) -> String {
     format!("{filter}{}{on}", if filter.contains('=') { ':' } else { '=' })
 }
 
+/// Remove a colour as effects.ts `keyLine` draws it: the pixel's lean towards the key colour, 0.5 + r·R + g·G + b·B,
+/// goes into alpha (colorchannelmixer, `aa` × the opaque alpha as the 0.5), then alpha = (edge − that) / width, within
+/// 0–1 (lutrgb); starts with a comma. None for numbers effects.ts never sends.
+fn key_filter([r, g, b, edge, width]: [f64; 5]) -> Option<String> {
+    let ok = [r, g, b].iter().all(|w| (-1.0..=1.0).contains(w)) && (0.5..=1.5).contains(&edge) && (0.005..=1.0).contains(&width);
+    ok.then(|| format!(",format=rgba,colorchannelmixer=ar={r:.4}:ag={g:.4}:ab={b:.4}:aa=0.5,lutrgb=a='clip(({edge:.4}-val/maxval)/{width:.4},0,1)*maxval'"))
+}
+
 /// One colour step of a look as FFmpeg draws it, with the same maths as the CSS filter function
 /// the preview uses (Filter Effects spec matrices, on the picture's RGB values); starts with a comma.
 /// None for a name or amount the catalog never sends.
@@ -1315,7 +1329,7 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cover_bytes, effect_filter, frame_step, gpu_picture, look_filter, piece_frames, pieces, timed, ClipSpec, RenderSpec, Source};
+    use super::{cover_bytes, effect_filter, frame_step, gpu_picture, key_filter, look_filter, piece_frames, pieces, timed, ClipSpec, RenderSpec, Source};
     use crate::local::ProbeInfo;
     use std::collections::HashMap;
 
@@ -1501,6 +1515,13 @@ mod tests {
         assert_eq!(look_filter("sharpen", 0.5).unwrap(), ",convolution=0m='0 -250 0 -250 2000 -250 0 -250 0':1m='0 -250 0 -250 2000 -250 0 -250 0':2m='0 -250 0 -250 2000 -250 0 -250 0':0rdiv=0.001:1rdiv=0.001:2rdiv=0.001");
         assert!(look_filter("sharpen", -0.5).is_none());
         assert!(look_filter("exposure", 1.5).is_none());
+        // Remove a colour: effects.ts `keyLine` for #00b140 at 50 / 20; numbers it never sends are refused.
+        assert_eq!(
+            key_filter([-0.4203, 0.5024, -0.0821, 0.6887, 0.0492]).unwrap(),
+            ",format=rgba,colorchannelmixer=ar=-0.4203:ag=0.5024:ab=-0.0821:aa=0.5,lutrgb=a='clip((0.6887-val/maxval)/0.0492,0,1)*maxval'"
+        );
+        assert!(key_filter([0.0, 0.0, 0.0, 0.6887, 0.0]).is_none());
+        assert!(key_filter([f64::NAN, 0.5, 0.0, 0.6887, 0.05]).is_none());
         // Only the catalog's names and amounts reach FFmpeg.
         assert!(look_filter("saturate", 2.5).is_none());
         assert!(look_filter("blur", 1.0).is_none());

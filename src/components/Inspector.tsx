@@ -25,7 +25,7 @@ import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
-import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustMin, adjustSteps, blockLabel } from "../project/effects";
+import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustMin, adjustSteps, blockLabel, keyLine } from "../project/effects";
 import { SHAPES, shapeLabel } from "../project/shapes";
 import "./Inspector.css";
 
@@ -388,6 +388,8 @@ export function Inspector({
         </fieldset>
       )}
 
+      {isPicture && <RemoveColour clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} />}
+
       {!isText && !isShape && !isImage && !isBlock && (
         <div className="insp__field">
           <label htmlFor="insp-speed">Speed</label>
@@ -646,6 +648,72 @@ export function Slider({
       />
       <span className="mono">{format(value)}</span>
     </div>
+  );
+}
+
+const KEY_COLOURS = [
+  { label: "Green screen", value: "#00b140" },
+  { label: "Blue screen", value: "#0047bb" },
+];
+const KEY_START = { strength: 50, softness: 20 };
+type EyeDropperApi = { EyeDropper: new () => { open: () => Promise<{ sRGBHex: string }> } };
+
+/** Remove a colour (chroma key): a green or blue screen, or any colour picked off the screen, and how much goes. */
+function RemoveColour({ clip, onChange, onCheckpoint }: { clip: Clip; onChange: (patch: ClipPatch, live?: boolean) => void; onCheckpoint: () => void }) {
+  const key = clip.chroma;
+  const canPick = "EyeDropper" in window;
+  // The clip's own key is off while picking, so its real colours show. One undo step.
+  const pick = async () => {
+    onCheckpoint();
+    if (key) onChange({ chroma: undefined }, true);
+    try {
+      const { sRGBHex } = await new (window as unknown as EyeDropperApi).EyeDropper().open();
+      onChange({ chroma: { ...KEY_START, ...key, color: sRGBHex } }, true);
+    } catch {
+      // Escape: as it was.
+      if (key) onChange({ chroma: key }, true);
+    }
+  };
+  const custom = key && !KEY_COLOURS.some((c) => c.value === key.color);
+  return (
+    <fieldset className="insp__group">
+      <legend>
+        Remove a colour
+        {key && (
+          <button type="button" className="insp__reset" onClick={() => onChange({ chroma: undefined })}>
+            Reset
+          </button>
+        )}
+      </legend>
+      <div className="insp__swatches">
+        {KEY_COLOURS.map((c) => (
+          <button
+            key={c.value}
+            type="button"
+            className="insp__swatch"
+            style={{ background: c.value }}
+            aria-label={c.label}
+            title={c.label}
+            aria-pressed={key?.color === c.value}
+            onClick={() => onChange({ chroma: { ...KEY_START, ...key, color: c.value } })}
+          />
+        ))}
+        {custom && <span className="insp__swatch" style={{ background: key.color }} role="img" aria-label={`Picked colour ${key.color}`} title="Picked colour" />}
+        {canPick && (
+          <button type="button" className="btn btn--secondary" onClick={() => void pick()}>
+            <Icon name="eyedropper" size={13} /> Pick from the picture
+          </button>
+        )}
+      </div>
+      {!key && <p className="insp__hint">Make one colour see-through, like a green screen, to show what's under this clip.</p>}
+      {key && !keyLine(key) && <p className="insp__hint">That colour is grey, so there's nothing to take out. Pick the coloured background.</p>}
+      {key && (
+        <>
+          <Slider id="insp-key-strength" label="Strength" min={0} max={100} step={1} value={key.strength} format={(v) => String(v)} onCheckpoint={onCheckpoint} onChange={(strength) => onChange({ chroma: { ...key, strength } }, true)} />
+          <Slider id="insp-key-soft" label="Soft edge" min={0} max={100} step={1} value={key.softness} format={(v) => String(v)} onCheckpoint={onCheckpoint} onChange={(softness) => onChange({ chroma: { ...key, softness } }, true)} />
+        </>
+      )}
+    </fieldset>
   );
 }
 

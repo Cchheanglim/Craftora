@@ -162,6 +162,7 @@ const paths = {
   ),
   plus: <path d="M12 5v14M5 12h14" />,
   minus: <path d="M5 12h14" />,
+  menu: <path d="M4 6h16M4 12h10M4 18h16" />,
   upload: (
     <>
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -289,6 +290,7 @@ const paths = {
   ),
   snowflake: <path d="M12 2v20M4.9 7l14.2 10M4.9 17 19.1 7M9 4l3 2 3-2M9 20l3-2 3 2" />,
   crop: <path d="M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2" />,
+  eyedropper: <path d="m2 22 1-1h3l9-9M3 21v-3l9-9M15 6l3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" />,
   flip: <path d="M12 3v18M8 7l-5 5 5 5V7ZM16 7l5 5-5 5V7Z" />,
 } as const;
 
