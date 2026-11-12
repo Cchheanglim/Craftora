@@ -131,6 +131,15 @@ test("a picture that fills the frame is rendered, not copied as it is", async ()
   const plan = planExport(p, settings);
   expect(plan.kind).toBe("render");
   expect(plan.kind === "render" && plan.spec.clips[0].fill).toBe(true);
+
+  // A filter, Enhance or a removed colour inside the clip is drawn too (they used to be copied away).
+  const one = applyEdit(applyEdit(p, { type: "updateClip", clipId: "c", patch: { fill: false } }), { type: "updateClip", clipId: "c", patch: { look: "noir" } });
+  expect(planExport(one, settings).kind).toBe("render");
+  const enhanced = applyEdit(one, { type: "updateClip", clipId: "c", patch: { look: undefined, adjust: { enhance: 1 } } });
+  expect(planExport(enhanced, settings).kind).toBe("render");
+  const keyed = applyEdit(enhanced, { type: "updateClip", clipId: "c", patch: { adjust: {}, chroma: { color: "#00b140", strength: 50, softness: 20 } } });
+  const keyedPlan = planExport(keyed, settings);
+  expect(keyedPlan.kind === "render" && keyedPlan.spec.clips[0].key?.length).toBe(5);
 });
 
 test("duplicating a clip places the copy right after it on magnetic and free tracks", () => {

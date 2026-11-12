@@ -6,7 +6,7 @@
  * - Time effects (slow motion, speed up, reverse) change the clip (or piece) they're dropped on.
  * - Transitions go on the join between two clips.
  */
-import { MIN_CLIP, TRANSITION_KINDS, clipEnd, isBlock, meets, clipLength, isStill, mainTrack, showsPicture, trackOrder, type Clip, type Project, type Transition } from "./model";
+import { MIN_CLIP, TRANSITION_KINDS, clipEnd, isBlock, meets, clipLength, isStill, mainTrack, showsPicture, trackOrder, type ChromaKey, type Clip, type Project, type Transition } from "./model";
 import type { ClipPatch, EditAction } from "./actions";
 import type { ShapeId } from "./shapes";
 import type { CSSProperties } from "react";
@@ -62,15 +62,22 @@ export const ADJUSTMENTS = [
   { id: "warmth", label: "Warmth" },
   { id: "sharpen", label: "Sharpen" },
 ] as const;
-export type Adjust = Partial<Record<(typeof ADJUSTMENTS)[number]["id"], number>>;
+/** `enhance`: 1 = Enhance is on (a checkbox, not a slider). */
+export type Adjust = Partial<Record<(typeof ADJUSTMENTS)[number]["id"] | "enhance", number>>;
+
+/**
+ * Edit → Adjust → Enhance: a clearer, more vivid picture in one click: darks lifted, brights held back, then a little
+ * more contrast, colour and sharpness. Steps the export already draws (project.rs `look_filter`).
+ */
+export const ENHANCE: LookStep[] = [["shadows", 0.3], ["highlights", -0.2], ["contrast", 1.08], ["saturate", 1.2], ["sharpen", 0.3]];
 
 /** Where an Adjust slider starts: Sharpen only sharpens. */
 export const adjustMin = (id: keyof Adjust) => (id === "sharpen" ? 0 : -100);
 
-/** A clip's adjustments as colour steps, drawn after its filter; none for all at 0. */
+/** A clip's adjustments as colour steps (Enhance first), drawn after its filter; none for all at 0. */
 export function adjustSteps(adjust?: Adjust): LookStep[] {
   const v = (id: keyof Adjust) => Math.round(clamp(adjust?.[id] ?? 0, adjustMin(id), 100)) / 100;
-  const steps: LookStep[] = [];
+  const steps: LookStep[] = adjust?.enhance ? [...ENHANCE] : [];
   if (v("exposure")) steps.push(["exposure", v("exposure")]);
   if (v("brightness")) steps.push(["brightness", round4(1 + v("brightness") / 2)]);
   if (v("contrast")) steps.push(["contrast", round4(1 + v("contrast") / 2)]);
@@ -101,6 +108,40 @@ export function toneCurve(op: ToneOp, v: number, x: number): number {
 
 /** Sharpen at `v` (0 to 1): the 3×3 kernel's weight on each of the four neighbours, taken away (the middle gets 1 + 4×). */
 export const sharpenWeight = (v: number) => 0.5 * v;
+
+/**
+ * Remove a colour (chroma key) as one straight line on the picture's red, green and blue, so the preview (an SVG colour
+ * matrix, Preview.tsx `KeyFilters`) and the export (project.rs `key_filter`) take away the same pixels. A pixel's lean
+ * towards the key colour's hue, p = r·R + g·G + b·B, is put in its alpha as 0.5 + p; then
+ * alpha = (edge − that) / width, kept within 0–1: the key colour goes, colours leaning less its way fade back in.
+ * Returns [r, g, b, edge, width]; null for a colour with no hue to remove (grey, black, white).
+ */
+export function keyLine({ color, strength, softness }: ChromaKey): [number, number, number, number, number] | null {
+  const n = parseInt(color.replace("#", ""), 16);
+  if (!/^#?[0-9a-f]{6}$/i.test(color) || !Number.isFinite(n)) return null;
+  const [R, G, B] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => c / 255);
+  // Its hue as BT.601 colour differences (blue − brightness, red − brightness).
+  const u = -0.1687 * R - 0.3313 * G + 0.5 * B;
+  const v = 0.5 * R - 0.4187 * G - 0.0813 * B;
+  const lean = Math.hypot(u, v);
+  if (lean < 0.05) return null;
+  const [du, dv] = [u / lean, v / lean];
+  const s = clamp(strength, 0, 100) / 100;
+  const soft = clamp(softness, 0, 100) / 100;
+  return [
+    round4(-0.1687 * du + 0.5 * dv),
+    round4(-0.3313 * du - 0.4187 * dv),
+    round4(0.5 * du - 0.0813 * dv),
+    // Stronger: colours leaning less far the key's way go too. Softer: a wider fade back in.
+    round4(0.5 + lean * (1 - 0.85 * s)),
+    round4(Math.max(0.01, lean * (0.05 + 0.5 * soft))),
+  ];
+}
+
+/** A pixel's alpha (0–1) after `keyLine`'s key, for red, green and blue from 0 to 1 (the maths both sides draw). */
+export function keyedAlpha([r, g, b, edge, width]: [number, number, number, number, number], R: number, G: number, B: number): number {
+  return clamp((edge - clamp(0.5 + r * R + g * G + b * B, 0, 1)) / width, 0, 1);
+}
 
 /** How much Warmth 100 changes red and blue (project.rs `look_filter` uses the same). */
 const WARMTH = 0.2;

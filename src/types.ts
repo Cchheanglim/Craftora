@@ -158,6 +158,8 @@ export interface RenderClip {
   smooth: boolean;
   /** Filter blocks: the colour steps, in order (effects.ts `LookStep`); empty otherwise. */
   look: LookStep[];
+  /** Remove a colour, before the colour steps: effects.ts `keyLine` ([r, g, b, edge, width]); none keeps every colour. */
+  key?: [number, number, number, number, number];
   /** Effect blocks: effects.ts `PICTURE_EFFECTS` id; empty otherwise. */
   effect: string;
   /** Strength as a multiple of how it was made (0–2) and Speed (0.5–3×): effects.ts `effectStrength`, `effectSpeed`. */

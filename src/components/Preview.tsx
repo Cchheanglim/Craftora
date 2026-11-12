@@ -8,7 +8,7 @@ import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
-import { RGB_SHARE, adjustSteps, blocksStyle, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
+import { RGB_SHARE, adjustSteps, blocksStyle, keyLine, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
@@ -480,6 +480,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           )}
           {WARMTH_FILTERS}
           <AdjustFilters clips={project.clips} />
+          <KeyFilters clips={project.clips} />
           <div
             className="preview__pictures"
             style={{ filter: blocks.filter, transform: [blocks.transform, blocks.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined }}
@@ -819,6 +820,27 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
  * the export's 3×3 kernel. Sharpen works on the preview's own pixels, fewer than the video's, so it looks a little
  * coarser here than in the export.
  */
+/** Remove a colour: one filter per keyed clip, `key-<clip id>`, effects.ts `keyLine` drawn as the export draws it. */
+function KeyFilters({ clips }: { clips: Clip[] }) {
+  const keyed = clips.flatMap((c) => {
+    const line = c.chroma && keyLine(c.chroma);
+    return line ? [{ id: c.id, line }] : [];
+  });
+  if (!keyed.length) return null;
+  return (
+    <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
+      {keyed.map(({ id, line: [r, g, b, edge, width] }) => (
+        <filter key={id} id={`key-${id}`} colorInterpolationFilters="sRGB">
+          <feColorMatrix type="matrix" values={`1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 ${r} ${g} ${b} 0 0.5`} />
+          <feComponentTransfer>
+            <feFuncA type="linear" slope={-1 / width} intercept={edge / width} />
+          </feComponentTransfer>
+        </filter>
+      ))}
+    </svg>
+  );
+}
+
 function AdjustFilters({ clips }: { clips: Clip[] }) {
   const used = useMemo(() => {
     const steps = new Map<string, LookStep>();
@@ -947,7 +969,10 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
   const fitWidth = clip.fill ? (wider ? aspect / stageAspect : 1) : wider ? 1 : aspect / stageAspect;
   const boxWidth = stageWidth * fitWidth * clip.size;
   // A filter or effect on this clip itself changes only its box, timed to the clip's span.
-  const fx = clip.look || clip.effect || adjustSteps(clip.adjust).length ? blocksStyle([clip], time, boxWidth, boxWidth / aspect) : undefined;
+  const own = clip.look || clip.effect || adjustSteps(clip.adjust).length ? blocksStyle([clip], time, boxWidth, boxWidth / aspect) : undefined;
+  // A removed colour goes first, from the picture as it comes (the export keys before the colour steps too).
+  const key = clip.chroma && keyLine(clip.chroma) ? `url(#key-${clip.id})` : undefined;
+  const fx = key ? { mirror: false, bars: 0, layers: [], ...own, filter: [key, own?.filter].filter(Boolean).join(" ") } : own;
   const box: CSSProperties = {
     width: `${fitWidth * clip.size * 100}%`,
     aspectRatio: String(aspect),

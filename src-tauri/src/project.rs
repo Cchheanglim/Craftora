@@ -1153,8 +1153,8 @@ fn cover_bytes(data_url: &str) -> Option<Vec<u8>> {
     (bytes.starts_with(&[0xFF, 0xD8, 0xFF]) && bytes.len() <= 8_000_000).then_some(bytes)
 }
 
-/// More than any look in effects.ts has, plus every Adjust slider.
-const MAX_LOOK_STEPS: usize = 12;
+/// More than any look in effects.ts has, plus every Adjust slider and Enhance's steps.
+const MAX_LOOK_STEPS: usize = 24;
 
 /// Blur's strength: its standard deviation as a share of the frame width (effects.ts `BLUR_SHARE`).
 /// RGB split at strength 1: red and blue moved this share of the width (effects.ts `RGB_SHARE`).

@@ -365,6 +365,12 @@ export function Inspector({
               </button>
             )}
           </legend>
+          {isPicture && (
+            <label className="option" title="Clearer, brighter and more vivid in one click">
+              <input type="checkbox" checked={Boolean(clip.adjust?.enhance)} onChange={(e) => onChange({ adjust: { ...clip.adjust, enhance: e.target.checked ? 1 : 0 } })} />
+              <span>Enhance</span>
+            </label>
+          )}
           {ADJUSTMENTS.map(({ id, label }) => (
             <Slider
               key={id}

@@ -40,6 +40,7 @@ export type ClipPatch = Partial<
     | "look"
     | "lookAmount"
     | "adjust"
+    | "chroma"
     | "effectStrength"
     | "effectSpeed"
     | "effect"

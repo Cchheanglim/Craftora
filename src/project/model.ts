@@ -186,6 +186,8 @@ export interface Clip {
   lookAmount?: number;
   /** Edit → Adjust (a picture, or a filter block): brightness, contrast, saturation, exposure, highlights, shadows, warmth, sharpen; -100 (0 for sharpen) to 100. */
   adjust?: Adjust;
+  /** Edit → Remove a colour (chroma key, e.g. a green screen); every colour stays when absent. */
+  chroma?: ChromaKey;
   /** An effect block: effects.ts `PICTURE_EFFECTS`. */
   effect?: PictureEffectId;
   /** Its Strength (0–100, 50 when absent) and Speed (0.5–3×, 1 when absent), for the effects that have them (`EFFECT_SETTINGS`). */
@@ -225,6 +227,13 @@ export interface Clip {
   font?: TextFont;
   /** What keeps text readable over the picture: an outline or a dark box; a soft shadow when absent. */
   edge?: TextEdge;
+}
+
+/** The colour a clip's picture loses (#rrggbb), how much of it goes and how soft its edges are (0–100 each; effects.ts `keyLine`). */
+export interface ChromaKey {
+  color: string;
+  strength: number;
+  softness: number;
 }
 
 /** Fonts offered for text: ones Windows has, so the export (project.rs `font_path`) draws the same letters. */
