@@ -6,6 +6,7 @@ import { Thumb } from "./Thumb";
 import { beginMediaDrag } from "./TimelineEditor";
 import type { FxTab } from "./FxPanel";
 import type { IconName } from "./Icon";
+import { IconTabs } from "./IconTabs";
 import "./MediaPanel.css";
 
 export interface MediaPanelProps {
@@ -129,27 +130,9 @@ export function MediaPanel({
     </span>
   );
 
-  const tabButton = ({ id, label, icon }: (typeof TABS)[number]) => (
-    <button
-      key={id}
-      type="button"
-      role="tab"
-      id={`media-panel-tab-${id}`}
-      aria-selected={tab === id}
-      aria-controls="media-panel-body"
-      className="media-panel__tab"
-      onClick={() => setTab(id)}
-    >
-      <Icon name={icon} size={15} />
-      <span>{label}</span>
-    </button>
-  );
-
   return (
     <section className="media-panel" aria-label="Media and audio">
-      <div className="media-panel__tabs" role="tablist" aria-label="Media and audio">
-        {TABS.map(tabButton)}
-      </div>
+      <IconTabs tabs={TABS} value={tab} onPick={setTab} label="Media and audio" idPrefix="media-panel-tab" />
 
       {tab !== "media" && tab !== "audio" && (
         <div className="media-panel__fx" id="media-panel-body" role="tabpanel" aria-labelledby={`media-panel-tab-${tab}`}>

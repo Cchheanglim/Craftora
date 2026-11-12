@@ -117,7 +117,9 @@ import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/Edge
 import { dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, type FxTab } from "./components/FxPanel";
 import { CropDialog } from "./components/CropDialog";
-import { PanelTabs } from "./components/PanelTabs";
+import { IconTabs } from "./components/IconTabs";
+import { loadFont } from "./lib/fonts";
+import type { IconName } from "./components/Icon";
 import { SoundPanel } from "./components/SoundPanel";
 import { LEVEL_STEP, VoicePanel } from "./components/VoicePanel";
 import { Tooltip } from "./components/Tooltip";
@@ -150,13 +152,17 @@ const DEMO = DEMO_SOURCES[0];
 const FX_TABS = ["filters", "effects", "transitions", "shapes"] as const;
 /** The right panel's tabs, in the owner's order (2026-11-12); those that don't fit go under More. */
 /** A selected clip's own tabs beside Edit (Inspector `section`). */
-const CLIP_TABS = ["adjust", "enhance", "background", "speed"] as const;
+const CLIP_TABS = ["text", "adjust", "enhance", "background", "speed"] as const;
 /** The right panel's row: the selected clip's settings (Filters, Effects, Transitions and Shapes are in the left panel, MediaPanel). */
-const PANEL_TABS: { id: "edit" | "transcript" | "assistant" | (typeof CLIP_TABS)[number]; label: string }[] = [
-  { id: "edit", label: "Edit" },
-  ...CLIP_TABS.map((id) => ({ id, label: id[0].toUpperCase() + id.slice(1) })),
-  { id: "transcript", label: "Transcript" },
-  { id: "assistant", label: "Assistant" },
+const PANEL_TABS: { id: "edit" | "transcript" | "assistant" | (typeof CLIP_TABS)[number]; label: string; icon: IconName }[] = [
+  { id: "edit", label: "Edit", icon: "pencil" },
+  { id: "text", label: "Text", icon: "text" },
+  { id: "adjust", label: "Adjust", icon: "sliders" },
+  { id: "enhance", label: "Enhance", icon: "wand" },
+  { id: "background", label: "Background", icon: "image" },
+  { id: "speed", label: "Speed", icon: "clock" },
+  { id: "transcript", label: "Transcript", icon: "captions" },
+  { id: "assistant", label: "Assistant", icon: "sparkle" },
 ];
 /** Quiet time after the last edit before the project is saved. */
 const AUTOSAVE_MS = 600;
@@ -571,6 +577,11 @@ export default function App() {
     if (rightTab === "sound" && !selected?.mediaId) setRightTab(panelBack.current);
     else if (soundOpen && selectedHasSound && rightTab === panelBack.current) setRightTab("sound");
   }, [rightTab, selected, soundOpen, selectedHasSound]);
+  // Library fonts the project's texts use: loaded for the preview once (Segoe UI shows until then, or if offline).
+  const usedFonts = [...new Set(project.clips.map((c) => c.font ?? ""))].join(",");
+  useEffect(() => {
+    for (const id of usedFonts.split(",")) loadFont(id).catch(() => {});
+  }, [usedFonts]);
   const pickTab = (tab: typeof rightTab) => {
     setSoundOpen(false);
     setRightTab(tab);
@@ -2080,7 +2091,7 @@ export default function App() {
               <div className={`app__panel${rightOpen ? "" : " is-closed"}`} inert={!rightOpen}>
                 {/* All eight in one row that scrolls sideways, ‹ › at its ends (like the popular editor). */}
                 <div className="app__tabs">
-                  <PanelTabs tabs={PANEL_TABS} value={rightTab === "sound" || rightTab === "voice" || (FX_TABS as readonly string[]).includes(rightTab) ? null : (rightTab as (typeof PANEL_TABS)[number]["id"])} onPick={pickTab} label="Right panel" />
+                  <IconTabs tabs={PANEL_TABS} value={rightTab === "sound" || rightTab === "voice" || (FX_TABS as readonly string[]).includes(rightTab) ? null : (rightTab as (typeof PANEL_TABS)[number]["id"])} onPick={pickTab} label="Right panel" idPrefix="right-tab" />
                 </div>
                 {fxOpen && (FX_TABS as readonly string[]).includes(rightTab) ? (
                   fxPanel(rightTab as FxTab, true)

@@ -226,3 +226,52 @@
   width: 22px;
   height: 22px;
 }
+
+/* Text → Font: the library as a list, each name in its own font once it's on this PC. */
+.insp__fonts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.insp__fonts-group {
+  margin-top: 8px;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.insp__font {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 16px;
+  text-align: left;
+}
+
+.insp__font:hover {
+  background: var(--bg-hover);
+}
+
+.insp__font[aria-pressed="true"] {
+  background: var(--bg-selected);
+  border-color: var(--line-hover);
+}
+
+.insp__font > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insp__font-note {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}

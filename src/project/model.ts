@@ -238,11 +238,36 @@ export interface ChromaKey {
 
 /** Fonts offered for text: ones Windows has, so the export (project.rs `font_path`) draws the same letters. */
 export const TEXT_FONTS = [
-  { id: "arial", label: "Arial", css: "Arial" },
-  { id: "impact", label: "Impact", css: "Impact" },
-  { id: "georgia", label: "Georgia", css: "Georgia" },
-  { id: "comic", label: "Comic Sans", css: '"Comic Sans MS"' },
+  { id: "arial", label: "Arial", css: "Arial", group: "On this PC" },
+  { id: "impact", label: "Impact", css: "Impact", group: "On this PC" },
+  { id: "georgia", label: "Georgia", css: "Georgia", group: "On this PC" },
+  { id: "comic", label: "Comic Sans", css: '"Comic Sans MS"', group: "On this PC" },
+  // The font library: free fonts (OFL / Apache) from Google's collection, downloaded the first time one is picked
+  // (fonts.rs). `file` is its path there. One weight each, so the preview and the export draw the same letters. `width`:
+  // its average letter width over its size, measured (Segoe UI bold, the default, is 0.473), for `textLines`.
+  ...([
+    ["bebas-neue", "Bebas Neue", "Bold titles", "ofl/bebasneue/BebasNeue-Regular.ttf", 0.339],
+    ["anton", "Anton", "Bold titles", "ofl/anton/Anton-Regular.ttf", 0.4],
+    ["archivo-black", "Archivo Black", "Bold titles", "ofl/archivoblack/ArchivoBlack-Regular.ttf", 0.547],
+    ["russo-one", "Russo One", "Bold titles", "ofl/russoone/RussoOne-Regular.ttf", 0.509],
+    ["bowlby-one", "Bowlby One", "Bold titles", "ofl/bowlbyone/BowlbyOne-Regular.ttf", 0.614],
+    ["alfa-slab-one", "Alfa Slab One", "Bold titles", "ofl/alfaslabone/AlfaSlabOne-Regular.ttf", 0.538],
+    ["black-ops-one", "Black Ops One", "Bold titles", "ofl/blackopsone/BlackOpsOne-Regular.ttf", 0.536],
+    ["poppins-bold", "Poppins Bold", "Clean", "ofl/poppins/Poppins-Bold.ttf", 0.503],
+    ["lato-bold", "Lato Bold", "Clean", "ofl/lato/Lato-Bold.ttf", 0.446],
+    ["kanit-bold", "Kanit Bold", "Clean", "ofl/kanit/Kanit-Bold.ttf", 0.462],
+    ["righteous", "Righteous", "Clean", "ofl/righteous/Righteous-Regular.ttf", 0.468],
+    ["bangers", "Bangers", "Fun", "ofl/bangers/Bangers-Regular.ttf", 0.368],
+    ["lobster", "Lobster", "Fun", "ofl/lobster/Lobster-Regular.ttf", 0.379],
+    ["permanent-marker", "Permanent Marker", "Fun", "apache/permanentmarker/PermanentMarker-Regular.ttf", 0.512],
+    ["pacifico", "Pacifico", "Hand-written", "ofl/pacifico/Pacifico-Regular.ttf", 0.424],
+    ["shadows-into-light", "Shadows Into Light", "Hand-written", "ofl/shadowsintolight/ShadowsIntoLight.ttf", 0.386],
+    ["great-vibes", "Great Vibes", "Hand-written", "ofl/greatvibes/GreatVibes-Regular.ttf", 0.302],
+    ["abril-fatface", "Abril Fatface", "Elegant", "ofl/abrilfatface/AbrilFatface-Regular.ttf", 0.456],
+  ] as const).map(([id, label, group, file, width]) => ({ id, label, css: `"Craftora ${label}"`, group, file, width })),
 ] as const;
+/** A font from the library (downloaded when picked), not one Windows has. */
+export const libraryFont = (id?: string) => TEXT_FONTS.find((f) => f.id === id && "file" in f) as Extract<(typeof TEXT_FONTS)[number], { file: string }> | undefined;
 export type TextFont = (typeof TEXT_FONTS)[number]["id"];
 export type TextEdge = "outline" | "box";
 
@@ -593,9 +618,11 @@ export function wrapText(text: string, max: number): string {
 }
 
 /** A text clip's lines in a frame, the same in the preview and the export. */
-export function textLines(text: string, size: number, frame: { width: number; height: number }): string {
-  // Letters of bold text are about 0.6 of their height wide; lines fill up to 92% of the width.
-  return wrapText(text, Math.max(8, Math.floor((0.92 * frame.width) / (0.6 * size * frame.height))));
+export function textLines(text: string, size: number, frame: { width: number; height: number }, font?: string): string {
+  // Letters of bold text are about 0.6 of their height wide (with room to spare); lines fill up to 92% of the width. A
+  // library font is that much wider or narrower than the default (Windows' own fonts wrap as they always have).
+  const letter = 0.6 * ((libraryFont(font)?.width ?? 0.473) / 0.473);
+  return wrapText(text, Math.max(8, Math.floor((0.92 * frame.width) / (letter * size * frame.height))));
 }
 
 /** A spoken line on the timeline: a caption piece of a clip that plays it. */

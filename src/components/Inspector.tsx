@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ClipPatch } from "../project/actions";
 import {
   MAX_CROP,
@@ -23,6 +24,7 @@ import {
 } from "../project/model";
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
+import { fontLoaded, loadFont } from "../lib/fonts";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
 import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustMin, blockLabel, keyLine } from "../project/effects";
@@ -47,7 +49,7 @@ const CROP_SIDES: { side: keyof Crop; label: string }[] = [
 const MAX_FADE = 5;
 
 /** The right panel's tab this is: Edit, or one of the clip's own tabs. */
-export type ClipSection = "edit" | "adjust" | "enhance" | "background" | "speed";
+export type ClipSection = "edit" | "text" | "adjust" | "enhance" | "background" | "speed";
 
 interface InspectorProps {
   /** Which settings to show (Edit when absent). */
@@ -122,6 +124,27 @@ export function Inspector({
   const sec = (v: number) => `${v.toFixed(1)} s`;
   const moving = Boolean(media) && !isImage;
   const ownTab = {
+    text: isText && (
+      track.name === "Captions" ? (
+        <p className="insp__hint">Captions are styled all together: select the captions track's clips in Edit to change them.</p>
+      ) : (
+        <>
+          <Slider id="insp-text-size" label="Size" min={0.02} max={0.3} step={0.005} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
+          <ColorField color={clip.color} onChange={(color) => onChange({ color })} />
+          <fieldset className="insp__field">
+            <legend>Edge</legend>
+            <div className="segmented" role="group" aria-label="Edge">
+              {([[undefined, "Shadow"], ["outline", "Outline"], ["box", "Box"]] as const).map(([edge, label]) => (
+                <button key={label} type="button" aria-pressed={clip.edge === edge} onClick={() => onChange({ edge })}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <FontLibrary selected={clip.font} onChange={onChange} />
+        </>
+      )
+    ),
     adjust: isPicture && (
       <fieldset className="insp__group">
         <legend>
@@ -211,7 +234,13 @@ export function Inspector({
 
       {section !== "edit" &&
         (ownTab || (
-          <p className="insp__hint">{section === "speed" ? "Select a video or sound clip on the timeline to change its speed." : "Select a video or picture on the timeline."}</p>
+          <p className="insp__hint">
+            {section === "speed"
+              ? "Select a video or sound clip on the timeline to change its speed."
+              : section === "text"
+                ? "Select a text on the timeline to change its font and style."
+                : "Select a video or picture on the timeline."}
+          </p>
         ))}
       {section === "edit" && (
         <>
@@ -368,9 +397,7 @@ export function Inspector({
               {/* A caption's size, place and look are set for all captions at once (Captions, above). */}
               {track.name !== "Captions" && (
                 <>
-                  <Slider id="insp-text-size" label="Size" min={0.02} max={0.3} step={0.005} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
                   <PositionSelect clip={clip} onChange={onChange} />
-                  <TextLook id="insp" look={clip} onChange={onChange} />
                 </>
               )}
             </>
@@ -738,6 +765,50 @@ function RemoveColour({ clip, onChange, onCheckpoint, onPick }: { clip: Clip; on
           <Slider id="insp-key-soft" label="Soft edge" min={0} max={100} step={1} value={key.softness} format={(v) => String(v)} onCheckpoint={onCheckpoint} onChange={(softness) => onChange({ chroma: { ...key, softness } }, true)} />
         </>
       )}
+    </fieldset>
+  );
+}
+
+/** The font library (model.ts `TEXT_FONTS`), by kind; a library font downloads the first time it's picked (lib/fonts.ts). */
+function FontLibrary({ selected, onChange }: { selected?: TextFont; onChange: (patch: ClipPatch) => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const pick = (id?: TextFont) => {
+    setBusy(id ?? null);
+    setFailed(false);
+    loadFont(id)
+      .then(() => onChange({ font: id }))
+      .catch(() => setFailed(true))
+      .finally(() => setBusy(null));
+  };
+  const groups = [...new Set(TEXT_FONTS.map((f) => f.group))];
+  const row = (id: TextFont | undefined, label: string, css?: string) => {
+    const ready = fontLoaded(id);
+    return (
+      <button key={id ?? "default"} type="button" className="insp__font" aria-pressed={selected === id} onClick={() => pick(id)}>
+        <span style={ready && css ? { fontFamily: `${css}, "Segoe UI", sans-serif` } : undefined}>{label}</span>
+        {busy === (id ?? null) && id ? (
+          <span className="insp__font-note">Downloading…</span>
+        ) : (
+          !ready && <Icon name="download" size={13} aria-label="Downloads the first time you pick it" />
+        )}
+      </button>
+    );
+  };
+  return (
+    <fieldset className="insp__group">
+      <legend>Font</legend>
+      <div className="insp__fonts">
+        {row(undefined, "Segoe UI (default)")}
+        {groups.map((group) => (
+          <div key={group} className="insp__fonts">
+            <span className="insp__fonts-group">{group}</span>
+            {TEXT_FONTS.filter((f) => f.group === group).map((f) => row(f.id, f.label, f.css))}
+          </div>
+        ))}
+      </div>
+      {failed && <p className="insp__hint">Couldn't download that font. Check the internet connection and try again.</p>}
+      <p className="insp__hint">Free fonts from Google Fonts: each one downloads the first time you pick it.</p>
     </fieldset>
   );
 }
