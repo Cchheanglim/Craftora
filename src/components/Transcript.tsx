@@ -15,6 +15,8 @@ interface TranscriptProps {
   captionStatus?: string;
   /** Makes captions from the sound for the media that has none; absent when there's nothing to do. */
   onMakeCaptions?: () => void;
+  /** Stops making captions from the sound; absent when nothing is being made. */
+  onCancelCaptions?: () => void;
   /** Saves the captions as an .srt file; absent in the browser preview. */
   onSaveSrt?: () => void;
   /** Opens an .srt, .vtt or .lrc caption file from this PC; absent in the browser preview. */
@@ -27,6 +29,15 @@ function MakeCaptions({ onMake }: { onMake: () => void }) {
     <button type="button" className="btn btn--secondary" onClick={onMake}>
       <Icon name="captions" size={14} />
       Make captions from the sound
+    </button>
+  );
+}
+
+function CancelCaptions({ onCancel }: { onCancel: () => void }) {
+  return (
+    <button type="button" className="btn btn--secondary" onClick={onCancel}>
+      <Icon name="x" size={14} />
+      Cancel making captions
     </button>
   );
 }
@@ -47,7 +58,7 @@ const keyOf = (line: number, word: number) => `${line}:${word}`;
  * What's said on the timeline, to edit by text: click a sentence or word to jump there, select words
  * and press Delete (or the button) to cut them out of the video.
  */
-export function Transcript({ project, api, time, seek, captionStatus, onMakeCaptions, onSaveSrt, onOpenCaptions }: TranscriptProps) {
+export function Transcript({ project, api, time, seek, captionStatus, onMakeCaptions, onCancelCaptions, onSaveSrt, onOpenCaptions }: TranscriptProps) {
   const lines = useMemo(() => transcript(project), [project]);
   const words = useMemo(() => lines.map(wordsOf), [lines]);
   const [query, setQuery] = useState("");
@@ -161,9 +172,10 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
         <Icon name="captions" size={18} />
         <p>{captionStatus ? `${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. It fills in every few minutes of the video.` : "Nothing said on the timeline yet."}</p>
         <p className="transcript__muted">Videos that come with captions show what's said here, to edit by text.</p>
-        {(onMakeCaptions || onOpenCaptions) && (
+        {(onMakeCaptions || onCancelCaptions || onOpenCaptions) && (
           <div className="transcript__actions">
             {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
+            {onCancelCaptions && <CancelCaptions onCancel={onCancelCaptions} />}
             {onOpenCaptions && <OpenCaptions onOpen={onOpenCaptions} />}
           </div>
         )}
@@ -209,6 +221,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
           </form>
         )}
         {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
+        {onCancelCaptions && <CancelCaptions onCancel={onCancelCaptions} />}
         {(onSaveSrt || onOpenCaptions) && (
           <div className="transcript__actions">
             {onSaveSrt && (

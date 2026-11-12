@@ -17,6 +17,8 @@ export interface Activity {
   detail: string;
   /** 0–100, or null while it can't tell. */
   percent: number | null;
+  /** Stops it (captions only: downloads and exports are cancelled in the Queue). */
+  onCancel?: () => void;
 }
 
 interface SidebarProps {
@@ -145,6 +147,11 @@ export function Sidebar({
               <span className="side__task-head">
                 <span className="truncate">{a.label}</span>
                 {a.percent !== null && <span className="mono">{Math.floor(a.percent)}%</span>}
+                {a.onCancel && (
+                  <button type="button" className="side__task-cancel" aria-label={`Cancel: ${a.label}`} title="Cancel" onClick={a.onCancel}>
+                    <Icon name="x" size={12} />
+                  </button>
+                )}
               </span>
               <span className={a.percent === null ? "side__task-bar is-indeterminate" : "side__task-bar"}>
                 <span style={{ width: a.percent === null ? undefined : `${a.percent}%` }} />

@@ -38,7 +38,8 @@ pub(crate) fn pick(
     automatic: &BTreeMap<String, Vec<SubFormat>>,
     language: Option<&str>,
 ) -> Option<Track> {
-    let lang = language.unwrap_or("en");
+    // "en-US" → "en": tracks are keyed by the plain language.
+    let lang = language.unwrap_or("en").split('-').next().unwrap_or("en");
     let is = |key: &str, l: &str| key == l || key.starts_with(&format!("{l}-"));
     let vtt = |(key, list): (&String, &Vec<SubFormat>), automatic: bool| {
         let file = list.iter().find(|f| f.ext.as_deref() == Some("vtt"))?;
@@ -49,8 +50,13 @@ pub(crate) fn pick(
     // Live replays list their chat as a "subtitle".
     let own = || manual.iter().filter(|(k, _)| k.as_str() != "live_chat");
     let mine = own().find(|(k, _)| is(k, lang)).or_else(|| own().find(|(k, _)| is(k, "en"))).or_else(|| own().next());
-    // Automatic ones come in every language by machine translation; "-orig" marks what was said.
-    let auto = automatic.iter().find(|(k, _)| k.ends_with("-orig")).or_else(|| automatic.get_key_value(lang));
+    // Automatic ones come in every language by machine translation; "-orig" marks what was said, one per
+    // audio track when the video is dubbed, so the video's own language comes first.
+    let orig = format!("{lang}-orig");
+    let auto = automatic
+        .get_key_value(&orig)
+        .or_else(|| automatic.get_key_value(lang))
+        .or_else(|| automatic.iter().find(|(k, _)| k.ends_with("-orig")));
     mine.and_then(|m| vtt(m, false)).or_else(|| auto.and_then(|a| vtt(a, true)))
 }
 
@@ -248,6 +254,9 @@ mod tests {
         automatic.insert("en-orig".to_string(), vtt("auto-orig"));
         let track = pick(&manual, &automatic, Some("en")).unwrap();
         assert_eq!((track.url.as_str(), track.label.as_str()), ("auto-orig", "English (automatic)"));
+        // A dubbed video lists an "-orig" per audio track: the video's own language wins.
+        automatic.insert("bn-orig".to_string(), vtt("auto-bn"));
+        assert_eq!(pick(&manual, &automatic, Some("en-US")).unwrap().url, "auto-orig");
         manual.insert("live_chat".to_string(), vtt("chat"));
         manual.insert("en-US".to_string(), vtt("mine"));
         assert_eq!(pick(&manual, &automatic, Some("en")).unwrap().url, "mine");

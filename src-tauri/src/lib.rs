@@ -164,6 +164,7 @@ pub fn run() {
             captions::open_captions,
             notify::notify,
             speech::make_captions,
+            speech::cancel_captions,
             store::save_snapshot,
             store::save_voice,
             virustotal::site_check_available,

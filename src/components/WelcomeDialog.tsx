@@ -49,6 +49,8 @@ export function WelcomeDialog({ onImport, onPasteLink, busy, onClose }: WelcomeD
   useEffect(() => {
     const el = ref.current;
     if (el && !el.open) el.showModal();
+    // showModal focuses the first button (the X) with a focus ring; the window itself takes focus instead.
+    el?.focus();
   }, []);
 
   const close = (then?: () => void) => {
@@ -67,6 +69,7 @@ export function WelcomeDialog({ onImport, onPasteLink, busy, onClose }: WelcomeD
       ref={ref}
       className={leaving ? "welcome is-leaving" : "welcome"}
       aria-labelledby="welcome-title"
+      tabIndex={-1}
       // Escape closes a modal dialog by itself; fade out first instead.
       onCancel={(e) => {
         e.preventDefault();

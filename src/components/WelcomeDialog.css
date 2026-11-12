@@ -10,6 +10,9 @@
   animation: welcome-in var(--dur) var(--ease-out) both;
 }
 
+.welcome:focus {
+  outline: none;
+}
 .welcome::backdrop {
   background: rgb(0 0 0 / 0.6);
   animation: welcome-fade-in var(--dur) linear both;

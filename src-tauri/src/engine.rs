@@ -63,12 +63,9 @@ pub async fn run_to_end(app: &AppHandle, name: &str, args: &[&str]) -> Result<Ou
     let mut command: std::process::Command = command(app, name)?.args(args).into();
     command.stdin(std::process::Stdio::null());
     let child = command.spawn().map_err(|e| format!("Could not start {name}: {e}"))?;
-    let tied = tie(child.id());
-    let output = tauri::async_runtime::spawn_blocking(move || {
-        let output = child.wait_with_output();
-        drop(tied);
-        output
-    });
+    // Held here, not in the waiting thread: a caller that stops waiting (Cancel) ends the program too.
+    let _tied = tie(child.id());
+    let output = tauri::async_runtime::spawn_blocking(move || child.wait_with_output());
     output.await.map_err(|e| e.to_string())?.map_err(|e| format!("Could not start {name}: {e}"))
 }
 

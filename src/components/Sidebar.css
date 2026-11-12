@@ -129,6 +129,25 @@
   color: var(--text-2);
 }
 
+/* Keeps the percent and Cancel together on the right. */
+.side__task-head > .truncate {
+  margin-right: auto;
+}
+
+.side__task-cancel {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.side__task-cancel:hover {
+  color: var(--text);
+}
+
 .side__task-bar {
   height: 3px;
   border-radius: 2px;

@@ -19,6 +19,7 @@ import {
   linkPeaks,
   loadCaptions,
   makeCaptions,
+  cancelCaptions,
   onSpeechProgress,
   onSpeechLines,
   detectSilences,
@@ -803,20 +804,23 @@ export default function App() {
       void unlines.then((stop) => stop());
     };
   }, [api]);
-  // Media that captions can be made for from its sound: none yet, unfinished, or made before each
-  // sentence got its own line. Not while it's being done (a failed try can be tried again).
+  // Media that captions can be made for from its sound: none yet, unfinished, made before each
+  // sentence got its own line, or the site's automatic ones (sometimes in the wrong language). Not
+  // while it's being done (a failed try can be tried again).
   const uncaptioned = inDesktopApp
     ? project.media.filter((m) => {
         const s = m.source;
-        const made = m.captions && !m.captions.partial && (m.captions.bySentence || m.captions.label !== SPOKEN);
+        const machine = (label?: string) => Boolean(label?.endsWith("(automatic)"));
+        const made = m.captions && !m.captions.partial && !machine(m.captions.label) && (m.captions.bySentence || m.captions.label !== SPOKEN);
         const going = captioning[m.id] && captioning[m.id] !== "couldn't make captions";
-        return !made && !going && !s.captions && m.hasAudio && !s.image && !s.live && !m.missing;
+        return !made && !going && (!s.captions || machine(s.captions.label)) && m.hasAudio && !s.image && !s.live && !m.missing;
       })
     : [];
   // Only when asked (Transcript → Make captions): it keeps the processor busy for minutes.
   const makeSpokenCaptions = () => {
     for (const m of uncaptioned) {
       const s = m.source;
+      stoppedCaptions.current.delete(m.id);
       setCaptioning((all) => ({ ...all, [m.id]: "captions waiting…" }));
       const done = (label?: string) =>
         setCaptioning((all) => {
@@ -825,15 +829,26 @@ export default function App() {
         });
       speechTurn.current = speechTurn.current.then(async () => {
         while (!idle.current) await new Promise((r) => window.setTimeout(r, 3_000));
+        if (stoppedCaptions.current.has(m.id)) return;
         return makeCaptions(m.id, s.url, Boolean(s.local), preference("captionsOnGpu"))
           .then((lines) => {
             done();
             // The finished file replaces the lines shown along the way.
             if (lines.length) api.refreshMedia(m.id, { captions: { label: SPOKEN, lines, bySentence: true } });
           })
-          .catch(() => done("couldn't make captions"));
+          .catch(() => (stoppedCaptions.current.has(m.id) ? done() : done("couldn't make captions")));
       });
     }
+  };
+  /** Media whose captions Cancel stopped (queued ones then don't start). */
+  const stoppedCaptions = useRef(new Set<string>());
+  const makingCaptions = Object.keys(captioning).filter((id) => captioning[id] !== "couldn't make captions");
+  const stopCaptions = (ids = makingCaptions) => {
+    for (const id of ids) {
+      stoppedCaptions.current.add(id);
+      void cancelCaptions(id);
+    }
+    setCaptioning((all) => Object.fromEntries(Object.entries(all).filter(([id]) => !ids.includes(id))));
   };
 
   /** A picture picked on this PC becomes a media item's list picture (and its History row's). */
@@ -1783,7 +1798,13 @@ export default function App() {
               const text = captioning[m.id];
               const percent = /(\d+)%/.exec(text)?.[1];
               const label = text.replace(/,?\s*\d+%$/, "");
-              return { id: `captions-${m.id}`, label: label[0].toUpperCase() + label.slice(1), detail: m.name, percent: percent ? Number(percent) : null };
+              return {
+                id: `captions-${m.id}`,
+                label: label[0].toUpperCase() + label.slice(1),
+                detail: m.name,
+                percent: percent ? Number(percent) : null,
+                onCancel: () => stopCaptions([m.id]),
+              };
             }),
         ]}
       />
@@ -1968,6 +1989,7 @@ export default function App() {
                     seek={playback.seek}
                     captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
                     onMakeCaptions={uncaptioned.length ? makeSpokenCaptions : undefined}
+                    onCancelCaptions={makingCaptions.length ? () => stopCaptions() : undefined}
                     onSaveSrt={inDesktopApp ? () => void saveCaptionsFile() : undefined}
                     onOpenCaptions={inDesktopApp ? () => void openCaptions() : undefined}
                   />
