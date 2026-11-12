@@ -222,6 +222,11 @@ struct ClipSpec {
     /// "outline", "box", or a soft shadow when empty.
     #[serde(default)]
     edge: String,
+    /// Text style presets (model.ts `Clip`): the edge's colour (#rrggbb) and strength; absent both, the old look.
+    #[serde(default)]
+    edge_color: Option<String>,
+    #[serde(default)]
+    edge_size: Option<f64>,
 }
 
 /// A fade over the clip's own time: `fade_in` from `start` for `length`, or out.
@@ -578,6 +583,11 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
         {
             return Err("A clip on the timeline has an invalid setting.".into());
         }
+        // A style preset's edge: a #rrggbb colour (it goes into the filter graph) and a sane strength.
+        let hex = |c: &str| c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+        if clip.edge_color.as_deref().is_some_and(|c| !hex(c)) || clip.edge_size.is_some_and(|k| !(0.5..=6.0).contains(&k)) {
+            return Err("A text on the timeline has an invalid style.".into());
+        }
         // A library font is downloaded when it's picked (fonts.rs): without its file, the text would come out in another font.
         if clip.role == Role::Text && !["", "arial", "impact", "georgia", "comic"].contains(&clip.font.as_str()) && crate::fonts::installed(&clip.font).is_none() {
             return Err(format!("The font “{}” isn't on this PC. Pick it again in the Text tab to download it, then export.", clip.font));
@@ -911,11 +921,18 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                     let size = ((h as f64) * clip.size).round().max(8.0) as u32;
                     let color = clip.color.trim_start_matches('#');
                     let font = font_path(&clip.text, &clip.font);
-                    // As the preview draws them (Preview.css): an outline about 5% of the letter height, or a box.
-                    let edge = match clip.edge.as_str() {
-                        "outline" => format!("borderw={}:bordercolor=black", (f64::from(size) * 0.05).round().max(1.0)),
-                        "box" => format!("box=1:boxcolor=black@0.6:boxborderw={}", (f64::from(size) * 0.2).round()),
-                        _ => "shadowcolor=black@0.6:shadowx=2:shadowy=2".into(),
+                    // As the preview draws them (Preview.css): an outline about 5% of the letter height, or a box; a
+                    // style preset colours the edge (`validate` checked it) and makes it stronger.
+                    let k = clip.edge_size.unwrap_or(1.0);
+                    let tint = clip.edge_color.as_deref().map(|c| format!("0x{}", c.trim_start_matches('#')));
+                    let edge = match (clip.edge.as_str(), &tint) {
+                        ("outline", _) => format!("borderw={}:bordercolor={}", (f64::from(size) * 0.05 * k).round().max(1.0), tint.as_deref().unwrap_or("black")),
+                        ("box", _) => format!("box=1:boxcolor={}:boxborderw={}", tint.as_deref().unwrap_or("black@0.6"), (f64::from(size) * 0.2).round()),
+                        (_, None) if clip.edge_size.is_none() => "shadowcolor=black@0.6:shadowx=2:shadowy=2".into(),
+                        (_, _) => {
+                            let off = (f64::from(size) * 0.06 * k).round().max(1.0);
+                            format!("shadowcolor={}:shadowx={off}:shadowy={off}", tint.as_deref().unwrap_or("black@0.6"))
+                        }
                     };
                     graph.push(format!(
                         "[{picture}]drawtext=fontfile='{font}':textfile='{file}':expansion=none:text_align=C:fontsize={size}:fontcolor=0x{color}:{edge}:x='(w-text_w)*{x}':y='(h-text_h)*{y}'{alpha}:enable='between(t,{start},{end})'[p{i}]",

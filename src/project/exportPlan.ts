@@ -207,6 +207,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       color: c.color ?? "#ffffff",
       font: c.font,
       edge: c.edge,
+      edgeColor: c.edgeColor,
+      edgeSize: c.edgeSize,
     };
   });
   const media = used.map((m) => {

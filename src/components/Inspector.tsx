@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { ClipPatch } from "../project/actions";
 import {
   MAX_CROP,
@@ -133,6 +133,7 @@ export function Inspector({
         <p className="insp__hint">Captions are styled all together: select the captions track's clips in Edit to change them.</p>
       ) : (
         <>
+          <TextStyles clip={clip} onChange={onChange} />
           <Slider id="insp-text-size" label="Size" min={0.02} max={0.3} step={0.005} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
           <ColorField color={clip.color} onChange={(color, live) => onChange({ color }, live)} onCheckpoint={onCheckpoint} />
           <fieldset className="insp__field">
@@ -777,6 +778,41 @@ function RemoveColour({ clip, onChange, onCheckpoint, onPick }: { clip: Clip; on
           <Slider id="insp-key-soft" label="Soft edge" min={0} max={100} step={1} value={key.softness} format={(v) => String(v)} onCheckpoint={onCheckpoint} onChange={(softness) => onChange({ chroma: { ...key, softness } }, true)} />
         </>
       )}
+    </fieldset>
+  );
+}
+
+/** Text style presets: the letters' colour and their edge (Preview.css draws them, project.rs the same in the export). */
+const TEXT_STYLES: { label: string; patch: Pick<Clip, "color" | "edge" | "edgeColor" | "edgeSize"> }[] = [
+  { label: "Classic", patch: { color: "#ffffff", edge: undefined, edgeColor: undefined, edgeSize: undefined } },
+  { label: "Outline", patch: { color: "#ffffff", edge: "outline", edgeColor: undefined, edgeSize: undefined } },
+  { label: "Bold", patch: { color: "#ffd60a", edge: "outline", edgeColor: "#000000", edgeSize: 2 } },
+  { label: "Pop", patch: { color: "#ffffff", edge: "outline", edgeColor: "#ff2d78", edgeSize: 2 } },
+  { label: "3D", patch: { color: "#ffffff", edge: undefined, edgeColor: "#d81e3a", edgeSize: 1.5 } },
+  { label: "Retro", patch: { color: "#ffd60a", edge: undefined, edgeColor: "#2b59c3", edgeSize: 2 } },
+  { label: "Label", patch: { color: "#111111", edge: "box", edgeColor: "#ffd60a", edgeSize: undefined } },
+  { label: "Sticker", patch: { color: "#ffffff", edge: "box", edgeColor: "#d81e3a", edgeSize: undefined } },
+];
+
+/** Text tab: the style presets as tiles, each "Aa" drawn in its style. */
+function TextStyles({ clip, onChange }: { clip: Clip; onChange: (patch: ClipPatch) => void }) {
+  const same = (p: (typeof TEXT_STYLES)[number]["patch"]) => (clip.color ?? "#ffffff") === p.color && clip.edge === p.edge && clip.edgeColor === p.edgeColor && clip.edgeSize === p.edgeSize;
+  return (
+    <fieldset className="insp__group">
+      <legend>Style</legend>
+      <div className="insp__styles">
+        {TEXT_STYLES.map(({ label, patch }) => (
+          <button key={label} type="button" className="insp__style" aria-pressed={same(patch)} onClick={() => onChange(patch)}>
+            <span
+              className={`insp__style-sample${patch.edge ? ` is-${patch.edge}` : ""}`}
+              style={{ color: patch.color, ...(patch.edgeColor && { "--edge-color": patch.edgeColor }), ...(patch.edgeSize && { "--edge-k": patch.edgeSize }) } as CSSProperties}
+            >
+              Aa
+            </span>
+            <span>{label}</span>
+          </button>
+        ))}
+      </div>
     </fieldset>
   );
 }

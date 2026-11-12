@@ -147,7 +147,12 @@ const textClass = (clip: Clip, selected: boolean) => ["preview__text", selected 
 /** The clip's font, falling back like the export does for letters it lacks. Impact is bold by design. */
 function textFont(clip: Clip): CSSProperties {
   const font = TEXT_FONTS.find((f) => f.id === clip.font);
-  return font ? { fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : {};
+  // A style preset's edge colour and strength (Preview.css reads them; project.rs draws the same).
+  const edge = {
+    ...(clip.edgeColor && { "--edge-color": clip.edgeColor }),
+    ...(clip.edgeSize && { "--edge-k": clip.edgeSize }),
+  } as CSSProperties;
+  return font ? { ...edge, fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : edge;
 }
 
 export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, silent, picking }: PreviewProps) {

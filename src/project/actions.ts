@@ -56,6 +56,8 @@ export type ClipPatch = Partial<
     | "color"
     | "font"
     | "edge"
+    | "edgeColor"
+    | "edgeSize"
     | "fadeIn"
     | "fadeOut"
     | "soundFadeIn"

@@ -227,6 +227,10 @@ export interface Clip {
   font?: TextFont;
   /** What keeps text readable over the picture: an outline or a dark box; a soft shadow when absent. */
   edge?: TextEdge;
+  /** Text style presets: the edge's colour (#rrggbb; a see-through black when absent) and its strength (thicker outline,
+   * longer shadow; 1 when absent). Absent both, text draws exactly as before them. */
+  edgeColor?: string;
+  edgeSize?: number;
 }
 
 /** The colour a clip's picture loses (#rrggbb), how much of it goes and how soft its edges are (0–100 each; effects.ts `keyLine`). */
