@@ -122,6 +122,11 @@
 
 **Fixed**
 
+- A YouTube video with dubbed sound tracks came with captions in one of the dubs' languages (such as Bangla for an
+  English video): Craftora now takes the captions of what was really said.
+- "Make captions from the sound" is offered for videos whose captions are the site's automatic ones too, and making
+  captions can be cancelled (in Transcript, or the X in Working on).
+- The welcome window no longer opens with a red ring around its close button.
 - A transition between a video and a shape (or text) right after it said the two clips had to meet; it now goes on
   that cut. On a clip with no cut at all (one long video), a transition now cuts it at the playhead (or where it's
   dropped) and goes there, instead of asking you to split it first. Adding another transition (click or drag) further
