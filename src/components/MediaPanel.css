@@ -124,10 +124,10 @@
   padding: 0;
 }
 
-/* Two cards a row in the usual width, more as the panel widens. */
+/* Small cards whatever the panel's width (owner): a wider panel fits more of them, never bigger ones. */
 .media-panel__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(96px, 112px));
   gap: 10px 8px;
 }
 
