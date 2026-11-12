@@ -28,3 +28,22 @@ export const targetOf = (source: Source) => source.slice(source.indexOf(":") + 1
 
 /** A model choice for agent programs, which use whatever model they're set up with. */
 export const OWN_MODEL = { id: "default", label: "Its own model" };
+
+const OFF_KEY = "craftora.assistantOff";
+/** AIs switched off in Settings → Assistant: kept (keys too) but left out of the assistant's AI list. */
+export function switchedOff(): Source[] {
+  try {
+    const list: unknown = JSON.parse(localStorage.getItem(OFF_KEY) ?? "[]");
+    return Array.isArray(list) ? list.filter((s): s is Source => typeof s === "string") : [];
+  } catch {
+    return [];
+  }
+}
+export function switchOff(source: Source, off: boolean) {
+  const rest = switchedOff().filter((s) => s !== source);
+  try {
+    localStorage.setItem(OFF_KEY, JSON.stringify(off ? [...rest, source] : rest));
+  } catch {
+    /* not essential */
+  }
+}

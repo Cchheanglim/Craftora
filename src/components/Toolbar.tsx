@@ -21,6 +21,8 @@ interface ToolbarProps {
   onSetUpSiteCheck?: () => void;
   /** Imports files from this PC; absent in the browser preview. */
   onImport?: () => void;
+  /** Opens the export pop-up; only in the editor. */
+  onExport?: () => void;
   /** Lets Home's "Paste a link" focus the field. */
   inputRef: RefObject<HTMLInputElement | null>;
   leftOpen: boolean;
@@ -43,6 +45,7 @@ export function Toolbar({
   canCheckSite,
   onSetUpSiteCheck,
   onImport,
+  onExport,
   inputRef,
   leftOpen,
   rightOpen,
@@ -179,6 +182,12 @@ export function Toolbar({
           </button>
         )}
         {queue}
+        {onExport && (
+          <button type="button" className="btn btn--primary" onClick={onExport} title="Export this project (pick where it's going, then Add to queue)">
+            <Icon name="film" size={14} />
+            Export
+          </button>
+        )}
         {onImport && (
           <button type="button" className="btn btn--secondary" onClick={onImport} disabled={fetching} title="Import files (Ctrl+O)">
             <Icon name="upload" size={14} />

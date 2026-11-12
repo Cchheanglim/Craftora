@@ -1,0 +1,36 @@
+.export-dialog {
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text);
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 64px);
+}
+
+/* Only while open: `display` here would override the closed dialog's hiding. */
+.export-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  animation: pop-in var(--dur) var(--ease-out) backwards;
+}
+
+.export-dialog:focus {
+  outline: none;
+}
+
+.export-dialog::backdrop {
+  background: rgb(0 0 0 / 0.6);
+  animation: fade-in var(--dur) linear backwards;
+}
+
+/* In a side panel the panel gives the head its room; here the pop-up's edges would touch Back and X. */
+.export-dialog .panel-head {
+  padding: var(--space-3);
+}
+
+/* The head already says Export. */
+.export-dialog .export__title {
+  display: none;
+}

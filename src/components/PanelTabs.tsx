@@ -1,15 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { fitTabs } from "../lib/fitTabs";
 import { Icon } from "./Icon";
+import "./Select.css";
 import "./PanelTabs.css";
 
-/** One row of panel tabs that scrolls sideways, with ‹ › at the ends when there is more to see. */
+/** Space between the tabs, as in PanelTabs.css. */
+const GAP = 2;
+
+/**
+ * One row of panel tabs: those that fit whole, and a More menu with the rest (no tab half cut off or faded). The open
+ * tab always stays in the row.
+ */
 export function PanelTabs<T extends string>({
   tabs,
   value,
   onPick,
   label,
 }: {
-  /** In order; all in one row. */
+  /** In order. */
   tabs: { id: T; label: string }[];
   /** The open tab (pressed), or null when none of these is open (e.g. a settings panel is open). */
   value: T | null;
@@ -17,92 +25,88 @@ export function PanelTabs<T extends string>({
   /** For screen readers, e.g. "Right panel". */
   label: string;
 }) {
-  const stripRef = useRef<HTMLDivElement>(null);
-  const [canLeft, setCanLeft] = useState(false);
-  const [canRight, setCanRight] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const key = `ptabs-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
+  const open = tabs.findIndex((t) => t.id === value);
+  const [shown, setShown] = useState<number[]>(() => tabs.map((_, i) => i));
   // Labels, not the array: callers usually pass a new array each render.
   const labels = tabs.map((t) => t.label).join("\n");
 
-  useEffect(() => {
-    const strip = stripRef.current;
-    if (!strip) return;
+  // Every tab (and More) is measured in a hidden copy of the row, so what fits is known before anything is cut.
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    const measure = measureRef.current;
+    if (!box || !measure) return;
     const update = () => {
-      setCanLeft(strip.scrollLeft > 1);
-      setCanRight(strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1);
+      const sizes = Array.from(measure.children).map((el) => (el as HTMLElement).offsetWidth);
+      const more = sizes.pop() ?? 0;
+      const style = getComputedStyle(box);
+      const room = box.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const next = fitTabs(sizes, room, more + GAP, GAP, open);
+      setShown((now) => (now.join() === next.join() ? now : next));
     };
     update();
-    strip.addEventListener("scroll", update, { passive: true });
-    // The strip (the panel is resizable) and the tabs (the font loading late widens them) both change what fits.
+    // The panel is resizable, and the font loading late widens the tabs.
     const observer = new ResizeObserver(update);
-    observer.observe(strip);
-    Array.from(strip.children).forEach((tab) => observer.observe(tab));
-    return () => {
-      strip.removeEventListener("scroll", update);
-      observer.disconnect();
-    };
-  }, [labels]);
+    observer.observe(box);
+    observer.observe(measure);
+    return () => observer.disconnect();
+  }, [labels, open]);
 
-  // Native and not passive: React's onWheel can't stop the panel from scrolling too.
-  useEffect(() => {
-    const strip = stripRef.current;
-    if (!strip) return;
-    const onWheel = (e: WheelEvent) => {
-      // A sideways trackpad swipe already scrolls the strip by itself.
-      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-      const dy = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY * 16 : e.deltaY;
-      const room = dy < 0 ? strip.scrollLeft : strip.scrollWidth - strip.clientWidth - strip.scrollLeft;
-      if (room <= 1) return; // At that end: let the page scroll as usual.
-      e.preventDefault();
-      strip.scrollLeft += dy;
-    };
-    strip.addEventListener("wheel", onWheel, { passive: false });
-    return () => strip.removeEventListener("wheel", onWheel);
-  }, []);
-
-  // Bring the open tab into view by scrolling the strip only (scrollIntoView could move the panel or page too).
-  useEffect(() => {
-    const strip = stripRef.current;
-    const tab = strip?.querySelector<HTMLElement>('[aria-pressed="true"]');
-    if (!strip || !tab) return;
-    const start = tab.offsetLeft;
-    const end = start + tab.offsetWidth;
-    if (start < strip.scrollLeft) strip.scrollTo({ left: start, behavior: "smooth" });
-    else if (end > strip.scrollLeft + strip.clientWidth)
-      strip.scrollTo({ left: end - strip.clientWidth, behavior: "smooth" });
-  }, [value, labels]);
-
-  const page = (dir: -1 | 1) => {
-    const strip = stripRef.current;
-    if (strip) strip.scrollBy({ left: dir * strip.clientWidth * 0.7, behavior: "smooth" });
-  };
+  const hidden = tabs.filter((_, i) => !shown.includes(i));
 
   return (
-    <div className="ptabs">
-      <button
-        type="button"
-        className="ptabs__arrow"
-        aria-label="Earlier tabs"
-        style={{ visibility: canLeft ? "visible" : "hidden" }}
-        onClick={() => page(-1)}
-      >
-        <Icon name="chevronLeft" size={14} />
-      </button>
-      <div ref={stripRef} className="ptabs__strip" role="group" aria-label={label}>
-        {tabs.map((tab) => (
-          <button key={tab.id} type="button" aria-pressed={tab.id === value} onClick={() => onPick(tab.id)}>
-            {tab.label}
+    <div ref={boxRef} className="ptabs">
+      <div className="ptabs__strip" role="group" aria-label={label}>
+        {shown.map((i) => (
+          <button key={tabs[i].id} type="button" aria-pressed={tabs[i].id === value} onClick={() => onPick(tabs[i].id)}>
+            {tabs[i].label}
           </button>
         ))}
+        {hidden.length > 0 && (
+          <button
+            type="button"
+            className="ptabs__more"
+            style={{ anchorName: `--${key}` } as CSSProperties}
+            popoverTarget={key}
+            aria-haspopup="menu"
+            title={hidden.map((t) => t.label).join(", ")}
+          >
+            More
+            <Icon name="chevronDown" size={13} />
+          </button>
+        )}
       </div>
-      <button
-        type="button"
-        className="ptabs__arrow"
-        aria-label="More tabs"
-        style={{ visibility: canRight ? "visible" : "hidden" }}
-        onClick={() => page(1)}
-      >
-        <Icon name="chevronRight" size={14} />
-      </button>
+      {hidden.length > 0 && (
+        <div ref={listRef} id={key} popover="auto" role="menu" className="select__list ptabs__list" style={{ positionAnchor: `--${key}` } as CSSProperties}>
+          {hidden.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                listRef.current?.hidePopover();
+                onPick(t.id);
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div ref={measureRef} className="ptabs__strip ptabs__measure" aria-hidden="true">
+        {tabs.map((t) => (
+          <button key={t.id} type="button" tabIndex={-1} aria-pressed={t.id === value}>
+            {t.label}
+          </button>
+        ))}
+        <button type="button" tabIndex={-1} className="ptabs__more">
+          More
+          <Icon name="chevronDown" size={13} />
+        </button>
+      </div>
     </div>
   );
 }

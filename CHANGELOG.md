@@ -4,6 +4,11 @@
 
 **New**
 
+- **Export** is a button next to Queue (in the editor) that opens the export settings in a pop-up with Back and X,
+  instead of a tab in the right panel. Add to queue closes it; Ctrl+Enter still adds the project straight away.
+- **Settings → Assistant**: every AI the assistant can use in one list, Connected and Discover and add. Open a row for
+  its details (where it's installed, Remove key), paste a key or connect a local AI server there, and switch an AI off to
+  leave it out of the assistant's list (its key stays saved). Scan again looks for newly installed AI programs.
 - **Voice-over**: the microphone button on the timeline opens a recorder: pick the microphone, see its level, press
   Record, and after a 3-2-1 count talk while the video plays from the playhead (muted, so the speakers don't get into
   the microphone; can be turned off). Stop puts the take on its own track where it started, saved as an .m4a in the
@@ -122,6 +127,11 @@
 
 **Fixed**
 
+- A YouTube video with dubbed sound tracks came with captions in one of the dubs' languages (such as Bangla for an
+  English video): Craftora now takes the captions of what was really said.
+- "Make captions from the sound" is offered for videos whose captions are the site's automatic ones too, and making
+  captions can be cancelled (in Transcript, or the X in Working on).
+- The welcome window no longer opens with a red ring around its close button.
 - A transition between a video and a shape (or text) right after it said the two clips had to meet; it now goes on
   that cut. On a clip with no cut at all (one long video), a transition now cuts it at the playhead (or where it's
   dropped) and goes there, instead of asking you to split it first. Adding another transition (click or drag) further

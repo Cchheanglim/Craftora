@@ -3,6 +3,8 @@ import type { AudioContainer, ExportSettings, VideoContainer } from "../types";
 import { FRAMES, formatSize, type ExportPlan } from "../project/exportPlan";
 import { Icon } from "./Icon";
 import { useConfirm } from "./ConfirmDialog";
+import { Select } from "./Select";
+import { BrandIcon, type Brand } from "./BrandIcon";
 import "./ExportPanel.css";
 
 interface ExportPanelProps {
@@ -30,10 +32,11 @@ interface ExportPanelProps {
 }
 
 /** One click for the usual places a video goes. */
-const PRESETS = [
-  { label: "YouTube", detail: "16:9", frameId: "1080p", fill: false },
-  { label: "TikTok · Reels · Shorts", detail: "9:16", frameId: "vertical", fill: true },
-  { label: "Instagram post", detail: "1:1", frameId: "square", fill: true },
+const PRESETS: { label: string; detail: string; frameId: string; fill: boolean; brands: Brand[] }[] = [
+  { label: "YouTube", detail: "16:9", frameId: "1080p", fill: false, brands: ["youtube"] },
+  // Reels are Instagram's: its logo stands for them.
+  { label: "TikTok · Reels · Shorts", detail: "9:16", frameId: "vertical", fill: true, brands: ["tiktok", "instagram", "shorts"] },
+  { label: "Instagram post", detail: "1:1", frameId: "square", fill: true, brands: ["instagram"] },
 ];
 
 const VIDEO_CONTAINERS: VideoContainer[] = ["mp4", "mkv"];
@@ -143,21 +146,21 @@ export function ExportPanel({
               File type
             </label>
             {isVideo ? (
-              <select id="container" className="field mono" value={settings.videoContainer} onChange={(e) => onChange({ videoContainer: e.target.value as VideoContainer })}>
-                {VIDEO_CONTAINERS.map((c) => (
-                  <option key={c} value={c}>
-                    {c.toUpperCase()}
-                  </option>
-                ))}
-              </select>
+              <Select<VideoContainer>
+                id="container"
+                className="mono"
+                value={settings.videoContainer}
+                options={VIDEO_CONTAINERS.map((c) => ({ value: c, label: c.toUpperCase() }))}
+                onChange={(videoContainer) => onChange({ videoContainer })}
+              />
             ) : (
-              <select id="container" className="field mono" value={settings.audioContainer} onChange={(e) => onChange({ audioContainer: e.target.value as AudioContainer })}>
-                {AUDIO_CONTAINERS.map((c) => (
-                  <option key={c} value={c}>
-                    {c.toUpperCase()}
-                  </option>
-                ))}
-              </select>
+              <Select<AudioContainer>
+                id="container"
+                className="mono"
+                value={settings.audioContainer}
+                options={AUDIO_CONTAINERS.map((c) => ({ value: c, label: c.toUpperCase() }))}
+                onChange={(audioContainer) => onChange({ audioContainer })}
+              />
             )}
           </div>
         </fieldset>
@@ -168,6 +171,11 @@ export function ExportPanel({
             <div className="export__presets">
               {PRESETS.map((p) => (
                 <button key={p.frameId} type="button" className="export__preset" aria-pressed={settings.frameId === p.frameId} onClick={() => onPreset(p.frameId, p.fill)}>
+                  <span className="export__brands" aria-hidden="true">
+                    {p.brands.map((b) => (
+                      <BrandIcon key={b} brand={b} />
+                    ))}
+                  </span>
                   <strong>{p.label}</strong>
                   <span>{p.detail}</span>
                 </button>
@@ -182,13 +190,7 @@ export function ExportPanel({
             <label htmlFor="frame" className="section-label">
               Frame
             </label>
-            <select id="frame" className="field" value={settings.frameId} onChange={(e) => onChange({ frameId: e.target.value })}>
-              {FRAMES.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
+            <Select id="frame" value={settings.frameId} options={FRAMES.map((f) => ({ value: f.id, label: f.label }))} onChange={(frameId) => onChange({ frameId })} />
           </div>
         )}
 

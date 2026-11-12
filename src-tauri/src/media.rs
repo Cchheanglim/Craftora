@@ -69,6 +69,9 @@ struct Format {
     protocol: Option<String>,
     /// HLS formats: the master playlist that lists every quality and the sound.
     manifest_url: Option<String>,
+    /// A sound track's language; `language_preference` 10 marks the original (not a dub).
+    language: Option<String>,
+    language_preference: Option<i32>,
     /// Headers the site's video servers want, such as the page as `Referer`.
     #[serde(default)]
     http_headers: BTreeMap<String, String>,
@@ -633,7 +636,9 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
     // shortcut: not checked with `first_served` (that would slow every fetch); a refused file just doesn't play on hover.
     let hover = if length_known { preview_choices(&info.formats, Some(HOVER_HEIGHT)).first().and_then(|f| f.url.clone()) } else { None };
     let hover_url = with_page(hover.unwrap_or_default());
-    let captions = crate::captions::pick(&info.subtitles, &info.automatic_captions, info.language.as_deref());
+    // A dubbed video's `language` is its first sound track's (a dub): the original track says what was said.
+    let original = info.formats.iter().find(|f| f.language_preference.is_some_and(|p| p >= 10)).and_then(|f| f.language.as_deref());
+    let captions = crate::captions::pick(&info.subtitles, &info.automatic_captions, original.or(info.language.as_deref()));
     let thumbnails = other_pictures(&info);
     if preview_url.is_empty() && !bot_checked {
         let mut formats = info.formats;

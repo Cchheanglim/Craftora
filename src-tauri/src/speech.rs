@@ -121,10 +121,28 @@ pub async fn make_captions(
     let work = app.path().app_cache_dir().map_err(|e| e.to_string())?.join(format!("speech-{id}"));
     std::fs::create_dir_all(&work).map_err(|e| format!("Couldn't make a working folder: {e}"))?;
     let started = std::time::Instant::now();
-    let made = listen(&app, &id, (file, &source), chosen, &work, card).await;
+    // Its own task, so Cancel can stop it: whisper, FFmpeg and yt-dlp end with it (`tie`).
+    let task = tauri::async_runtime::spawn({
+        let (app, id, work) = (app.clone(), id.clone(), work.clone());
+        async move { listen(&app, &id, (file, &source), chosen, &work, card).await }
+    });
+    RUNNING.lock().unwrap().insert(id.clone(), task.inner().abort_handle());
+    let made = task.await.unwrap_or_else(|_| Err("Cancelled".into()));
+    RUNNING.lock().unwrap().remove(&id);
     crate::diag::note(format!("captions from the sound: {} in {:.0}s", if made.is_ok() { "made" } else { "failed" }, started.elapsed().as_secs_f64()));
     let _ = std::fs::remove_dir_all(&work);
     made
+}
+
+/// Captions being made from the sound, by media id.
+static RUNNING: Mutex<std::collections::BTreeMap<String, tokio::task::AbortHandle>> = Mutex::new(std::collections::BTreeMap::new());
+
+/// Stops making captions for `id` (nothing when it isn't running).
+#[tauri::command]
+pub fn cancel_captions(id: String) {
+    if let Some(task) = RUNNING.lock().unwrap().remove(&id) {
+        task.abort();
+    }
 }
 
 async fn listen(app: &AppHandle, id: &str, (file, link): (Option<PathBuf>, &str), chosen: &SpeechModel, work: &Path, card: Option<u32>) -> Result<Vec<Caption>, String> {

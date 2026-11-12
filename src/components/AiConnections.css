@@ -1,0 +1,240 @@
+/* Settings → Assistant: the AIs list (AiConnections.tsx). */
+/* A card, not the page's full width: names and switches stay close. */
+.ai-conn {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 720px;
+}
+
+.ai-conn__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ai-conn__tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-input);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.ai-conn__tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--dur-fast, 120ms) linear, color var(--dur-fast, 120ms) linear;
+}
+
+.ai-conn__tabs button:hover {
+  color: var(--text);
+}
+
+.ai-conn__tabs button[aria-pressed="true"] {
+  background: var(--line-strong);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.ai-conn__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  /* Fixed, not the theme's radius: the glass themes' larger one makes it a circle. */
+  border-radius: 3px;
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-conn__box {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+.ai-conn__empty {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.ai-conn__row + .ai-conn__row {
+  border-top: 1px solid var(--line);
+}
+
+.ai-conn__row.is-dim {
+  opacity: 0.6;
+}
+
+.ai-conn__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-right: var(--space-4);
+}
+
+.ai-conn__open {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 10px var(--space-4);
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-conn__open:disabled {
+  cursor: default;
+}
+
+.ai-conn__open:disabled .ai-conn__chevron {
+  visibility: hidden;
+}
+
+.ai-conn__chevron {
+  display: grid;
+  color: var(--text-3);
+  transition: transform 120ms ease-out;
+}
+
+.ai-conn__chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.ai-conn__text {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.ai-conn__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-conn__status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.ai-conn__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.ai-conn__dot.is-ready {
+  background: var(--ok);
+}
+
+/* The usual round switch (owner's reference, 2026-11-12): a square one read as a battery. */
+.ai-conn__switch {
+  flex: none;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: var(--line-hover);
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+
+.ai-conn__switch > span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+  transition: transform 150ms ease-out;
+}
+
+.ai-conn__switch[aria-checked="true"] {
+  background: var(--accent-fill);
+}
+
+.ai-conn__switch[aria-checked="true"] > span {
+  transform: translateX(16px);
+}
+
+/* Lined up under the name: chevron (14px) + gap. */
+.ai-conn__details {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 14px + var(--space-3));
+}
+
+.ai-conn__details .asst__form {
+  justify-self: stretch;
+  max-width: 640px;
+}
+
+.ai-conn__path {
+  font-size: 12px;
+  color: var(--text-2);
+  word-break: break-all;
+}
+
+.ai-conn__muted {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.ai-conn__form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-self: stretch;
+}
+
+.ai-conn__form .field {
+  flex: 1;
+  min-width: 180px;
+}
+
+.ai-conn__error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+  color: var(--accent);
+}

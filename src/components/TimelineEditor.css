@@ -10,7 +10,7 @@
 }
 
 .tl__toolbar {
-  height: 38px;
+  height: 32px;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -20,7 +20,15 @@
 }
 
 .tl__toolbar .btn {
-  height: 28px;
+  height: 24px;
+  gap: 5px;
+  padding: 0 8px;
+  font-size: var(--text-xs);
+}
+
+.tl__toolbar .btn svg {
+  width: 13px;
+  height: 13px;
 }
 
 /* A narrow timeline (wide side panels) keeps only the tools' icons; each still names itself on hover. */
@@ -36,13 +44,14 @@
 }
 
 .tl__toolbar .btn--icon {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
 }
 
 .tl__sep {
   width: 1px;
-  height: 18px;
+  height: 14px;
   margin: 0 var(--space-1);
   background: var(--line);
 }
@@ -55,7 +64,7 @@
 }
 
 .tl__zoom-slider {
-  width: 96px;
+  width: 84px;
   margin: 0 4px;
   accent-color: var(--text);
 }
