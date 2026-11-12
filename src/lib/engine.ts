@@ -10,6 +10,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { Caption, JobSpec, MediaSource, RenderSpec } from "../types";
 import { shapePng } from "../project/shapes";
 import { captureThumbnail } from "./thumbnail";
+import { loadFont } from "./fonts";
 
 export const inDesktopApp = "__TAURI_INTERNALS__" in window;
 
@@ -418,6 +419,10 @@ export async function startRender(spec: RenderSpec): Promise<void> {
       spec.clips.map(async (c) => (c.role === "shape" && c.shape ? { ...c, picture: await shapePng(c.shape, spec.width, spec.height) } : c)),
     );
     if (clips.some((c) => c.role === "shape" && !c.picture)) throw new Error("A shape couldn't be drawn for the export.");
+    // A text's library font must be on this PC: the export draws with its file (fonts.rs).
+    await Promise.all(clips.map((c) => loadFont(c.font))).catch(() => {
+      throw new Error("Couldn't download a font this video's text uses. Check the internet connection, then export again.");
+    });
     await invoke("start_render", { spec: { ...spec, clips } });
   } catch (err) {
     throw new Error(message(err));

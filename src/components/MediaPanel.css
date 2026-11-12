@@ -9,42 +9,6 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
-  container-type: inline-size;
-}
-
-/* Six tabs: three to a row, or all six in one row when the panel is wide; none is ever hidden or pushed aside. */
-.media-panel__tabs {
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-  padding: 8px;
-  border-bottom: 1px solid var(--line);
-}
-
-.media-panel__tab {
-  min-width: 0;
-  height: 44px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-3);
-  font-size: var(--text-xs);
-}
-
-.media-panel__tab:hover {
-  background: var(--bg-hover);
-}
-
-.media-panel__tab[aria-selected="true"] {
-  background: var(--bg-selected);
-  color: var(--text);
 }
 
 .media-panel__body {
@@ -124,10 +88,11 @@
   padding: 0;
 }
 
-/* Small cards whatever the panel's width (owner): a wider panel fits more of them, never bigger ones. */
+/* Small cards whatever the panel's width (owner): two a row even at the narrowest, more as it widens, never bigger. */
 .media-panel__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 112px));
+  /* Columns are counted from the 80 px (a fixed max would be used instead and leave one column): cards stay ~80–125 px. */
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
   gap: 10px 8px;
 }
 
@@ -278,10 +243,4 @@
 
 .media-panel__fx > * {
   zoom: 0.88;
-}
-
-@container (min-width: 420px) {
-  .media-panel__tabs {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
 }

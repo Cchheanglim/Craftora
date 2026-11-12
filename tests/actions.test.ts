@@ -289,6 +289,16 @@ test("exported text wraps at whole words to fit the frame", async () => {
   expect(wrapText("one\ntwo", 30)).toBe("one\ntwo");
 });
 
+test("a wide library font wraps sooner, a narrow one later, Windows' fonts as before", async () => {
+  const { textLines } = await import("../src/project/model");
+  const frame = { width: 1920, height: 1080 };
+  const text = "Welcome to the shop: today we are looking at a brand new camera for travel videos";
+  const longest = (font?: string) => Math.max(...textLines(text, 0.08, frame, font).split("\n").map((l) => l.length));
+  expect(textLines(text, 0.08, frame, "arial")).toBe(textLines(text, 0.08, frame));
+  expect(longest("bowlby-one")).toBeLessThan(longest());
+  expect(longest("bebas-neue")).toBeGreaterThan(longest());
+});
+
 test("long caption lines become two-line pieces at whole words, timed by length", async () => {
   const { readableCaptions, CAPTION_CHARS } = await import("../src/project/model");
   const english = "After the war the gods came down to the mountain and asked who would guard the gate, and the monkey king answered that he would do it alone if they let him keep his staff.";

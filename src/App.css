@@ -150,17 +150,14 @@
 }
 
 /* Under the tabs, a line and a little room: the settings scroll beneath that edge, not up against the tabs. */
-.app__panel > .app__tabs + :not(.app__tabs) {
-  margin-top: var(--space-3);
-  border-top: 1px solid var(--line);
-}
 
 .app__panel > :not(.app__tabs) {
   animation: fade-in var(--dur) linear backwards;
 }
 
+/* The tabs (IconTabs) draw their own line under them. */
 .app__tabs {
-  margin: var(--space-3) var(--space-5) 0;
+  flex-shrink: 0;
 }
 
 /* Shown while files are dragged over the window. */

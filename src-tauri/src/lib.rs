@@ -4,6 +4,7 @@ mod captions;
 mod diag;
 mod encoders;
 mod engine;
+mod fonts;
 mod jobs;
 mod live;
 mod local;
@@ -70,6 +71,7 @@ pub fn run() {
             });
         })
         .setup(|app| {
+            fonts::init(app.handle());
             // Exports interrupted by closing the app leave working folders behind.
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -164,6 +166,7 @@ pub fn run() {
             captions::open_captions,
             notify::notify,
             speech::make_captions,
+            fonts::font_file,
             speech::cancel_captions,
             store::save_snapshot,
             store::save_voice,

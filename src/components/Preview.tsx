@@ -636,7 +636,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 onPointerDown={beginGesture(clip, "move")}
                 onClick={(e) => e.stopPropagation()}
               >
-                {textLines(clip.text ?? "", clip.size, frame)}
+                {textLines(clip.text ?? "", clip.size, frame, clip.font)}
                 {isSelected && handles(clip)}
               </div>
             );
@@ -657,7 +657,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               onPointerDown={beginGesture(clip, "move")}
               onClick={(e) => e.stopPropagation()}
             >
-              {textLines(clip.text ?? "", clip.size, frame)}
+              {textLines(clip.text ?? "", clip.size, frame, clip.font)}
               {selectedId === SHOWN_CAPTIONS && handles(clip)}
             </div>
           ))}

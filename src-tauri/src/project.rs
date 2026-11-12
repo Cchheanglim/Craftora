@@ -578,6 +578,10 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
         {
             return Err("A clip on the timeline has an invalid setting.".into());
         }
+        // A library font is downloaded when it's picked (fonts.rs): without its file, the text would come out in another font.
+        if clip.role == Role::Text && !["", "arial", "impact", "georgia", "comic"].contains(&clip.font.as_str()) && crate::fonts::installed(&clip.font).is_none() {
+            return Err(format!("The font “{}” isn't on this PC. Pick it again in the Text tab to download it, then export.", clip.font));
+        }
         match clip.role {
             Role::Video if !clip.effect.is_empty() && effect_filter(&clip.effect, 0.0, clip.length(), (1920, 1080, 30), (1.0, 1.0)).is_none() => {
                 return Err("An effect on a clip isn't one Craftora knows.".into());
@@ -1124,6 +1128,10 @@ fn font_path(text: &str, font: &str) -> String {
         _ => &[],
     };
     let latin = !has('\u{1780}', '\u{17FF}') && !has('\u{2190}', '\u{2BFF}');
+    // A font from the library (fonts.rs), downloaded when it was picked: `validate` refuses the export without it.
+    if let Some(file) = crate::fonts::installed(font).filter(|_| latin) {
+        return file.to_string_lossy().replace('\\', "/").replace(':', "\\:");
+    }
     let path = chosen
         .iter()
         .filter(|_| latin)
