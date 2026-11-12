@@ -7,6 +7,9 @@
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: var(--bg-raised);
+  /* The theme's glass colour is see-through: blur what's behind, like the app's other glass panels. */
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
   color: var(--text);
   width: min(880px, calc(100vw - 32px));
   height: min(560px, calc(100vh - 32px));
