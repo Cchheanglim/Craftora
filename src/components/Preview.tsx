@@ -56,6 +56,8 @@ interface PreviewProps {
   silent?: boolean;
   /** Remove a colour → Pick: the next click on this clip's picture gives its colour (#rrggbb); Escape or a click beside it cancels. */
   picking?: { clipId: string; onPicked: (color: string) => void; onCancel: (unreadable?: boolean) => void };
+  /** The Image editor: the picture on its background colour, without play controls. */
+  still?: { background: string };
 }
 
 const WAVE_BARS = 140;
@@ -156,7 +158,7 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { ...edge, fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : edge;
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, silent, picking }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, silent, picking, still }: PreviewProps) {
   const [mutedByHand, setMuted] = useState(false);
   const muted = mutedByHand || Boolean(silent);
   // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
@@ -454,14 +456,14 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
         onClick={() => {
           if (justDragged.current) return;
           // With a picture or text selected, a click beside it lets go of it; otherwise it plays.
-          if (editable(selected)) onSelect(null);
+          if (editable(selected) || still) onSelect(null);
           else playback.toggle();
         }}
       >
         <div
           ref={stageRef}
           className="preview__stage"
-          style={{ "--aspect": stageAspect } as CSSProperties}
+          style={{ "--aspect": stageAspect, background: still?.background } as CSSProperties}
           onPointerUp={(e) => {
             // A shape tile dragged from the right panel and let go here lands centred where the pointer is.
             const item = fxDrag.current;
@@ -673,7 +675,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             </div>
           ))}
         </div>
-        {nothingHere && duration > 0 && <p className="preview__note">Nothing on the timeline here</p>}
+        {nothingHere && duration > 0 && !still && <p className="preview__note">Nothing on the timeline here</p>}
         {levelShown && <p className="preview__level mono">Volume {Math.round(level * 100)}%</p>}
         {/* While a link stays slow, the message stays between its short waits. */}
         {playing && (playback.waiting || playback.slow) && (
@@ -684,7 +686,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
         )}
       </div>
 
-      {timelineWave.length > 0 && (
+      {timelineWave.length > 0 && !still && (
         <div
           className="preview__wave"
           role="slider"
@@ -704,7 +706,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
         </div>
       )}
 
-      <div className="preview__transport" onClick={(e) => e.stopPropagation()}>
+      <div className="preview__transport" hidden={Boolean(still)} onClick={(e) => e.stopPropagation()}>
         <div className="preview__buttons">
           <button type="button" className="btn btn--icon" aria-label="Previous frame" onClick={() => playback.seek(time - FRAME)}>
             <Icon name="stepBack" size={15} />

@@ -87,13 +87,16 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
 /** Whether the Fast/Precise choice applies (only the single-cut path can skip re-encoding). */
 export function cutModeApplies(project: Project, settings: ExportSettings): boolean {
   const single = singleUntouched(project);
-  if (!single) return false;
+  if (!single || project.image) return false;
   return single.media.source.local ? settings.output === "video" : true;
 }
 
 export function planExport(project: Project, settings: ExportSettings): ExportPlan {
-  const isVideo = settings.output === "video";
-  const container = isVideo ? settings.videoContainer : settings.audioContainer;
+  // An image: every layer at once, nothing moving (the Image editor has no time).
+  const still = project.image;
+  if (still) project = { ...project, clips: project.clips.map((c) => ({ ...c, start: 0, fadeIn: 0, fadeOut: 0, anim: undefined, transition: undefined })) };
+  const isVideo = !still && settings.output === "video";
+  const container = still ? (settings.imageContainer ?? "png") : isVideo ? settings.videoContainer : settings.audioContainer;
   const duration = projectDuration(project);
   if (project.clips.length === 0) return { kind: "empty", reason: "Add something to the timeline first." };
   // Its site only lets the download in (bot check, or a link that expires): export the downloaded copy.
@@ -129,7 +132,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
         url: src.url,
         format,
         output: settings.output,
-        container,
+        // Never an image here (`cutModeApplies`).
+        container: container as JobSpec["container"],
         start: clip.in,
         end: clip.out,
         duration: src.duration,
@@ -154,7 +158,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   }
 
   // Everything else: one render of the whole timeline.
-  const frame = frameOf(settings);
+  const frame = still ?? frameOf(settings);
   const used = project.media.filter((m) => project.clips.some((c) => c.mediaId === m.id));
   const hidden = new Set(project.tracks.filter((t) => t.hidden).map((t) => t.id));
   // An Adjust layer with every slider at 0 changes nothing (and the export refuses a block with nothing to draw).
@@ -229,7 +233,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   const fileName = `${settings.name?.trim() || `${slug(title)}_edit`}.${container}`;
   // Rough: ~8 Mbit/s for 1080p video plus 192 kbit/s sound.
   const pixels = (frame.width * frame.height) / (1920 * 1080);
-  const sizeMb = isVideo ? duration * (1 + 0.024) * Math.max(0.4, pixels) : duration * (container === "wav" ? 0.18 : container === "flac" ? 0.1 : 0.04);
+  const sizeMb = still ? pixels * (container === "png" ? 3 : 0.6) : isVideo ? duration * (1 + 0.024) * Math.max(0.4, pixels) : duration * (container === "wav" ? 0.18 : container === "flac" ? 0.1 : 0.04);
 
   const counts = {
     clips: project.clips.filter((c) => c.mediaId).length,
@@ -238,7 +242,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   const summary = [
     formatClock(duration),
     container.toUpperCase(),
-    isVideo ? `${frame.width}×${frame.height}` : "Audio only",
+    isVideo || still ? `${frame.width}×${frame.height}` : "Audio only",
     `${counts.clips} clip${counts.clips === 1 ? "" : "s"}`,
     counts.texts ? `${counts.texts} text` : "",
   ]
@@ -277,10 +281,11 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       width: frame.width,
       height: frame.height,
       fps: FPS,
-      output: settings.output,
+      output: still ? "image" : settings.output,
       container,
       fileName,
       quality: settings.quality,
+      background: still?.background,
       cover: isVideo ? project.cover : undefined,
     },
     sizeMb,

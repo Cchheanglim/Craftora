@@ -28,6 +28,8 @@ interface ExportPanelProps {
   fastEncoder: string | null;
   /** A preset: picks the frame and sets every picture to fill it (or to fit). */
   onPreset: (frameId: string, fill: boolean) => void;
+  /** An image (Image editor): PNG or JPG, nothing about video or cutting. */
+  still?: boolean;
   /** The selected clip's settings, shown above the export settings. */
 }
 
@@ -55,12 +57,13 @@ export function ExportPanel({
   onChooseOutputDir,
   fastEncoder,
   onPreset,
+  still,
 }: ExportPanelProps) {
   const [copied, setCopied] = useState(false);
   const [moreBelow, setMoreBelow] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  const isVideo = settings.output === "video";
+  const isVideo = !still && settings.output === "video";
   const ready = plan.kind !== "empty";
 
   // Show the "More settings below" bar while the end of the settings is out of view.
@@ -133,6 +136,15 @@ export function ExportPanel({
 
         <fieldset>
           <legend className="section-label">Output</legend>
+          {still ? (
+            <div className="segmented" role="group" aria-label="File type">
+              {(["png", "jpg"] as const).map((c) => (
+                <button key={c} type="button" aria-pressed={(settings.imageContainer ?? "png") === c} onClick={() => onChange({ imageContainer: c })}>
+                  {c === "png" ? "PNG (sharpest)" : "JPG (smaller)"}
+                </button>
+              ))}
+            </div>
+          ) : (
           <div className="export__output">
             <div className="segmented" role="group" aria-label="Output type">
               <button type="button" aria-pressed={isVideo} disabled={!hasPicture} onClick={() => onChange({ output: "video" })}>
@@ -163,6 +175,7 @@ export function ExportPanel({
               />
             )}
           </div>
+          )}
         </fieldset>
 
         {isVideo && hasPicture && (
@@ -215,6 +228,7 @@ export function ExportPanel({
           </fieldset>
         )}
 
+        {!still && (
         <fieldset>
           <legend className="section-label">Cut mode</legend>
           {cutModeApplies ? (
@@ -241,6 +255,7 @@ export function ExportPanel({
             </p>
           )}
         </fieldset>
+        )}
 
         {ready && (
           <details className="export__command">

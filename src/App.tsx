@@ -102,6 +102,7 @@ import {
   trackOrder,
   projectDuration,
   projectName,
+  newImageProject,
   silencesFromPeaks,
   upgradeProject,
   type MediaItem,
@@ -111,6 +112,8 @@ import {
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { MediaPanel } from "./components/MediaPanel";
+import { LayersPanel } from "./components/LayersPanel";
+import { ImageSizePanel } from "./components/ImageSizePanel";
 import { Home, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
 import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/EdgeResizer";
@@ -316,6 +319,7 @@ const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined,
 
 export default function App() {
   const [view, setView] = useState<View>(inDesktopApp ? "home" : "editor");
+  const inEditor = view === "editor" || view === "image";
   const [leftOpen, setLeftOpen] = useState(() => remembered("craftora.left", true));
   // Always open at start: it has no button any more (owner, 2026-11-12), only Ctrl+Alt+B hides it.
   const [rightOpen, setRightOpen] = useState(true);
@@ -340,12 +344,12 @@ export default function App() {
   const [sideWidth, setSideWidth] = useState(() => Math.min(SIDE_WIDTH.max, Math.max(SIDE_WIDTH.min, rememberedSize("craftora.sideWidth") ?? SIDE_WIDTH.usual)));
   const [panelWidth, setPanelWidth] = useState(() => Math.min(PANEL_WIDTH.max, Math.max(PANEL_WIDTH.min, rememberedSize("craftora.panelWidth") ?? PANEL_WIDTH.usual)));
   const resizeSide = (dragged: number) => {
-    const width = roomFor(dragged, rightOpen && view === "editor" ? panelWidth : 0, SIDE_WIDTH);
+    const width = roomFor(dragged, rightOpen && inEditor ? panelWidth : 0, SIDE_WIDTH);
     setSideWidth(width);
     rememberText("craftora.sideWidth", String(width));
   };
   const resizePanel = (dragged: number) => {
-    const width = roomFor(dragged, leftOpen && view === "editor" ? sideWidth : 0, PANEL_WIDTH);
+    const width = roomFor(dragged, leftOpen && inEditor ? sideWidth : 0, PANEL_WIDTH);
     setPanelWidth(width);
     rememberText("craftora.panelWidth", String(width));
   };
@@ -410,12 +414,14 @@ export default function App() {
 
   const api = useProject(() => (inDesktopApp ? emptyProject() : demoProject()));
   const { project } = api;
+  // The Image editor is the editor's layout for an image project (Layers instead of the timeline, nothing timed).
+  const imageMode = inEditor && Boolean(project.image);
   const duration = projectDuration(project);
   const playback = usePlayback(duration);
   // The editor's players go away with its page, but the clock wouldn't: leaving the editor pauses.
   const { pause } = playback;
   useEffect(() => {
-    if (view !== "editor") pause();
+    if (!inEditor) pause();
   }, [view, pause]);
   // The assistant reads these at the moment it needs them, between network calls.
   const projectRef = useRef(project);
@@ -465,9 +471,11 @@ export default function App() {
   }, []);
 
   // Save the project a moment after each change. Empty projects aren't worth keeping.
+  const pendingSave = useRef<(() => void) | undefined>(undefined);
   useEffect(() => {
     if (project.media.length === 0 && project.clips.length === 0) return;
-    const timer = window.setTimeout(() => {
+    const save = () => {
+      pendingSave.current = undefined;
       const entry: ProjectEntry = {
         id: projectId,
         name: projectName(project),
@@ -475,11 +483,14 @@ export default function App() {
         duration: projectDuration(project),
         clips: project.clips.length,
         thumbnail: coverOf(project),
+        image: project.image ? true : undefined,
       };
       saveProject({ ...entry, version: 1, project })
         .then(() => setProjects((list) => [entry, ...list.filter((p) => p.id !== entry.id)]))
         .catch((err) => setError(`Couldn't save the project: ${errorText(err)}`));
-    }, AUTOSAVE_MS);
+    };
+    pendingSave.current = save;
+    const timer = window.setTimeout(save, AUTOSAVE_MS);
     return () => window.clearTimeout(timer);
   }, [project, projectId]);
 
@@ -1231,25 +1242,39 @@ export default function App() {
     try {
       const saved = await loadProject(id);
       const opened = upgradeProject(saved.project);
+      pendingSave.current?.();
       api.reset(opened);
       setProjectId(id);
       setSelectedId(null);
       playback.pause();
       playback.seek(0);
-      setView("editor");
+      setView(opened.image ? "image" : "editor");
       reconnect(opened.media);
     } catch (err) {
       setError(`Couldn't open the project: ${errorText(err)}`);
     }
   };
 
-  const newProject = () => {
-    api.reset(emptyProject());
+  const newProject = (image = false) => {
+    pendingSave.current?.();
+    api.reset(image ? newImageProject() : emptyProject());
     setProjectId(crypto.randomUUID());
     setSelectedId(null);
     playback.pause();
     playback.seek(0);
-    setView("editor");
+    setView(image ? "image" : "editor");
+  };
+
+  /** Editor and Image editor each open the last project of their kind, or a new one. */
+  const go = (next: View) => {
+    const image = next === "image";
+    if ((next === "editor" || image) && Boolean(project.image) !== image) {
+      const last = projects.find((p) => Boolean(p.image) === image);
+      if (last) void openProject(last.id);
+      else newProject(image);
+      return;
+    }
+    setView(next);
   };
 
   const removeProject = async (id: string) => {
@@ -1705,10 +1730,10 @@ export default function App() {
     // Picking a suggestion from the link field's list sends a keydown without a key.
     const key = e.key?.toLowerCase();
     if (!key) return;
-    if (ctrl && key === "enter" && view === "editor") return (e.preventDefault(), addToQueue());
+    if (ctrl && key === "enter" && inEditor) return (e.preventDefault(), addToQueue());
     if (ctrl && key === "o" && inDesktopApp) return (e.preventDefault(), void importFiles());
     if (ctrl && key === "b") return (e.preventDefault(), e.altKey ? toggleRight() : toggleLeft());
-    if (isTyping(e.target) || view !== "editor") return;
+    if (isTyping(e.target) || !inEditor) return;
     if (ctrl && key === "z" && !e.shiftKey) return (e.preventDefault(), api.undo());
     if (ctrl && (key === "y" || (key === "z" && e.shiftKey))) return (e.preventDefault(), api.redo());
     if (ctrl && key === "d") return (e.preventDefault(), duplicate());
@@ -1723,7 +1748,7 @@ export default function App() {
     const onButton = target.tagName === "BUTTON" || target.getAttribute("role") === "button";
     const t = playback.time;
     const actions: Record<string, () => void> = {
-      " ": playback.toggle,
+      " ": () => !imageMode && playback.toggle(),
       s: split,
       delete: remove,
       backspace: remove,
@@ -1847,8 +1872,8 @@ export default function App() {
   const mainMenu = (rail: boolean) => (
     <Sidebar
       rail={rail}
-      view={view}
-      onViewChange={setView}
+      view={imageMode ? "image" : view === "image" ? "editor" : view}
+      onViewChange={go}
       libraryCount={shownExports.length}
       downloadsCount={downloadsCount}
       engines={engines}
@@ -1881,11 +1906,11 @@ export default function App() {
   );
 
   return (
-    <div className="app" style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen && view === "editor" ? sideWidth : 0, PANEL_WIDTH)}px` } as CSSProperties}>
+    <div className="app" style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen && inEditor ? sideWidth : 0, PANEL_WIDTH)}px` } as CSSProperties}>
       <Ambient active={theme !== "classic"} />
       <Tooltip />
       {fetchReview.dialog}
-      {exportOpen && view === "editor" && (
+      {exportOpen && inEditor && (
         <ExportDialog sub={projectName(project)} onClose={() => setExportOpen(false)}>
           <ExportPanel
             settings={effective}
@@ -1893,6 +1918,7 @@ export default function App() {
             plan={plan}
             cutModeApplies={cutModeApplies(toExport, effective)}
             hasPicture={hasPicture}
+            still={imageMode}
             onAddToQueue={() => {
               addToQueue();
               // Queued: the Queue button next to Export shows it, so the pop-up's job is done.
@@ -1915,7 +1941,7 @@ export default function App() {
       )}
       <Toolbar
         queue={<QueueDock queue={queue} freshId={freshId} />}
-        onExport={view === "editor" ? () => setExportOpen(true) : undefined}
+        onExport={inEditor ? () => setExportOpen(true) : undefined}
         url={url}
         onUrlChange={(next) => {
           setUrl(next);
@@ -1945,7 +1971,7 @@ export default function App() {
         }
         onImport={inDesktopApp ? () => void importFiles() : undefined}
         inputRef={urlRef}
-        menu={view === "editor" ? mainMenu(false) : undefined}
+        menu={inEditor ? mainMenu(false) : undefined}
         update={
           updates.status.kind === "available"
             ? { label: `Update to v${updates.status.version}`, onClick: () => void updates.install() }
@@ -1955,7 +1981,7 @@ export default function App() {
         }
       />
 
-      {view !== "editor" && mainMenu(true)}
+      {!inEditor && mainMenu(true)}
 
       <main className="app__work">
         {view === "home" && (
@@ -1966,7 +1992,7 @@ export default function App() {
             projects={projects}
             currentId={project.clips.length || project.media.length ? projectId : null}
             onOpenProject={(id) => (id === projectId ? setView("editor") : void openProject(id))}
-            onNewProject={newProject}
+            onNewProject={() => newProject()}
             onDeleteProject={(id) => void removeProject(id)}
             recent={shownExports}
             outputDir={outputDir}
@@ -1980,7 +2006,7 @@ export default function App() {
             projects={projects}
             currentId={project.clips.length || project.media.length ? projectId : null}
             onOpenProject={(id) => (id === projectId ? setView("editor") : void openProject(id))}
-            onNewProject={newProject}
+            onNewProject={() => newProject()}
             onDeleteProject={(id) => void removeProject(id)}
           />
         )}
@@ -2029,7 +2055,7 @@ export default function App() {
             onOpenWorkspace={() => setView("editor")}
           />
         )}
-        {view === "editor" && (
+        {inEditor && (
           <div
             className="app__editor"
             data-sized={timelineHeight ? "" : undefined}
@@ -2038,6 +2064,7 @@ export default function App() {
             <div className="app__top">
               {leftOpen && (
                 <MediaPanel
+                  still={imageMode ? { text: <AddText onAdd={addText} />, size: <ImageSizePanel project={project} api={api} /> } : undefined}
                   media={project.media}
                   preparing={preparing}
                   captioning={captioning}
@@ -2066,8 +2093,10 @@ export default function App() {
                 picking={picking ? { clipId: picking.clipId, onPicked: (color) => endPick(color), onCancel: (unreadable) => endPick(undefined, unreadable) } : undefined}
                 project={project}
                 api={api}
-                playback={playback}
-                frame={frameOf(effective)}
+                // An image is its first moment: arrow keys or an old playhead can't hide its layers.
+                playback={imageMode ? { ...playback, time: 0, playing: false } : playback}
+                frame={project.image ? { id: "image", label: "", ...project.image } : frameOf(effective)}
+                still={imageMode && project.image ? { background: project.image.background } : undefined}
                 duration={duration}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
@@ -2101,7 +2130,7 @@ export default function App() {
               <div className={`app__panel${rightOpen ? "" : " is-closed"}`} inert={!rightOpen}>
                 {/* All eight in one row that scrolls sideways, ‹ › at its ends (like the popular editor). */}
                 <div className="app__tabs">
-                  <IconTabs tabs={PANEL_TABS} value={rightTab === "sound" || rightTab === "voice" || (FX_TABS as readonly string[]).includes(rightTab) ? null : (rightTab as (typeof PANEL_TABS)[number]["id"])} onPick={pickTab} label="Right panel" idPrefix="right-tab" />
+                  <IconTabs tabs={imageMode ? PANEL_TABS.filter((t) => !["speed", "transcript"].includes(t.id)) : PANEL_TABS} value={rightTab === "sound" || rightTab === "voice" || (FX_TABS as readonly string[]).includes(rightTab) ? null : (rightTab as (typeof PANEL_TABS)[number]["id"])} onPick={pickTab} label="Right panel" idPrefix="right-tab" />
                 </div>
                 {fxOpen && (FX_TABS as readonly string[]).includes(rightTab) ? (
                   fxPanel(rightTab as FxTab, true)
@@ -2157,7 +2186,7 @@ export default function App() {
                   // Edit: the selected clip's settings (and the captions' style).
                   <aside className="export" aria-label="Clip settings">
                     <div className="export__body is-edit">
-                    {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} /> : <p className="export__hint">Click a clip on the timeline to change it here.</p>)}
+                    {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} /> : <p className="export__hint">{imageMode ? "Click a layer to change it here." : "Click a clip on the timeline to change it here."}</p>)}
                     {rightTab === "edit" && (selectedId === SHOWN_CAPTIONS || selectedTrack?.name === "Captions") && (
                       <CaptionStyle
                         layout={project.captionLayout ?? CAPTIONS}
@@ -2185,6 +2214,7 @@ export default function App() {
                         onRelink={(item) => void relink(item)}
                         onPickColour={() => startPick(selected)}
                         onAddText={addText}
+                        still={imageMode}
                         onPreview={(from, seconds) => {
                           const back = playback.time;
                           playback.seek(from);
@@ -2213,7 +2243,7 @@ export default function App() {
                         onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
                         onSplit={split}
                         onDuplicate={() => duplicate()}
-                        onOpenCrop={() => openCrop(selected, playback.time)}
+                        onOpenCrop={() => openCrop(selected, imageMode ? 0 : playback.time)}
                         onCutSilences={
                           selected.mediaId && project.media.find((m) => m.id === selected.mediaId)?.hasAudio && !project.media.find((m) => m.id === selected.mediaId)?.source.image
                             ? () => void cutSilences()
@@ -2243,6 +2273,9 @@ export default function App() {
               </div>
             </div>
             <TimelineDivider height={timelineHeight} onResize={resizeTimeline} />
+            {imageMode ? (
+              <LayersPanel project={project} api={api} selectedId={selectedId} onSelect={setSelectedId} />
+            ) : (
             <TimelineEditor
               project={project}
               api={api}
@@ -2296,6 +2329,7 @@ export default function App() {
               onAiEdit={aiEdit}
               onCover={(choice) => void chooseCover(choice)}
             />
+            )}
           </div>
         )}
       </main>

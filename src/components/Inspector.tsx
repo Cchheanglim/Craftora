@@ -85,6 +85,8 @@ interface InspectorProps {
   onAddText?: (size?: number) => void;
   /** Plays `seconds` of the timeline from `from` once, to show a text animation just picked. */
   onPreview?: (from: number, seconds: number) => void;
+  /** The Image editor: nothing about time (fades, sound, animations, Split). */
+  still?: boolean;
   /** What the editor calls the clip's track ("Track 2"). */
   trackName: string;
   canSplit: boolean;
@@ -113,6 +115,7 @@ export function Inspector({
   onPickColour,
   onAddText,
   onPreview,
+  still,
   trackName,
   canSplit,
 }: InspectorProps) {
@@ -139,7 +142,7 @@ export function Inspector({
       ) : (
         <>
           <TextStyles clip={clip} onChange={onChange} />
-          <TextAnimations clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} onPreview={onPreview} />
+          {!still && <TextAnimations clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} onPreview={onPreview} />}
           <Slider id="insp-text-size" label="Size" min={0.02} max={0.3} step={0.005} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
           <ColorField color={clip.color} onChange={(color, live) => onChange({ color }, live)} onCheckpoint={onCheckpoint} />
           <fieldset className="insp__field">
@@ -226,10 +229,12 @@ export function Inspector({
           {isBlock ? (clip.look || clip.effect ? `${clip.look ? "Filter" : "Effect"}: ${blockLabel(clip)}` : blockLabel(clip)) : isShape ? `Shape: ${shapeLabel(clip.shape)}` : isText ? "Text" : (media?.name ?? "Clip")}
         </h2>
       </header>
-      <p className="insp__meta">
-        {trackName} · <span className="mono">{formatClock(clip.start)}</span> → <span className="mono">{formatClock(clipEnd(clip))}</span> ·{" "}
-        <span className="mono">{formatClock(length)}</span> long
-      </p>
+      {!still && (
+        <p className="insp__meta">
+          {trackName} · <span className="mono">{formatClock(clip.start)}</span> → <span className="mono">{formatClock(clipEnd(clip))}</span> ·{" "}
+          <span className="mono">{formatClock(length)}</span> long
+        </p>
+      )}
       {media?.missing && (
         <p className="insp__warn">
           <Icon name="alert" size={13} />
@@ -282,7 +287,7 @@ export function Inspector({
                 ),
             )}
 
-          {onDuration && (
+          {onDuration && !still && (
             <div className="insp__slider">
               <label htmlFor="insp-duration">Duration</label>
               <input
@@ -474,7 +479,7 @@ export function Inspector({
             </div>
           )}
 
-          {!isBlock && (
+          {!isBlock && !still && (
           <fieldset className="insp__group">
             <legend>Fade</legend>
             <Slider id="insp-fade-in" label="In" min={0} max={maxFade} step={0.1} value={clip.fadeIn} format={sec} onCheckpoint={onCheckpoint} onChange={(fadeIn) => onChange({ fadeIn }, true)} />
@@ -484,6 +489,7 @@ export function Inspector({
 
           {!isText &&
             !isShape &&
+            !still &&
             !isImage &&
             !isBlock &&
             (hasSound ? (
@@ -572,10 +578,12 @@ export function Inspector({
           )}
 
           <div className="insp__actions">
-            <button type="button" className="btn btn--secondary" onClick={onSplit} disabled={!canSplit} title="Split at the playhead (S)">
-              <Icon name="scissors" size={14} />
-              Split
-            </button>
+            {!still && (
+              <button type="button" className="btn btn--secondary" onClick={onSplit} disabled={!canSplit} title="Split at the playhead (S)">
+                <Icon name="scissors" size={14} />
+                Split
+              </button>
+            )}
             <button type="button" className="btn btn--secondary" onClick={onDuplicate} title="Duplicate (Ctrl+D)">
               <Icon name="copy" size={14} />
               Duplicate
@@ -595,7 +603,7 @@ export function Inspector({
 type Look = { color?: string; font?: TextFont; edge?: TextEdge };
 
 /** A few quick colours, and any colour on the wheel (open already when the colour is none of the quick ones). */
-function ColorField({ color, onChange, onCheckpoint }: { color?: string; onChange: (color: string, live?: boolean) => void; onCheckpoint?: () => void }) {
+export function ColorField({ color, onChange, onCheckpoint }: { color?: string; onChange: (color: string, live?: boolean) => void; onCheckpoint?: () => void }) {
   const current = color ?? "#ffffff";
   const [wheel, setWheel] = useState(() => !TEXT_COLORS.some((c) => c.value === current));
   return (

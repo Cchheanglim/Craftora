@@ -27,7 +27,8 @@
 }
 
 .preview__pictures {
-  background: #000;
+  /* The stage's: black, or an image's own background. */
+  background: inherit;
   transform-origin: 50% 50%;
 }
 
@@ -305,6 +306,11 @@
 
 .preview__wave > span.is-past {
   background: var(--accent);
+}
+
+/* The Image editor has no time. */
+.preview__transport[hidden] {
+  display: none;
 }
 
 .preview__transport {

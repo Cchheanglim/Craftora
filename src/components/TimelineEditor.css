@@ -774,6 +774,30 @@
   background: linear-gradient(to left, rgb(0 0 0 / 0.55), transparent);
 }
 
+.tl__anim {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-bottom: 2px solid rgb(255 255 255 / 0.7);
+  background: rgb(255 255 255 / 0.12);
+  pointer-events: none;
+}
+
+.tl__anim.is-in {
+  left: 0;
+}
+
+.tl__anim.is-out {
+  right: 0;
+}
+
+/* A loop: only the line, along the whole clip. */
+.tl__anim.is-loop {
+  inset: auto 0 0;
+  background: none;
+  border-bottom-style: dashed;
+}
+
 .tl__thumb {
   position: relative;
   z-index: 1;

@@ -164,7 +164,7 @@ export function ProjectList({
                 <span className="home__project-text">
                   <span className="truncate">{p.name}</span>
                   <span className="home__project-meta">
-                    {p.clips} clip{p.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(p.duration)}</span> · {ago(p.savedAt)}
+                    {p.image ? `Image · ${p.clips} layer${p.clips === 1 ? "" : "s"}` : <>{p.clips} clip{p.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(p.duration)}</span></>} · {ago(p.savedAt)}
                   </span>
                 </span>
               </label>
@@ -175,7 +175,7 @@ export function ProjectList({
               <span className="home__project-text">
                 <span className="truncate">{p.name}</span>
                 <span className="home__project-meta">
-                  {p.clips} clip{p.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(p.duration)}</span> · {ago(p.savedAt)}
+                  {p.image ? `Image · ${p.clips} layer${p.clips === 1 ? "" : "s"}` : <>{p.clips} clip{p.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(p.duration)}</span></>} · {ago(p.savedAt)}
                 </span>
               </span>
               {p.id === currentId && <span className="home__open">Open now</span>}

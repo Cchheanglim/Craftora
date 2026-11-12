@@ -4,6 +4,7 @@ import type { TextMotion } from "./project/textMotion";
 export type OutputKind = "video" | "audio";
 export type VideoContainer = "mp4" | "mkv";
 export type AudioContainer = "mp3" | "wav" | "flac";
+export type ImageContainer = "png" | "jpg";
 export type CutMode = "fast" | "precise";
 
 /** One downloadable stream that yt-dlp reported for a source. */
@@ -76,6 +77,8 @@ export interface Frame {
 
 export interface ExportSettings {
   output: OutputKind;
+  /** Image projects: the picture's file type; PNG when absent. */
+  imageContainer?: ImageContainer;
   videoContainer: VideoContainer;
   audioContainer: AudioContainer;
   /** Only used for a single untouched clip; everything else is re-encoded. */
@@ -118,10 +121,12 @@ export interface RenderSpec {
   width: number;
   height: number;
   fps: number;
-  output: OutputKind;
-  container: VideoContainer | AudioContainer;
+  output: OutputKind | "image";
+  container: VideoContainer | AudioContainer | ImageContainer;
   fileName: string;
   quality: RenderQuality;
+  /** Images: the colour under every layer (#rrggbb); black when absent. */
+  background?: string;
 }
 
 export type TransitionKind =

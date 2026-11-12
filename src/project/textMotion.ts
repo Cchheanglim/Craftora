@@ -57,15 +57,19 @@ function join(...parts: (Points | undefined)[]): Points | undefined {
   return points.length ? points : undefined;
 }
 
+/** Seconds the in and the out animations take (0 without): they share the clip when they'd overlap. */
+export function animSpans(clip: Clip): { in: number; out: number } {
+  const { in: enter, out: leave } = clip.anim ?? {};
+  const fit = Math.min(1, clipLength(clip) / ((enter?.length ?? 0) + (leave?.length ?? 0) || 1));
+  return { in: enter ? Math.max(0.05, enter.length * fit) : 0, out: leave ? Math.max(0.05, leave.length * fit) : 0 };
+}
+
 /** A text clip's animation; `shown` is its text as drawn (model.ts `textLines`). Undefined when it has none. */
 export function textMotion(clip: Clip, shown: string): TextMotion | undefined {
   const { in: enter, out: leave, loop } = clip.anim ?? {};
   if (!enter && !leave && !loop) return undefined;
   const length = clipLength(clip);
-  // In and out share the clip when they'd overlap.
-  const fit = Math.min(1, length / ((enter?.length ?? 0) + (leave?.length ?? 0) || 1));
-  const a = enter ? Math.max(0.05, enter.length * fit) : 0;
-  const b = leave ? Math.max(0.05, leave.length * fit) : 0;
+  const { in: a, out: b } = animSpans(clip);
   const from = length - b;
   const inAlpha = enter && { fade: curve(0, a, (p) => p), pop: curve(0, a, (p) => clamp(p / 0.4, 0, 1)), "slide-up": curve(0, a, (p) => clamp(p * 2, 0, 1)), typewriter: undefined }[enter.kind];
   // The export can't shrink the outline with the letters: they fade while small.

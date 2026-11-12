@@ -44,6 +44,9 @@ pub struct RenderSpec {
     /// Video files: the cover picture (a JPEG data URL from the editor's Cover), built in as the file's cover.
     #[serde(default)]
     cover: String,
+    /// Images: the colour under every layer (#rrggbb); black when empty.
+    #[serde(default)]
+    background: String,
 }
 
 #[derive(Deserialize)]
@@ -592,11 +595,23 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
     if texts > MAX_TEXT_CLIPS {
         return Err(format!("A timeline can have at most {MAX_TEXT_CLIPS} texts and captions."));
     }
-    if (spec.output == Output::Video) != spec.container.is_video() {
+    let fits = match spec.output {
+        Output::Video => spec.container.is_video(),
+        Output::Audio => !spec.container.is_video() && !spec.container.is_image(),
+        Output::Image => spec.container.is_image(),
+    };
+    if !fits {
         return Err("That file type doesn't match the output.".into());
     }
-    if !(16..=4096).contains(&spec.width) || !(16..=4096).contains(&spec.height) || !(1..=120).contains(&spec.fps) {
+    // A photo can be bigger than a video frame.
+    let most = if spec.output == Output::Image { 8192 } else { 4096 };
+    if !(16..=most).contains(&spec.width) || !(16..=most).contains(&spec.height) || !(1..=120).contains(&spec.fps) {
         return Err("The video size is out of range.".into());
+    }
+    // It goes into the filter graph.
+    let bg = &spec.background;
+    if !bg.is_empty() && !(bg.len() == 7 && bg.starts_with('#') && bg[1..].chars().all(|c| c.is_ascii_hexdigit())) {
+        return Err("The image's background colour is invalid.".into());
     }
     let opened = app.state::<OpenedFiles>();
     for media in &spec.media {
@@ -781,7 +796,9 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
 
     // Pre-render each Smooth slow-mo video clip in up to 4 pieces side by side.
     let (w, h, fps) = (spec.width, spec.height, spec.fps);
-    let is_video = spec.output == Output::Video;
+    // A picture is drawn for a video and for an image (its first frame, `still`).
+    let still = spec.output == Output::Image;
+    let is_video = spec.output != Output::Audio;
     let mut smoothed: HashSet<usize> = HashSet::new();
     if is_video {
         let threads = std::thread::available_parallelism().map(usize::from).unwrap_or(4);
@@ -926,7 +943,10 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
     // 3. The filter graph.
     let mut graph: Vec<String> = Vec::new();
     if is_video {
-        graph.push(format!("color=black:s={w}x{h}:r={fps}:d={},format=yuv420p[base]", secs(total)));
+        let background = if spec.background.is_empty() { "black".to_string() } else { format!("0x{}", &spec.background[1..]) };
+        // An image keeps every pixel's colour (4:2:0 video colour blurs coloured edges, e.g. red text on blue).
+        let (pixels, mix) = if still { ("yuv444p", ":format=yuv444") } else { ("yuv420p", "") };
+        graph.push(format!("color={background}:s={w}x{h}:r={fps}:d={},format={pixels}[base]", secs(total)));
         let mut picture = String::from("base");
         let mut layered: Vec<(usize, &ClipSpec)> = spec.clips.iter().enumerate().filter(|(_, c)| c.role != Role::Audio).collect();
         // Pictures first, then the filter and effect blocks over them, then text and shapes on top by track (as the
@@ -961,7 +981,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                         clip.picture_fades()
                     ));
                     graph.push(format!(
-                        "[{picture}][v{i}]overlay=x='{x}*(W-w){}':y='{y}*(H-h){}':eof_action=pass:repeatlast=0:enable='between(t,{start},{end})'[p{i}]",
+                        "[{picture}][v{i}]overlay=x='{x}*(W-w){}':y='{y}*(H-h){}':eof_action=pass:repeatlast=0{mix}:enable='between(t,{start},{end})'[p{i}]",
                         clip.slide('W'),
                         clip.slide('H'),
                         x = clip.x,
@@ -977,7 +997,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                         "[{k}:v]format=rgba,loop=loop={frames}:size=1:start=0,setpts=N/{fps}/TB{},setpts=PTS+{start}/TB[s{i}]",
                         clip.picture_fades()
                     ));
-                    graph.push(format!("[{picture}][s{i}]overlay=0:0:eof_action=pass:repeatlast=0:enable='between(t,{start},{end})'[p{i}]"));
+                    graph.push(format!("[{picture}][s{i}]overlay=0:0:eof_action=pass:repeatlast=0{mix}:enable='between(t,{start},{end})'[p{i}]"));
                     picture = format!("p{i}");
                 }
                 Role::Text => {
@@ -1094,7 +1114,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
     });
 
     // 4. Encode, on the graphics card when asked and possible; if that fails, on the processor.
-    let encoder = if is_video { encoders::for_render(app, spec.quality).await } else { Encoder::Software };
+    let encoder = if is_video && !still { encoders::for_render(app, spec.quality).await } else { Encoder::Software };
     // From a file: hundreds of text clips (captions) would pass Windows' 32,767-character command limit.
     let graph_file = work.join("graph.txt");
     std::fs::write(&graph_file, graph.join(";")).map_err(|e| format!("Couldn't prepare the export: {e}"))?;
@@ -1119,7 +1139,13 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         }
         let graph = if on_gpu { &gpu_file } else { &graph_file };
         args.extend(["-/filter_complex".into(), graph.to_string_lossy().into_owned()]);
-        if is_video {
+        if still {
+            // One picture: the first frame; a JPEG at high quality.
+            args.extend(["-map".into(), "[outv]".into(), "-frames:v".into(), "1".into(), "-update".into(), "1".into()]);
+            if spec.container == Container::Jpg {
+                args.extend(["-q:v".into(), "2".into()]);
+            }
+        } else if is_video {
             args.extend(["-map".into(), "[outv]".into()]);
             let mut codec = encoder.args(spec.quality);
             // Already that format on the graphics card; asking for it again would add a step on the processor, which fails.
@@ -1133,7 +1159,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
             }
         }
         match &sound {
-            Some(label) => {
+            Some(label) if !still => {
                 args.extend(["-map".into(), format!("[{label}]")]);
                 let codec: &[&str] = match spec.container {
                     Container::Mp3 => &["-c:a", "libmp3lame", "-b:a", "320k"],
@@ -1143,7 +1169,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                 };
                 args.extend(codec.iter().map(|s| s.to_string()));
             }
-            None => args.push("-an".into()),
+            _ => args.push("-an".into()),
         }
         args.extend(["-t".into(), secs(total)]);
         if spec.container == Container::Mp4 {

@@ -296,6 +296,8 @@ export interface Project {
   captionLayout?: CaptionLayout;
   /** Cover (on the main track): the project's picture (a JPEG data URL), also built into exported videos. */
   cover?: string;
+  /** An image (the Image editor): its size in pixels and background colour (#rrggbb); a video when absent. */
+  image?: { width: number; height: number; background: string };
 }
 
 /** `x`/`y` as for text clips; `size`: letter height as a fraction of the frame. The look is as for text clips. */
@@ -467,6 +469,26 @@ export function transitionMix(
 
 export function projectDuration(p: Project): number {
   return p.clips.reduce((max, c) => Math.max(max, clipEnd(c)), 0);
+}
+
+/** Image editor sizes (Size tab), in pixels. */
+export const IMAGE_SIZES = [
+  { id: "square", label: "Square post", width: 1080, height: 1080 },
+  { id: "portrait", label: "Portrait post", width: 1080, height: 1350 },
+  { id: "story", label: "Story", width: 1080, height: 1920 },
+  { id: "landscape", label: "Landscape", width: 1920, height: 1080 },
+  { id: "thumbnail", label: "Video thumbnail", width: 1280, height: 720 },
+  { id: "a4", label: "A4 print", width: 2480, height: 3508 },
+] as const;
+/** The largest side an image may have (project.rs `validate`). */
+export const MAX_IMAGE_SIDE = 8192;
+
+/** A new, empty image (Image editor). */
+export const newImageProject = (width = 1080, height = 1080, background = "#ffffff"): Project => ({ ...emptyProject(), image: { width, height, background } });
+
+/** An image's layers, top first: each track with its one clip (actions.ts `asLayers`); empty tracks left out. */
+export function layersOf(p: Project): { track: Track; clip: Clip }[] {
+  return p.tracks.flatMap((track) => p.clips.filter((c) => c.trackId === track.id).map((clip) => ({ track, clip })));
 }
 
 export function emptyProject(): Project {
