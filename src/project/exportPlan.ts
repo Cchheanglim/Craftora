@@ -5,8 +5,8 @@
  */
 import type { ExportSettings, Frame, JobSpec, RenderClip, RenderSpec } from "../types";
 import { formatClock, formatTimecode } from "../lib/timecode";
-import { adjustSteps, effectSpeed, effectStrength, lookSteps } from "./effects";
-import { isBlock, clipLength, isCropped, meets, projectDuration, trackOrder, trackSilent, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
+import { adjustSteps, effectSpeed, effectStrength, keyLine, lookSteps } from "./effects";
+import { isBlock, clipLength, isCropped, meets, projectDuration, showsPicture, trackOrder, trackSilent, textLines, transitionLength, type Clip, type MediaItem, type Project } from "./model";
 
 export const FRAMES: Frame[] = [
   { id: "1080p", label: "16:9 · 1920 × 1080", width: 1920, height: 1080 },
@@ -72,6 +72,11 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
     !clip.soundFadeIn &&
     !clip.soundFadeOut &&
     !isCropped(clip.crop) &&
+    // A filter, effect, Adjust (Enhance too) or removed colour inside it has to be drawn.
+    !clip.look &&
+    !clip.effect &&
+    adjustSteps(clip.adjust).length === 0 &&
+    !clip.chroma &&
     !clip.fill &&
     clip.size >= 0.999 &&
     clip.start < 0.001;
@@ -177,6 +182,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       smooth: Boolean(c.smooth && c.speed < 1),
       // An effect block takes no colour steps (the export refuses both on one block).
       look: !c.mediaId && c.effect ? [] : [...lookSteps(c.look, c.lookAmount), ...adjustSteps(c.adjust)],
+      key: c.chroma && showsPicture(project, c) ? (keyLine(c.chroma) ?? undefined) : undefined,
       effect: c.effect ?? "",
       effectStrength: effectStrength(c),
       effectSpeed: effectSpeed(c),

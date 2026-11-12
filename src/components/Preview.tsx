@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import type { Frame } from "../types";
 import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, soundFadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
 import { newShapeClip, shapeBox, shapeSvg } from "../project/shapes";
@@ -8,9 +8,10 @@ import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
-import { RGB_SHARE, adjustSteps, blocksStyle, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
+import { RGB_SHARE, adjustSteps, blocksStyle, keyLine, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
+import { Select } from "./Select";
 import { SyncedMedia } from "./SyncedMedia";
 import "./Preview.css";
 
@@ -52,6 +53,8 @@ interface PreviewProps {
   onDownload?: (mediaId: string) => void;
   /** No sound while a voice-over records (its speakers would get into the microphone). */
   silent?: boolean;
+  /** Remove a colour → Pick: the next click on this clip's picture gives its colour (#rrggbb); Escape or a click beside it cancels. */
+  picking?: { clipId: string; onPicked: (color: string) => void; onCancel: (unreadable?: boolean) => void };
 }
 
 const WAVE_BARS = 140;
@@ -147,7 +150,7 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : {};
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, silent }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, silent, picking }: PreviewProps) {
   const [mutedByHand, setMuted] = useState(false);
   const muted = mutedByHand || Boolean(silent);
   // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
@@ -465,6 +468,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             onDropShape(item, along((e.clientX - r.left) / r.width, w), along((e.clientY - r.top) / r.height, h));
           }}
         >
+          {picking && <ColourPicker stage={stageRef} picking={picking} />}
           {pictures.some((c) => {
             // A link with nothing playable, or whose preview failed, would otherwise just be black.
             const source = mediaOf(c)?.source;
@@ -479,6 +483,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           )}
           {WARMTH_FILTERS}
           <AdjustFilters clips={project.clips} />
+          <KeyFilters clips={project.clips} />
           <div
             className="preview__pictures"
             style={{ filter: blocks.filter, transform: [blocks.transform, blocks.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined }}
@@ -708,32 +713,26 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           <label htmlFor="speed" className="sr-only">
             Playback speed
           </label>
-          <select id="speed" className="field mono" value={playback.speed} onChange={(e) => playback.setSpeed(Number(e.target.value))}>
-            {SPEEDS.map((s) => (
-              <option key={s} value={s}>
-                {s}×
-              </option>
-            ))}
-          </select>
+          <Select
+            id="speed"
+            className="mono"
+            value={String(playback.speed)}
+            options={SPEEDS.map((s) => ({ value: String(s), label: `${s}×` }))}
+            onChange={(s) => playback.setSpeed(Number(s))}
+          />
           {quality && (
             <>
               <label htmlFor="preview-quality" className="sr-only">
                 Preview quality
               </label>
-              <select
+              <Select
                 id="preview-quality"
-                className="field mono"
+                className="mono"
                 title="Preview quality (exports use the quality picked in Export)"
-                value={quality.height ?? ""}
-                onChange={(e) => quality.onChange(e.target.value ? Number(e.target.value) : undefined)}
-              >
-                <option value="">Best</option>
-                {quality.heights.map((h) => (
-                  <option key={h} value={h}>
-                    {h}p
-                  </option>
-                ))}
-              </select>
+                value={String(quality.height ?? "")}
+                options={[{ value: "", label: "Best" }, ...quality.heights.map((h) => ({ value: String(h), label: `${h}p` }))]}
+                onChange={(h) => quality.onChange(h ? Number(h) : undefined)}
+              />
             </>
           )}
           {onSnapshot && (
@@ -785,27 +784,19 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               <label htmlFor="caption-place" className="sr-only">
                 Where captions appear
               </label>
-              <select
+              <Select<string>
                 id="caption-place"
-                className="field"
                 title="Where captions appear"
                 value={captionPlace}
-                onChange={(e) => {
-                  const preset = CAPTION_PLACES.find((p) => p.place === e.target.value);
+                options={[
+                  ...CAPTION_PLACES.map(({ place, label }) => ({ value: place as string, label })),
+                  ...(captionPlace === "custom" ? [{ value: "custom", label: "Custom", disabled: true }] : []),
+                ]}
+                onChange={(place) => {
+                  const preset = CAPTION_PLACES.find((p) => p.place === place);
                   if (preset) api.edit({ type: "layoutCaptions", patch: { x: 0.5, y: preset.y } });
                 }}
-              >
-                {CAPTION_PLACES.map(({ place, label }) => (
-                  <option key={place} value={place}>
-                    {label}
-                  </option>
-                ))}
-                {captionPlace === "custom" && (
-                  <option value="custom" disabled>
-                    Custom
-                  </option>
-                )}
-              </select>
+              />
             </>
           )}
           <button type="button" className="btn btn--icon" aria-label={muted ? "Unmute" : "Mute"} aria-pressed={muted} onClick={() => setMuted((m) => !m)}>
@@ -832,6 +823,69 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
  * the export's 3×3 kernel. Sharpen works on the preview's own pixels, fewer than the video's, so it looks a little
  * coarser here than in the export.
  */
+/**
+ * Remove a colour → Pick: a crosshair over the stage; a click on the clip's picture reads the colour there (5 × 5 pixels
+ * of the frame the preview shows, averaged, so noise doesn't decide it). Escape or a click beside the picture cancels.
+ */
+function ColourPicker({ stage, picking }: { stage: RefObject<HTMLDivElement | null>; picking: NonNullable<PreviewProps["picking"]> }) {
+  const { clipId, onPicked, onCancel } = picking;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+  const pick = (e: ReactMouseEvent) => {
+    e.stopPropagation();
+    const el = stage.current?.querySelector<HTMLVideoElement | HTMLImageElement>(`[data-clip="${CSS.escape(clipId)}"] :is(video, img)`);
+    if (!el) return onCancel();
+    const r = el.getBoundingClientRect();
+    const mirrored = el.classList.contains("is-mirrored");
+    const fx = (e.clientX - r.left) / r.width;
+    const fy = (e.clientY - r.top) / r.height;
+    if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return onCancel();
+    const [w, h] = el instanceof HTMLVideoElement ? [el.videoWidth, el.videoHeight] : [el.naturalWidth, el.naturalHeight];
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 5;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!w || !h || !ctx) return onCancel(true);
+    try {
+      ctx.drawImage(el, (mirrored ? 1 - fx : fx) * w - 2, fy * h - 2, 5, 5, 0, 0, 5, 5);
+      const d = ctx.getImageData(0, 0, 5, 5).data;
+      const avg = [0, 1, 2].map((c) => Math.round(Array.from({ length: 25 }, (_, i) => d[i * 4 + c]).reduce((a, b) => a + b) / 25));
+      onPicked(`#${avg.map((v) => v.toString(16).padStart(2, "0")).join("")}`);
+    } catch {
+      // A video from another site the preview may show but not read.
+      onCancel(true);
+    }
+  };
+  return (
+    <div className="preview__picker" onClick={pick} onPointerDown={(e) => e.stopPropagation()} role="button" aria-label="Click the colour to remove">
+      <span className="preview__picker-hint">Click the colour to remove · Esc to cancel</span>
+    </div>
+  );
+}
+
+/** Remove a colour: one filter per keyed clip, `key-<clip id>`, effects.ts `keyLine` drawn as the export draws it. */
+function KeyFilters({ clips }: { clips: Clip[] }) {
+  const keyed = clips.flatMap((c) => {
+    const line = c.chroma && keyLine(c.chroma);
+    return line ? [{ id: c.id, line }] : [];
+  });
+  if (!keyed.length) return null;
+  return (
+    <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
+      {keyed.map(({ id, line: [r, g, b, edge, width] }) => (
+        <filter key={id} id={`key-${id}`} colorInterpolationFilters="sRGB">
+          <feColorMatrix type="matrix" values={`1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 ${r} ${g} ${b} 0 0.5`} />
+          <feComponentTransfer>
+            <feFuncA type="linear" slope={-1 / width} intercept={edge / width} />
+          </feComponentTransfer>
+        </filter>
+      ))}
+    </svg>
+  );
+}
+
 function AdjustFilters({ clips }: { clips: Clip[] }) {
   const used = useMemo(() => {
     const steps = new Map<string, LookStep>();
@@ -960,7 +1014,10 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
   const fitWidth = clip.fill ? (wider ? aspect / stageAspect : 1) : wider ? 1 : aspect / stageAspect;
   const boxWidth = stageWidth * fitWidth * clip.size;
   // A filter or effect on this clip itself changes only its box, timed to the clip's span.
-  const fx = clip.look || clip.effect || adjustSteps(clip.adjust).length ? blocksStyle([clip], time, boxWidth, boxWidth / aspect) : undefined;
+  const own = clip.look || clip.effect || adjustSteps(clip.adjust).length ? blocksStyle([clip], time, boxWidth, boxWidth / aspect) : undefined;
+  // A removed colour goes first, from the picture as it comes (the export keys before the colour steps too).
+  const key = clip.chroma && keyLine(clip.chroma) ? `url(#key-${clip.id})` : undefined;
+  const fx = key ? { mirror: false, bars: 0, layers: [], ...own, filter: [key, own?.filter].filter(Boolean).join(" ") } : own;
   const box: CSSProperties = {
     width: `${fitWidth * clip.size * 100}%`,
     aspectRatio: String(aspect),
@@ -980,6 +1037,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
   return (
     <div
       className={selected ? "preview__picture is-selected" : "preview__picture"}
+      data-clip={clip.id}
       style={{ ...box, visibility: visible ? "visible" : "hidden", opacity }}
       onPointerDown={onPointerDown}
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}

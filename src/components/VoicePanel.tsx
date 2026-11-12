@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listMicrophones, openMicrophone, startRecording, type Microphone } from "../lib/voice";
 import { PanelHead } from "./SoundPanel";
+import { Select } from "./Select";
 import "./VoicePanel.css";
 
 type Phase = "ready" | "countdown" | "recording" | "saving" | "testing" | "playing";
@@ -263,14 +264,13 @@ export function VoicePanel({
       />
       <div className="insp__field">
         <label htmlFor="voice-mic">Microphone</label>
-        <select id="voice-mic" className="field" value={deviceId} disabled={busy} onChange={(e) => setDeviceId(e.target.value)}>
-          <option value="">Windows default</option>
-          {mics.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
-          ))}
-        </select>
+        <Select
+          id="voice-mic"
+          value={deviceId}
+          disabled={busy}
+          options={[{ value: "", label: "Windows default" }, ...mics.map((m) => ({ value: m.id, label: m.label }))]}
+          onChange={setDeviceId}
+        />
       </div>
       <div className="voice__meter" aria-hidden="true">
         <div ref={barRef} className="voice__level" />

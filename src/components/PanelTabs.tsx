@@ -29,7 +29,6 @@ export function PanelTabs<T extends string>({
   const measureRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const key = `ptabs-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
-  const open = tabs.findIndex((t) => t.id === value);
   const [shown, setShown] = useState<number[]>(() => tabs.map((_, i) => i));
   // Labels, not the array: callers usually pass a new array each render.
   const labels = tabs.map((t) => t.label).join("\n");
@@ -44,7 +43,7 @@ export function PanelTabs<T extends string>({
       const more = sizes.pop() ?? 0;
       const style = getComputedStyle(box);
       const room = box.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-      const next = fitTabs(sizes, room, more + GAP, GAP, open);
+      const next = fitTabs(sizes, room, more + GAP, GAP);
       setShown((now) => (now.join() === next.join() ? now : next));
     };
     update();
@@ -53,7 +52,7 @@ export function PanelTabs<T extends string>({
     observer.observe(box);
     observer.observe(measure);
     return () => observer.disconnect();
-  }, [labels, open]);
+  }, [labels]);
 
   const hidden = tabs.filter((_, i) => !shown.includes(i));
 
@@ -72,6 +71,8 @@ export function PanelTabs<T extends string>({
             style={{ anchorName: `--${key}` } as CSSProperties}
             popoverTarget={key}
             aria-haspopup="menu"
+            // The open tab is one of these: More shows it, the row stays as it is.
+            aria-pressed={hidden.some((t) => t.id === value)}
             title={hidden.map((t) => t.label).join(", ")}
           >
             More
@@ -85,7 +86,8 @@ export function PanelTabs<T extends string>({
             <button
               key={t.id}
               type="button"
-              role="menuitem"
+              role="menuitemradio"
+              aria-checked={t.id === value}
               onClick={() => {
                 listRef.current?.hidePopover();
                 onPick(t.id);

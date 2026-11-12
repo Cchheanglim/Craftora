@@ -14,14 +14,14 @@
 
 /* The AI picker, the message box and Send in the panel's text size, not the larger one of other forms (owner: the
    letters were too big). */
-.asst__head select,
+.asst__head .select,
 .asst__head .btn,
 .asst__compose textarea,
 .asst__actions .btn {
   font-size: 12.5px;
 }
 
-.asst__head select {
+.asst__head .select {
   flex: 1;
   min-width: 0;
   height: 32px;
@@ -194,7 +194,7 @@
 
 /* The AI service: as wide as its name; the model list takes the rest. Alone (AI programs have no
    model list), it fills the row. */
-.asst__head .asst__provider:not(:only-of-type) {
+.asst__head:has(#asst-model) .asst__provider {
   flex: 0 0 auto;
 }
 

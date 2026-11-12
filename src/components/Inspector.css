@@ -112,7 +112,8 @@
   text-align: right;
 }
 
-.insp__slider > label {
+.insp__slider > label,
+.insp__slider > .insp__row-label {
   font-size: var(--text-xs);
   color: var(--text-2);
 }
@@ -209,4 +210,19 @@
 
 .insp__pair .insp__rotate:hover {
   border-color: var(--line-hover);
+}
+
+/* Remove a colour: the colour being removed, a swatch and its code. */
+.insp__key-colour {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.insp__key-colour .insp__swatch {
+  width: 22px;
+  height: 22px;
 }

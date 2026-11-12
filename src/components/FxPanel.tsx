@@ -8,6 +8,7 @@ import { SHAPES } from "../project/shapes";
 import { Icon } from "./Icon";
 import { Slider } from "./Inspector";
 import { PanelHead } from "./SoundPanel";
+import { Select } from "./Select";
 import { beginFxDrag } from "./TimelineEditor";
 import "./FxPanel.css";
 
@@ -206,18 +207,12 @@ export function FxPanel({
           <>
             <div className="insp__field">
               <label htmlFor="fx-trans-kind">Type</label>
-              <select
+              <Select<Transition["kind"]>
                 id="fx-trans-kind"
-                className="field"
                 value={activeTransition.kind}
-                onChange={(e) => onTransitionChange?.({ ...activeTransition, kind: e.target.value as Transition["kind"] })}
-              >
-                {TRANSITION_KINDS.map((t) => (
-                  <option key={t.kind} value={t.kind}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+                options={TRANSITION_KINDS.map((t) => ({ value: t.kind, label: t.label }))}
+                onChange={(kind) => onTransitionChange?.({ ...activeTransition, kind })}
+              />
             </div>
             <Slider
               id="fx-trans-duration"

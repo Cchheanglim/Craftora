@@ -93,7 +93,7 @@
   padding: 0;
 }
 
-:root[data-theme] :is(.toolbar, .side, .app__panel, .preview, .tl, .home, .library) {
+:root[data-theme] :is(.toolbar, .side, .app__panel, .media-panel, .preview, .tl, .home, .library) {
   border: 1px solid var(--glass-edge);
   border-radius: 18px;
   background: var(--bg-panel);
@@ -122,8 +122,14 @@
 
 /* The Queue drop-down sits inside the toolbar, whose own blur stops its blur reaching the page:
    see-through, the video and tabs showed sharply behind it. */
-:root[data-theme] .queue__panel {
+:root[data-theme] .queue__panel,
+:root[data-theme] .toolbar__nav-menu .side {
   background: var(--bg-canvas);
+}
+
+/* The editor's menu: a pop-up, not one of the page's glass panels. */
+:root[data-theme] .toolbar__nav-menu .side {
+  border-radius: 12px;
 }
 
 /* On Light glass the clips' teal is pale: their names in the usual dark text, not white. */
@@ -131,7 +137,7 @@
   color: var(--text);
 }
 
-:root[data-theme] :is(.confirm, .welcome, .crop-dialog, .export-dialog, .text-menu, .export__more, .tl__menu, .select__list, .queue__panel, .tooltip) {
+:root[data-theme] :is(.confirm, .welcome, .crop-dialog, .export-dialog, .text-menu, .export__more, .tl__menu, .tl__ai-box, .select__list, .queue__panel, .tooltip) {
   border-color: var(--glass-edge);
   -webkit-backdrop-filter: blur(30px) saturate(170%);
   backdrop-filter: blur(30px) saturate(170%);

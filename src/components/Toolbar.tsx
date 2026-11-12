@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { checkSite, errorText } from "../lib/engine";
 import { siteVerdict, type Verdict } from "./Home";
@@ -6,6 +6,8 @@ import { Icon } from "./Icon";
 import "./Toolbar.css";
 
 interface ToolbarProps {
+  /** The main menu (Sidebar), shown from the round button at the left; absent: no button (other pages show it as a column). */
+  menu?: ReactNode;
   /** The Queue button (QueueDock), next to Import. */
   queue: ReactNode;
   url: string;
@@ -25,16 +27,12 @@ interface ToolbarProps {
   onExport?: () => void;
   /** Lets Home's "Paste a link" focus the field. */
   inputRef: RefObject<HTMLInputElement | null>;
-  leftOpen: boolean;
-  rightOpen: boolean;
-  onToggleLeft: () => void;
-  /** Absent where there is no right panel (Home, Exports). */
-  onToggleRight?: () => void;
   /** A newer version: a button to install it, or its progress (no `onClick`) while installing. */
   update?: { label: string; onClick?: () => void };
 }
 
 export function Toolbar({
+  menu,
   queue,
   url,
   onUrlChange,
@@ -47,14 +45,93 @@ export function Toolbar({
   onImport,
   onExport,
   inputRef,
-  leftOpen,
-  rightOpen,
-  onToggleLeft,
-  onToggleRight,
   update,
 }: ToolbarProps) {
+  const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
+
+  const navRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearTimer = () => {
+    if (closeTimer.current !== null) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+
+  const handleMouseEnter = () => {
+    clearTimer();
+    setOpen(true);
+  };
+
+  const handleMouseLeave = () => {
+    clearTimer();
+    closeTimer.current = setTimeout(() => {
+      setOpen(false);
+    }, 250);
+  };
+
+  useEffect(() => {
+    return () => {
+      clearTimer();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (navRef.current && !navRef.current.contains(e.target as Node)) {
+        clearTimer();
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [open]);
+
+  const handleButtonClick = () => {
+    clearTimer();
+    setOpen((prev) => !prev);
+  };
+
+  const handleButtonKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      clearTimer();
+      setOpen(true);
+      const focusFirst = () => {
+        const firstBtn = navRef.current?.querySelector<HTMLButtonElement>(".toolbar__nav-menu button");
+        firstBtn?.focus();
+      };
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(focusFirst);
+      } else {
+        setTimeout(focusFirst, 0);
+      }
+    }
+  };
+
+  const handleNavKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape" && open) {
+      e.preventDefault();
+      e.stopPropagation();
+      clearTimer();
+      setOpen(false);
+      buttonRef.current?.focus();
+    }
+  };
+
+  const handleMenuClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) {
+      clearTimer();
+      setOpen(false);
+    }
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -75,20 +152,36 @@ export function Toolbar({
     }
   };
 
-
   return (
     <header className="toolbar">
       <div className="toolbar__brand">
-        <button
-          type="button"
-          className="btn btn--icon"
-          aria-label={leftOpen ? "Collapse the left panel" : "Expand the left panel"}
-          aria-pressed={leftOpen}
-          title="Left panel (Ctrl+B)"
-          onClick={onToggleLeft}
+        {menu && (
+        <div
+          ref={navRef}
+          className="toolbar__nav"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          onKeyDown={handleNavKeyDown}
         >
-          <Icon name="panelLeft" />
-        </button>
+          <button
+            ref={buttonRef}
+            type="button"
+            className="btn btn--icon"
+            aria-label="Menu"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={handleButtonClick}
+            onKeyDown={handleButtonKeyDown}
+          >
+            <Icon name="menu" />
+          </button>
+          {open && (
+            <div className="toolbar__nav-menu" onClick={handleMenuClick}>
+              {menu}
+            </div>
+          )}
+        </div>
+        )}
         <img src="/craftora.svg" width={22} height={22} alt="" className="toolbar__logo" />
         <span>Craftora</span>
       </div>
@@ -192,18 +285,6 @@ export function Toolbar({
           <button type="button" className="btn btn--secondary" onClick={onImport} disabled={fetching} title="Import files (Ctrl+O)">
             <Icon name="upload" size={14} />
             Import
-          </button>
-        )}
-        {onToggleRight && (
-          <button
-            type="button"
-            className="btn btn--icon"
-            aria-label={rightOpen ? "Collapse the right panel" : "Expand the right panel"}
-            aria-pressed={rightOpen}
-            title="Right panel (Ctrl+Alt+B)"
-            onClick={onToggleRight}
-          >
-            <Icon name="panelRight" />
           </button>
         )}
       </div>

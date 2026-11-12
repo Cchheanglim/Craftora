@@ -40,6 +40,7 @@ export type ClipPatch = Partial<
     | "look"
     | "lookAmount"
     | "adjust"
+    | "chroma"
     | "effectStrength"
     | "effectSpeed"
     | "effect"
@@ -101,7 +102,7 @@ export type EditAction =
   /** Removes these media-time ranges from a clip. `exact`: just these (words from the transcript), not padded silences of 0.25 s or more. */
   | { type: "cutSilences"; clipId: string; ranges: [number, number][]; exact?: boolean }
   | { type: "splitByChapters"; clipId: string }
-  | { type: "deleteClip"; clipId: string }
+  | { type: "deleteClip"; clipId: string; /** What comes after it on its track moves back by its length (magnetic tracks always close up). */ closeGap?: boolean }
   | { type: "updateClip"; clipId: string; patch: ClipPatch }
   /** 0.25–4; the clip gets shorter or longer on the timeline. */
   | { type: "setSpeed"; clipId: string; speed: number }
@@ -587,8 +588,14 @@ export function applyEdit(p: Project, action: EditAction): Project {
       return settle({ ...p, clips: p.clips.flatMap((c) => (c.id === clip.id ? pieces : [c])) });
     }
 
-    case "deleteClip":
-      return packMagnetic({ ...p, clips: p.clips.filter((c) => c.id !== action.clipId) });
+    case "deleteClip": {
+      const gone = p.clips.find((c) => c.id === action.clipId);
+      const clips = p.clips.filter((c) => c.id !== action.clipId);
+      if (!gone || !action.closeGap || isMagnetic(p, gone.trackId)) return packMagnetic({ ...p, clips });
+      const back = clipLength(gone);
+      // Settled, so a clip that ran into the deleted one by a transition now runs into the one before it.
+      return settle({ ...p, clips: clips.map((c) => (c.trackId === gone.trackId && c.start > gone.start ? { ...c, start: round(Math.max(0, c.start - back)) } : c)) });
+    }
 
     case "updateClip": {
       const patch = { ...action.patch };

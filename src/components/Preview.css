@@ -373,3 +373,25 @@
   background: var(--bg-canvas);
   border-top: 1px solid var(--line);
 }
+
+/* Remove a colour → Pick: a crosshair over the picture until a colour is clicked. */
+.preview__picker {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  cursor: crosshair;
+}
+
+.preview__picker-hint {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  translate: -50% 0;
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  pointer-events: none;
+}

@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { shapeLabel } from "../project/shapes";
-import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, showsPicture, mediaTimeAt, previousOnTrack, trackLabel, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
+import { MIN_CLIP, SPEEDS, TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, showsPicture, mediaTimeAt, previousOnTrack, trackLabel, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
 import { LOOKS, PICTURE_EFFECTS, blockLabel, type FxItem } from "../project/effects";
 import { packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
@@ -89,8 +89,12 @@ interface TimelineEditorProps {
   onClipCommand: (command: ClipCommand, clip: Clip, time: number) => void;
   /** Something has been copied, so Paste can put it at the playhead. */
   canPaste: boolean;
+  /** Copy effects was used, so Paste effects can put that filter, effect and Adjust on another clip. */
+  canPasteEffects: boolean;
   /** Cover on the main track: from the frame at the playhead, a picture, or none. */
   onCover: (choice: "frame" | "picture" | "remove") => void;
+  /** "AI edit": the picked part of a clip (timeline seconds) and what to change there; absent hides the button. */
+  onAiEdit?: (ask: { clipId: string; start: number; end: number; text: string }) => void;
   /**
    * A voice-over being recorded: drawn as a growing clip from `start` to `end` (seconds on the timeline) on track
    * `trackId`, the track the take will land on; null: a new row below all the tracks (the take gets a new track).
@@ -100,7 +104,7 @@ interface TimelineEditorProps {
 }
 
 /** What a clip's right-click menu can do (App `clipCommand` does it). */
-export type ClipCommand = "copy" | "cut" | "paste" | "delete" | "freeze" | "reverse" | "mirror" | "rotate" | "crop" | "export" | "replace" | "reveal";
+export type ClipCommand = "copy" | "cut" | "paste" | "delete" | "freeze" | "reverse" | "mirror" | "rotate" | "crop" | "export" | "replace" | "reveal" | "split" | "duplicate" | "deleteGap" | "mute" | "copyEffects" | "pasteEffects" | `speed-${number}`;
 
 type DragMode = "move" | "start" | "end";
 
@@ -161,8 +165,10 @@ export function TimelineEditor({
   onOpenFx,
   onClipCommand,
   canPaste,
+  canPasteEffects,
   onCover,
   recording,
+  onAiEdit,
 }: TimelineEditorProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -176,6 +182,24 @@ export function TimelineEditor({
     setGhostState(g);
   };
   const [pps, setPps] = useState(40);
+  const [aiMode, setAiMode] = useState(false);
+  const [aiPick, setAiPick] = useState<{ clipId: string; start: number; end: number } | null>(null);
+  const pickRef = useRef<HTMLDivElement>(null);
+  const turnAiOff = () => {
+    setAiMode(false);
+    setAiPick(null);
+  };
+  useEffect(() => {
+    if (!aiMode) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        turnAiOff();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [aiMode]);
   // The track buttons compact (only ⋯ and Cover), remembered on this PC; `headsDrag` is the width while the line
   // beside them is dragged.
   const [headsCompact, setHeadsCompact] = useState(() => {
@@ -617,6 +641,72 @@ export function TimelineEditor({
   const canSplit = selected && playback.time > selected.start && playback.time < clipEnd(selected);
   const canCutSilences = Boolean(selected && selectedMedia?.hasAudio && !selectedMedia.source.image);
 
+  const toggleAiMode = () => {
+    if (aiMode) {
+      turnAiOff();
+    } else {
+      setAiMode(true);
+      if (selected && !isBlock(selected)) {
+        setAiPick({ clipId: selected.id, start: selected.start, end: clipEnd(selected) });
+      } else {
+        setAiPick(null);
+      }
+    }
+  };
+
+  const beginPick = (clip: Clip) => (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.currentTarget;
+    el.setPointerCapture?.(e.pointerId);
+    onSelect(clip.id);
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const cEnd = clipEnd(clip);
+    const clamp = (t: number) => Math.max(clip.start, Math.min(cEnd, t));
+    const pressTime = clamp(timeAt(e.clientX));
+    let moved = false;
+
+    const move = (ev: PointerEvent) => {
+      scrollAtEdge(ev.clientX);
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) >= 4) {
+        moved = true;
+      }
+      const cur = clamp(timeAt(ev.clientX));
+      setAiPick({
+        clipId: clip.id,
+        start: Math.min(pressTime, cur),
+        end: Math.max(pressTime, cur),
+      });
+    };
+
+    const end = (ev: PointerEvent) => {
+      try {
+        el.releasePointerCapture?.(ev.pointerId);
+      } catch {
+        /* ignore */
+      }
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", end);
+      el.removeEventListener("pointercancel", end);
+
+      if (!moved || Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) {
+        setAiPick({ clipId: clip.id, start: clip.start, end: cEnd });
+      } else {
+        const cur = clamp(timeAt(ev.clientX));
+        const s = Math.min(pressTime, cur);
+        const en = Math.max(pressTime, cur);
+        setAiPick({ clipId: clip.id, start: s === en ? clip.start : s, end: s === en ? cEnd : en });
+      }
+    };
+
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  };
+
   // While a clip is being moved: it follows the pointer, and on a magnetic track the other
   // clips close up behind it and open a gap where it would land.
   const isMagnetic = (trackId: string) => Boolean(project.tracks.find((t) => t.id === trackId)?.magnetic);
@@ -695,6 +785,28 @@ export function TimelineEditor({
           <Icon name="plus" size={14} />
           Track
         </button>
+        {onAiEdit && (
+          <>
+            <span className="tl__sep" aria-hidden="true" />
+            <div className="tl__ai-wrap">
+              <button
+                type="button"
+                className="btn btn--ghost"
+                aria-pressed={aiMode}
+                title="Pick part of a clip and tell the AI what to change"
+                onClick={toggleAiMode}
+              >
+                <Icon name="sparkle" size={14} />
+                AI edit
+              </button>
+              {aiMode && !aiPick && (
+                <div className="tl__ai-hint" role="status">
+                  Drag over a clip to pick the part to edit
+                </div>
+              )}
+            </div>
+          </>
+        )}
         {/* Like the popular editor: fit, then out, a slider, in; all but fit zoom about the playhead. */}
         <div className="tl__zoom">
           <button type="button" className="btn btn--icon" aria-label="Zoom to fit timeline" title="Zoom to fit timeline (Shift+Z)" onClick={fit}>
@@ -977,15 +1089,13 @@ export function TimelineEditor({
                         aria-label={`${label}, ${formatClock(clip.start)} to ${formatClock(clipEnd(clip))}`}
                         className={classes.join(" ")}
                         style={{ left: start * pps, width: Math.max(4, length * pps) }}
-                        onPointerDown={beginDrag(clip, "move")}
+                        onPointerDown={aiMode ? beginPick(clip) : beginDrag(clip, "move")}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           onSelect(clip.id);
-                          const onClip = playback.time >= clip.start && playback.time < clipEnd(clip);
-                          // Kept on screen: about 230 × 400 px.
-                          const x = Math.min(e.clientX, window.innerWidth - 236);
-                          const y = Math.min(e.clientY, window.innerHeight - 404);
-                          setClipMenu({ clipId: clip.id, x, y, time: onClip ? playback.time : timeAt(e.clientX) });
+                          // Inside it, not on its very edge, where Split has nothing to cut: there, where it was clicked.
+                          const onClip = playback.time > clip.start + MIN_CLIP && playback.time < clipEnd(clip) - MIN_CLIP;
+                          setClipMenu({ clipId: clip.id, x: e.clientX, y: e.clientY, time: onClip ? playback.time : timeAt(e.clientX) });
                         }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
@@ -1092,6 +1202,23 @@ export function TimelineEditor({
                     );
                   })}
                 {recording && recording.trackId === track.id && <RecordingClip recording={recording} pps={pps} />}
+                {aiMode && aiPick && (() => {
+                  const c = project.clips.find((cl) => cl.id === aiPick.clipId);
+                  if (!c || where(c).trackId !== track.id) return null;
+                  return (
+                    <div
+                      ref={pickRef}
+                      className="tl__ai-pick"
+                      style={{
+                        left: aiPick.start * pps,
+                        width: Math.max(0, (aiPick.end - aiPick.start) * pps),
+                        top: 2,
+                        bottom: 2,
+                      }}
+                      aria-hidden="true"
+                    />
+                  );
+                })()}
               </div>
             ))}
             {/* Not a real track yet: no laneRefs entry, takes no drops. */}
@@ -1163,6 +1290,8 @@ export function TimelineEditor({
                   local={Boolean(media?.source.local)}
                   locked={Boolean(track?.locked)}
                   canPaste={canPaste}
+                  sound={Boolean(media?.hasAudio)}
+                  canPasteEffects={canPasteEffects}
                   onPick={(command) => {
                     setClipMenu(null);
                     onClipCommand(command, clip, clipMenu.time);
@@ -1175,6 +1304,19 @@ export function TimelineEditor({
             <div className="tl__playhead" style={{ left: playback.time * pps }} aria-hidden="true" />
             {project.clips.length === 0 && (
               <p className="tl__empty">Drag media here from the left, or press + on a file to add it.</p>
+            )}
+            {aiMode && aiPick && (
+              <AiEditBox
+                pickRef={pickRef}
+                aiPick={aiPick}
+                pps={pps}
+                scrollRef={scrollRef}
+                onClose={turnAiOff}
+                onSend={(text) => {
+                  onAiEdit?.({ ...aiPick, text });
+                  turnAiOff();
+                }}
+              />
             )}
           </div>
         </div>
@@ -1252,9 +1394,24 @@ const ClipFrames = memo(function ClipFrames({ clip, strip, pps, cellHeight, dura
   );
 });
 
+/** A menu that just opened, moved up and left by as much as it would run out of the window (a ref callback). */
+function keepInside(el: HTMLElement | null) {
+  if (!el) return;
+  // Measured where it opened (React may call this twice) and without its pop-in, which shrinks it for a moment (it
+  // still plays after).
+  el.style.translate = "";
+  el.style.animation = "none";
+  const r = el.getBoundingClientRect();
+  el.style.animation = "";
+  const dx = Math.max(8 - r.left, Math.min(0, window.innerWidth - 8 - r.right));
+  const dy = Math.max(8 - r.top, Math.min(0, window.innerHeight - 8 - r.bottom));
+  el.style.translate = `${Math.round(dx)}px ${Math.round(dy)}px`;
+}
+
 /**
- * A clip's right-click menu: copy, cut, paste, delete, Edit ▸ (freeze, reverse,
- * mirror, rotate, crop), export it, replace it, open its file. Escape or a click anywhere else closes it.
+ * A clip's right-click menu: copy, cut, paste, delete, delete and close gap, split, duplicate, Edit ▸ (freeze,
+ * reverse, mirror, rotate, crop), Speed ▸, mute, copy/paste effects, export it, replace it, open its file. Escape or
+ * a click anywhere else closes it.
  */
 function ClipMenu({
   x,
@@ -1265,6 +1422,8 @@ function ClipMenu({
   local,
   locked,
   canPaste,
+  sound,
+  canPasteEffects,
   onPick,
   onClose,
 }: {
@@ -1280,19 +1439,23 @@ function ClipMenu({
   /** On a locked track: only what doesn't change it. */
   locked: boolean;
   canPaste: boolean;
+  /** Media with sound: Mute applies. */
+  sound: boolean;
+  /** Copy effects was used: Paste effects applies. */
+  canPasteEffects: boolean;
   onPick: (command: ClipCommand) => void;
   onClose: () => void;
 }) {
-  const [editOpen, setEditOpen] = useState(false);
+  const [open, setOpen] = useState<"edit" | "speed" | null>(null);
   // Closing waits a moment, so the pointer can cut across the rows below on its way into the list.
   const closing = useRef(0);
-  const holdEdit = (open: boolean) => {
+  const hold = (which: "edit" | "speed", show: boolean) => {
     window.clearTimeout(closing.current);
-    if (open) setEditOpen(true);
-    else closing.current = window.setTimeout(() => setEditOpen(false), 350);
+    if (show) setOpen(which);
+    else closing.current = window.setTimeout(() => setOpen((o) => (o === which ? null : o)), 350);
   };
   useEffect(() => () => window.clearTimeout(closing.current), []);
-  const item =(command: ClipCommand, label: string, icon: IconName, enabled: boolean, keys?: string, checked?: boolean) => (
+  const item = (command: ClipCommand, label: string, icon: IconName | undefined, enabled: boolean, keys?: string, checked?: boolean) => (
     <button
       key={command}
       type="button"
@@ -1301,7 +1464,7 @@ function ClipMenu({
       disabled={!enabled}
       onClick={() => onPick(command)}
     >
-      <Icon name={icon} size={13} />
+      {icon && <Icon name={icon} size={13} />}
       <span className="tl__menu-text">{label}</span>
       {keys && <kbd>{keys}</kbd>}
     </button>
@@ -1323,6 +1486,7 @@ function ClipMenu({
         }}
       />
       <div
+        ref={keepInside}
         className="tl__menu tl__clip-menu"
         role="menu"
         aria-label="Clip"
@@ -1343,31 +1507,36 @@ function ClipMenu({
         {item("cut", "Cut", "scissors", !locked, "Ctrl X")}
         {item("paste", "Paste", "clipboard", canPaste, "Ctrl V")}
         {item("delete", "Delete", "trash", !locked, "Del")}
+        {item("deleteGap", "Delete and close gap", "trash", !locked)}
         <hr />
-        <div className="tl__submenu" onMouseEnter={() => holdEdit(true)} onMouseLeave={() => holdEdit(false)}>
+        {item("split", "Split", "scissors", !locked, "S")}
+        {item("duplicate", "Duplicate", "plus", !locked, "Ctrl D")}
+        <hr />
+        <div className="tl__submenu" onMouseEnter={() => hold("edit", true)} onMouseLeave={() => hold("edit", false)}>
           <button
             type="button"
             role="menuitem"
             aria-haspopup="menu"
-            aria-expanded={editOpen}
+            aria-expanded={open === "edit"}
             disabled={locked || !(video || picture)}
             // Hovering already opened it: a click must not close it again.
-            onClick={() => setEditOpen(true)}
+            onClick={() => setOpen("edit")}
             onKeyDown={(e) => {
-              if (e.key === "ArrowRight") setEditOpen(true);
+              if (e.key === "ArrowRight") setOpen("edit");
             }}
           >
             <Icon name="sliders" size={13} />
             <span className="tl__menu-text">Edit</span>
             <span aria-hidden="true">›</span>
           </button>
-          {editOpen && (
+          {open === "edit" && (
             <div
+              ref={keepInside}
               className="tl__menu tl__submenu-list"
               role="menu"
               aria-label="Edit"
               onKeyDown={(e) => {
-                if (e.key === "ArrowLeft") setEditOpen(false);
+                if (e.key === "ArrowLeft") setOpen(null);
               }}
             >
               {item("freeze", "Freeze frame", "snowflake", video && picture)}
@@ -1378,12 +1547,173 @@ function ClipMenu({
             </div>
           )}
         </div>
+        <div className="tl__submenu" onMouseEnter={() => hold("speed", true)} onMouseLeave={() => hold("speed", false)}>
+          <button
+            type="button"
+            role="menuitem"
+            aria-haspopup="menu"
+            aria-expanded={open === "speed"}
+            disabled={locked || !video}
+            // Hovering already opened it: a click must not close it again.
+            onClick={() => setOpen("speed")}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowRight") setOpen("speed");
+            }}
+          >
+            <Icon name="clock" size={13} />
+            <span className="tl__menu-text">Speed</span>
+            <span aria-hidden="true">›</span>
+          </button>
+          {open === "speed" && (
+            <div
+              ref={keepInside}
+              className="tl__menu tl__submenu-list"
+              role="menu"
+              aria-label="Speed"
+              onKeyDown={(e) => {
+                if (e.key === "ArrowLeft") setOpen(null);
+              }}
+            >
+              {SPEEDS.map((s) => item(`speed-${s}`, `${s}×${s === 1 ? " (normal)" : ""}`, undefined, true, undefined, clip.speed === s))}
+            </div>
+          )}
+        </div>
+        {item("mute", clip.volume === 0 ? "Unmute clip" : "Mute clip", clip.volume === 0 ? "volume" : "volumeOff", sound && !locked)}
+        <hr />
+        {item("copyEffects", "Copy effects", "sparkle", Boolean(clip.look || clip.effect || clip.adjust))}
+        {item("pasteEffects", "Paste effects", "clipboard", canPasteEffects && !locked && (picture || isBlock(clip)))}
         <hr />
         {item("export", "Export this clip", "upload", media)}
         {item("replace", "Replace clip…", "image", media && !locked)}
         {item("reveal", "Open file location", "folder", local)}
       </div>
     </>,
+    document.body,
+  );
+}
+
+/**
+ * AI edit dialog: positioned under the picked range on the timeline, lets user type instructions for the assistant.
+ */
+function AiEditBox({
+  pickRef,
+  aiPick,
+  pps,
+  scrollRef,
+  onClose,
+  onSend,
+}: {
+  pickRef: { current: HTMLDivElement | null };
+  aiPick: { clipId: string; start: number; end: number };
+  pps: number;
+  scrollRef: { current: HTMLDivElement | null };
+  onClose: () => void;
+  onSend: (text: string) => void;
+}) {
+  const [text, setText] = useState("");
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  // Under the picked part when it fits, else above it (the timeline is usually at the foot of the window), never over it.
+  const place = () => {
+    if (!pickRef.current) return { left: 0, top: 0 };
+    const r = pickRef.current.getBoundingClientRect();
+    const h = boxRef.current?.offsetHeight ?? 150;
+    return { left: r.left, top: r.bottom + 8 + h <= window.innerHeight - 8 ? r.bottom + 8 : r.top - 8 - h };
+  };
+  const [pos, setPos] = useState(place);
+  const updatePos = () => setPos(place());
+
+  useLayoutEffect(() => {
+    updatePos();
+  }, [pps, aiPick, pickRef]);
+
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const onScroll = () => updatePos();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [scrollRef, pickRef]);
+
+  useLayoutEffect(() => {
+    if (boxRef.current) keepInside(boxRef.current);
+  });
+
+  const handleSend = () => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    onSend(trimmed);
+    setText("");
+  };
+
+  return createPortal(
+    <div
+      ref={(el) => {
+        boxRef.current = el;
+        keepInside(el);
+      }}
+      className="tl__ai-box"
+      role="dialog"
+      aria-label="AI edit"
+      style={{ position: "fixed", left: pos.left, top: pos.top }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Escape") {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+    >
+      <div className="tl__ai-box-top">
+        <span className="tl__ai-chip mono">
+          {formatClock(aiPick.start)} – {formatClock(aiPick.end)}
+        </span>
+        <button
+          type="button"
+          className="tl__ai-close"
+          aria-label="Close"
+          title="Close"
+          onClick={onClose}
+        >
+          <Icon name="x" size={13} />
+        </button>
+      </div>
+      <textarea
+        className="tl__ai-input"
+        aria-label="Describe your edit"
+        rows={2}
+        autoFocus
+        placeholder="Describe your edit, e.g. make this part slow-mo and add a title"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+          }
+        }}
+      />
+      <div className="tl__ai-box-footer">
+        <span className="tl__ai-note">Edits only the picked part · Ctrl Z undoes it</span>
+        <button
+          type="button"
+          className="tl__ai-send"
+          aria-label="Send"
+          disabled={!text.trim()}
+          onClick={handleSend}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 19V5M6 11l6-6 6 6" />
+          </svg>
+        </button>
+      </div>
+    </div>,
     document.body,
   );
 }

@@ -132,6 +132,8 @@
 - "Make captions from the sound" is offered for videos whose captions are the site's automatic ones too, and making
   captions can be cancelled (in Transcript, or the X in Working on).
 - The welcome window no longer opens with a red ring around its close button.
+- Every drop-down list (microphone, speed, quality, font, place, transition type, frame, file type, the assistant's AI
+  and model) opens in Craftora's own dark look instead of Windows' white list, and scrollbars are slim again.
 - A transition between a video and a shape (or text) right after it said the two clips had to meet; it now goes on
   that cut. On a clip with no cut at all (one long video), a transition now cuts it at the playhead (or where it's
   dropped) and goes there, instead of asking you to split it first. Adding another transition (click or drag) further

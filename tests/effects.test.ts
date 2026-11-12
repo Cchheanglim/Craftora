@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEdit, type EditAction } from "../src/project/actions";
-import { adjustSteps, blockLabel, blocksStyle, dropEdits, lookFilter, lookSteps, stepsFilter, toneCurve, warmthMatrix } from "../src/project/effects";
+import { ENHANCE, adjustSteps, blockLabel, blocksStyle, dropEdits, keyLine, keyedAlpha, lookFilter, lookSteps, stepsFilter, toneCurve, warmthMatrix } from "../src/project/effects";
 import { clipEnd, emptyProject, isBlock, mediaFromSource, trackLabel, type Clip, type Project } from "../src/project/model";
 import type { MediaSource } from "../src/types";
 
@@ -337,4 +337,23 @@ test("a pasted clip lands at the playhead, and a replaced one keeps its place", 
   // A shorter file gives what it has.
   p = applyEdit(p, { type: "replaceClipMedia", clipId: "c", mediaId: shorter.id });
   expect(p.clips.find((c) => c.id === "c")).toMatchObject({ mediaId: shorter.id, in: 0, out: 4 });
+});
+
+test("removing a colour takes the green screen away and keeps skin, white and other colours", () => {
+  const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number];
+  const line = keyLine({ color: "#00b140", strength: 50, softness: 20 })!;
+  const alpha = (hex: string) => keyedAlpha(line, ...rgb(hex));
+  expect(alpha("#00b140")).toBe(0);
+  // A darker and a lighter part of the same screen go too.
+  expect(alpha("#0a8a35")).toBe(0);
+  expect(alpha("#4fd77a")).toBeLessThan(0.2);
+  for (const kept of ["#e0ac69", "#ffffff", "#000000", "#808080", "#d81e3a", "#2b4a9b"]) expect(alpha(kept)).toBe(1);
+  // Grey has no hue to remove.
+  expect(keyLine({ color: "#808080", strength: 50, softness: 20 })).toBeNull();
+  expect(keyLine({ color: "green", strength: 50, softness: 20 })).toBeNull();
+});
+
+test("Enhance adds its steps before the Adjust sliders", () => {
+  expect(adjustSteps({ enhance: 1, brightness: 20 })).toEqual([...ENHANCE, ["brightness", 1.1]]);
+  expect(adjustSteps({ enhance: 0 })).toEqual([]);
 });

@@ -19,6 +19,7 @@ import { PROVIDERS, providerName, type Provider } from "../assistant/providers";
 import { OWN_MODEL, isKeyed, sourceOf, switchedOff, targetOf, type Found, type Source } from "../assistant/agents";
 import { Icon } from "./Icon";
 import { useConfirm } from "./ConfirmDialog";
+import { Select } from "./Select";
 import "./AssistantPanel.css";
 
 const EXAMPLES = [
@@ -51,6 +52,10 @@ interface AssistantPanelProps {
   current: () => Project;
   playhead: () => number;
   seek: (t: number) => void;
+  /** A request from the timeline's AI edit box: sent once an AI is ready (after it's set up, if it isn't yet). */
+  request?: { id: string; text: string } | null;
+  /** The request was sent: the timeline can forget it. */
+  onRequested?: () => void;
 }
 
 function remembered(key: string): string | null {
@@ -82,7 +87,7 @@ function rememberedSource(): Source {
 }
 
 /** Chat with the AI editing assistant, which edits the timeline with the editor's own actions. */
-export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelProps) {
+export function AssistantPanel({ api, current, playhead, seek, request, onRequested }: AssistantPanelProps) {
   /** The AIs with a saved key; null while checking. */
   const [keys, setKeys] = useState<Provider[] | null>(null);
   /** AI programs and local servers on this PC; null while scanning. */
@@ -104,6 +109,11 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
   // Falling back to another model is for Gemini's free plan; other AIs use the model picked.
   const fallbacks = useMemo(() => (models && provider === "gemini" ? fallbackModels(models) : []), [models, provider]);
   const { entries, busy, send, reset } = useAssistant({ api, current, playhead, seek, provider, model, fallbacks });
+  useEffect(() => {
+    if (!request || !ready || !model || busy) return;
+    onRequested?.();
+    void send(request.text);
+  }, [request, ready, model, busy, send, onRequested]);
   const { ask, dialog } = useConfirm();
   const recommended = models ? (isKeyed(provider) ? recommendedModels(models, provider) : models.map((m) => ({ ...m, why: "" }))) : [];
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -248,55 +258,42 @@ export function AssistantPanel({ api, current, playhead, seek }: AssistantPanelP
         <label htmlFor="asst-provider" className="sr-only">
           AI
         </label>
-        <select
+        {/* Switched off in Settings → Assistant: hidden here, unless it's the one in use. */}
+        <Select<string>
           id="asst-provider"
-          className="field asst__provider"
+          className="asst__provider"
           value={provider}
-          onChange={(e) => (e.target.value === CONNECT ? setConnecting(true) : chooseProvider(e.target.value as Source))}
           disabled={busy}
-        >
-          {/* Switched off in Settings → Assistant: hidden here, unless it's the one in use. */}
-          {PROVIDERS.filter((p) => p.id === provider || !off.includes(p.id)).map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-              {keys.includes(p.id) ? "" : " (add key)"}
-            </option>
-          ))}
-          {found
-            .filter((f) => f.ready && (sourceOf(f) === provider || !off.includes(sourceOf(f))))
-            .map((f) => (
-              <option key={sourceOf(f)} value={sourceOf(f)}>
-                {f.name}
-              </option>
-            ))}
-          <option value={CONNECT}>Connect another AI…</option>
-        </select>
+          options={[
+            ...PROVIDERS.filter((p) => p.id === provider || !off.includes(p.id)).map((p) => ({
+              value: p.id as string,
+              label: `${p.name}${keys.includes(p.id) ? "" : " (add key)"}`,
+            })),
+            ...found
+              .filter((f) => f.ready && (sourceOf(f) === provider || !off.includes(sourceOf(f))))
+              .map((f) => ({ value: sourceOf(f) as string, label: f.name })),
+            { value: CONNECT, label: "Connect another AI…" },
+          ]}
+          onChange={(next) => (next === CONNECT ? setConnecting(true) : chooseProvider(next as Source))}
+        />
         {!provider.startsWith("program:") && (
           <>
             <label htmlFor="asst-model" className="sr-only">
               Model
             </label>
-            <select
+            <Select
               id="asst-model"
-              className="field"
               value={model}
-              onChange={(e) => {
-                if (e.target.value === SEARCH) setSearching(true);
-                else chooseModel(e.target.value);
-              }}
               disabled={busy || !models?.length}
-            >
-              {!models && <option value="">{modelsError ? "Couldn't load models" : "Loading models…"}</option>}
-              {models?.length === 0 && <option value="">{isKeyed(provider) ? "No usable models for this key" : "No models found"}</option>}
-              {recommended.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                  {m.why ? ` (${m.why})` : ""}
-                </option>
-              ))}
-              {model && !recommended.some((m) => m.id === model) && <option value={model}>{models?.find((m) => m.id === model)?.label ?? model}</option>}
-              {models && models.length > recommended.length && <option value={SEARCH}>Search all {models.length} models…</option>}
-            </select>
+              options={[
+                ...(!models ? [{ value: "", label: modelsError ? "Couldn't load models" : "Loading models…" }] : []),
+                ...(models?.length === 0 ? [{ value: "", label: isKeyed(provider) ? "No usable models for this key" : "No models found" }] : []),
+                ...recommended.map((m) => ({ value: m.id, label: `${m.label}${m.why ? ` (${m.why})` : ""}` })),
+                ...(model && !recommended.some((m) => m.id === model) ? [{ value: model, label: models?.find((m) => m.id === model)?.label ?? model }] : []),
+                ...(models && models.length > recommended.length ? [{ value: SEARCH, label: `Search all ${models.length} models…` }] : []),
+              ]}
+              onChange={(next) => (next === SEARCH ? setSearching(true) : chooseModel(next))}
+            />
           </>
         )}
         <button type="button" className="btn btn--ghost" onClick={() => void startOver()} disabled={busy || entries.length === 0} title="Start a new conversation">

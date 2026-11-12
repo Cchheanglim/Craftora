@@ -70,3 +70,10 @@
   right: anchor(right);
   position-try-fallbacks: flip-block;
 }
+
+/* The open tab, when it's one of More's. */
+.ptabs__list button[aria-checked="true"] {
+  background: var(--bg-selected);
+  color: var(--text);
+  font-weight: 500;
+}
