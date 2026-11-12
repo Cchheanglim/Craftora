@@ -146,7 +146,8 @@ export function AiConnections() {
     <div className="ai-conn">
       {dialog}
       <div className="ai-conn__head">
-        <div className="segmented" role="group" aria-label="AIs">
+        {/* Not `.segmented`: its equal halves squeezed "Discover and add" and its count. */}
+        <div className="ai-conn__tabs" role="group" aria-label="AIs">
           <button type="button" aria-pressed={tab === "connected"} onClick={() => show("connected")}>
             Connected
           </button>
