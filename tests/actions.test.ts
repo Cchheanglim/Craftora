@@ -147,6 +147,22 @@ test("duplicating a clip places the copy right after it on magnetic and free tra
   expect(p.clips.find((c) => c.id === "t2")?.start).toBe(5);
 });
 
+test("delete and close gap moves what comes after on that track back, keeping gaps and transitions", () => {
+  const media = mediaFromSource(source("video"));
+  let p: Project = applyEdit(emptyProject(), { type: "importMedia", item: media });
+  for (const [id, at] of [["a", 0], ["b", 10], ["c", 20], ["d", 33]] as const) p = applyEdit(p, { type: "addClip", clipId: id, mediaId: media.id, at });
+  p = applyEdit(p, { type: "setTransition", clipId: "c", transition: { kind: "crossfade", duration: 1 } });
+  p = applyEdit(p, { type: "addText", clipId: "t", at: 15, text: "Hi" });
+  const start = (q: Project, id: string) => q.clips.find((c) => c.id === id)?.start;
+  expect(start(p, "c")).toBe(19);
+  // c ran into b by its 1 s transition: now into a. d keeps its 4 s gap; the text on its own track stays.
+  const q = applyEdit(p, { type: "deleteClip", clipId: "b", closeGap: true });
+  expect([start(q, "a"), start(q, "c"), start(q, "d"), start(q, "t")]).toEqual([0, 9, 23, 15]);
+  expect(q.clips.find((c) => c.id === "c")?.transition?.kind).toBe("crossfade");
+  // Plain Delete leaves the gap.
+  expect(start(applyEdit(p, { type: "deleteClip", clipId: "b" }), "c")).toBe(19);
+});
+
 test("cutting silences, splitting by chapters, and muting a track update the timeline", async () => {
   const { planExport } = await import("../src/project/exportPlan");
   const media = mediaFromSource({

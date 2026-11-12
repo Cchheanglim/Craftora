@@ -79,7 +79,7 @@ import { applyTheme, saveTheme, savedTheme, type Theme } from "./lib/theme";
 import { preference } from "./lib/preferences";
 import { useGlideScroll } from "./lib/glide";
 import { useProject } from "./project/useProject";
-import { applyEdit, SHOWN_CAPTIONS, timelineCaptions, voiceTrack, withShownCaptions } from "./project/actions";
+import { applyEdit, SHOWN_CAPTIONS, timelineCaptions, voiceTrack, withShownCaptions, type ClipPatch } from "./project/actions";
 import { usePlayback } from "./project/usePlayback";
 import { cutModeApplies, formatSize, frameOf, planExport, type ExportPlan } from "./project/exportPlan";
 import {
@@ -1356,10 +1356,10 @@ export default function App() {
     }
     return done.select;
   };
-  const duplicate = () => {
-    if (!selectedId) return;
+  const duplicate = (clipId = selectedId) => {
+    if (!clipId) return;
     const newClipId = crypto.randomUUID();
-    api.edit({ type: "duplicateClip", clipId: selectedId, newClipId });
+    api.edit({ type: "duplicateClip", clipId, newClipId });
     setSelectedId(newClipId);
   };
   const cutSilences = async () => {
@@ -1503,6 +1503,9 @@ export default function App() {
     clipboard.current = clip;
     setCanPaste(true);
   };
+  /** Copy effects / Paste effects (clip right-click menu): a clip's filter, effect and Adjust. */
+  const copiedEffects = useRef<ClipPatch | null>(null);
+  const [canPasteEffects, setCanPasteEffects] = useState(false);
   /** The copied clip at the playhead, on its own track if it's free there. */
   const pasteClip = () => {
     const clip = clipboard.current;
@@ -1607,7 +1610,8 @@ export default function App() {
   const clipCommand = (command: ClipCommand, clip: Clip, time: number) => {
     const media = project.media.find((m) => m.id === clip.mediaId);
     const patch = (p: Partial<Clip>) => api.edit({ type: "updateClip", clipId: clip.id, patch: p });
-    const actions: Record<ClipCommand, () => void> = {
+    if (command.startsWith("speed-")) return api.edit({ type: "setSpeed", clipId: clip.id, speed: Number(command.slice(6)) });
+    const actions: Record<Exclude<ClipCommand, `speed-${number}`>, () => void> = {
       copy: () => copyClip(clip),
       cut: () => {
         copyClip(clip);
@@ -1619,6 +1623,21 @@ export default function App() {
         api.edit({ type: "deleteClip", clipId: clip.id });
         setSelectedId(null);
       },
+      deleteGap: () => {
+        api.edit({ type: "deleteClip", clipId: clip.id, closeGap: true });
+        setSelectedId(null);
+      },
+      split: () => api.edit({ type: "splitClip", clipId: clip.id, newClipId: crypto.randomUUID(), at: time }),
+      duplicate: () => duplicate(clip.id),
+      // shortcut: unmuting goes back to full volume (the level before muting isn't kept); keep it on the clip if people ask.
+      mute: () => patch({ volume: clip.volume > 0 ? 0 : 1 }),
+      copyEffects: () => {
+        const { look, lookAmount, adjust, effect, effectStrength, effectSpeed } = clip;
+        copiedEffects.current = { look, lookAmount, adjust, effect, effectStrength, effectSpeed };
+        setCanPasteEffects(true);
+      },
+      // Replaces the clip's own filter, effect and Adjust (ones the copied clip didn't have are taken off).
+      pasteEffects: () => copiedEffects.current && patch(copiedEffects.current),
       freeze: () => void freezeFrame(clip, time),
       reverse: () => patch({ reverse: !clip.reverse }),
       mirror: () => patch({ mirror: !clip.mirror }),
@@ -1628,7 +1647,7 @@ export default function App() {
       replace: () => void replaceClip(clip),
       reveal: () => media?.source.local && void revealFile(media.source.url),
     };
-    actions[command]();
+    actions[command as keyof typeof actions]();
   };
 
   // Keyboard shortcuts.
@@ -2105,7 +2124,7 @@ export default function App() {
                         onCheckpoint={api.checkpoint}
                         onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
                         onSplit={split}
-                        onDuplicate={duplicate}
+                        onDuplicate={() => duplicate()}
                         onOpenCrop={() => openCrop(selected, playback.time)}
                         onCutSilences={
                           selected.mediaId && project.media.find((m) => m.id === selected.mediaId)?.hasAudio && !project.media.find((m) => m.id === selected.mediaId)?.source.image
@@ -2175,7 +2194,7 @@ export default function App() {
                 openFx(id, "transitions");
               }}
               onSplit={split}
-              onDuplicate={duplicate}
+              onDuplicate={() => duplicate()}
               onCutSilences={() => void cutSilences()}
               cuttingSilences={cuttingSilences}
               onDelete={remove}
@@ -2185,6 +2204,7 @@ export default function App() {
               onDropFx={applyFx}
               onClipCommand={clipCommand}
               canPaste={canPaste}
+              canPasteEffects={canPasteEffects}
               onCover={(choice) => void chooseCover(choice)}
             />
           </div>

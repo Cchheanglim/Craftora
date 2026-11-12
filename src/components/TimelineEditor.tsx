@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { shapeLabel } from "../project/shapes";
-import { TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, showsPicture, mediaTimeAt, previousOnTrack, trackLabel, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
+import { MIN_CLIP, SPEEDS, TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, showsPicture, mediaTimeAt, previousOnTrack, trackLabel, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
 import { LOOKS, PICTURE_EFFECTS, blockLabel, type FxItem } from "../project/effects";
 import { packedTrack, slotOn } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
@@ -89,6 +89,8 @@ interface TimelineEditorProps {
   onClipCommand: (command: ClipCommand, clip: Clip, time: number) => void;
   /** Something has been copied, so Paste can put it at the playhead. */
   canPaste: boolean;
+  /** Copy effects was used, so Paste effects can put that filter, effect and Adjust on another clip. */
+  canPasteEffects: boolean;
   /** Cover on the main track: from the frame at the playhead, a picture, or none. */
   onCover: (choice: "frame" | "picture" | "remove") => void;
   /**
@@ -100,7 +102,7 @@ interface TimelineEditorProps {
 }
 
 /** What a clip's right-click menu can do (App `clipCommand` does it). */
-export type ClipCommand = "copy" | "cut" | "paste" | "delete" | "freeze" | "reverse" | "mirror" | "rotate" | "crop" | "export" | "replace" | "reveal";
+export type ClipCommand = "copy" | "cut" | "paste" | "delete" | "freeze" | "reverse" | "mirror" | "rotate" | "crop" | "export" | "replace" | "reveal" | "split" | "duplicate" | "deleteGap" | "mute" | "copyEffects" | "pasteEffects" | `speed-${number}`;
 
 type DragMode = "move" | "start" | "end";
 
@@ -161,6 +163,7 @@ export function TimelineEditor({
   onOpenFx,
   onClipCommand,
   canPaste,
+  canPasteEffects,
   onCover,
   recording,
 }: TimelineEditorProps) {
@@ -981,11 +984,9 @@ export function TimelineEditor({
                         onContextMenu={(e) => {
                           e.preventDefault();
                           onSelect(clip.id);
-                          const onClip = playback.time >= clip.start && playback.time < clipEnd(clip);
-                          // Kept on screen: about 230 × 400 px.
-                          const x = Math.min(e.clientX, window.innerWidth - 236);
-                          const y = Math.min(e.clientY, window.innerHeight - 404);
-                          setClipMenu({ clipId: clip.id, x, y, time: onClip ? playback.time : timeAt(e.clientX) });
+                          // Inside it, not on its very edge, where Split has nothing to cut: there, where it was clicked.
+                          const onClip = playback.time > clip.start + MIN_CLIP && playback.time < clipEnd(clip) - MIN_CLIP;
+                          setClipMenu({ clipId: clip.id, x: e.clientX, y: e.clientY, time: onClip ? playback.time : timeAt(e.clientX) });
                         }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
@@ -1163,6 +1164,8 @@ export function TimelineEditor({
                   local={Boolean(media?.source.local)}
                   locked={Boolean(track?.locked)}
                   canPaste={canPaste}
+                  sound={Boolean(media?.hasAudio)}
+                  canPasteEffects={canPasteEffects}
                   onPick={(command) => {
                     setClipMenu(null);
                     onClipCommand(command, clip, clipMenu.time);
@@ -1252,9 +1255,24 @@ const ClipFrames = memo(function ClipFrames({ clip, strip, pps, cellHeight, dura
   );
 });
 
+/** A menu that just opened, moved up and left by as much as it would run out of the window (a ref callback). */
+function keepInside(el: HTMLElement | null) {
+  if (!el) return;
+  // Measured where it opened (React may call this twice) and without its pop-in, which shrinks it for a moment (it
+  // still plays after).
+  el.style.translate = "";
+  el.style.animation = "none";
+  const r = el.getBoundingClientRect();
+  el.style.animation = "";
+  const dx = Math.max(8 - r.left, Math.min(0, window.innerWidth - 8 - r.right));
+  const dy = Math.max(8 - r.top, Math.min(0, window.innerHeight - 8 - r.bottom));
+  el.style.translate = `${Math.round(dx)}px ${Math.round(dy)}px`;
+}
+
 /**
- * A clip's right-click menu: copy, cut, paste, delete, Edit ▸ (freeze, reverse,
- * mirror, rotate, crop), export it, replace it, open its file. Escape or a click anywhere else closes it.
+ * A clip's right-click menu: copy, cut, paste, delete, delete and close gap, split, duplicate, Edit ▸ (freeze,
+ * reverse, mirror, rotate, crop), Speed ▸, mute, copy/paste effects, export it, replace it, open its file. Escape or
+ * a click anywhere else closes it.
  */
 function ClipMenu({
   x,
@@ -1265,6 +1283,8 @@ function ClipMenu({
   local,
   locked,
   canPaste,
+  sound,
+  canPasteEffects,
   onPick,
   onClose,
 }: {
@@ -1280,19 +1300,23 @@ function ClipMenu({
   /** On a locked track: only what doesn't change it. */
   locked: boolean;
   canPaste: boolean;
+  /** Media with sound: Mute applies. */
+  sound: boolean;
+  /** Copy effects was used: Paste effects applies. */
+  canPasteEffects: boolean;
   onPick: (command: ClipCommand) => void;
   onClose: () => void;
 }) {
-  const [editOpen, setEditOpen] = useState(false);
+  const [open, setOpen] = useState<"edit" | "speed" | null>(null);
   // Closing waits a moment, so the pointer can cut across the rows below on its way into the list.
   const closing = useRef(0);
-  const holdEdit = (open: boolean) => {
+  const hold = (which: "edit" | "speed", show: boolean) => {
     window.clearTimeout(closing.current);
-    if (open) setEditOpen(true);
-    else closing.current = window.setTimeout(() => setEditOpen(false), 350);
+    if (show) setOpen(which);
+    else closing.current = window.setTimeout(() => setOpen((o) => (o === which ? null : o)), 350);
   };
   useEffect(() => () => window.clearTimeout(closing.current), []);
-  const item =(command: ClipCommand, label: string, icon: IconName, enabled: boolean, keys?: string, checked?: boolean) => (
+  const item = (command: ClipCommand, label: string, icon: IconName | undefined, enabled: boolean, keys?: string, checked?: boolean) => (
     <button
       key={command}
       type="button"
@@ -1301,7 +1325,7 @@ function ClipMenu({
       disabled={!enabled}
       onClick={() => onPick(command)}
     >
-      <Icon name={icon} size={13} />
+      {icon && <Icon name={icon} size={13} />}
       <span className="tl__menu-text">{label}</span>
       {keys && <kbd>{keys}</kbd>}
     </button>
@@ -1323,6 +1347,7 @@ function ClipMenu({
         }}
       />
       <div
+        ref={keepInside}
         className="tl__menu tl__clip-menu"
         role="menu"
         aria-label="Clip"
@@ -1343,31 +1368,36 @@ function ClipMenu({
         {item("cut", "Cut", "scissors", !locked, "Ctrl X")}
         {item("paste", "Paste", "clipboard", canPaste, "Ctrl V")}
         {item("delete", "Delete", "trash", !locked, "Del")}
+        {item("deleteGap", "Delete and close gap", "trash", !locked)}
         <hr />
-        <div className="tl__submenu" onMouseEnter={() => holdEdit(true)} onMouseLeave={() => holdEdit(false)}>
+        {item("split", "Split", "scissors", !locked, "S")}
+        {item("duplicate", "Duplicate", "plus", !locked, "Ctrl D")}
+        <hr />
+        <div className="tl__submenu" onMouseEnter={() => hold("edit", true)} onMouseLeave={() => hold("edit", false)}>
           <button
             type="button"
             role="menuitem"
             aria-haspopup="menu"
-            aria-expanded={editOpen}
+            aria-expanded={open === "edit"}
             disabled={locked || !(video || picture)}
             // Hovering already opened it: a click must not close it again.
-            onClick={() => setEditOpen(true)}
+            onClick={() => setOpen("edit")}
             onKeyDown={(e) => {
-              if (e.key === "ArrowRight") setEditOpen(true);
+              if (e.key === "ArrowRight") setOpen("edit");
             }}
           >
             <Icon name="sliders" size={13} />
             <span className="tl__menu-text">Edit</span>
             <span aria-hidden="true">›</span>
           </button>
-          {editOpen && (
+          {open === "edit" && (
             <div
+              ref={keepInside}
               className="tl__menu tl__submenu-list"
               role="menu"
               aria-label="Edit"
               onKeyDown={(e) => {
-                if (e.key === "ArrowLeft") setEditOpen(false);
+                if (e.key === "ArrowLeft") setOpen(null);
               }}
             >
               {item("freeze", "Freeze frame", "snowflake", video && picture)}
@@ -1378,6 +1408,41 @@ function ClipMenu({
             </div>
           )}
         </div>
+        <div className="tl__submenu" onMouseEnter={() => hold("speed", true)} onMouseLeave={() => hold("speed", false)}>
+          <button
+            type="button"
+            role="menuitem"
+            aria-haspopup="menu"
+            aria-expanded={open === "speed"}
+            disabled={locked || !video}
+            // Hovering already opened it: a click must not close it again.
+            onClick={() => setOpen("speed")}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowRight") setOpen("speed");
+            }}
+          >
+            <Icon name="clock" size={13} />
+            <span className="tl__menu-text">Speed</span>
+            <span aria-hidden="true">›</span>
+          </button>
+          {open === "speed" && (
+            <div
+              ref={keepInside}
+              className="tl__menu tl__submenu-list"
+              role="menu"
+              aria-label="Speed"
+              onKeyDown={(e) => {
+                if (e.key === "ArrowLeft") setOpen(null);
+              }}
+            >
+              {SPEEDS.map((s) => item(`speed-${s}`, `${s}×${s === 1 ? " (normal)" : ""}`, undefined, true, undefined, clip.speed === s))}
+            </div>
+          )}
+        </div>
+        {item("mute", clip.volume === 0 ? "Unmute clip" : "Mute clip", clip.volume === 0 ? "volume" : "volumeOff", sound && !locked)}
+        <hr />
+        {item("copyEffects", "Copy effects", "sparkle", Boolean(clip.look || clip.effect || clip.adjust))}
+        {item("pasteEffects", "Paste effects", "clipboard", canPasteEffects && !locked && (picture || isBlock(clip)))}
         <hr />
         {item("export", "Export this clip", "upload", media)}
         {item("replace", "Replace clip…", "image", media && !locked)}
