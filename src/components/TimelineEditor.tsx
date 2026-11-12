@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
+import { FPS } from "../project/exportPlan";
 import { shapeLabel } from "../project/shapes";
 import { MIN_CLIP, SPEEDS, TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, showsPicture, mediaTimeAt, previousOnTrack, trackLabel, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
 import { LOOKS, PICTURE_EFFECTS, blockLabel, type FxItem } from "../project/effects";
@@ -308,7 +309,14 @@ export function TimelineEditor({
 
   // Zoomed all the way out, the whole edit fits however long it is (a 2-hour video too).
   const minPps = Math.min(MIN_PPS, (viewWidth - 40) / Math.max(duration * 1.5, 15));
-  const fit = () => setPps(Math.min(MAX_PPS, Math.max(minPps, (viewWidth - 40) / Math.max(duration * 1.5, 15))));
+  // Fit: the whole edit fills the lanes (a little room after its end), scrolled back to its start.
+  const fit = () => {
+    const to = Math.min(MAX_PPS, Math.max(minPps, (viewWidth - 24) / Math.max(duration, 1)));
+    scrollTo.current = 0;
+    ppsNow.current = to;
+    setPps(to);
+    if (scrollRef.current) scrollRef.current.scrollLeft = 0;
+  };
   const minPpsRef = useRef(minPps);
   minPpsRef.current = minPps;
 
@@ -1023,7 +1031,8 @@ export function TimelineEditor({
             <div className="tl__ruler mono" style={{ "--minor": `${(step * pps) / 5}px` } as CSSProperties} onPointerDown={beginScrub}>
               {ticks.map((t) => (
                 <span key={t} style={{ left: t * pps }}>
-                  {formatClock(t)}
+                  {/* Between whole seconds (zoomed right in), the frame within the second, as the popular editor marks it. */}
+                  {Number.isInteger(t) ? formatClock(t) : `${Math.round((t % 1) * FPS)}f`}
                 </span>
               ))}
             </div>

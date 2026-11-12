@@ -78,6 +78,8 @@ interface InspectorProps {
   onRelink: (media: MediaItem) => void;
   /** Remove a colour → Pick: the next click on the preview picks the colour (App `pickColour`). */
   onPickColour?: () => void;
+  /** Text tab with something else picked: a new text at the playhead (its letter height, or the usual). */
+  onAddText?: (size?: number) => void;
   /** What the editor calls the clip's track ("Track 2"). */
   trackName: string;
   canSplit: boolean;
@@ -104,6 +106,7 @@ export function Inspector({
   onDelete,
   onRelink,
   onPickColour,
+  onAddText,
   trackName,
   canSplit,
 }: InspectorProps) {
@@ -234,13 +237,16 @@ export function Inspector({
 
       {section !== "edit" &&
         (ownTab || (
-          <p className="insp__hint">
-            {section === "speed"
-              ? "Select a video or sound clip on the timeline to change its speed."
-              : section === "text"
-                ? "Select a text on the timeline to change its font and style."
-                : "Select a video or picture on the timeline."}
-          </p>
+          <>
+            <p className="insp__hint">
+              {section === "speed"
+                ? "Select a video or sound clip on the timeline to change its speed."
+                : section === "text"
+                  ? "Select a text on the timeline to change its font and style, or add one."
+                  : "Select a video or picture on the timeline."}
+            </p>
+            {section === "text" && onAddText && <AddText onAdd={onAddText} />}
+          </>
         ))}
       {section === "edit" && (
         <>
@@ -766,6 +772,24 @@ function RemoveColour({ clip, onChange, onCheckpoint, onPick }: { clip: Clip; on
         </>
       )}
     </fieldset>
+  );
+}
+
+/** Text tab with no text picked: a new one at the playhead, in three sizes (letter height over the frame's). */
+export function AddText({ onAdd }: { onAdd: (size?: number) => void }) {
+  return (
+    <div className="insp__add-text">
+      <button type="button" className="insp__add-title" onClick={() => onAdd(0.12)}>
+        Add a title
+      </button>
+      <button type="button" className="insp__add-subtitle" onClick={() => onAdd(0.07)}>
+        Add a subtitle
+      </button>
+      <button type="button" onClick={() => onAdd(0.045)}>
+        Add body text
+      </button>
+      <p className="insp__hint">It goes on the timeline at the red playhead.</p>
+    </div>
   );
 }
 
