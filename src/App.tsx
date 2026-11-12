@@ -307,7 +307,8 @@ const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined,
 export default function App() {
   const [view, setView] = useState<View>(inDesktopApp ? "home" : "editor");
   const [leftOpen, setLeftOpen] = useState(() => remembered("craftora.left", true));
-  const [rightOpen, setRightOpen] = useState(() => remembered("craftora.right", true));
+  // Always open at start: it has no button any more (owner, 2026-11-12), only Ctrl+Alt+B hides it.
+  const [rightOpen, setRightOpen] = useState(true);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -531,7 +532,7 @@ export default function App() {
   };
 
   const toggleLeft = useCallback(() => setLeftOpen((o) => (remember("craftora.left", !o), !o)), []);
-  const toggleRight = useCallback(() => setRightOpen((o) => (remember("craftora.right", !o), !o)), []);
+  const toggleRight = useCallback(() => setRightOpen((o) => !o), []);
 
   // A timeline with nothing visual can only be saved as sound.
   const hasPicture = project.clips.some((c) => !c.mediaId || showsPicture(project, c));
@@ -1777,9 +1778,7 @@ export default function App() {
         onImport={inDesktopApp ? () => void importFiles() : undefined}
         inputRef={urlRef}
         leftOpen={leftOpen}
-        rightOpen={rightOpen}
         onToggleLeft={toggleLeft}
-        onToggleRight={view === "editor" ? toggleRight : undefined}
         update={
           updates.status.kind === "available"
             ? { label: `Update to v${updates.status.version}`, onClick: () => void updates.install() }

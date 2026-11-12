@@ -26,10 +26,7 @@ interface ToolbarProps {
   /** Lets Home's "Paste a link" focus the field. */
   inputRef: RefObject<HTMLInputElement | null>;
   leftOpen: boolean;
-  rightOpen: boolean;
   onToggleLeft: () => void;
-  /** Absent where there is no right panel (Home, Exports). */
-  onToggleRight?: () => void;
   /** A newer version: a button to install it, or its progress (no `onClick`) while installing. */
   update?: { label: string; onClick?: () => void };
 }
@@ -48,9 +45,7 @@ export function Toolbar({
   onExport,
   inputRef,
   leftOpen,
-  rightOpen,
   onToggleLeft,
-  onToggleRight,
   update,
 }: ToolbarProps) {
   const [checking, setChecking] = useState(false);
@@ -192,18 +187,6 @@ export function Toolbar({
           <button type="button" className="btn btn--secondary" onClick={onImport} disabled={fetching} title="Import files (Ctrl+O)">
             <Icon name="upload" size={14} />
             Import
-          </button>
-        )}
-        {onToggleRight && (
-          <button
-            type="button"
-            className="btn btn--icon"
-            aria-label={rightOpen ? "Collapse the right panel" : "Expand the right panel"}
-            aria-pressed={rightOpen}
-            title="Right panel (Ctrl+Alt+B)"
-            onClick={onToggleRight}
-          >
-            <Icon name="panelRight" />
           </button>
         )}
       </div>

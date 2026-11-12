@@ -24,6 +24,7 @@ import {
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
+import { Select } from "./Select";
 import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustMin, adjustSteps, blockLabel } from "../project/effects";
 import { SHAPES, shapeLabel } from "../project/shapes";
 import "./Inspector.css";
@@ -384,13 +385,12 @@ export function Inspector({
       {!isText && !isShape && !isImage && !isBlock && (
         <div className="insp__field">
           <label htmlFor="insp-speed">Speed</label>
-          <select id="insp-speed" className="field" value={clip.speed} onChange={(e) => onSpeed(Number(e.target.value))}>
-            {SPEEDS.map((s) => (
-              <option key={s} value={s}>
-                {s}×{s === 1 ? " (normal)" : ""}
-              </option>
-            ))}
-          </select>
+          <Select
+            id="insp-speed"
+            value={String(clip.speed)}
+            options={SPEEDS.map((s) => ({ value: String(s), label: `${s}×${s === 1 ? " (normal)" : ""}` }))}
+            onChange={(s) => onSpeed(Number(s))}
+          />
         </div>
       )}
 
@@ -452,18 +452,12 @@ export function Inspector({
       {streams.length > 0 && media && (
         <div className="insp__field">
           <label htmlFor="insp-quality">Source quality</label>
-          <select
+          <Select
             id="insp-quality"
-            className="field"
-            value={isPicture ? media.videoFormat : media.audioFormat}
-            onChange={(e) => onFormat(isPicture ? { videoFormat: e.target.value } : { audioFormat: e.target.value })}
-          >
-            {streams.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label} · {s.detail} · ~{formatSize(s.sizeMb)}
-              </option>
-            ))}
-          </select>
+            value={(isPicture ? media.videoFormat : media.audioFormat) ?? ""}
+            options={streams.map((s) => ({ value: s.id, label: `${s.label} · ${s.detail} · ~${formatSize(s.sizeMb)}` }))}
+            onChange={(id) => onFormat(isPicture ? { videoFormat: id } : { audioFormat: id })}
+          />
         </div>
       )}
 
@@ -545,14 +539,12 @@ function TextLook({ id, look, onChange }: { id: string; look: Look; onChange: (p
     <>
       <div className="insp__field">
         <label htmlFor={`${id}-font`}>Font</label>
-        <select id={`${id}-font`} className="field" value={look.font ?? ""} onChange={(e) => onChange({ font: (e.target.value || undefined) as TextFont | undefined })}>
-          <option value="">Segoe UI</option>
-          {TEXT_FONTS.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.label}
-            </option>
-          ))}
-        </select>
+        <Select<string>
+          id={`${id}-font`}
+          value={look.font ?? ""}
+          options={[{ value: "", label: "Segoe UI" }, ...TEXT_FONTS.map((f) => ({ value: f.id as string, label: f.label }))]}
+          onChange={(font) => onChange({ font: (font || undefined) as TextFont | undefined })}
+        />
       </div>
       <ColorField color={look.color} onChange={(color) => onChange({ color })} />
       <fieldset className="insp__field">
@@ -656,23 +648,19 @@ function PositionSelect({ clip, onChange, disabled }: { clip: Clip; onChange: (p
   return (
     <div className="insp__field">
       <label htmlFor="insp-position">Place</label>
-      <select
+      <Select<string>
         id="insp-position"
-        className="field"
         value={preset ?? "custom"}
         disabled={disabled}
-        onChange={(e) => {
-          const p = POSITIONS[e.target.value as Position];
+        options={[
+          ...(preset ? [] : [{ value: "custom", label: "Where you dragged it" }]),
+          ...Object.entries(POSITIONS).map(([key, p]) => ({ value: key, label: p.label })),
+        ]}
+        onChange={(key) => {
+          const p = POSITIONS[key as Position];
           if (p) onChange({ x: p.x, y: p.y });
         }}
-      >
-        {!preset && <option value="custom">Where you dragged it</option>}
-        {Object.entries(POSITIONS).map(([key, p]) => (
-          <option key={key} value={key}>
-            {p.label}
-          </option>
-        ))}
-      </select>
+      />
     </div>
   );
 }

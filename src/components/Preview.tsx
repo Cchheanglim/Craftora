@@ -11,6 +11,7 @@ import { formatTimecode } from "../lib/timecode";
 import { RGB_SHARE, adjustSteps, blocksStyle, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
+import { Select } from "./Select";
 import { SyncedMedia } from "./SyncedMedia";
 import "./Preview.css";
 
@@ -708,32 +709,26 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           <label htmlFor="speed" className="sr-only">
             Playback speed
           </label>
-          <select id="speed" className="field mono" value={playback.speed} onChange={(e) => playback.setSpeed(Number(e.target.value))}>
-            {SPEEDS.map((s) => (
-              <option key={s} value={s}>
-                {s}×
-              </option>
-            ))}
-          </select>
+          <Select
+            id="speed"
+            className="mono"
+            value={String(playback.speed)}
+            options={SPEEDS.map((s) => ({ value: String(s), label: `${s}×` }))}
+            onChange={(s) => playback.setSpeed(Number(s))}
+          />
           {quality && (
             <>
               <label htmlFor="preview-quality" className="sr-only">
                 Preview quality
               </label>
-              <select
+              <Select
                 id="preview-quality"
-                className="field mono"
+                className="mono"
                 title="Preview quality (exports use the quality picked in Export)"
-                value={quality.height ?? ""}
-                onChange={(e) => quality.onChange(e.target.value ? Number(e.target.value) : undefined)}
-              >
-                <option value="">Best</option>
-                {quality.heights.map((h) => (
-                  <option key={h} value={h}>
-                    {h}p
-                  </option>
-                ))}
-              </select>
+                value={String(quality.height ?? "")}
+                options={[{ value: "", label: "Best" }, ...quality.heights.map((h) => ({ value: String(h), label: `${h}p` }))]}
+                onChange={(h) => quality.onChange(h ? Number(h) : undefined)}
+              />
             </>
           )}
           {onSnapshot && (
@@ -785,27 +780,19 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               <label htmlFor="caption-place" className="sr-only">
                 Where captions appear
               </label>
-              <select
+              <Select<string>
                 id="caption-place"
-                className="field"
                 title="Where captions appear"
                 value={captionPlace}
-                onChange={(e) => {
-                  const preset = CAPTION_PLACES.find((p) => p.place === e.target.value);
+                options={[
+                  ...CAPTION_PLACES.map(({ place, label }) => ({ value: place as string, label })),
+                  ...(captionPlace === "custom" ? [{ value: "custom", label: "Custom", disabled: true }] : []),
+                ]}
+                onChange={(place) => {
+                  const preset = CAPTION_PLACES.find((p) => p.place === place);
                   if (preset) api.edit({ type: "layoutCaptions", patch: { x: 0.5, y: preset.y } });
                 }}
-              >
-                {CAPTION_PLACES.map(({ place, label }) => (
-                  <option key={place} value={place}>
-                    {label}
-                  </option>
-                ))}
-                {captionPlace === "custom" && (
-                  <option value="custom" disabled>
-                    Custom
-                  </option>
-                )}
-              </select>
+              />
             </>
           )}
           <button type="button" className="btn btn--icon" aria-label={muted ? "Unmute" : "Mute"} aria-pressed={muted} onClick={() => setMuted((m) => !m)}>

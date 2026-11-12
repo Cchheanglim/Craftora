@@ -13,20 +13,26 @@ export function Select<T extends string>({
   options,
   onChange,
   className,
+  disabled,
+  title,
 }: {
   /** For a <label htmlFor>. */
   id?: string;
   value: T;
-  options: { value: T; label: string }[];
+  /** A `disabled` one shows but can't be picked (such as "Custom" for a place set by dragging). */
+  options: { value: T; label: string; disabled?: boolean }[];
   onChange: (value: T) => void;
   /** Extra classes for the button, such as "mono". */
   className?: string;
+  disabled?: boolean;
+  title?: string;
 }) {
   // useId gives ":r1:"; anchor names and ids want plain letters.
   const key = `select-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const list = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const current = options.find((o) => o.value === value);
+  // Like a native <select>: a value missing from the list shows the first choice.
+  const current = options.find((o) => o.value === value) ?? options[0];
 
   const pick = (next: T) => {
     if (next !== value) onChange(next);
@@ -37,7 +43,7 @@ export function Select<T extends string>({
   const move = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
     e.preventDefault();
-    const items = Array.from(list.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? []);
+    const items = Array.from(list.current?.querySelectorAll<HTMLButtonElement>('[role="option"]:not(:disabled)') ?? []);
     const at = items.indexOf(document.activeElement as HTMLButtonElement);
     const next = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : Math.min(items.length - 1, Math.max(0, at + (e.key === "ArrowDown" ? 1 : -1)));
     items[next]?.focus();
@@ -53,6 +59,8 @@ export function Select<T extends string>({
         popoverTarget={key}
         aria-haspopup="listbox"
         aria-expanded={open}
+        disabled={disabled}
+        title={title}
         onKeyDown={(e) => {
           if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
           e.preventDefault();
@@ -77,7 +85,7 @@ export function Select<T extends string>({
         }}
       >
         {options.map((o) => (
-          <button key={o.value} type="button" role="option" aria-selected={o.value === value} onClick={() => pick(o.value)}>
+          <button key={o.value} type="button" role="option" aria-selected={o.value === value} disabled={o.disabled} onClick={() => pick(o.value)}>
             <span className="truncate">{o.label}</span>
             {o.value === value && <Icon name="check" size={14} />}
           </button>
