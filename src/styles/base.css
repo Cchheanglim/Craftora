@@ -119,6 +119,13 @@ input[type="checkbox"] {
   background: transparent;
 }
 
+/* Number boxes: no Windows up/down arrows (typed, or nudged with the arrow keys). */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 /* Shared utilities */
 .mono {
   font-family: var(--font-mono);

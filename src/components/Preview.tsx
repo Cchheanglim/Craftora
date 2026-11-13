@@ -444,6 +444,30 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     window.addEventListener("pointercancel", up);
   };
 
+  // Image editor: the arrows nudge the selected layer 1 image pixel (Shift: 10), a held key one undo step, as in photo editors.
+  const nudge = useRef<(e: KeyboardEvent) => void>(() => {});
+  nudge.current = (e) => {
+    const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    const clip = project.clips.find((c) => c.id === selectedId);
+    const el = e.target as HTMLElement;
+    if (!still || !dir || !clip || !stageRef.current || e.defaultPrevented || project.tracks.find((t) => t.id === clip.trackId)?.locked || e.ctrlKey || e.altKey || e.metaKey || el.closest("input, textarea, select, [contenteditable]")) return;
+    const stage = stageRef.current.getBoundingClientRect();
+    const box = isShape(clip)
+      ? shapeBox(clip, stage.width, stage.height)
+      : stageRef.current.querySelector(`[data-clip="${CSS.escape(clip.id)}"]`)?.getBoundingClientRect();
+    if (!box || stage.width <= 0) return;
+    e.preventDefault();
+    const step = ((e.shiftKey ? 10 : 1) * stage.width) / frame.width;
+    const along = (now: number, free: number, d: number) => (free <= 0 ? now : Math.min(1, Math.max(0, now + (d * step) / free)));
+    if (!e.repeat) api.checkpoint();
+    api.editLive({ type: "updateClip", clipId: clip.id, patch: { x: along(clip.x, stage.width - box.width, dir[0]), y: along(clip.y, stage.height - box.height, dir[1]) } });
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => nudge.current(e);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const handles = (clip: Clip) =>
     (isShape(clip) ? ["nw", "ne", "sw", "se", "n", "s", "e", "w"] : ["nw", "ne", "sw", "se"]).map((corner) => (
       <span key={corner} className={`preview__handle is-${corner}`} onPointerDown={beginGesture(clip, corner as Corner | Edge)} aria-hidden="true" />
@@ -636,6 +660,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               <div
                 key={clip.id}
                 className={textClass(clip, isSelected)}
+                data-clip={clip.id}
                 style={{
                   left: `${clip.x * 100}%`,
                   top: `calc(${clip.y * 100}% + ${pose.dy * 100}cqh)`,

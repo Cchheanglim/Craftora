@@ -111,8 +111,6 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
   position: relative;
   box-sizing: border-box;
 }

@@ -106,6 +106,7 @@ import {
   MAX_IMAGE_SIDE,
   silencesFromPeaks,
   upgradeProject,
+  layersOf,
   type MediaItem,
   type Project,
   withImported,
@@ -1783,6 +1784,15 @@ export default function App() {
     if (ctrl && key === "z" && !e.shiftKey) return (e.preventDefault(), api.undo());
     if (ctrl && (key === "y" || (key === "z" && e.shiftKey))) return (e.preventDefault(), api.redo());
     if (ctrl && key === "d") return (e.preventDefault(), duplicate());
+    // Image editor, as in photo editors: Ctrl+J copies the layer (onto its own layer), Ctrl+] / Ctrl+[ move it up / down.
+    if (ctrl && imageMode && key === "j") return (e.preventDefault(), duplicate());
+    if (ctrl && imageMode && (key === "]" || key === "[") && selected) {
+      e.preventDefault();
+      // Past the next layer up or down (empty tracks between layers don't count), as the Layers panel's drag does.
+      const layers = layersOf(project);
+      const next = layers[layers.findIndex((l) => l.clip.id === selected.id) + (key === "]" ? -1 : 1)];
+      return next && api.edit({ type: "moveTrack", trackId: selected.trackId, to: project.tracks.indexOf(next.track) });
+    }
     if (ctrl && key === "c" && selected) return (e.preventDefault(), copyClip(selected));
     if (ctrl && key === "x" && selected) return (e.preventDefault(), clipCommand("cut", selected, playback.time));
     if (ctrl && key === "v" && clipboard.current) return (e.preventDefault(), pasteClip());
@@ -1798,13 +1808,15 @@ export default function App() {
       s: split,
       delete: remove,
       backspace: remove,
-      t: () => addText(),
+      t: () => (imageMode ? setImageTool("text") : addText()),
+      v: () => imageMode && setImageTool("move"),
       f: () => window.dispatchEvent(new Event("craftora:toggle-fullscreen")),
       // As in video players: 5 s; Shift steps one frame for exact edits.
-      arrowleft: () => playback.seek(t - (e.shiftKey ? 1 / 30 : 5)),
-      arrowright: () => playback.seek(t + (e.shiftKey ? 1 / 30 : 5)),
-      arrowup: () => window.dispatchEvent(new CustomEvent("craftora:volume", { detail: 0.1 })),
-      arrowdown: () => window.dispatchEvent(new CustomEvent("craftora:volume", { detail: -0.1 })),
+      // The Image editor's arrows nudge the layer instead (Preview).
+      arrowleft: () => !imageMode && playback.seek(t - (e.shiftKey ? 1 / 30 : 5)),
+      arrowright: () => !imageMode && playback.seek(t + (e.shiftKey ? 1 / 30 : 5)),
+      arrowup: () => !imageMode && window.dispatchEvent(new CustomEvent("craftora:volume", { detail: 0.1 })),
+      arrowdown: () => !imageMode && window.dispatchEvent(new CustomEvent("craftora:volume", { detail: -0.1 })),
       home: () => playback.seek(0),
       end: () => playback.seek(duration),
       i: () => selectedId && api.edit({ type: "trimClip", clipId: selectedId, edge: "start", time: t }),
@@ -2184,6 +2196,7 @@ export default function App() {
               onPickColour={() => startPick(selected)}
               onAddText={addText}
               still={imageMode}
+              imageSize={project.image}
               onCutOut={cutOutOf(selected)}
               onRestore={() => selected.mediaId && api.edit({ type: "cutOut", mediaId: selected.mediaId })}
               onPeek={(on) => setPeek(on ? (selected.mediaId ?? null) : null)}
