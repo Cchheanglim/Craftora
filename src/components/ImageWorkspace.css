@@ -152,7 +152,6 @@
   height: 100%;
   box-sizing: border-box;
   overflow-y: auto;
-  scrollbar-width: thin;
   padding: 12px;
   border-right: 1px solid var(--line);
   background: var(--bg-panel);
@@ -335,7 +334,6 @@
 
 .image-ws__prop-body {
   overflow-y: auto;
-  scrollbar-width: thin;
   flex: 1;
   min-height: 0;
   border-bottom: 1px solid var(--line);

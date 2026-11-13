@@ -124,6 +124,37 @@
   Edits with text, effects or several clips are made the usual way.
 - **Arrow keys like a video player**: ← / → jump 5 seconds back or forward (Shift + ← / → still
   steps one frame), ↑ / ↓ turn the preview's volume up or down.
+- **Clip right-click menu**: right-click a clip on the timeline for Split, Duplicate, Delete and close gap, Speed ▸ (a
+  submenu of speeds), Mute, Copy effects / Paste effects.
+- **Editor layout with two panels**: left panel with tabs Media, Audio, Filters, Effects, Transitions, Shapes; right
+  panel with the selected clip's settings (Edit, Text, Adjust, Enhance, Background, Speed, Transcript, Assistant). All
+  tabs always visible (two rows when narrow). The main menu opens from the round button in the editor's toolbar, and
+  is a column on the left on every other page.
+- **Enhance**: one click makes a clip's picture clearer and better lit (Enhance tab): dark parts are lifted, bright
+  parts held back, with a little more colour and sharpness.
+- **Remove a colour**: green or blue screen removal, with a picker to click the colour on the preview; strength and
+  softness.
+- **AI edit**: the ✨ button in the timeline toolbar: drag over part of a clip, type what to do, and the assistant
+  does it.
+- **Font library**: 18 free fonts, downloaded the first time you pick one; the export uses the same letters as the
+  preview.
+- **Text tab**: add a title, subtitle or body text at the playhead; 8 style presets (edge colour and strength); size,
+  colour (with a colour wheel), edge and font.
+- **Text animations**: Text tab → Animation: In (Fade, Pop, Slide up, Typewriter), Out (Fade, Shrink), Loop (Bounce,
+  Pulse); the export moves exactly like the preview.
+- **Timeline zoom in percent**: 100% fits the whole project; the ruler shows frames ("15f") between seconds when
+  zoomed in.
+- **Image editor** (Main menu → Image editor, under Editor): make pictures instead of videos. New image window with
+  sizes (Square post, Portrait post, Story, Landscape, Video thumbnail, A4 print) or open a photo; layers panel
+  (show/hide, lock, opacity, rename, drag to reorder, background row); zoom and pan the work area (Ctrl+0 fits,
+  Space+drag pans, Tab hides the panels); save as PNG or JPG (quality, 0.5–2× size, see-through background for PNG).
+- **Remove background**: Background tab → Remove background cuts a person or object out of a photo on this PC (the AI
+  model, about 180 MB, downloads the first time; then a few seconds per photo). Restore brings the original back.
+- **Image editor: exact place and size**: a selected picture or shape shows X, Y, W and H in pixels of the image (Edit
+  tab); type a number and press Enter. A picture keeps its shape (its H sets the W too).
+- **Image editor shortcuts, as in photo editors**: arrow keys move the selected layer 1 pixel (Shift: 10; holding one is
+  a single undo step), Ctrl+J copies the layer, Ctrl+] / Ctrl+[ move it up / down the layers, V picks Move and T picks
+  Text.
 
 **Fixed**
 
@@ -180,6 +211,7 @@
 - **An edited video exported while its link was still being copied could use the unfinished copy.**
   The export now waits for the copy to finish.
 - **Old video files downloaded only for exports** are cleaned up when no project or export uses them.
+- **Exporting one clip** with changes on it now exports those changes (it used to export the untouched file).
 
 ## 0.6.0 (November 2026)
 

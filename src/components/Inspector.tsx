@@ -32,6 +32,7 @@ import { Select } from "./Select";
 import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustMin, blockLabel, keyLine } from "../project/effects";
 import { SHAPES, shapeLabel } from "../project/shapes";
 import { TEXT_IN, TEXT_OUT, TEXT_LOOP } from "../project/textMotion";
+import { LayerPlace } from "./LayerPlace";
 import "./Inspector.css";
 
 const TEXT_COLORS = [
@@ -92,6 +93,8 @@ interface InspectorProps {
   onPeek?: (on: boolean) => void;
   /** The Image editor: nothing about time (fades, sound, animations, Split). */
   still?: boolean;
+  /** The Image editor's image size, for the layer's place in pixels. */
+  imageSize?: { width: number; height: number };
   /** What the editor calls the clip's track ("Track 2"). */
   trackName: string;
   canSplit: boolean;
@@ -121,6 +124,7 @@ export function Inspector({
   onAddText,
   onPreview,
   still,
+  imageSize,
   onCutOut,
   onRestore,
   onPeek,
@@ -409,6 +413,7 @@ export function Inspector({
                 onCheckpoint={onCheckpoint}
                 onChange={(aspect) => onChange({ aspect }, true)}
               />
+              {imageSize && <LayerPlace clip={clip} image={imageSize} onChange={onChange} />}
             </>
           )}
 
@@ -440,6 +445,7 @@ export function Inspector({
               <p className="insp__hint">Drag the picture on the preview to move it; drag a corner to resize.</p>
               <Slider id="insp-size" label="Size" min={0.1} max={1} step={0.01} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
               <PositionSelect clip={clip} onChange={onChange} />
+              {imageSize && <LayerPlace clip={clip} media={media} image={imageSize} onChange={onChange} />}
             </>
           )}
 
