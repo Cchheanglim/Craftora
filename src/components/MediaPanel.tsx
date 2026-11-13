@@ -176,7 +176,7 @@ export function MediaPanel({
               )}
               <h2 className="section-label media-panel__label">In this project · {visuals.length}</h2>
               {visuals.length === 0 ? (
-                <p className="media-panel__hint">Import videos or pictures from this PC, or paste a link at the top.</p>
+                <p className="media-panel__hint">{still ? "Import pictures from this PC, then click one to add it as a layer." : "Import videos or pictures from this PC, or paste a link at the top."}</p>
               ) : (
                 <ul className="media-panel__grid">
                   {visuals.map((item) => (

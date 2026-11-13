@@ -1,356 +1,160 @@
-/* Image editor layout */
+/* Image editor: tool strip | (tool's panel) | grey work area | dock (Layers over Properties). Edge to edge under the
+   top bar, like a photo editor. */
 
 .image-ws {
-  /* Fills the window under the top bar, like the video editor (App.css .app__editor). */
   flex: 1;
   min-width: 0;
   min-height: 0;
-  margin: 14px var(--space-4) 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg-panel);
   display: grid;
-  grid-template-rows: 34px 1fr;
-  grid-template-columns: 44px auto 1fr auto;
-  position: relative;
-  overflow: hidden;
+  grid-template-columns: 56px minmax(0, 1fr) 340px;
+  grid-template-areas: "tools work dock";
+  border-top: 1px solid var(--line);
+  background: var(--bg-canvas);
   font-family: var(--font-ui);
-  font-size: 12px;
   color: var(--text);
+  overflow: hidden;
 }
 
-/* Tab hides panels to give picture the whole window */
+.image-ws.has-flyout {
+  grid-template-columns: 56px 300px minmax(0, 1fr) 340px;
+  grid-template-areas: "tools flyout work dock";
+}
+
+/* A small window: the tool's panel narrows so the picture keeps room beside it. */
+@media (max-width: 1300px) {
+  .image-ws.has-flyout {
+    grid-template-columns: 56px 220px minmax(0, 1fr) 340px;
+  }
+}
+
+/* Tab hides the panels to give the picture the whole window. */
 .image-ws.image-ws--immersive {
-  grid-template-columns: 0 0 1fr 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "work";
 }
 
-.image-ws.image-ws--immersive .image-ws__tool-strip,
-.image-ws.image-ws--immersive .image-ws__flyout,
-.image-ws.image-ws--immersive .image-ws__sidebar {
+.image-ws--immersive .image-ws__tools,
+.image-ws--immersive .image-ws__flyout,
+.image-ws--immersive .image-ws__dock {
   display: none;
 }
 
-.image-ws.image-ws--immersive .image-ws__work-area {
-  grid-column: 1 / -1;
-}
-
-/* 1. Options bar (row 1, all columns) */
-.image-ws__options-bar {
-  grid-column: 1 / -1;
-  grid-row: 1;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--line);
-  padding: 0 8px;
-  box-sizing: border-box;
-  min-width: 0;
-  z-index: 3;
-}
-
-.image-ws__options-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-}
-
-.image-ws__history {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.image-ws__opt-btn {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  color: var(--text-2);
-  cursor: pointer;
-}
-
-.image-ws__opt-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.image-ws__opt-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* 2. Tool strip (44px) */
-.image-ws__tool-strip {
-  grid-column: 1;
-  grid-row: 2;
-  width: 44px;
+/* Tool strip */
+.image-ws__tools {
+  grid-area: tools;
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: var(--bg-panel);
+  gap: 4px;
+  padding: 8px 0;
+  background: var(--bg-rail);
   border-right: 1px solid var(--line);
-  padding: 6px 0;
-  box-sizing: border-box;
+  min-height: 0;
   overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: none;
 }
 
-.image-ws__tool-strip::-webkit-scrollbar {
-  display: none;
-}
-
-.image-ws__tool-btn {
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
+.image-ws__tool {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius);
+  background: transparent;
   color: var(--text-2);
   cursor: pointer;
-  flex-shrink: 0;
-  padding: 0;
+  transition: background-color var(--dur-fast) linear, color var(--dur-fast) linear;
 }
 
-.image-ws__tool-btn:hover {
-  background: var(--bg-hover);
+.image-ws__tool:hover:not(:disabled) {
+  background: var(--bg-raised);
   color: var(--text);
 }
 
-.image-ws__tool-btn.is-active,
-.image-ws__tool-btn[aria-pressed="true"] {
+.image-ws__tool.is-active {
   background: var(--bg-selected);
   color: var(--text);
+}
+
+.image-ws__tool:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.image-ws__tool-key {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  font-size: 9.5px;
+  line-height: 1.2;
+  color: var(--text-3);
+}
+
+.image-ws__tool.is-active .image-ws__tool-key {
+  color: var(--text-2);
 }
 
 .image-ws__tool-sep {
   width: 24px;
   height: 1px;
+  flex: none;
+  margin: 4px 0;
   background: var(--line);
-  margin: 6px auto;
-  flex-shrink: 0;
 }
 
-/* 3. Flyout (280px) */
+/* The open tool's panel (Photos, Shapes, Canvas size), sized to its content */
 .image-ws__flyout {
-  grid-column: 2;
-  grid-row: 2;
-  width: 280px;
-  height: 100%;
-  box-sizing: border-box;
-  overflow-y: auto;
-  padding: 12px;
-  border-right: 1px solid var(--line);
+  grid-area: flyout;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-panel);
+  border-right: 1px solid var(--line);
+  overflow: hidden;
 }
 
-/* 4. Work area */
-/* The owner asked for a grey work area so a white picture's edges are easy to see */
-.image-ws__work-area {
-  grid-column: 3;
-  grid-row: 2;
-  background: #3a3a3f;
+.image-ws__flyout > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The left panel (MediaPanel) filling the column, without the video editor's own frame */
+.image-ws__flyout > .media-panel {
+  width: auto;
+  border: 0;
+  border-radius: 0;
+}
+
+/* Work area: the owner asked for a grey one so a white picture's edges are easy to see */
+.image-ws__work {
+  grid-area: work;
   position: relative;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
-  height: 100%;
-  width: 100%;
+  background: #3a3a3f;
   user-select: none;
   touch-action: none;
-  box-sizing: border-box;
 }
 
-.image-ws__work-area.is-grab {
+.image-ws__work.is-grab {
   cursor: grab;
 }
 
-.image-ws__work-area.is-grabbing {
+.image-ws__work.is-grabbing {
   cursor: grabbing;
 }
 
 .image-ws__camera {
   position: absolute;
-  top: 32px;
-  left: 32px;
-  right: 32px;
-  bottom: 32px;
+  inset: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   transform-origin: center;
-  box-sizing: border-box;
-}
-
-.image-ws__zoom-box {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  display: flex;
-  align-items: center;
-  height: 24px;
-  background: var(--bg-panel);
-  border: 1px solid var(--line);
-  border-radius: 0;
-  color: var(--text);
-  font-size: 12px;
-  z-index: 2;
-  box-sizing: border-box;
-}
-
-.image-ws__zoom-btn {
-  width: 24px;
-  height: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  color: var(--text-2);
-  cursor: pointer;
-  padding: 0;
-  font-size: 14px;
-  line-height: 1;
-}
-
-.image-ws__zoom-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.image-ws__zoom-pct {
-  padding: 0 6px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-  min-width: 42px;
-  text-align: center;
-  line-height: 24px;
-}
-
-.image-ws__zoom-fit {
-  height: 100%;
-  padding: 0 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 0;
-  border-left: 1px solid var(--line);
-  border-radius: 0;
-  color: var(--text-2);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.image-ws__zoom-fit:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-/* 5. Right sidebar (264px) */
-.image-ws__sidebar {
-  grid-column: 4;
-  grid-row: 2;
-  width: 264px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-panel);
-  border-left: 1px solid var(--line);
-  overflow: hidden;
-  box-sizing: border-box;
-}
-
-.image-ws__section {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.image-ws__sidebar-hdr {
-  height: 28px;
-  min-height: 28px;
-  width: 100%;
-  padding: 0 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--bg-panel);
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  color: var(--text-2);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  box-sizing: border-box;
-  text-align: left;
-}
-
-.image-ws__sidebar-hdr:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.image-ws__sidebar-title {
-  font-size: 12px;
-  line-height: 1;
-}
-
-.image-ws__chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-3);
-}
-
-.image-ws__chevron.is-collapsed {
-  transform: rotate(-90deg);
-}
-
-.image-ws__section--props {
-  flex-shrink: 0;
-  max-height: calc(45% + 28px);
-}
-
-.image-ws__section--props.is-expanded {
-  flex: 1;
-  max-height: 100%;
-}
-
-.image-ws__prop-body {
-  overflow-y: auto;
-  flex: 1;
-  min-height: 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.image-ws__section--layers {
-  flex: 1;
-}
-
-.image-ws__section--layers.is-collapsed {
-  flex: 0 0 auto;
-}
-
-.image-ws__layers-body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
 }
 
 /* The canvas is the editor's Preview: here it fills the camera and loses its video-panel frame and black backdrop, so
@@ -369,5 +173,72 @@
 }
 
 .image-ws__camera .preview__screen {
+  border: 0;
   background: transparent;
+}
+
+/* Dock: Layers on top, a line that drags, the picked layer's Properties under it */
+.image-ws__dock {
+  grid-area: dock;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: var(--layers-h, 232px) 9px minmax(0, 1fr);
+  background: var(--bg-panel);
+  border-left: 1px solid var(--line);
+}
+
+.image-ws__layers {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-rail);
+  overflow: hidden;
+}
+
+.image-ws__layers > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.image-ws__grip {
+  display: grid;
+  place-items: center;
+  background: var(--bg-raised);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.image-ws__grip > span {
+  width: 28px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--line-hover);
+}
+
+.image-ws__grip:hover > span,
+.image-ws__grip:focus-visible > span {
+  background: var(--text-3);
+}
+
+.image-ws__props {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.image-ws__props > .app__tabs {
+  flex: none;
+}
+
+.image-ws__props > .export {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The top bar's zoom box */
+.image-ws__zoom {
+  width: 84px;
 }

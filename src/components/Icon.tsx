@@ -105,6 +105,7 @@ const paths = {
     </>
   ),
   chevronDown: <path d="m6 9 6 6 6-6" />,
+  chevronUp: <path d="m6 15 6-6 6 6" />,
   chevronLeft: <path d="m15 6-6 6 6 6" />,
   chevronRight: <path d="m9 6 6 6-6 6" />,
   terminal: <path d="m4 17 6-6-6-6M12 19h8" />,

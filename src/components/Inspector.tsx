@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ClipPatch } from "../project/actions";
 import {
   MAX_CROP,
@@ -88,6 +88,9 @@ interface InspectorProps {
   onPreview?: (from: number, seconds: number) => void;
   /** Remove background (a photo on this PC): runs the AI, saying what it's doing; Restore brings the photo back. */
   onCutOut?: (onStatus: (text: string) => void) => Promise<void>;
+  /** Remove background was asked for somewhere else (the Image editor's do-anything box): it starts here once. */
+  startCut?: boolean;
+  onCutStarted?: () => void;
   onRestore?: () => void;
   /** While held: the preview shows the photo as it was before its cut-out. */
   onPeek?: (on: boolean) => void;
@@ -126,6 +129,8 @@ export function Inspector({
   still,
   imageSize,
   onCutOut,
+  startCut,
+  onCutStarted,
   onRestore,
   onPeek,
   trackName,
@@ -147,6 +152,15 @@ export function Inspector({
   const pct = (v: number) => `${Math.round(v * 100)}%`;
   const sec = (v: number) => `${v.toFixed(1)} s`;
   const moving = Boolean(media) && !isImage;
+  const enhance = isPicture && (
+    <>
+      <label className="option">
+        <input type="checkbox" checked={Boolean(clip.adjust?.enhance)} onChange={(e) => onChange({ adjust: { ...clip.adjust, enhance: e.target.checked ? 1 : 0 } })} />
+        <span>Enhance</span>
+      </label>
+      <p className="insp__hint">Clearer, brighter and more vivid in one click: dark parts lifted, bright parts held back, a little more colour and sharpness.</p>
+    </>
+  );
   const ownTab = {
     text: isText && (
       track.name === "Captions" ? (
@@ -172,6 +186,9 @@ export function Inspector({
       )
     ),
     adjust: isPicture && (
+      <>
+      {/* The Image editor has no Enhance tab: it heads Adjust. */}
+      {still && enhance}
       <fieldset className="insp__group">
         <legend>
           Adjust
@@ -197,19 +214,12 @@ export function Inspector({
           />
         ))}
       </fieldset>
-    ),
-    enhance: isPicture && (
-      <>
-        <label className="option">
-          <input type="checkbox" checked={Boolean(clip.adjust?.enhance)} onChange={(e) => onChange({ adjust: { ...clip.adjust, enhance: e.target.checked ? 1 : 0 } })} />
-          <span>Enhance</span>
-        </label>
-        <p className="insp__hint">Clearer, brighter and more vivid in one click: dark parts lifted, bright parts held back, a little more colour and sharpness.</p>
       </>
     ),
+    enhance,
     background: isPicture && (
       <>
-        {media && (media.original || onCutOut) && <RemoveBackground cutOut={Boolean(media.original)} onCutOut={onCutOut} onRestore={onRestore} onPeek={onPeek} />}
+        {media && (media.original || onCutOut) && <RemoveBackground cutOut={Boolean(media.original)} onCutOut={onCutOut} onRestore={onRestore} onPeek={onPeek} start={startCut} onStarted={onCutStarted} />}
         <RemoveColour clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} onPick={onPickColour} />
       </>
     ),
@@ -280,6 +290,10 @@ export function Inspector({
         ))}
       {section === "edit" && (
         <>
+          {/* Image editor: every layer's see-through amount (shapes have theirs with their look, below). */}
+          {still && !isShape && !isBlock && (
+            <Slider id="insp-layer-opacity" label="Opacity" min={0} max={1} step={0.05} value={clip.opacity ?? 1} format={pct} onCheckpoint={onCheckpoint} onChange={(opacity) => onChange({ opacity }, true)} />
+          )}
           {isBlock && (
             <p className="insp__hint">
               It changes the pictures under it while it lasts (not text). Drag it on the timeline to move it, or drag its edges to start or end it
@@ -434,7 +448,7 @@ export function Inspector({
               {/* A caption's size, place and look are set for all captions at once (Captions, above). */}
               {track.name !== "Captions" && (
                 <>
-                  <PositionSelect clip={clip} onChange={onChange} />
+                  {!still && <PositionSelect clip={clip} onChange={onChange} />}
                 </>
               )}
             </>
@@ -444,8 +458,18 @@ export function Inspector({
             <>
               <p className="insp__hint">Drag the picture on the preview to move it; drag a corner to resize.</p>
               <Slider id="insp-size" label="Size" min={0.1} max={1} step={0.01} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
-              <PositionSelect clip={clip} onChange={onChange} />
+              {!still && <PositionSelect clip={clip} onChange={onChange} />}
               {imageSize && <LayerPlace clip={clip} media={media} image={imageSize} onChange={onChange} />}
+              {still && (
+                <div className="insp__actions">
+                  <button type="button" className="btn btn--secondary" onClick={() => onChange({ rotate: ((clip.rotate ?? 0) + 90) % 360 })}>
+                    <Icon name="rotate" size={13} /> Turn 90°
+                  </button>
+                  <button type="button" className="btn btn--secondary" onClick={() => onChange({ mirror: !clip.mirror })}>
+                    <Icon name="flip" size={13} /> Mirror
+                  </button>
+                </div>
+              )}
             </>
           )}
 
@@ -770,11 +794,15 @@ function RemoveBackground({
   onCutOut,
   onRestore,
   onPeek,
+  start,
+  onStarted,
 }: {
   cutOut: boolean;
   onCutOut?: (onStatus: (text: string) => void) => Promise<void>;
   onRestore?: () => void;
   onPeek?: (on: boolean) => void;
+  start?: boolean;
+  onStarted?: () => void;
 }) {
   const [status, setStatus] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -785,6 +813,19 @@ function RemoveBackground({
       .catch((err) => setFailed(err instanceof Error ? err.message : String(err)))
       .finally(() => setStatus(null));
   };
+  // Once per request: React's development mode runs this twice on mount, which would cut the photo twice at once.
+  const started = useRef(false);
+  useEffect(() => {
+    if (!start) started.current = false;
+    if (!start || cutOut || started.current) return;
+    started.current = true;
+    onStarted?.();
+    run();
+    // Only when it's asked for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [start]);
+  // "Getting the cut-out tool (170 MB, once)… 62%": the download as a bar too.
+  const percent = status ? Number(/(\d+)%/.exec(status)?.[1] ?? NaN) : NaN;
   return (
     <fieldset className="insp__group">
       <legend>Remove background</legend>
@@ -814,9 +855,14 @@ function RemoveBackground({
           Remove background
         </button>
       )}
+      {!Number.isNaN(percent) && (
+        <div className="insp__bar" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+          <i style={{ width: `${percent}%` }} />
+        </div>
+      )}
       {status && <p className="insp__hint">{status}</p>}
       {failed && <p className="insp__hint">Couldn't remove the background: {failed}</p>}
-      {!cutOut && !status && <p className="insp__hint">Finds the subject and makes the rest see-through, on this PC. The AI model (170 MB) downloads the first time.</p>}
+      {!cutOut && !status && <p className="insp__hint">Finds the subject and makes the rest see-through, on this PC. The cut-out tool (170 MB) downloads the first time.</p>}
     </fieldset>
   );
 }
@@ -981,7 +1027,7 @@ function TextAnimations({
 }
 
 /** Text tab with no text picked: a new one at the playhead, in three sizes (letter height over the frame's). */
-export function AddText({ onAdd }: { onAdd: (size?: number) => void }) {
+export function AddText({ onAdd, still }: { onAdd: (size?: number) => void; /** The Image editor: no playhead hint. */ still?: boolean }) {
   return (
     <div className="insp__add-text">
       <button type="button" className="insp__add-title" onClick={() => onAdd(0.12)}>
@@ -993,7 +1039,7 @@ export function AddText({ onAdd }: { onAdd: (size?: number) => void }) {
       <button type="button" onClick={() => onAdd(0.045)}>
         Add body text
       </button>
-      <p className="insp__hint">It goes on the timeline at the red playhead.</p>
+      {!still && <p className="insp__hint">It goes on the timeline at the red playhead.</p>}
     </div>
   );
 }

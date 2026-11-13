@@ -1,11 +1,6 @@
-import {
-  Fragment,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Icon, type IconName } from "./Icon";
+import { Select } from "./Select";
 import "./ImageWorkspace.css";
 
 export interface ImageTool {
@@ -14,6 +9,9 @@ export interface ImageTool {
   icon: IconName;
   /** Tools are drawn in groups with a thin line between groups. */
   group: "select" | "content" | "edit";
+  /** Its key, shown small in the button's corner. */
+  key?: string;
+  disabled?: boolean;
 }
 
 function isInputTarget(target: EventTarget | null): boolean {
@@ -29,6 +27,11 @@ function isInputTarget(target: EventTarget | null): boolean {
   );
 }
 
+/** The picture's room around it in the work area (px each side). */
+const MARGIN = 32;
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 8;
+
 function clampPan(
   x: number,
   y: number,
@@ -43,8 +46,8 @@ function clampPan(
   const cx = areaW / 2;
   const cy = areaH / 2;
 
-  const availW = Math.max(0, areaW - 64);
-  const availH = Math.max(0, areaH - 64);
+  const availW = Math.max(0, areaW - 2 * MARGIN);
+  const availH = Math.max(0, areaH - 2 * MARGIN);
 
   let picW = availW;
   let picH = availH;
@@ -74,129 +77,149 @@ function clampPan(
   return { x: clampedX, y: clampedY };
 }
 
+/** The picture's zoom and pan in the work area, kept in App so the top bar's zoom box can show and change them. */
+export interface ImageView {
+  zoom: number;
+  pan: { x: number; y: number };
+  /** Zoom as a percentage of the picture's real pixels. */
+  pct: number;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  fit: () => void;
+  /** Zoom so the picture shows at `pct` % of its real pixels. */
+  zoomTo: (pct: number) => void;
+  /** Zoom by `factor` around a point of the work area (px from its top left). */
+  zoomAround: (factor: number, x: number, y: number) => void;
+  /** Moves the picture to `x`, `y` (kept partly on screen). */
+  panTo: (x: number, y: number) => void;
+  /** The work area's element, which the view measures. */
+  areaRef: (el: HTMLElement | null) => void;
+}
+
+export function useImageView(imageSize: { width: number; height: number }): ImageView {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [area, setArea] = useState<HTMLElement | null>(null);
+  const [areaSize, setAreaSize] = useState({ width: 0, height: 0 });
+  // Read by the handlers, which stay the same functions from render to render.
+  const now = useRef({ zoom, pan, areaSize, imageSize });
+  now.current = { zoom, pan, areaSize, imageSize };
+
+  useEffect(() => {
+    if (!area) return;
+    const ro = new ResizeObserver(([entry]) => setAreaSize({ width: entry.contentRect.width, height: entry.contentRect.height }));
+    ro.observe(area);
+    return () => ro.disconnect();
+  }, [area]);
+
+  // The fitted picture's width (zoom 1), for the percentage.
+  const fittedWidth = (a = areaSize, img = imageSize) =>
+    img.width > 0 && img.height > 0 && a.width > 2 * MARGIN && a.height > 2 * MARGIN
+      ? Math.min(a.width - 2 * MARGIN, ((a.height - 2 * MARGIN) * img.width) / img.height)
+      : Math.max(0, a.width - 2 * MARGIN);
+
+  const handlers = useMemo(() => {
+    const clamp = (x: number, y: number, z: number) => {
+      const { areaSize: a, imageSize: img } = now.current;
+      return clampPan(x, y, z, a.width, a.height, img.width, img.height);
+    };
+    // Zoom keeping the work area's point (px from its centre) still.
+    const zoomBy = (next: number, px = 0, py = 0) => {
+      const { zoom: z, pan: p } = now.current;
+      const nz = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+      setZoom(nz);
+      setPan(clamp(px - ((px - p.x) * nz) / z, py - ((py - p.y) * nz) / z, nz));
+    };
+    return {
+      zoomIn: () => zoomBy(now.current.zoom * 1.25),
+      zoomOut: () => zoomBy(now.current.zoom / 1.25),
+      fit: () => {
+        setZoom(1);
+        setPan({ x: 0, y: 0 });
+      },
+      zoomTo: (pct: number) => {
+        const { areaSize: a, imageSize: img } = now.current;
+        const w = fittedWidth(a, img);
+        if (w > 0 && img.width > 0) zoomBy(((pct / 100) * img.width) / w);
+      },
+      zoomAround: (factor: number, x: number, y: number) => {
+        const { areaSize: a } = now.current;
+        zoomBy(now.current.zoom * factor, x - a.width / 2, y - a.height / 2);
+      },
+      panTo: (x: number, y: number) => setPan(clamp(x, y, now.current.zoom)),
+    };
+    // fittedWidth only reads its arguments.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const w = fittedWidth();
+  const pct = imageSize.width > 0 ? Math.round(((zoom * w) / imageSize.width) * 100) : Math.round(zoom * 100);
+  return { zoom, pan, pct, ...handlers, areaRef: setArea };
+}
+
+/** The top bar's zoom box: the zoom now, and Fit or a set size. */
+export function ZoomSelect({ view }: { view: ImageView }) {
+  return (
+    <Select
+      className="mono image-ws__zoom"
+      value="now"
+      options={[
+        { value: "now", label: `${view.pct}%`, disabled: true },
+        { value: "fit", label: "Fit" },
+        { value: "50", label: "50%" },
+        { value: "100", label: "100%" },
+        { value: "200", label: "200%" },
+      ]}
+      onChange={(v) => (v === "fit" ? view.fit() : v !== "now" && view.zoomTo(Number(v)))}
+    />
+  );
+}
+
+/** How tall the Layers list starts, and the Properties' least room under it. */
+const LAYERS_H = 232;
+const PROPS_MIN = 200;
+const LAYERS_KEY = "craftora.imageLayersHeight";
+
+function savedLayersHeight(): number {
+  try {
+    const n = Number(localStorage.getItem(LAYERS_KEY));
+    return n >= 96 ? n : LAYERS_H;
+  } catch {
+    return LAYERS_H;
+  }
+}
+
+/**
+ * The Image editor: a tool strip at the left (with a tool's panel beside it), the picture in a grey work area, and a dock
+ * at the right with the layers on top and the picked layer's settings under them (a line between them drags).
+ */
 export function ImageWorkspace(props: {
   tools: ImageTool[];
   activeTool: string;
   onTool: (id: string) => void;
-  /** The open tool's panel (photos, text, shapes…), shown in a 280px column next to the tool strip; null = none. */
+  /** The open tool's panel (photos, shapes, canvas size…), in a 300px column next to the tool strip; null = none. */
   flyout: ReactNode | null;
-  /** The selected layer's quick actions, one line across the top. */
-  options: ReactNode;
   /** The picture (it fits its box by itself). */
   canvas: ReactNode;
-  /** The image's size in pixels, for the zoom percentage. */
-  imageSize: { width: number; height: number };
+  view: ImageView;
   properties: ReactNode;
   layers: ReactNode;
-  canUndo: boolean;
-  canRedo: boolean;
-  onUndo: () => void;
-  onRedo: () => void;
 }) {
-  const {
-    tools,
-    activeTool,
-    onTool,
-    flyout,
-    options,
-    canvas,
-    imageSize,
-    properties,
-    layers,
-    canUndo,
-    canRedo,
-    onUndo,
-    onRedo,
-  } = props;
+  const { tools, activeTool, onTool, flyout, canvas, view, properties, layers } = props;
 
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panelsVisible, setPanelsVisible] = useState(true);
-  const [propsOpen, setPropsOpen] = useState(true);
-  const [layersOpen, setLayersOpen] = useState(true);
   const [spaceDown, setSpaceDown] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [areaSize, setAreaSize] = useState({ width: 0, height: 0 });
+  const [layersH, setLayersH] = useState(savedLayersHeight);
 
-  const workAreaRef = useRef<HTMLDivElement>(null);
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
-  const panRef = useRef(pan);
-  panRef.current = pan;
-  const areaSizeRef = useRef(areaSize);
-  areaSizeRef.current = areaSize;
-  const imageSizeRef = useRef(imageSize);
-  imageSizeRef.current = imageSize;
+  const workAreaRef = useRef<HTMLElement | null>(null);
+  const dockRef = useRef<HTMLElement | null>(null);
+  const viewRef = useRef(view);
+  viewRef.current = view;
 
-  const dragRef = useRef<{
-    startX: number;
-    startY: number;
-    origX: number;
-    origY: number;
-  } | null>(null);
+  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
 
-  // ResizeObserver for measuring work area and computing pixel zoom %
-  useEffect(() => {
-    const el = workAreaRef.current;
-    if (!el) return;
-
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const cr = entry.contentRect;
-        setAreaSize({ width: cr.width, height: cr.height });
-      }
-    });
-
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-    };
-  }, []);
-
-  const handleZoomIn = () => {
-    setZoom((prevZoom) => {
-      const nextZoom = Math.min(8, prevZoom * 1.25);
-      setPan((prevPan) => {
-        const ratio = nextZoom / prevZoom;
-        return clampPan(
-          prevPan.x * ratio,
-          prevPan.y * ratio,
-          nextZoom,
-          areaSizeRef.current.width,
-          areaSizeRef.current.height,
-          imageSizeRef.current.width,
-          imageSizeRef.current.height
-        );
-      });
-      return nextZoom;
-    });
-  };
-
-  const handleZoomOut = () => {
-    setZoom((prevZoom) => {
-      const nextZoom = Math.max(0.1, prevZoom / 1.25);
-      setPan((prevPan) => {
-        const ratio = nextZoom / prevZoom;
-        return clampPan(
-          prevPan.x * ratio,
-          prevPan.y * ratio,
-          nextZoom,
-          areaSizeRef.current.width,
-          areaSizeRef.current.height,
-          imageSizeRef.current.width,
-          imageSizeRef.current.height
-        );
-      });
-      return nextZoom;
-    });
-  };
-
-  const handleFit = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-  };
-
-  // Keyboard shortcuts (Fit, Zoom +/-, Tab panel toggle, Space pan)
+  // Keyboard: Tab hides the panels, Space pans, Ctrl+0 fits, Ctrl+= / Ctrl+- zoom.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isInputTarget(e.target)) return;
@@ -216,26 +239,22 @@ export function ImageWorkspace(props: {
       if (e.ctrlKey || e.metaKey) {
         if (e.key === "0") {
           e.preventDefault();
-          handleFit();
+          viewRef.current.fit();
         } else if (e.key === "=" || e.key === "+") {
           e.preventDefault();
-          handleZoomIn();
+          viewRef.current.zoomIn();
         } else if (e.key === "-" || e.key === "_") {
           e.preventDefault();
-          handleZoomOut();
+          viewRef.current.zoomOut();
         }
       }
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        setSpaceDown(false);
-      }
+      if (e.code === "Space") setSpaceDown(false);
     };
 
-    const onBlur = () => {
-      setSpaceDown(false);
-    };
+    const onBlur = () => setSpaceDown(false);
 
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -247,106 +266,55 @@ export function ImageWorkspace(props: {
     };
   }, []);
 
-  // Wheel listener: non-passive for preventDefault
+  // Wheel: Ctrl zooms around the pointer, otherwise it pans (non-passive, to stop the page scrolling).
   useEffect(() => {
     const el = workAreaRef.current;
     if (!el) return;
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-
-      const rect = el.getBoundingClientRect();
-      const areaW = rect.width;
-      const areaH = rect.height;
-      const imgW = imageSizeRef.current.width;
-      const imgH = imageSizeRef.current.height;
-
+      const v = viewRef.current;
       if (e.ctrlKey || e.metaKey) {
-        // Zoom around pointer
-        const pointerX = e.clientX - rect.left;
-        const pointerY = e.clientY - rect.top;
-        const cx = areaW / 2;
-        const cy = areaH / 2;
-
-        const currentZoom = zoomRef.current;
-        const currentPan = panRef.current;
-
-        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-        const nextZoom = Math.min(8, Math.max(0.1, currentZoom * factor));
-
-        const nextX =
-          pointerX - cx - ((pointerX - cx - currentPan.x) * nextZoom) / currentZoom;
-        const nextY =
-          pointerY - cy - ((pointerY - cy - currentPan.y) * nextZoom) / currentZoom;
-
-        const clamped = clampPan(nextX, nextY, nextZoom, areaW, areaH, imgW, imgH);
-        setZoom(nextZoom);
-        setPan(clamped);
+        const rect = el.getBoundingClientRect();
+        v.zoomAround(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX - rect.left, e.clientY - rect.top);
       } else {
-        // Mouse wheel scroll pan
         const dx = e.shiftKey ? (e.deltaX !== 0 ? e.deltaX : e.deltaY) : e.deltaX;
         const dy = e.shiftKey ? 0 : e.deltaY;
-
-        const nextX = panRef.current.x - dx;
-        const nextY = panRef.current.y - dy;
-
-        const clamped = clampPan(nextX, nextY, zoomRef.current, areaW, areaH, imgW, imgH);
-        setPan(clamped);
+        v.panTo(v.pan.x - dx, v.pan.y - dy);
       }
     };
 
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => {
-      el.removeEventListener("wheel", onWheel);
-    };
+    return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  /** The line between Layers and Properties: dragged or moved with the arrow keys, remembered for next time. */
+  const setLayersHeight = (h: number) => {
+    const room = (dockRef.current?.clientHeight ?? 800) - PROPS_MIN;
+    const next = Math.round(Math.max(96, Math.min(room, h)));
+    setLayersH(next);
+    try {
+      localStorage.setItem(LAYERS_KEY, String(next));
+    } catch {
+      // Not remembered this time.
+    }
+  };
+
   const isPanTool = activeTool === "hand" || spaceDown;
-
-  const areaW = areaSize.width || (workAreaRef.current ? workAreaRef.current.clientWidth : 0);
-  const areaH = areaSize.height || (workAreaRef.current ? workAreaRef.current.clientHeight : 0);
-  const fittedWidth =
-    imageSize.width > 0 && imageSize.height > 0 && areaW > 64 && areaH > 64
-      ? Math.min(areaW - 64, ((areaH - 64) * imageSize.width) / imageSize.height)
-      : Math.max(0, areaW - 64);
-  const shownPct =
-    imageSize.width > 0
-      ? Math.round(((zoom * fittedWidth) / imageSize.width) * 100)
-      : Math.round(zoom * 100);
-
-  const workAreaClassName = `image-ws__work-area${
-    isDragging ? " is-grabbing" : isPanTool ? " is-grab" : ""
-  }`;
+  const endDrag = (e: React.PointerEvent<HTMLElement>) => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    setIsDragging(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
 
   return (
-    <div className={`image-ws${panelsVisible ? "" : " image-ws--immersive"}`}>
-      {/* 1. Options bar */}
-      <header className="image-ws__options-bar">
-        <div className="image-ws__options-content">{options}</div>
-        <div className="image-ws__history">
-          <button
-            type="button"
-            className="image-ws__opt-btn"
-            aria-label="Undo"
-            disabled={!canUndo}
-            onClick={onUndo}
-          >
-            <Icon name="undo" size={16} />
-          </button>
-          <button
-            type="button"
-            className="image-ws__opt-btn"
-            aria-label="Redo"
-            disabled={!canRedo}
-            onClick={onRedo}
-          >
-            <Icon name="redo" size={16} />
-          </button>
-        </div>
-      </header>
-
-      {/* 2. Tool strip */}
-      <nav className="image-ws__tool-strip">
+    <div className={`image-ws${panelsVisible ? "" : " image-ws--immersive"}${flyout !== null ? " has-flyout" : ""}`}>
+      <nav className="image-ws__tools" aria-label="Tools">
         {tools.map((tool, idx) => {
           const prevTool = tools[idx - 1];
           const isNewGroup = prevTool && prevTool.group !== tool.group;
@@ -355,160 +323,87 @@ export function ImageWorkspace(props: {
               {isNewGroup && <div className="image-ws__tool-sep" role="separator" />}
               <button
                 type="button"
-                className={`image-ws__tool-btn${tool.id === activeTool ? " is-active" : ""}`}
-                aria-label={tool.label}
+                className={`image-ws__tool${tool.id === activeTool ? " is-active" : ""}`}
+                aria-label={tool.key ? `${tool.label} (${tool.key})` : tool.label}
                 aria-pressed={tool.id === activeTool}
+                disabled={tool.disabled}
                 onClick={() => onTool(tool.id)}
               >
-                <Icon name={tool.icon} size={16} />
+                <Icon name={tool.icon} size={18} />
+                {tool.key && <span className="image-ws__tool-key mono" aria-hidden="true">{tool.key}</span>}
               </button>
             </Fragment>
           );
         })}
       </nav>
 
-      {/* 3. Flyout */}
       {flyout !== null && <aside className="image-ws__flyout">{flyout}</aside>}
 
-      {/* 4. Work area */}
       <main
-        ref={workAreaRef}
-        className={workAreaClassName}
+        ref={(el) => {
+          workAreaRef.current = el;
+          view.areaRef(el);
+        }}
+        className={`image-ws__work${isDragging ? " is-grabbing" : isPanTool ? " is-grab" : ""}`}
         onPointerDownCapture={(e) => {
           if (isPanTool && e.button === 0) {
             e.stopPropagation();
             e.preventDefault();
-            dragRef.current = {
-              startX: e.clientX,
-              startY: e.clientY,
-              origX: pan.x,
-              origY: pan.y,
-            };
+            dragRef.current = { startX: e.clientX, startY: e.clientY, origX: view.pan.x, origY: view.pan.y };
             setIsDragging(true);
             e.currentTarget.setPointerCapture(e.pointerId);
           }
         }}
         onPointerMove={(e) => {
-          if (!dragRef.current) return;
-          const dx = e.clientX - dragRef.current.startX;
-          const dy = e.clientY - dragRef.current.startY;
-          const nextX = dragRef.current.origX + dx;
-          const nextY = dragRef.current.origY + dy;
-          const clamped = clampPan(
-            nextX,
-            nextY,
-            zoomRef.current,
-            areaSizeRef.current.width,
-            areaSizeRef.current.height,
-            imageSizeRef.current.width,
-            imageSizeRef.current.height
-          );
-          setPan(clamped);
+          const d = dragRef.current;
+          if (d) view.panTo(d.origX + e.clientX - d.startX, d.origY + e.clientY - d.startY);
         }}
-        onPointerUp={(e) => {
-          if (dragRef.current) {
-            dragRef.current = null;
-            setIsDragging(false);
-            try {
-              e.currentTarget.releasePointerCapture(e.pointerId);
-            } catch {
-              // ignore
-            }
-          }
-        }}
-        onPointerCancel={(e) => {
-          if (dragRef.current) {
-            dragRef.current = null;
-            setIsDragging(false);
-            try {
-              e.currentTarget.releasePointerCapture(e.pointerId);
-            } catch {
-              // ignore
-            }
-          }
-        }}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
       >
         <div
           className="image-ws__camera"
-          style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            transformOrigin: "center",
-          }}
+          style={{ transform: `translate(${view.pan.x}px, ${view.pan.y}px) scale(${view.zoom})`, transformOrigin: "center" }}
         >
           {canvas}
         </div>
-
-        <div className="image-ws__zoom-box">
-          <button
-            type="button"
-            className="image-ws__zoom-btn"
-            aria-label="Zoom out"
-            onClick={handleZoomOut}
-          >
-            −
-          </button>
-          <span className="image-ws__zoom-pct">{shownPct}%</span>
-          <button
-            type="button"
-            className="image-ws__zoom-btn"
-            aria-label="Zoom in"
-            onClick={handleZoomIn}
-          >
-            +
-          </button>
-          <button
-            type="button"
-            className="image-ws__zoom-fit"
-            onClick={handleFit}
-          >
-            Fit
-          </button>
-        </div>
       </main>
 
-      {/* 5. Right sidebar */}
-      <aside className="image-ws__sidebar">
+      <aside ref={dockRef} className="image-ws__dock" style={{ "--layers-h": `${layersH}px` } as CSSProperties}>
+        <section className="image-ws__layers" aria-label="Layers">
+          {layers}
+        </section>
         <div
-          className={`image-ws__section image-ws__section--props${
-            !layersOpen ? " is-expanded" : ""
-          }`}
+          className="image-ws__grip"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Layers height"
+          aria-valuenow={layersH}
+          tabIndex={0}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            const start = { y: e.clientY, h: layersH };
+            const move = (ev: PointerEvent) => setLayersHeight(start.h + ev.clientY - start.y);
+            const up = () => {
+              window.removeEventListener("pointermove", move);
+              window.removeEventListener("pointerup", up);
+            };
+            window.addEventListener("pointermove", move);
+            window.addEventListener("pointerup", up);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+              e.preventDefault();
+              setLayersHeight(layersH + (e.key === "ArrowUp" ? -16 : 16));
+            }
+          }}
         >
-          <button
-            type="button"
-            className="image-ws__sidebar-hdr"
-            aria-expanded={propsOpen}
-            onClick={() => setPropsOpen((prev) => !prev)}
-          >
-            <span className="image-ws__sidebar-title">Properties</span>
-            <span
-              className={`image-ws__chevron${propsOpen ? "" : " is-collapsed"}`}
-            >
-              <Icon name="chevronDown" size={14} />
-            </span>
-          </button>
-          {propsOpen && <div className="image-ws__prop-body">{properties}</div>}
+          <span />
         </div>
-
-        <div
-          className={`image-ws__section image-ws__section--layers${
-            !layersOpen ? " is-collapsed" : ""
-          }`}
-        >
-          <button
-            type="button"
-            className="image-ws__sidebar-hdr"
-            aria-expanded={layersOpen}
-            onClick={() => setLayersOpen((prev) => !prev)}
-          >
-            <span className="image-ws__sidebar-title">Layers</span>
-            <span
-              className={`image-ws__chevron${layersOpen ? "" : " is-collapsed"}`}
-            >
-              <Icon name="chevronDown" size={14} />
-            </span>
-          </button>
-          {layersOpen && <div className="image-ws__layers-body">{layers}</div>}
-        </div>
+        <section className="image-ws__props" aria-label="Properties">
+          {properties}
+        </section>
       </aside>
     </div>
   );

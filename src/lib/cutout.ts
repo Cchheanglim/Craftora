@@ -32,7 +32,7 @@ export async function removeBackground(path: string, onStatus: (text: string) =>
   ort.env.wasm.wasmPaths = { wasm, mjs };
   session ??= (async () => {
     onStatus("Getting the AI model ready…");
-    const stop = await listen<{ percent: number }>("cutout-progress", (e) => onStatus(`Downloading the AI model (170 MB, once)… ${e.payload.percent}%`));
+    const stop = await listen<{ percent: number }>("cutout-progress", (e) => onStatus(`Getting the cut-out tool (170 MB, once)… ${e.payload.percent}%`));
     const model = new Uint8Array(await invoke<ArrayBuffer>("cutout_model").finally(stop));
     onStatus("Starting the AI…");
     return ort.InferenceSession.create(model, { executionProviders: "gpu" in navigator ? ["webgpu", "wasm"] : ["wasm"] });

@@ -48,11 +48,16 @@
   white-space: nowrap;
 }
 
-.icon-tabs__tab:hover {
+.icon-tabs__tab:hover:not(:disabled) {
   background: var(--bg-hover);
 }
 
 .icon-tabs__tab[aria-selected="true"] {
   background: var(--bg-selected);
   color: var(--text);
+}
+
+.icon-tabs__tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }

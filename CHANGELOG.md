@@ -153,8 +153,19 @@
 - **Image editor: exact place and size**: a selected picture or shape shows X, Y, W and H in pixels of the image (Edit
   tab); type a number and press Enter. A picture keeps its shape (its H sets the W too).
 - **Image editor shortcuts, as in photo editors**: arrow keys move the selected layer 1 pixel (Shift: 10; holding one is
-  a single undo step), Ctrl+J copies the layer, Ctrl+] / Ctrl+[ move it up / down the layers, V picks Move and T picks
-  Text.
+  a single undo step), Ctrl+J copies the layer, Ctrl+] / Ctrl+[ move it up / down the layers, V picks Move, H the Hand,
+  U opens the shapes, C crops the picked photo, and T adds a text in the middle of the picture.
+- **Image editor, new look**: no link box, Fetch or Import in its top bar (the picture's name and size, New image, Open a
+  photo, undo/redo and zoom instead); a tool strip with each tool's key; the layers on top at the right and the picked
+  layer's settings under them, with a line between them to drag. The settings are six tabs that never move (Edit,
+  Text, Adjust with Enhance, Filters, Effects, Cut out; the ones a layer can't use are greyed). Filters and still
+  effects go into the picked photo; Turn 90° and Mirror are in Edit; every layer has an Opacity. New layers list
+  (count, up/down/copy/delete at the top, a lock on each layer), a new New image window (Open a photo first, small size
+  cards, a preview), and the export pop-up opens beside the layers with Save PNG / Save JPG. An opened photo comes
+  picked.
+- **Do-anything box (Image editor, Ctrl+K)**: type what you want ("remove", "story", "vivid") and pick it: the picked
+  layer's actions first (Remove background starts straight away), then adding text, shapes and photos, picking a layer,
+  resizing the picture, export and zoom; anything else goes to the assistant.
 
 **Fixed**
 

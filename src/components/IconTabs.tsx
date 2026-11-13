@@ -13,7 +13,7 @@ export function IconTabs<T extends string>({
   label,
   idPrefix,
 }: {
-  tabs: { id: T; label: string; icon: IconName }[];
+  tabs: { id: T; label: string; icon: IconName; disabled?: boolean }[];
   /** The open tab; null when the panel shows something else (a settings panel). */
   value: T | null;
   onPick: (id: T) => void;
@@ -25,7 +25,7 @@ export function IconTabs<T extends string>({
     <div className="icon-tabs-box">
       <div className="icon-tabs" role="tablist" aria-label={label} data-count={tabs.length} style={{ "--narrow": Math.ceil(tabs.length / 2) } as CSSProperties}>
         {tabs.map((t) => (
-          <button key={t.id} type="button" role="tab" id={`${idPrefix}-${t.id}`} aria-selected={t.id === value} className="icon-tabs__tab" onClick={() => onPick(t.id)}>
+          <button key={t.id} type="button" role="tab" id={`${idPrefix}-${t.id}`} aria-selected={t.id === value} className="icon-tabs__tab" disabled={t.disabled} onClick={() => onPick(t.id)}>
             <Icon name={t.icon} size={15} />
             <span>{t.label}</span>
           </button>

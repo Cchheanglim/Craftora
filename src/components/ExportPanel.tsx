@@ -319,7 +319,7 @@ export function ExportPanel({
         )}
         <button type="button" className="btn btn--primary export__add" onClick={() => void confirmAdd()} disabled={!ready}>
           <span key={queuedCount} className={queuedCount > 0 ? "export__add-label is-queued" : "export__add-label"}>
-            Add to queue
+            {still ? `Save ${plan.kind === "empty" ? "picture" : (plan.fileName.split(".").pop() ?? "").toUpperCase()}` : "Add to queue"}
           </span>
           <kbd>Ctrl ↵</kbd>
         </button>
