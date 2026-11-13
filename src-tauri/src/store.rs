@@ -68,6 +68,9 @@ pub struct ProjectEntry {
     /// A small picture of the project's first video (a link's picture or a JPEG data URL).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     thumbnail: Option<String>,
+    /// Made in the Image editor.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    image: bool,
 }
 
 /// Saved projects, most recently saved first.

@@ -102,6 +102,8 @@ import {
   trackOrder,
   projectDuration,
   projectName,
+  newImageProject,
+  MAX_IMAGE_SIDE,
   silencesFromPeaks,
   upgradeProject,
   type MediaItem,
@@ -110,7 +112,12 @@ import {
 } from "./project/model";
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
-import { MediaPanel } from "./components/MediaPanel";
+import { MediaPanel, type Tab as MediaTab } from "./components/MediaPanel";
+import { LayersPanel } from "./components/LayersPanel";
+import { removeBackground } from "./lib/cutout";
+import { ImageSizePanel } from "./components/ImageSizePanel";
+import { NewImageDialog } from "./components/NewImageDialog";
+import { ImageWorkspace, type ImageTool } from "./components/ImageWorkspace";
 import { Home, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
 import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/EdgeResizer";
@@ -119,7 +126,7 @@ import { FxPanel, type FxTab } from "./components/FxPanel";
 import { CropDialog } from "./components/CropDialog";
 import { IconTabs } from "./components/IconTabs";
 import { loadFont } from "./lib/fonts";
-import type { IconName } from "./components/Icon";
+import { Icon, type IconName } from "./components/Icon";
 import { SoundPanel } from "./components/SoundPanel";
 import { LEVEL_STEP, VoicePanel } from "./components/VoicePanel";
 import { Tooltip } from "./components/Tooltip";
@@ -163,6 +170,17 @@ const PANEL_TABS: { id: "edit" | "transcript" | "assistant" | (typeof CLIP_TABS)
   { id: "speed", label: "Speed", icon: "clock" },
   { id: "transcript", label: "Transcript", icon: "captions" },
   { id: "assistant", label: "Assistant", icon: "sparkle" },
+];
+/** The Image editor's tool strip: the panel tools' ids are MediaPanel tabs. */
+const IMAGE_TOOLS: ImageTool[] = [
+  { id: "move", label: "Move", icon: "pointer", group: "select" },
+  { id: "hand", label: "Hand", icon: "hand", group: "select" },
+  { id: "media", label: "Photos", icon: "image", group: "content" },
+  { id: "text", label: "Text", icon: "text", group: "content" },
+  { id: "shapes", label: "Shapes", icon: "star", group: "content" },
+  { id: "filters", label: "Filters", icon: "blend", group: "edit" },
+  { id: "effects", label: "Effects", icon: "sparkle", group: "edit" },
+  { id: "size", label: "Canvas size", icon: "crop", group: "edit" },
 ];
 /** Quiet time after the last edit before the project is saved. */
 const AUTOSAVE_MS = 600;
@@ -316,6 +334,15 @@ const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined,
 
 export default function App() {
   const [view, setView] = useState<View>(inDesktopApp ? "home" : "editor");
+  const inEditor = view === "editor" || view === "image";
+  /** A cut-out photo shown as it was, while Background → "Hold to see the original" is held. */
+  const [peek, setPeek] = useState<string | null>(null);
+  /** Image editor → New image: preset sizes, a photo, or a recent image. */
+  const [newImageOpen, setNewImageOpen] = useState(false);
+  /** Image editor: the tool picked in its tool strip (a panel's tool opens that panel beside it). */
+  const [imageTool, setImageTool] = useState("move");
+  /** Image editor's options bar → Remove background: what it's doing, while it runs. */
+  const [cutting, setCutting] = useState<string | null>(null);
   const [leftOpen, setLeftOpen] = useState(() => remembered("craftora.left", true));
   // Always open at start: it has no button any more (owner, 2026-11-12), only Ctrl+Alt+B hides it.
   const [rightOpen, setRightOpen] = useState(true);
@@ -340,12 +367,12 @@ export default function App() {
   const [sideWidth, setSideWidth] = useState(() => Math.min(SIDE_WIDTH.max, Math.max(SIDE_WIDTH.min, rememberedSize("craftora.sideWidth") ?? SIDE_WIDTH.usual)));
   const [panelWidth, setPanelWidth] = useState(() => Math.min(PANEL_WIDTH.max, Math.max(PANEL_WIDTH.min, rememberedSize("craftora.panelWidth") ?? PANEL_WIDTH.usual)));
   const resizeSide = (dragged: number) => {
-    const width = roomFor(dragged, rightOpen && view === "editor" ? panelWidth : 0, SIDE_WIDTH);
+    const width = roomFor(dragged, rightOpen && inEditor ? panelWidth : 0, SIDE_WIDTH);
     setSideWidth(width);
     rememberText("craftora.sideWidth", String(width));
   };
   const resizePanel = (dragged: number) => {
-    const width = roomFor(dragged, leftOpen && view === "editor" ? sideWidth : 0, PANEL_WIDTH);
+    const width = roomFor(dragged, leftOpen && inEditor ? sideWidth : 0, PANEL_WIDTH);
     setPanelWidth(width);
     rememberText("craftora.panelWidth", String(width));
   };
@@ -410,12 +437,14 @@ export default function App() {
 
   const api = useProject(() => (inDesktopApp ? emptyProject() : demoProject()));
   const { project } = api;
+  // The Image editor is the editor's layout for an image project (Layers instead of the timeline, nothing timed).
+  const imageMode = inEditor && Boolean(project.image);
   const duration = projectDuration(project);
   const playback = usePlayback(duration);
   // The editor's players go away with its page, but the clock wouldn't: leaving the editor pauses.
   const { pause } = playback;
   useEffect(() => {
-    if (view !== "editor") pause();
+    if (!inEditor) pause();
   }, [view, pause]);
   // The assistant reads these at the moment it needs them, between network calls.
   const projectRef = useRef(project);
@@ -465,9 +494,11 @@ export default function App() {
   }, []);
 
   // Save the project a moment after each change. Empty projects aren't worth keeping.
+  const pendingSave = useRef<(() => void) | undefined>(undefined);
   useEffect(() => {
     if (project.media.length === 0 && project.clips.length === 0) return;
-    const timer = window.setTimeout(() => {
+    const save = () => {
+      pendingSave.current = undefined;
       const entry: ProjectEntry = {
         id: projectId,
         name: projectName(project),
@@ -475,11 +506,14 @@ export default function App() {
         duration: projectDuration(project),
         clips: project.clips.length,
         thumbnail: coverOf(project),
+        image: project.image ? true : undefined,
       };
       saveProject({ ...entry, version: 1, project })
         .then(() => setProjects((list) => [entry, ...list.filter((p) => p.id !== entry.id)]))
         .catch((err) => setError(`Couldn't save the project: ${errorText(err)}`));
-    }, AUTOSAVE_MS);
+    };
+    pendingSave.current = save;
+    const timer = window.setTimeout(save, AUTOSAVE_MS);
     return () => window.clearTimeout(timer);
   }, [project, projectId]);
 
@@ -1231,25 +1265,62 @@ export default function App() {
     try {
       const saved = await loadProject(id);
       const opened = upgradeProject(saved.project);
+      pendingSave.current?.();
       api.reset(opened);
       setProjectId(id);
       setSelectedId(null);
       playback.pause();
       playback.seek(0);
-      setView("editor");
+      setView(opened.image ? "image" : "editor");
       reconnect(opened.media);
     } catch (err) {
       setError(`Couldn't open the project: ${errorText(err)}`);
     }
   };
 
-  const newProject = () => {
-    api.reset(emptyProject());
+  const startProject = (next: Project) => {
+    pendingSave.current?.();
+    api.reset(next);
     setProjectId(crypto.randomUUID());
     setSelectedId(null);
     playback.pause();
     playback.seek(0);
-    setView("editor");
+    setView(next.image ? "image" : "editor");
+  };
+  const newProject = (image = false) => startProject(image ? newImageProject() : emptyProject());
+
+  /** Image editor → Open a photo: a new image exactly the photo's size (at most `MAX_IMAGE_SIDE`), the photo its layer. */
+  const openPhoto = async () => {
+    const path = await pickMediaFile();
+    if (!path) return;
+    try {
+      const source = await openLocal(path);
+      if (!source.image) throw new Error("that isn't a picture");
+      const img = new Image();
+      img.src = source.previewUrl;
+      await img.decode();
+      const k = Math.min(1, MAX_IMAGE_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+      const item = mediaFromSource(source);
+      let next = newImageProject(Math.round(img.naturalWidth * k), Math.round(img.naturalHeight * k));
+      next = applyEdit(next, { type: "importMedia", item });
+      startProject(applyEdit(next, { type: "addClip", clipId: crypto.randomUUID(), mediaId: item.id, at: 0 }));
+    } catch (err) {
+      setError(`Couldn't open that photo: ${errorText(err)}`);
+    }
+  };
+
+  /** Editor and Image editor each open the last project of their kind, or a new one. */
+  const go = (next: View) => {
+    const image = next === "image";
+    if ((next === "editor" || image) && Boolean(project.image) !== image) {
+      const last = projects.find((p) => Boolean(p.image) === image);
+      if (last) void openProject(last.id);
+      else newProject(image);
+      // The first image: pick its size (or a photo) first.
+      if (image && !last) setNewImageOpen(true);
+      return;
+    }
+    setView(next);
   };
 
   const removeProject = async (id: string) => {
@@ -1705,10 +1776,10 @@ export default function App() {
     // Picking a suggestion from the link field's list sends a keydown without a key.
     const key = e.key?.toLowerCase();
     if (!key) return;
-    if (ctrl && key === "enter" && view === "editor") return (e.preventDefault(), addToQueue());
+    if (ctrl && key === "enter" && inEditor) return (e.preventDefault(), addToQueue());
     if (ctrl && key === "o" && inDesktopApp) return (e.preventDefault(), void importFiles());
     if (ctrl && key === "b") return (e.preventDefault(), e.altKey ? toggleRight() : toggleLeft());
-    if (isTyping(e.target) || view !== "editor") return;
+    if (isTyping(e.target) || !inEditor) return;
     if (ctrl && key === "z" && !e.shiftKey) return (e.preventDefault(), api.undo());
     if (ctrl && (key === "y" || (key === "z" && e.shiftKey))) return (e.preventDefault(), api.redo());
     if (ctrl && key === "d") return (e.preventDefault(), duplicate());
@@ -1723,7 +1794,7 @@ export default function App() {
     const onButton = target.tagName === "BUTTON" || target.getAttribute("role") === "button";
     const t = playback.time;
     const actions: Record<string, () => void> = {
-      " ": playback.toggle,
+      " ": () => !imageMode && playback.toggle(),
       s: split,
       delete: remove,
       backspace: remove,
@@ -1847,8 +1918,8 @@ export default function App() {
   const mainMenu = (rail: boolean) => (
     <Sidebar
       rail={rail}
-      view={view}
-      onViewChange={setView}
+      view={imageMode ? "image" : view === "image" ? "editor" : view}
+      onViewChange={go}
       libraryCount={shownExports.length}
       downloadsCount={downloadsCount}
       engines={engines}
@@ -1880,12 +1951,323 @@ export default function App() {
     />
   );
 
+  /** Remove background for a clip's photo (a picture on this PC), or nothing for anything else. */
+  const cutOutOf = (clip: Clip | null) => {
+    const photo = project.media.find((m) => m.id === clip?.mediaId);
+    if (!photo?.source.image || !photo.source.local || !inDesktopApp || photo.original) return undefined;
+    return async (onStatus: (text: string) => void) => {
+      const path = await removeBackground(photo.source.url, onStatus);
+      api.edit({ type: "cutOut", mediaId: photo.id, source: await openLocal(path) });
+    };
+  };
+  const quickCut = cutOutOf(selected);
+  // The options bar: the selected layer's quick actions, or how to start a new image.
+  const imageOptions = !selected ? (
+    <>
+      <button type="button" className="ws-opt" onClick={() => setNewImageOpen(true)}>
+        New image…
+      </button>
+      <button type="button" className="ws-opt" onClick={() => void openPhoto()}>
+        Open a photo…
+      </button>
+      {project.image && (
+        <span className="ws-opt__note mono">
+          {project.image.width} × {project.image.height}
+        </span>
+      )}
+    </>
+  ) : (
+    <>
+      <span className="ws-opt__name">{selected.name ?? (selected.text?.split("\n")[0] || project.media.find((m) => m.id === selected.mediaId)?.name || "Layer")}</span>
+      {(quickCut || cutting) && (
+        <button
+          type="button"
+          className="ws-opt"
+          disabled={Boolean(cutting)}
+          onClick={() => {
+            setCutting("Getting ready…");
+            quickCut?.(setCutting)
+              .catch((err) => setError(`Couldn't remove the background: ${errorText(err)}`))
+              .finally(() => setCutting(null));
+          }}
+        >
+          <Icon name="wand" size={13} />
+          {cutting ?? "Remove background"}
+        </button>
+      )}
+      {selected.mediaId && project.media.find((m) => m.id === selected.mediaId)?.original && (
+        <button type="button" className="ws-opt" onClick={() => selected.mediaId && api.edit({ type: "cutOut", mediaId: selected.mediaId })}>
+          Restore
+        </button>
+      )}
+      {showsPicture(project, selected) && (
+        <>
+          <button type="button" className="ws-opt" onClick={() => openCrop(selected, 0)}>
+            Crop
+          </button>
+          <button type="button" className="ws-opt" onClick={() => api.edit({ type: "updateClip", clipId: selected.id, patch: { mirror: !selected.mirror } })}>
+            Flip
+          </button>
+          <button type="button" className="ws-opt" onClick={() => api.edit({ type: "updateClip", clipId: selected.id, patch: { rotate: ((selected.rotate ?? 0) + 90) % 360 } })}>
+            Turn
+          </button>
+        </>
+      )}
+      <button type="button" className="ws-opt" onClick={() => duplicate()}>
+        Duplicate
+      </button>
+      <button type="button" className="ws-opt" onClick={remove}>
+        Delete
+      </button>
+    </>
+  );
+
+  // The editor's pieces, shared by the video editor's layout and the Image editor's (ImageWorkspace).
+  const mediaPanel = (only?: MediaTab) => (
+    <MediaPanel
+      still={imageMode ? { text: <AddText onAdd={addText} />, size: (
+          <>
+            <button type="button" className="btn btn--secondary" onClick={() => void openPhoto()}>
+              Open a photo as a new image
+            </button>
+            <ImageSizePanel project={project} api={api} />
+          </>
+        ) } : undefined}
+      media={project.media}
+      preparing={preparing}
+      captioning={captioning}
+      previewReady={Object.fromEntries(
+        project.media
+          .filter((m) => m.source.previewCacheIds?.some((id) => cached[id] !== undefined))
+          .map((m) => [m.id, Math.min(...(m.source.previewCacheIds ?? []).map((id) => cached[id] ?? 0))]),
+      )}
+      downloading={downloadingIds}
+      onDownload={inDesktopApp ? (mediaId) => {
+        const item = project.media.find((m) => m.id === mediaId);
+        if (item) downloadForEditing(item);
+      } : undefined}
+      onImport={inDesktopApp ? () => void importFiles() : undefined}
+      onAddMedia={addMedia}
+      onRemoveMedia={(mediaId) => api.edit({ type: "removeMedia", mediaId })}
+      onChangePicture={inDesktopApp ? (mediaId) => void changePicture(mediaId) : undefined}
+      usedMedia={usedMedia}
+      onRecordVoice={inDesktopApp ? openVoice : undefined}
+      fx={(tab) => fxPanel(tab, false)}
+      only={only}
+    />
+  );
+  const preview = (
+    <Preview
+      silent={voiceSilent}
+      picking={picking ? { clipId: picking.clipId, onPicked: (color) => endPick(color), onCancel: (unreadable) => endPick(undefined, unreadable) } : undefined}
+      // Background tab → hold to see the original: that photo drawn as it was before its cut-out.
+      project={peek ? { ...project, media: project.media.map((m) => (m.id === peek && m.original ? { ...m, source: m.original } : m)) } : project}
+      api={api}
+      // An image is its first moment: arrow keys or an old playhead can't hide its layers.
+      playback={imageMode ? { ...playback, time: 0, playing: false } : playback}
+      frame={project.image ? { id: "image", label: "", ...project.image } : frameOf(effective)}
+      still={imageMode && project.image ? { background: project.image.background } : undefined}
+      duration={duration}
+      selectedId={selectedId}
+      onSelect={setSelectedId}
+      onSnapshot={takeSnapshot}
+      onDropShape={(item, x, y) => {
+        // At the playhead, where it was let go (same undo step as adding it).
+        const id = applyFx(item, undefined, playback.time);
+        if (id) api.editLive({ type: "updateClip", clipId: id, patch: { x, y } });
+      }}
+      captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
+      showCaptions={showCaptions}
+      onToggleCaptions={toggleCaptions}
+      onMakeCaptions={uncaptioned.length ? makeSpokenCaptions : undefined}
+      onDownload={
+        inDesktopApp
+          ? (mediaId) => {
+              const item = project.media.find((m) => m.id === mediaId);
+              if (item && !downloadingIds.has(mediaId)) downloadForEditing(item);
+            }
+          : undefined
+      }
+      quality={
+        inDesktopApp && previewHeights.length
+          ? { height: links[0]?.previewHeight, heights: previewHeights, onChange: choosePreviewHeight }
+          : undefined
+      }
+    />
+  );
+  const panelBody = (
+    <>
+      {/* All eight in one row that scrolls sideways, ‹ › at its ends (like the popular editor). */}
+      <div className="app__tabs">
+        <IconTabs tabs={imageMode ? PANEL_TABS.filter((t) => !["speed", "transcript"].includes(t.id)) : PANEL_TABS} value={rightTab === "sound" || rightTab === "voice" || (FX_TABS as readonly string[]).includes(rightTab) ? null : (rightTab as (typeof PANEL_TABS)[number]["id"])} onPick={pickTab} label="Right panel" idPrefix="right-tab" />
+      </div>
+      {fxOpen && (FX_TABS as readonly string[]).includes(rightTab) ? (
+        fxPanel(rightTab as FxTab, true)
+      ) : rightTab === "transcript" ? (
+        <Transcript
+          project={project}
+          api={api}
+          time={playback.time}
+          seek={playback.seek}
+          captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
+          onMakeCaptions={uncaptioned.length ? makeSpokenCaptions : undefined}
+          onCancelCaptions={makingCaptions.length ? () => stopCaptions() : undefined}
+          onSaveSrt={inDesktopApp ? () => void saveCaptionsFile() : undefined}
+          onOpenCaptions={inDesktopApp ? () => void openCaptions() : undefined}
+        />
+      ) : rightTab === "assistant" ? (
+        <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} request={aiAsk} onRequested={() => setAiAsk(null)} />
+      ) : rightTab === "sound" && selected?.mediaId ? (
+        <SoundPanel
+          clip={selected}
+          media={project.media.find((m) => m.id === selected.mediaId)}
+          onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
+          onCheckpoint={api.checkpoint}
+          onBack={() => pickTab(panelBack.current)}
+          onClose={() => {
+            pickTab(panelBack.current);
+            toggleRight();
+          }}
+        />
+      ) : rightTab === "voice" ? (
+        <VoicePanel
+          startAt={formatClock(playback.time)}
+          onStart={(mute) => {
+            voiceAt.current = playback.time;
+            setVoiceLevels([]);
+            setVoiceSilent(mute);
+            if (!playback.playing) playback.toggle();
+          }}
+          onStop={(take) => {
+            playback.pause();
+            setVoiceSilent(false);
+            // The live clip stays until the take is on the timeline in its place.
+            return placeVoice(take).finally(() => setVoiceLevels(null));
+          }}
+          onLevel={(level) => setVoiceLevels((levels) => levels && [...levels, level])}
+          onBack={() => setRightTab(panelBack.current)}
+          onClose={() => {
+            setRightTab(panelBack.current);
+            toggleRight();
+          }}
+        />
+      ) : (
+        // Edit: the selected clip's settings (and the captions' style).
+        <aside className="export" aria-label="Clip settings">
+          <div className="export__body is-edit">
+          {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} /> : <p className="export__hint">{imageMode ? "Click a layer to change it here." : "Click a clip on the timeline to change it here."}</p>)}
+          {rightTab === "edit" && (selectedId === SHOWN_CAPTIONS || selectedTrack?.name === "Captions") && (
+            <CaptionStyle
+              layout={project.captionLayout ?? CAPTIONS}
+              onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "layoutCaptions", patch })}
+              onCheckpoint={api.checkpoint}
+              onSaveSrt={inDesktopApp ? () => void saveCaptionsFile() : undefined}
+              onOpenCaptions={inDesktopApp ? () => void openCaptions() : undefined}
+            />
+          )}
+          {rightTab === "edit" && selected && isBlock(selected) && (
+            <p className="export__hint">
+              {selected.effect ? "Effects" : "Filters"} have their own settings.{" "}
+              <button type="button" className="btn btn--ghost" onClick={() => openFx(selected.id, selected.effect ? "effects" : "filters")}>
+                Open its settings
+              </button>
+            </p>
+          )}
+          {selected && selectedTrack && !isBlock(selected) && (
+            <Inspector
+              key={selected.id}
+              section={(CLIP_TABS as readonly string[]).includes(rightTab) ? (rightTab as ClipSection) : "edit"}
+              clip={selected}
+              track={selectedTrack}
+              media={project.media.find((m) => m.id === selected.mediaId)}
+              onRelink={(item) => void relink(item)}
+              onPickColour={() => startPick(selected)}
+              onAddText={addText}
+              still={imageMode}
+              onCutOut={cutOutOf(selected)}
+              onRestore={() => selected.mediaId && api.edit({ type: "cutOut", mediaId: selected.mediaId })}
+              onPeek={(on) => setPeek(on ? (selected.mediaId ?? null) : null)}
+              onPreview={(from, seconds) => {
+                const back = playback.time;
+                playback.seek(from);
+                if (!playback.playing) playback.toggle();
+                window.setTimeout(() => {
+                  playback.pause();
+                  // After the clock's last ticks (it stops a frame or two late), which would move the playhead on again.
+                  requestAnimationFrame(() => requestAnimationFrame(() => playback.seek(back)));
+                }, seconds * 1000 + 150);
+              }}
+              trackName={trackLabel(project, selectedTrack)}
+              onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
+              onDuration={
+                !selected.mediaId || project.media.find((m) => m.id === selected.mediaId)?.source.image
+                  ? (seconds, live) =>
+                      (live ? api.editLive : api.edit)({
+                        type: "trimClip",
+                        clipId: selected.id,
+                        edge: "end",
+                        time: selected.start + Math.max(0.2, seconds),
+                      })
+                  : undefined
+              }
+              onSpeed={(speed) => api.edit({ type: "setSpeed", clipId: selected.id, speed })}
+              onCheckpoint={api.checkpoint}
+              onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
+              onSplit={split}
+              onDuplicate={() => duplicate()}
+              onOpenCrop={() => openCrop(selected, imageMode ? 0 : playback.time)}
+              onCutSilences={
+                selected.mediaId && project.media.find((m) => m.id === selected.mediaId)?.hasAudio && !project.media.find((m) => m.id === selected.mediaId)?.source.image
+                  ? () => void cutSilences()
+                  : undefined
+              }
+              cuttingSilences={cuttingSilences}
+              onSplitChapters={
+                selected.mediaId &&
+                project.media
+                  .find((m) => m.id === selected.mediaId)
+                  ?.source.chapters?.some((ch) => ch.start > selected.in + 0.2 && ch.start < selected.out - 0.2)
+                  ? () => api.edit({ type: "splitByChapters", clipId: selected.id })
+                  : undefined
+              }
+              onAddCaptions={
+                selected.mediaId && project.media.find((m) => m.id === selected.mediaId)?.captions
+                  ? () => api.edit({ type: "addCaptions", mediaId: selected.mediaId!, trackId: `text-${crypto.randomUUID().slice(0, 8)}` })
+                  : undefined
+              }
+              onDelete={remove}
+              canSplit={playback.time > selected.start && playback.time < clipEnd(selected)}
+            />
+          )}
+          </div>
+        </aside>
+      )}
+    </>
+  );
+
   return (
-    <div className="app" style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen && view === "editor" ? sideWidth : 0, PANEL_WIDTH)}px` } as CSSProperties}>
+    <div className="app" style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen && inEditor ? sideWidth : 0, PANEL_WIDTH)}px` } as CSSProperties}>
       <Ambient active={theme !== "classic"} />
       <Tooltip />
       {fetchReview.dialog}
-      {exportOpen && view === "editor" && (
+      <NewImageDialog
+        open={newImageOpen}
+        recent={projects.filter((p) => p.image).slice(0, 6)}
+        onCreate={(width, height, background) => {
+          setNewImageOpen(false);
+          startProject(newImageProject(width, height, background));
+        }}
+        onOpenPhoto={() => {
+          setNewImageOpen(false);
+          void openPhoto();
+        }}
+        onOpenProject={(id) => {
+          setNewImageOpen(false);
+          void openProject(id);
+        }}
+        onClose={() => setNewImageOpen(false)}
+      />
+      {exportOpen && inEditor && (
         <ExportDialog sub={projectName(project)} onClose={() => setExportOpen(false)}>
           <ExportPanel
             settings={effective}
@@ -1893,6 +2275,7 @@ export default function App() {
             plan={plan}
             cutModeApplies={cutModeApplies(toExport, effective)}
             hasPicture={hasPicture}
+            still={imageMode ? project.image : undefined}
             onAddToQueue={() => {
               addToQueue();
               // Queued: the Queue button next to Export shows it, so the pop-up's job is done.
@@ -1915,7 +2298,7 @@ export default function App() {
       )}
       <Toolbar
         queue={<QueueDock queue={queue} freshId={freshId} />}
-        onExport={view === "editor" ? () => setExportOpen(true) : undefined}
+        onExport={inEditor ? () => setExportOpen(true) : undefined}
         url={url}
         onUrlChange={(next) => {
           setUrl(next);
@@ -1945,7 +2328,7 @@ export default function App() {
         }
         onImport={inDesktopApp ? () => void importFiles() : undefined}
         inputRef={urlRef}
-        menu={view === "editor" ? mainMenu(false) : undefined}
+        menu={inEditor ? mainMenu(false) : undefined}
         update={
           updates.status.kind === "available"
             ? { label: `Update to v${updates.status.version}`, onClick: () => void updates.install() }
@@ -1955,7 +2338,7 @@ export default function App() {
         }
       />
 
-      {view !== "editor" && mainMenu(true)}
+      {!inEditor && mainMenu(true)}
 
       <main className="app__work">
         {view === "home" && (
@@ -1966,7 +2349,7 @@ export default function App() {
             projects={projects}
             currentId={project.clips.length || project.media.length ? projectId : null}
             onOpenProject={(id) => (id === projectId ? setView("editor") : void openProject(id))}
-            onNewProject={newProject}
+            onNewProject={() => newProject()}
             onDeleteProject={(id) => void removeProject(id)}
             recent={shownExports}
             outputDir={outputDir}
@@ -1980,7 +2363,7 @@ export default function App() {
             projects={projects}
             currentId={project.clips.length || project.media.length ? projectId : null}
             onOpenProject={(id) => (id === projectId ? setView("editor") : void openProject(id))}
-            onNewProject={newProject}
+            onNewProject={() => newProject()}
             onDeleteProject={(id) => void removeProject(id)}
           />
         )}
@@ -2029,207 +2412,38 @@ export default function App() {
             onOpenWorkspace={() => setView("editor")}
           />
         )}
-        {view === "editor" && (
+        {imageMode && project.image ? (
+          <ImageWorkspace
+            tools={IMAGE_TOOLS}
+            activeTool={imageTool}
+            // A panel's tool picked again closes its panel.
+            onTool={(id) => setImageTool((now) => (now === id && id !== "move" ? "move" : id))}
+            flyout={imageTool !== "move" && imageTool !== "hand" ? mediaPanel(imageTool as MediaTab) : null}
+            options={imageOptions}
+            canvas={preview}
+            imageSize={project.image}
+            properties={panelBody}
+            layers={<LayersPanel project={project} api={api} selectedId={selectedId} onSelect={setSelectedId} />}
+            canUndo={api.canUndo}
+            canRedo={api.canRedo}
+            onUndo={api.undo}
+            onRedo={api.redo}
+          />
+        ) : inEditor && (
           <div
             className="app__editor"
             data-sized={timelineHeight ? "" : undefined}
             style={timelineHeight ? ({ "--tl-h": `${timelineHeight}px` } as CSSProperties) : undefined}
           >
             <div className="app__top">
-              {leftOpen && (
-                <MediaPanel
-                  media={project.media}
-                  preparing={preparing}
-                  captioning={captioning}
-                  previewReady={Object.fromEntries(
-                    project.media
-                      .filter((m) => m.source.previewCacheIds?.some((id) => cached[id] !== undefined))
-                      .map((m) => [m.id, Math.min(...(m.source.previewCacheIds ?? []).map((id) => cached[id] ?? 0))]),
-                  )}
-                  downloading={downloadingIds}
-                  onDownload={inDesktopApp ? (mediaId) => {
-                    const item = project.media.find((m) => m.id === mediaId);
-                    if (item) downloadForEditing(item);
-                  } : undefined}
-                  onImport={inDesktopApp ? () => void importFiles() : undefined}
-                  onAddMedia={addMedia}
-                  onRemoveMedia={(mediaId) => api.edit({ type: "removeMedia", mediaId })}
-                  onChangePicture={inDesktopApp ? (mediaId) => void changePicture(mediaId) : undefined}
-                  usedMedia={usedMedia}
-                  onRecordVoice={inDesktopApp ? openVoice : undefined}
-                  fx={(tab) => fxPanel(tab, false)}
-                />
-              )}
+              {leftOpen && mediaPanel()}
               {leftOpen && <EdgeResizer edge="right" width={sideWidth} limits={SIDE_WIDTH} label="Media panel width" onResize={resizeSide} />}
-              <Preview
-                silent={voiceSilent}
-                picking={picking ? { clipId: picking.clipId, onPicked: (color) => endPick(color), onCancel: (unreadable) => endPick(undefined, unreadable) } : undefined}
-                project={project}
-                api={api}
-                playback={playback}
-                frame={frameOf(effective)}
-                duration={duration}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                onSnapshot={takeSnapshot}
-                onDropShape={(item, x, y) => {
-                  // At the playhead, where it was let go (same undo step as adding it).
-                  const id = applyFx(item, undefined, playback.time);
-                  if (id) api.editLive({ type: "updateClip", clipId: id, patch: { x, y } });
-                }}
-                captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
-                showCaptions={showCaptions}
-                onToggleCaptions={toggleCaptions}
-                onMakeCaptions={uncaptioned.length ? makeSpokenCaptions : undefined}
-                onDownload={
-                  inDesktopApp
-                    ? (mediaId) => {
-                        const item = project.media.find((m) => m.id === mediaId);
-                        if (item && !downloadingIds.has(mediaId)) downloadForEditing(item);
-                      }
-                    : undefined
-                }
-                quality={
-                  inDesktopApp && previewHeights.length
-                    ? { height: links[0]?.previewHeight, heights: previewHeights, onChange: choosePreviewHeight }
-                    : undefined
-                }
-              />
+              {preview}
               {/* The right panel beside the preview; the timeline spans the full width under both. */}
               {rightOpen && <EdgeResizer edge="left" width={panelWidth} limits={PANEL_WIDTH} label="Right panel width" onResize={resizePanel} />}
               {/* Stays mounted when closed so it can slide away; inert keeps it out of Tab and clicks. */}
               <div className={`app__panel${rightOpen ? "" : " is-closed"}`} inert={!rightOpen}>
-                {/* All eight in one row that scrolls sideways, ‹ › at its ends (like the popular editor). */}
-                <div className="app__tabs">
-                  <IconTabs tabs={PANEL_TABS} value={rightTab === "sound" || rightTab === "voice" || (FX_TABS as readonly string[]).includes(rightTab) ? null : (rightTab as (typeof PANEL_TABS)[number]["id"])} onPick={pickTab} label="Right panel" idPrefix="right-tab" />
-                </div>
-                {fxOpen && (FX_TABS as readonly string[]).includes(rightTab) ? (
-                  fxPanel(rightTab as FxTab, true)
-                ) : rightTab === "transcript" ? (
-                  <Transcript
-                    project={project}
-                    api={api}
-                    time={playback.time}
-                    seek={playback.seek}
-                    captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
-                    onMakeCaptions={uncaptioned.length ? makeSpokenCaptions : undefined}
-                    onCancelCaptions={makingCaptions.length ? () => stopCaptions() : undefined}
-                    onSaveSrt={inDesktopApp ? () => void saveCaptionsFile() : undefined}
-                    onOpenCaptions={inDesktopApp ? () => void openCaptions() : undefined}
-                  />
-                ) : rightTab === "assistant" ? (
-                  <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} request={aiAsk} onRequested={() => setAiAsk(null)} />
-                ) : rightTab === "sound" && selected?.mediaId ? (
-                  <SoundPanel
-                    clip={selected}
-                    media={project.media.find((m) => m.id === selected.mediaId)}
-                    onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
-                    onCheckpoint={api.checkpoint}
-                    onBack={() => pickTab(panelBack.current)}
-                    onClose={() => {
-                      pickTab(panelBack.current);
-                      toggleRight();
-                    }}
-                  />
-                ) : rightTab === "voice" ? (
-                  <VoicePanel
-                    startAt={formatClock(playback.time)}
-                    onStart={(mute) => {
-                      voiceAt.current = playback.time;
-                      setVoiceLevels([]);
-                      setVoiceSilent(mute);
-                      if (!playback.playing) playback.toggle();
-                    }}
-                    onStop={(take) => {
-                      playback.pause();
-                      setVoiceSilent(false);
-                      // The live clip stays until the take is on the timeline in its place.
-                      return placeVoice(take).finally(() => setVoiceLevels(null));
-                    }}
-                    onLevel={(level) => setVoiceLevels((levels) => levels && [...levels, level])}
-                    onBack={() => setRightTab(panelBack.current)}
-                    onClose={() => {
-                      setRightTab(panelBack.current);
-                      toggleRight();
-                    }}
-                  />
-                ) : (
-                  // Edit: the selected clip's settings (and the captions' style).
-                  <aside className="export" aria-label="Clip settings">
-                    <div className="export__body is-edit">
-                    {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} /> : <p className="export__hint">Click a clip on the timeline to change it here.</p>)}
-                    {rightTab === "edit" && (selectedId === SHOWN_CAPTIONS || selectedTrack?.name === "Captions") && (
-                      <CaptionStyle
-                        layout={project.captionLayout ?? CAPTIONS}
-                        onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "layoutCaptions", patch })}
-                        onCheckpoint={api.checkpoint}
-                        onSaveSrt={inDesktopApp ? () => void saveCaptionsFile() : undefined}
-                        onOpenCaptions={inDesktopApp ? () => void openCaptions() : undefined}
-                      />
-                    )}
-                    {rightTab === "edit" && selected && isBlock(selected) && (
-                      <p className="export__hint">
-                        {selected.effect ? "Effects" : "Filters"} have their own settings.{" "}
-                        <button type="button" className="btn btn--ghost" onClick={() => openFx(selected.id, selected.effect ? "effects" : "filters")}>
-                          Open its settings
-                        </button>
-                      </p>
-                    )}
-                    {selected && selectedTrack && !isBlock(selected) && (
-                      <Inspector
-                        key={selected.id}
-                        section={(CLIP_TABS as readonly string[]).includes(rightTab) ? (rightTab as ClipSection) : "edit"}
-                        clip={selected}
-                        track={selectedTrack}
-                        media={project.media.find((m) => m.id === selected.mediaId)}
-                        onRelink={(item) => void relink(item)}
-                        onPickColour={() => startPick(selected)}
-                        onAddText={addText}
-                        trackName={trackLabel(project, selectedTrack)}
-                        onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
-                        onDuration={
-                          !selected.mediaId || project.media.find((m) => m.id === selected.mediaId)?.source.image
-                            ? (seconds, live) =>
-                                (live ? api.editLive : api.edit)({
-                                  type: "trimClip",
-                                  clipId: selected.id,
-                                  edge: "end",
-                                  time: selected.start + Math.max(0.2, seconds),
-                                })
-                            : undefined
-                        }
-                        onSpeed={(speed) => api.edit({ type: "setSpeed", clipId: selected.id, speed })}
-                        onCheckpoint={api.checkpoint}
-                        onFormat={(format) => selected.mediaId && api.edit({ type: "setMediaFormat", mediaId: selected.mediaId, ...format })}
-                        onSplit={split}
-                        onDuplicate={() => duplicate()}
-                        onOpenCrop={() => openCrop(selected, playback.time)}
-                        onCutSilences={
-                          selected.mediaId && project.media.find((m) => m.id === selected.mediaId)?.hasAudio && !project.media.find((m) => m.id === selected.mediaId)?.source.image
-                            ? () => void cutSilences()
-                            : undefined
-                        }
-                        cuttingSilences={cuttingSilences}
-                        onSplitChapters={
-                          selected.mediaId &&
-                          project.media
-                            .find((m) => m.id === selected.mediaId)
-                            ?.source.chapters?.some((ch) => ch.start > selected.in + 0.2 && ch.start < selected.out - 0.2)
-                            ? () => api.edit({ type: "splitByChapters", clipId: selected.id })
-                            : undefined
-                        }
-                        onAddCaptions={
-                          selected.mediaId && project.media.find((m) => m.id === selected.mediaId)?.captions
-                            ? () => api.edit({ type: "addCaptions", mediaId: selected.mediaId!, trackId: `text-${crypto.randomUUID().slice(0, 8)}` })
-                            : undefined
-                        }
-                        onDelete={remove}
-                        canSplit={playback.time > selected.start && playback.time < clipEnd(selected)}
-                      />
-                    )}
-                    </div>
-                  </aside>
-                )}
+                {panelBody}
               </div>
             </div>
             <TimelineDivider height={timelineHeight} onResize={resizeTimeline} />

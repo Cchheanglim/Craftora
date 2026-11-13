@@ -44,6 +44,15 @@ pub struct RenderSpec {
     /// Video files: the cover picture (a JPEG data URL from the editor's Cover), built in as the file's cover.
     #[serde(default)]
     cover: String,
+    /// Images: the colour under every layer (#rrggbb); black when empty.
+    #[serde(default)]
+    background: String,
+    /// PNG images: see-through where no layer covers it, instead of the background colour.
+    #[serde(default)]
+    transparent: bool,
+    /// JPG images: 1–100 (high when absent).
+    #[serde(default)]
+    image_quality: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -227,6 +236,73 @@ struct ClipSpec {
     edge_color: Option<String>,
     #[serde(default)]
     edge_size: Option<f64>,
+    /// Text animations (textMotion.ts `TextMotion`), drawn as the preview draws them; still text when absent.
+    #[serde(default)]
+    motion: Option<Motion>,
+    /// Pictures and text (an Image editor layer's opacity), 0–1.
+    #[serde(default = "one")]
+    opacity: f64,
+}
+
+/// A text's animation (textMotion.ts `TextMotion`): [seconds from the clip's start, value] points joined by straight lines.
+#[derive(Deserialize, Default)]
+struct Motion {
+    #[serde(default)]
+    alpha: Vec<(f64, f64)>,
+    #[serde(default)]
+    scale: Vec<(f64, f64)>,
+    /// Moved down by this share of the frame's height.
+    #[serde(default)]
+    dy: Vec<(f64, f64)>,
+    #[serde(default, rename = "loop")]
+    cycle: Option<Cycle>,
+    #[serde(default)]
+    typing: Vec<Typed>,
+}
+
+/// A looping move: one cycle of points over `period` seconds, repeated from the clip's start.
+#[derive(Deserialize)]
+struct Cycle {
+    period: f64,
+    #[serde(default)]
+    scale: Vec<(f64, f64)>,
+    #[serde(default)]
+    dy: Vec<(f64, f64)>,
+}
+
+/// Typewriter: `text` shows until `until` seconds after the clip's start.
+#[derive(Deserialize)]
+struct Typed {
+    text: String,
+    until: f64,
+}
+
+impl Motion {
+    /// Numbers that go into the filter graph: finite, in range, a few points each, times in order within the clip.
+    fn valid(&self, length: f64, text: &str) -> bool {
+        let points = |p: &[(f64, f64)], span: f64, lo: f64, hi: f64| {
+            p.len() <= 64
+                && p.iter().all(|&(t, v)| (0.0..=span + 0.01).contains(&t) && (lo..=hi).contains(&v))
+                && p.windows(2).all(|w| w[1].0 - w[0].0 > 0.00005)
+        };
+        points(&self.alpha, length, 0.0, 1.0)
+            && points(&self.scale, length, 0.0, 2.0)
+            && points(&self.dy, length, -1.0, 1.0)
+            && self.cycle.as_ref().is_none_or(|c| (0.1..=10.0).contains(&c.period) && points(&c.scale, c.period, 0.0, 2.0) && points(&c.dy, c.period, -1.0, 1.0))
+            && self.typing.len() <= 64
+            && self.typing.iter().all(|s| (0.0..=length + 0.01).contains(&s.until) && s.text.len() <= text.len() + 1)
+            && self.typing.windows(2).all(|w| w[1].until > w[0].until)
+    }
+}
+
+/// Animation points (`Motion`) as an FFmpeg expression of `u` seconds: straight lines between them, the first and last
+/// values held outside them (textMotion.ts `pointsAt`). None without points.
+fn lerp(points: &[(f64, f64)], u: &str) -> Option<String> {
+    let &(_, last) = points.last()?;
+    Some(points.windows(2).rev().fold(format!("{last:.4}"), |rest, w| {
+        let ((t0, v0), (t1, v1)) = (w[0], w[1]);
+        format!("if(lt({u},{t1:.4}),{v0:.4}+({:.4})*clip(({u}-{t0:.4})/{:.4},0,1),{rest})", v1 - v0, t1 - t0)
+    }))
 }
 
 /// A fade over the clip's own time: `fade_in` from `start` for `length`, or out.
@@ -358,9 +434,10 @@ impl ClipSpec {
         let (bw, bh) = (((w as f64) * self.size).round().max(2.0), ((h as f64) * self.size).round().max(2.0));
         let fit = if self.fill { "increase" } else { "decrease" };
         format!(
-            "setpts=PTS-STARTPTS{},scale=w={bw}:h={bh}:force_original_aspect_ratio={fit}:force_divisible_by=2,setsar=1{}",
+            "setpts=PTS-STARTPTS{},scale=w={bw}:h={bh}:force_original_aspect_ratio={fit}:force_divisible_by=2,setsar=1{}{}",
             self.picture_edits(),
-            self.smooth_frames(fps)
+            self.smooth_frames(fps),
+            if self.opacity < 1.0 { format!(",format=rgba,colorchannelmixer=aa={:.3}", self.opacity) } else { String::new() }
         )
     }
 
@@ -472,10 +549,10 @@ impl ClipSpec {
     }
 
     /// drawtext's opacity over time for faded text, or nothing.
-    fn text_alpha(&self) -> String {
+    fn text_alpha(&self) -> Option<String> {
         let ramps = self.ramps(false);
         if ramps.is_empty() {
-            return String::new();
+            return None;
         }
         // The lowest of all ramps, each 0–1 in timeline time.
         let terms: Vec<String> = ramps
@@ -489,8 +566,7 @@ impl ClipSpec {
                 }
             })
             .collect();
-        let expr = terms.iter().skip(1).fold(terms[0].clone(), |acc, t| format!("min({acc},{t})"));
-        format!(":alpha='{expr}'")
+        Some(terms.iter().skip(1).fold(terms[0].clone(), |acc, t| format!("min({acc},{t})")))
     }
 }
 
@@ -529,11 +605,26 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
     if texts > MAX_TEXT_CLIPS {
         return Err(format!("A timeline can have at most {MAX_TEXT_CLIPS} texts and captions."));
     }
-    if (spec.output == Output::Video) != spec.container.is_video() {
+    let fits = match spec.output {
+        Output::Video => spec.container.is_video(),
+        Output::Audio => !spec.container.is_video() && !spec.container.is_image(),
+        Output::Image => spec.container.is_image(),
+    };
+    if !fits {
         return Err("That file type doesn't match the output.".into());
     }
-    if !(16..=4096).contains(&spec.width) || !(16..=4096).contains(&spec.height) || !(1..=120).contains(&spec.fps) {
+    // A photo can be bigger than a video frame.
+    let most = if spec.output == Output::Image { 8192 } else { 4096 };
+    if !(16..=most).contains(&spec.width) || !(16..=most).contains(&spec.height) || !(1..=120).contains(&spec.fps) {
         return Err("The video size is out of range.".into());
+    }
+    if spec.transparent && spec.container != Container::Png || spec.image_quality.is_some_and(|q| !(1..=100).contains(&q)) {
+        return Err("That image setting isn't one Craftora offers.".into());
+    }
+    // It goes into the filter graph.
+    let bg = &spec.background;
+    if !bg.is_empty() && !(bg.len() == 7 && bg.starts_with('#') && bg[1..].chars().all(|c| c.is_ascii_hexdigit())) {
+        return Err("The image's background colour is invalid.".into());
     }
     let opened = app.state::<OpenedFiles>();
     for media in &spec.media {
@@ -587,6 +678,12 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
         let hex = |c: &str| c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
         if clip.edge_color.as_deref().is_some_and(|c| !hex(c)) || clip.edge_size.is_some_and(|k| !(0.5..=6.0).contains(&k)) {
             return Err("A text on the timeline has an invalid style.".into());
+        }
+        if !(0.0..=1.0).contains(&clip.opacity) {
+            return Err("A layer on the timeline has an invalid opacity.".into());
+        }
+        if clip.motion.as_ref().is_some_and(|m| !m.valid(clip.length(), &clip.text)) {
+            return Err("A text on the timeline has an invalid animation.".into());
         }
         // A library font is downloaded when it's picked (fonts.rs): without its file, the text would come out in another font.
         if clip.role == Role::Text && !["", "arial", "impact", "georgia", "comic"].contains(&clip.font.as_str()) && crate::fonts::installed(&clip.font).is_none() {
@@ -685,7 +782,7 @@ async fn render(app: &AppHandle, spec: &RenderSpec) -> Result<PathBuf, String> {
     let ext = spec.container.ext();
     // Rendered inside the working folder; only a finished file reaches the export folder.
     let temp = work.join(format!("output.{ext}"));
-    let result = match render_in(app, spec, &work, &temp).await {
+    let result = match if spec.transparent { see_through(app, spec, &work, &temp).await } else { render_in(app, spec, &work, &temp, None).await } {
         Ok(()) => deliver(&temp, &dir, &safe_stem(&spec.file_name), ext),
         Err(e) => Err(e),
     };
@@ -693,7 +790,33 @@ async fn render(app: &AppHandle, spec: &RenderSpec) -> Result<PathBuf, String> {
     result
 }
 
-async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Path) -> Result<(), String> {
+/// A see-through PNG: drawtext can't draw onto see-through pixels, so the image is drawn on black and on white, and
+/// each pixel's opacity is what those two differ by (1 − (white − black)), its colour the black one divided by it.
+async fn see_through(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Path) -> Result<(), String> {
+    let (black, white) = (work.join("on-black.png"), work.join("on-white.png"));
+    render_in(app, spec, work, &black, Some("black")).await?;
+    render_in(app, spec, work, &white, Some("white")).await?;
+    let colour = |c: char| format!("{c}='if(alpha(X\\,Y)\\,min(255\\,{c}(X\\,Y)*255/alpha(X\\,Y))\\,0)'");
+    let merge = format!(
+        "[0:v]format=gbrp,split[a1][a2];[1:v]format=gbrp[b];[b][a1]blend=all_mode=difference,extractplanes=g,negate[al];[a2][al]alphamerge,format=rgba,geq={}:{}:{}:a='alpha(X\\,Y)',format=rgba",
+        colour('r'),
+        colour('g'),
+        colour('b')
+    );
+    let mut args: Vec<String> = ["-y", "-hide_banner", "-nostats", "-progress", "pipe:1", "-i"].map(String::from).to_vec();
+    args.extend([black.to_string_lossy().into_owned(), "-i".into(), white.to_string_lossy().into_owned(), "-filter_complex".into(), merge]);
+    args.extend(["-frames:v", "1", "-update", "1"].map(String::from));
+    args.push(output.to_string_lossy().into_owned());
+    crate::jobs::run_ffmpeg(app, &spec.id, args, 0.04, "encoding", Some(work)).await
+}
+
+/// JPG quality 1–100 as FFmpeg's `-q:v` (2 best … 31 smallest).
+fn jpg_q(quality: Option<u32>) -> u32 {
+    2 + (100 - quality.unwrap_or(95).clamp(1, 100)) * 29 / 99
+}
+
+/// `background`: the colour under every layer instead of the spec's (a see-through PNG draws on black and on white).
+async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Path, background: Option<&str>) -> Result<(), String> {
     // 1. Every media file used, as a local path (links: just the part the clips use).
     let mut sources: HashMap<&str, Source> = HashMap::new();
     for (n, media) in spec.media.iter().enumerate() {
@@ -715,7 +838,9 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
 
     // Pre-render each Smooth slow-mo video clip in up to 4 pieces side by side.
     let (w, h, fps) = (spec.width, spec.height, spec.fps);
-    let is_video = spec.output == Output::Video;
+    // A picture is drawn for a video and for an image (its first frame, `still`).
+    let still = spec.output == Output::Image;
+    let is_video = spec.output != Output::Audio;
     let mut smoothed: HashSet<usize> = HashSet::new();
     if is_video {
         let threads = std::thread::available_parallelism().map(usize::from).unwrap_or(4);
@@ -860,7 +985,14 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
     // 3. The filter graph.
     let mut graph: Vec<String> = Vec::new();
     if is_video {
-        graph.push(format!("color=black:s={w}x{h}:r={fps}:d={},format=yuv420p[base]", secs(total)));
+        let background = match background {
+            Some(colour) => colour.to_string(),
+            None if spec.background.is_empty() => "black".to_string(),
+            None => format!("0x{}", &spec.background[1..]),
+        };
+        // An image keeps every pixel's colour (4:2:0 video colour blurs coloured edges, e.g. red text on blue).
+        let (pixels, mix) = if still { ("yuv444p", ":format=yuv444") } else { ("yuv420p", "") };
+        graph.push(format!("color={background}:s={w}x{h}:r={fps}:d={},format={pixels}[base]", secs(total)));
         let mut picture = String::from("base");
         let mut layered: Vec<(usize, &ClipSpec)> = spec.clips.iter().enumerate().filter(|(_, c)| c.role != Role::Audio).collect();
         // Pictures first, then the filter and effect blocks over them, then text and shapes on top by track (as the
@@ -895,7 +1027,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                         clip.picture_fades()
                     ));
                     graph.push(format!(
-                        "[{picture}][v{i}]overlay=x='{x}*(W-w){}':y='{y}*(H-h){}':eof_action=pass:repeatlast=0:enable='between(t,{start},{end})'[p{i}]",
+                        "[{picture}][v{i}]overlay=x='{x}*(W-w){}':y='{y}*(H-h){}':eof_action=pass:repeatlast=0{mix}:enable='between(t,{start},{end})'[p{i}]",
                         clip.slide('W'),
                         clip.slide('H'),
                         x = clip.x,
@@ -911,13 +1043,10 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                         "[{k}:v]format=rgba,loop=loop={frames}:size=1:start=0,setpts=N/{fps}/TB{},setpts=PTS+{start}/TB[s{i}]",
                         clip.picture_fades()
                     ));
-                    graph.push(format!("[{picture}][s{i}]overlay=0:0:eof_action=pass:repeatlast=0:enable='between(t,{start},{end})'[p{i}]"));
+                    graph.push(format!("[{picture}][s{i}]overlay=0:0:eof_action=pass:repeatlast=0{mix}:enable='between(t,{start},{end})'[p{i}]"));
                     picture = format!("p{i}");
                 }
                 Role::Text => {
-                    // The text goes in a file so no character can break the filter syntax.
-                    let file = format!("text{i}.txt");
-                    std::fs::write(work.join(&file), clip.text.as_bytes()).map_err(|e| format!("Couldn't prepare text: {e}"))?;
                     let size = ((h as f64) * clip.size).round().max(8.0) as u32;
                     let color = clip.color.trim_start_matches('#');
                     let font = font_path(&clip.text, &clip.font);
@@ -934,12 +1063,46 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                             format!("shadowcolor={}:shadowx={off}:shadowy={off}", tint.as_deref().unwrap_or("black@0.6"))
                         }
                     };
-                    graph.push(format!(
-                        "[{picture}]drawtext=fontfile='{font}':textfile='{file}':expansion=none:text_align=C:fontsize={size}:fontcolor=0x{color}:{edge}:x='(w-text_w)*{x}':y='(h-text_h)*{y}'{alpha}:enable='between(t,{start},{end})'[p{i}]",
-                        x = clip.x,
-                        y = clip.y,
-                        alpha = clip.text_alpha()
-                    ));
+                    // Its animation (textMotion.ts), at `u` seconds into the clip: opacity times the fades, size about the
+                    // text's middle (`text_w/s` is its width at full size), and a move down by a share of the frame.
+                    let still = Motion::default();
+                    let motion = clip.motion.as_ref().unwrap_or(&still);
+                    let u = format!("(t-{})", secs(clip.start));
+                    let (cycle_scale, cycle_dy) = motion.cycle.as_ref().map_or((None, None), |c| {
+                        let u = format!("mod(t-{},{:.4})", secs(clip.start), c.period);
+                        (lerp(&c.scale, &u), lerp(&c.dy, &u))
+                    });
+                    let scale = [lerp(&motion.scale, &u), cycle_scale].into_iter().flatten().collect::<Vec<_>>();
+                    let dy = [lerp(&motion.dy, &u), cycle_dy].into_iter().flatten().collect::<Vec<_>>();
+                    let opacity = (clip.opacity < 1.0).then(|| format!("{:.3}", clip.opacity));
+                    let alpha = [clip.text_alpha(), lerp(&motion.alpha, &u), opacity].into_iter().flatten().collect::<Vec<_>>();
+                    let alpha = if alpha.is_empty() { String::new() } else { format!(":alpha='{}'", alpha.join("*")) };
+                    let (x, y) = (clip.x, clip.y);
+                    let place = if scale.is_empty() && dy.is_empty() {
+                        format!("fontsize={size}:fontcolor=0x{color}:{edge}:x='(w-text_w)*{x}':y='(h-text_h)*{y}'")
+                    } else {
+                        let s = if scale.is_empty() { "1".into() } else { format!("max(0.01,{})", scale.join("*")) };
+                        let dy = if dy.is_empty() { "0".into() } else { dy.join("+") };
+                        format!("fontsize='max(1,{size}*{s})':fontcolor=0x{color}:{edge}:x='(w-text_w/{s})*{x}+(text_w/{s}-text_w)/2':y='(h-text_h/{s})*{y}+(text_h/{s}-text_h)/2+({dy})*h'")
+                    };
+                    // Typewriter: each typed part for its time, then the whole text. Each goes in a file so no character
+                    // can break the filter syntax.
+                    let mut from = clip.start;
+                    let mut draws = Vec::new();
+                    for (k, typed) in motion.typing.iter().enumerate() {
+                        let until = clip.start + typed.until;
+                        if !typed.text.is_empty() {
+                            let file = format!("text{i}-{k}.txt");
+                            std::fs::write(work.join(&file), typed.text.as_bytes()).map_err(|e| format!("Couldn't prepare text: {e}"))?;
+                            draws.push(format!("drawtext=fontfile='{font}':textfile='{file}':expansion=none:text_align=C:{place}{alpha}:enable='gte(t,{})*lt(t,{})'", secs(from), secs(until)));
+                        }
+                        from = until;
+                    }
+                    let file = format!("text{i}.txt");
+                    std::fs::write(work.join(&file), clip.text.as_bytes()).map_err(|e| format!("Couldn't prepare text: {e}"))?;
+                    let start = if motion.typing.is_empty() { start.clone() } else { secs(from) };
+                    draws.push(format!("drawtext=fontfile='{font}':textfile='{file}':expansion=none:text_align=C:{place}{alpha}:enable='between(t,{start},{end})'"));
+                    graph.push(format!("[{picture}]{}[p{i}]", draws.join(",")));
                     picture = format!("p{i}");
                 }
                 Role::Effect => {
@@ -998,7 +1161,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
     });
 
     // 4. Encode, on the graphics card when asked and possible; if that fails, on the processor.
-    let encoder = if is_video { encoders::for_render(app, spec.quality).await } else { Encoder::Software };
+    let encoder = if is_video && !still { encoders::for_render(app, spec.quality).await } else { Encoder::Software };
     // From a file: hundreds of text clips (captions) would pass Windows' 32,767-character command limit.
     let graph_file = work.join("graph.txt");
     std::fs::write(&graph_file, graph.join(";")).map_err(|e| format!("Couldn't prepare the export: {e}"))?;
@@ -1023,7 +1186,13 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
         }
         let graph = if on_gpu { &gpu_file } else { &graph_file };
         args.extend(["-/filter_complex".into(), graph.to_string_lossy().into_owned()]);
-        if is_video {
+        if still {
+            // One picture: the first frame; a JPEG at high quality.
+            args.extend(["-map".into(), "[outv]".into(), "-frames:v".into(), "1".into(), "-update".into(), "1".into()]);
+            if spec.container == Container::Jpg {
+                args.extend(["-q:v".into(), jpg_q(spec.image_quality).to_string()]);
+            }
+        } else if is_video {
             args.extend(["-map".into(), "[outv]".into()]);
             let mut codec = encoder.args(spec.quality);
             // Already that format on the graphics card; asking for it again would add a step on the processor, which fails.
@@ -1037,7 +1206,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
             }
         }
         match &sound {
-            Some(label) => {
+            Some(label) if !still => {
                 args.extend(["-map".into(), format!("[{label}]")]);
                 let codec: &[&str] = match spec.container {
                     Container::Mp3 => &["-c:a", "libmp3lame", "-b:a", "320k"],
@@ -1047,7 +1216,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
                 };
                 args.extend(codec.iter().map(|s| s.to_string()));
             }
-            None => args.push("-an".into()),
+            _ => args.push("-an".into()),
         }
         args.extend(["-t".into(), secs(total)]);
         if spec.container == Container::Mp4 {
@@ -1354,9 +1523,32 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cover_bytes, effect_filter, frame_step, gpu_picture, key_filter, look_filter, piece_frames, pieces, timed, ClipSpec, RenderSpec, Source};
+    use super::{cover_bytes, effect_filter, frame_step, gpu_picture, jpg_q, key_filter, lerp, look_filter, piece_frames, pieces, timed, ClipSpec, Motion, RenderSpec, Source};
     use crate::local::ProbeInfo;
     use std::collections::HashMap;
+
+    #[test]
+    fn jpg_quality_maps_onto_ffmpeg_q() {
+        assert_eq!([jpg_q(Some(100)), jpg_q(Some(1)), jpg_q(None), jpg_q(Some(500))], [2, 31, 3, 2]);
+    }
+
+    #[test]
+    fn text_animation_points_become_one_expression_and_bad_ones_are_refused() {
+        assert_eq!(lerp(&[], "u"), None);
+        assert_eq!(lerp(&[(0.0, 0.5)], "u").unwrap(), "0.5000");
+        assert_eq!(
+            lerp(&[(0.0, 0.0), (0.5, 1.0), (1.0, 0.0)], "u").unwrap(),
+            "if(lt(u,0.5000),0.0000+(1.0000)*clip((u-0.0000)/0.5000,0,1),if(lt(u,1.0000),1.0000+(-1.0000)*clip((u-0.5000)/0.5000,0,1),0.0000))"
+        );
+        let motion = |json: &str| serde_json::from_str::<Motion>(json).unwrap();
+        assert!(motion(r#"{"alpha":[[0,0],[0.5,1]],"loop":{"period":1,"dy":[[0,0],[1,-0.04]]},"typing":[{"text":"H","until":0.5}]}"#).valid(3.0, "Hi"));
+        // Out of order, past the clip, too big, a typed text longer than the text.
+        assert!(!motion(r#"{"alpha":[[0.5,0],[0.2,1]]}"#).valid(3.0, "Hi"));
+        assert!(!motion(r#"{"scale":[[0,1],[9,1]]}"#).valid(3.0, "Hi"));
+        assert!(!motion(r#"{"scale":[[0,50]]}"#).valid(3.0, "Hi"));
+        assert!(!motion(r#"{"loop":{"period":0,"scale":[]}}"#).valid(3.0, "Hi"));
+        assert!(!motion(r#"{"typing":[{"text":"Hello","until":0.5}]}"#).valid(3.0, "Hi"));
+    }
 
     #[test]
     fn draws_only_a_plain_full_clip_on_the_graphics_card() {

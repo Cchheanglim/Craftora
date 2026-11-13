@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEve
 import type { Frame } from "../types";
 import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, soundFadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
 import { newShapeClip, shapeBox, shapeSvg } from "../project/shapes";
+import { motionAt, textMotion } from "../project/textMotion";
 import type { FxItem } from "../project/effects";
 import { fxDrag } from "./TimelineEditor";
 import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
@@ -55,6 +56,8 @@ interface PreviewProps {
   silent?: boolean;
   /** Remove a colour → Pick: the next click on this clip's picture gives its colour (#rrggbb); Escape or a click beside it cancels. */
   picking?: { clipId: string; onPicked: (color: string) => void; onCancel: (unreadable?: boolean) => void };
+  /** The Image editor: the picture on its background colour, without play controls. */
+  still?: { background: string };
 }
 
 const WAVE_BARS = 140;
@@ -155,7 +158,7 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { ...edge, fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : edge;
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, silent, picking }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, silent, picking, still }: PreviewProps) {
   const [mutedByHand, setMuted] = useState(false);
   const muted = mutedByHand || Boolean(silent);
   // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
@@ -453,14 +456,14 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
         onClick={() => {
           if (justDragged.current) return;
           // With a picture or text selected, a click beside it lets go of it; otherwise it plays.
-          if (editable(selected)) onSelect(null);
+          if (editable(selected) || still) onSelect(null);
           else playback.toggle();
         }}
       >
         <div
           ref={stageRef}
           className="preview__stage"
-          style={{ "--aspect": stageAspect } as CSSProperties}
+          style={{ "--aspect": stageAspect, background: still?.background } as CSSProperties}
           onPointerUp={(e) => {
             // A shape tile dragged from the right panel and let go here lands centred where the pointer is.
             const item = fxDrag.current;
@@ -510,7 +513,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 stageAspect={stageAspect}
                 stageWidth={stageRef.current?.clientWidth ?? frame.width}
                 visible={t !== null && !trackHidden(clip)}
-                opacity={t === null ? 0 : mix(clip).picture}
+                opacity={t === null ? 0 : mix(clip).picture * (clip.opacity ?? 1)}
                 white={t === null ? 0 : mix(clip).white}
                 shift={t === null ? 0 : mix(clip).shift}
                 lift={t === null ? 0 : mix(clip).lift}
@@ -625,23 +628,28 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 />
               );
             }
+            // Its animation at this moment, as the export draws it (textMotion.ts). Picked and paused, it shows as set: a
+            // text added at the playhead would otherwise sit at its own first moment, invisible, and couldn't be dragged.
+            const lines = textLines(clip.text ?? "", clip.size, frame, clip.font);
+            const pose = motionAt(isSelected && !playing ? undefined : textMotion(clip, lines), time - clip.start, lines);
             return (
               <div
                 key={clip.id}
                 className={textClass(clip, isSelected)}
                 style={{
                   left: `${clip.x * 100}%`,
-                  top: `${clip.y * 100}%`,
+                  top: `calc(${clip.y * 100}% + ${pose.dy * 100}cqh)`,
                   translate: `${-clip.x * 100}% ${-clip.y * 100}%`,
+                  scale: pose.scale,
                   fontSize: `${clip.size * 100}cqh`,
                   color: clip.color,
-                  opacity: fadeAt(clip, time),
+                  opacity: fadeAt(clip, time) * pose.alpha * (clip.opacity ?? 1),
                   ...textFont(clip),
                 }}
                 onPointerDown={beginGesture(clip, "move")}
                 onClick={(e) => e.stopPropagation()}
               >
-                {textLines(clip.text ?? "", clip.size, frame, clip.font)}
+                {pose.text}
                 {isSelected && handles(clip)}
               </div>
             );
@@ -667,7 +675,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             </div>
           ))}
         </div>
-        {nothingHere && duration > 0 && <p className="preview__note">Nothing on the timeline here</p>}
+        {nothingHere && duration > 0 && !still && <p className="preview__note">Nothing on the timeline here</p>}
         {levelShown && <p className="preview__level mono">Volume {Math.round(level * 100)}%</p>}
         {/* While a link stays slow, the message stays between its short waits. */}
         {playing && (playback.waiting || playback.slow) && (
@@ -678,7 +686,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
         )}
       </div>
 
-      {timelineWave.length > 0 && (
+      {timelineWave.length > 0 && !still && (
         <div
           className="preview__wave"
           role="slider"
@@ -698,7 +706,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
         </div>
       )}
 
-      <div className="preview__transport" onClick={(e) => e.stopPropagation()}>
+      <div className="preview__transport" hidden={Boolean(still)} onClick={(e) => e.stopPropagation()}>
         <div className="preview__buttons">
           <button type="button" className="btn btn--icon" aria-label="Previous frame" onClick={() => playback.seek(time - FRAME)}>
             <Icon name="stepBack" size={15} />

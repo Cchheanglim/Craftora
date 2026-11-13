@@ -8,6 +8,7 @@ import {
   DEFAULT_TEXT_LENGTH,
   MAX_CROP,
   MIN_CLIP,
+  MAX_IMAGE_SIDE,
   NO_CROP,
   POSITIONS,
   mainTrack,
@@ -46,6 +47,7 @@ export type ClipPatch = Partial<
     | "effect"
     | "shape"
     | "opacity"
+    | "name"
     | "outline"
     | "aspect"
     | "size"
@@ -58,6 +60,7 @@ export type ClipPatch = Partial<
     | "edge"
     | "edgeColor"
     | "edgeSize"
+    | "anim"
     | "fadeIn"
     | "fadeOut"
     | "soundFadeIn"
@@ -70,6 +73,8 @@ export type EditAction =
   | { type: "importMedia"; item: MediaItem }
   | { type: "removeMedia"; mediaId: string }
   | { type: "setMediaFormat"; mediaId: string; videoFormat?: string; audioFormat?: string }
+  /** Remove background: a photo shows its cut-out (`source`), or its original again (no `source`). */
+  | { type: "cutOut"; mediaId: string; source?: MediaItem["source"] }
   /**
    * Without a track: videos and pictures go to the main track, sound to a free track below it. On
    * a magnetic track `at` picks the slot; elsewhere it's the start time (playhead).
@@ -114,6 +119,10 @@ export type EditAction =
   | { type: "addTrack"; trackId: string; /** Under every other track instead of on top. */ below?: boolean }
   /** Removes a track and every clip on it. */
   | { type: "removeTrack"; trackId: string }
+  /** Image editor: a layer up or down (a track to its new place, counted from the top). */
+  | { type: "moveTrack"; trackId: string; to: number }
+  /** Image editor: the picture's size (pixels) or background colour (#rrggbb). */
+  | { type: "setImage"; patch: Partial<NonNullable<Project["image"]>> }
   /** Magnet on: the track's clips close up and stay back to back. */
   | { type: "setMagnetic"; trackId: string; magnetic: boolean }
   /** Silences or restores a track's clips in both the preview and the export. */
@@ -327,9 +336,43 @@ function trim(clip: Clip, edge: "start" | "end", time: number, sourceLength: num
 }
 
 export function applyEdit(p: Project, action: EditAction): Project {
+  const next = edit(p, action);
+  return next.image ? asLayers(next) : next;
+}
+
+/**
+ * An image's rule (Image editor): every picture, text or shape is a layer, i.e. alone on its track, from the start. A
+ * second clip on a track gets a track of its own just above it.
+ */
+export function asLayers(p: Project): Project {
+  if (p.clips.every((c) => c.start === 0 && p.clips.filter((o) => o.trackId === c.trackId).length === 1)) return p;
+  const tracks: Track[] = [];
+  const clips: Clip[] = [];
+  for (const track of p.tracks) {
+    const [first, ...extra] = p.clips.filter((c) => c.trackId === track.id).sort((a, b) => a.start - b.start);
+    for (const c of extra.reverse()) {
+      const id = `track-${crypto.randomUUID().slice(0, 8)}`;
+      tracks.push({ id, name: "Layer" });
+      clips.push({ ...c, trackId: id, start: 0 });
+    }
+    tracks.push(track);
+    if (first) clips.push({ ...first, start: 0 });
+  }
+  return { ...p, tracks, clips };
+}
+
+function edit(p: Project, action: EditAction): Project {
   switch (action.type) {
     case "importMedia":
       return { ...p, media: [...p.media, action.item] };
+
+    case "cutOut":
+      return {
+        ...p,
+        media: p.media.map((m) =>
+          m.id !== action.mediaId ? m : action.source ? { ...m, source: action.source, original: m.original ?? m.source } : m.original ? { ...m, source: m.original, original: undefined } : m,
+        ),
+      };
 
     case "removeMedia":
       return packMagnetic({
@@ -500,9 +543,9 @@ export function applyEdit(p: Project, action: EditAction): Project {
         first = { ...clip, out: cut };
         second = { ...clip, id: action.newClipId, start: round(action.at), in: cut };
       }
-      // The fade in stays with the first part, the fade out with the second.
-      first = fitFades({ ...first, fadeOut: 0, soundFadeOut: 0 });
-      second = fitFades({ ...second, fadeIn: 0, soundFadeIn: 0, transition: undefined });
+      // The fade in (and a text's in-animation) stays with the first part, the fade out with the second.
+      first = fitFades({ ...first, fadeOut: 0, soundFadeOut: 0, anim: clip.anim && { ...clip.anim, out: undefined } });
+      second = fitFades({ ...second, fadeIn: 0, soundFadeIn: 0, transition: undefined, anim: clip.anim && { ...clip.anim, in: undefined } });
       return { ...p, clips: p.clips.flatMap((c) => (c.id === clip.id ? [first, second] : [c])) };
     }
 
@@ -636,6 +679,21 @@ export function applyEdit(p: Project, action: EditAction): Project {
     case "addTrack":
       if (p.tracks.some((t) => t.id === action.trackId)) return p;
       return withTrack(p, Boolean(action.below), action.trackId).project;
+
+    case "setImage": {
+      if (!p.image) return p;
+      const { width, height, background } = { ...p.image, ...action.patch };
+      const side = (v: number) => clamp(Math.round(v) || 16, 16, MAX_IMAGE_SIDE);
+      return { ...p, image: { width: side(width), height: side(height), background: /^#[0-9a-f]{6}$/i.test(background) ? background : p.image.background } };
+    }
+
+    case "moveTrack": {
+      const track = p.tracks.find((t) => t.id === action.trackId);
+      if (!track) return p;
+      const tracks = p.tracks.filter((t) => t !== track);
+      tracks.splice(clamp(Math.round(action.to), 0, tracks.length), 0, track);
+      return { ...p, tracks };
+    }
 
     case "removeTrack":
       if (!p.tracks.some((t) => t.id === action.trackId)) return p;

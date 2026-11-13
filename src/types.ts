@@ -1,8 +1,10 @@
 import type { LookStep } from "./project/effects";
 import type { Clip } from "./project/model";
+import type { TextMotion } from "./project/textMotion";
 export type OutputKind = "video" | "audio";
 export type VideoContainer = "mp4" | "mkv";
 export type AudioContainer = "mp3" | "wav" | "flac";
+export type ImageContainer = "png" | "jpg";
 export type CutMode = "fast" | "precise";
 
 /** One downloadable stream that yt-dlp reported for a source. */
@@ -75,6 +77,12 @@ export interface Frame {
 
 export interface ExportSettings {
   output: OutputKind;
+  /** Image projects: the picture's file type (PNG when absent); a PNG see-through where no layer covers it; JPG quality
+   * 1–100; the size, times the image's (1 when absent). */
+  imageContainer?: ImageContainer;
+  transparent?: boolean;
+  imageQuality?: number;
+  imageScale?: number;
   videoContainer: VideoContainer;
   audioContainer: AudioContainer;
   /** Only used for a single untouched clip; everything else is re-encoded. */
@@ -117,10 +125,14 @@ export interface RenderSpec {
   width: number;
   height: number;
   fps: number;
-  output: OutputKind;
-  container: VideoContainer | AudioContainer;
+  output: OutputKind | "image";
+  container: VideoContainer | AudioContainer | ImageContainer;
   fileName: string;
   quality: RenderQuality;
+  /** Images: the colour under every layer (#rrggbb); black when absent. A PNG's see-through background; JPG quality. */
+  background?: string;
+  transparent?: boolean;
+  imageQuality?: number;
 }
 
 export type TransitionKind =
@@ -195,6 +207,10 @@ export interface RenderClip {
   /** Text style presets (model.ts `Clip`): the edge's colour and strength. */
   edgeColor?: string;
   edgeSize?: number;
+  /** Pictures and text: an Image editor layer's opacity (shapes draw theirs into `picture`). */
+  opacity?: number;
+  /** Text animations (textMotion.ts), drawn by project.rs as the preview draws them. */
+  motion?: TextMotion;
   /** Shapes: how to draw it (shapes.ts `shapeSvg`); `startRender` turns it into `picture`. */
   shape?: Partial<Pick<Clip, "shape" | "color" | "size" | "aspect" | "x" | "y" | "rotate" | "opacity" | "outline">>;
   /** Shapes: the whole frame as a PNG data URL with the shape drawn on it, laid over the video. */

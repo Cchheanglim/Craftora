@@ -1,0 +1,316 @@
+/*
+ * Photoshop-style vertical Layers panel.
+ * Sits in the right sidebar under Properties.
+ */
+
+.layers-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+/* Dense control rows: Opacity and Lock */
+.layers-panel__control-row {
+  height: 36px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--line);
+  box-sizing: border-box;
+}
+
+.layers-panel__control-label {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.layers-panel__opacity-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.layers-panel__opacity-input {
+  width: 56px;
+  height: 24px;
+  padding: 0 var(--space-1);
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+.layers-panel__opacity-input::-webkit-outer-spin-button,
+.layers-panel__opacity-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.layers-panel__opacity-input:focus {
+  border-color: var(--line-hover);
+}
+
+.layers-panel__opacity-input:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.layers-panel__opacity-unit {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+/* Small square ghost buttons (24x24) */
+.layers-panel__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.layers-panel__icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.layers-panel__icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.layers-panel__icon-btn[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+/* Scrolling layer list */
+.layers-panel__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.layers-panel__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.layers-panel__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.layers-panel__list::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: var(--radius-sm);
+}
+
+.layers-panel__empty {
+  margin: var(--space-3);
+  font-size: 12px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+/* Rows (36px) */
+.layers-panel__row {
+  height: 36px;
+  min-height: 36px;
+  max-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--line-soft);
+  box-sizing: border-box;
+  cursor: pointer;
+  touch-action: none;
+  background: var(--bg-panel);
+  color: var(--text);
+  position: relative;
+}
+
+.layers-panel__row:hover:not(.is-selected):not(.layers-panel__row--bg) {
+  background: var(--bg-hover);
+}
+
+.layers-panel__row.is-selected {
+  background: var(--bg-selected);
+}
+
+.layers-panel__row.is-locked {
+  cursor: default;
+}
+
+.layers-panel__row.is-dragging {
+  opacity: 0.92;
+  cursor: grabbing;
+}
+
+.layers-panel__row:focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: -1px;
+}
+
+/* Dim thumbnail and name when track is hidden */
+.layers-panel__row.is-hidden .layers-panel__thumb,
+.layers-panel__row.is-hidden .layers-panel__name {
+  opacity: 0.4;
+}
+
+.layers-panel__row--bg {
+  cursor: default;
+}
+
+.layers-panel__row--bg:hover {
+  background: transparent;
+}
+
+/* 28x28 Thumbnails */
+.layers-panel__thumb {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--bg-input);
+  color: var(--text-2);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Two linear gradients at 45deg for 8px transparency checkerboard */
+.layers-panel__thumb--checker {
+  background-color: #f2f2f4;
+  background-image:
+    linear-gradient(45deg, #cfcfd3 25%, transparent 25%, transparent 75%, #cfcfd3 75%),
+    linear-gradient(45deg, #cfcfd3 25%, transparent 25%, transparent 75%, #cfcfd3 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+  color: #18181a;
+}
+
+.layers-panel__thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.layers-panel__thumb-text {
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text);
+}
+
+.layers-panel__thumb-bg {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  box-sizing: border-box;
+}
+
+/* Name and inline rename */
+.layers-panel__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layers-panel__name--bg {
+  font-style: italic;
+  color: var(--text-2);
+}
+
+.layers-panel__name-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 var(--space-1);
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 12px;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  outline: none;
+}
+
+.layers-panel__name-input:focus {
+  border-color: var(--line-hover);
+}
+
+.layers-panel__lock-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.layers-panel__eye-placeholder {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+/* 2px horizontal drop indicator line */
+.layers-panel__drop-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--text);
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* Bottom bar (32px, right-aligned icons) */
+.layers-panel__bottom-bar {
+  height: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border-top: 1px solid var(--line);
+  background: var(--bg-panel);
+  box-sizing: border-box;
+}

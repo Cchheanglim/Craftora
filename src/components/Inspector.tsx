@@ -18,6 +18,7 @@ import {
   type Crop,
   type MediaItem,
   type Position,
+  type TextAnim,
   type TextEdge,
   type TextFont,
   type Track,
@@ -30,6 +31,7 @@ import { Icon } from "./Icon";
 import { Select } from "./Select";
 import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustMin, blockLabel, keyLine } from "../project/effects";
 import { SHAPES, shapeLabel } from "../project/shapes";
+import { TEXT_IN, TEXT_OUT, TEXT_LOOP } from "../project/textMotion";
 import "./Inspector.css";
 
 const TEXT_COLORS = [
@@ -81,6 +83,15 @@ interface InspectorProps {
   onPickColour?: () => void;
   /** Text tab with something else picked: a new text at the playhead (its letter height, or the usual). */
   onAddText?: (size?: number) => void;
+  /** Plays `seconds` of the timeline from `from` once, to show a text animation just picked. */
+  onPreview?: (from: number, seconds: number) => void;
+  /** Remove background (a photo on this PC): runs the AI, saying what it's doing; Restore brings the photo back. */
+  onCutOut?: (onStatus: (text: string) => void) => Promise<void>;
+  onRestore?: () => void;
+  /** While held: the preview shows the photo as it was before its cut-out. */
+  onPeek?: (on: boolean) => void;
+  /** The Image editor: nothing about time (fades, sound, animations, Split). */
+  still?: boolean;
   /** What the editor calls the clip's track ("Track 2"). */
   trackName: string;
   canSplit: boolean;
@@ -108,6 +119,11 @@ export function Inspector({
   onRelink,
   onPickColour,
   onAddText,
+  onPreview,
+  still,
+  onCutOut,
+  onRestore,
+  onPeek,
   trackName,
   canSplit,
 }: InspectorProps) {
@@ -134,6 +150,7 @@ export function Inspector({
       ) : (
         <>
           <TextStyles clip={clip} onChange={onChange} />
+          {!still && <TextAnimations clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} onPreview={onPreview} />}
           <Slider id="insp-text-size" label="Size" min={0.02} max={0.3} step={0.005} value={clip.size} format={pct} onCheckpoint={onCheckpoint} onChange={(size) => onChange({ size }, true)} />
           <ColorField color={clip.color} onChange={(color, live) => onChange({ color }, live)} onCheckpoint={onCheckpoint} />
           <fieldset className="insp__field">
@@ -186,7 +203,12 @@ export function Inspector({
         <p className="insp__hint">Clearer, brighter and more vivid in one click: dark parts lifted, bright parts held back, a little more colour and sharpness.</p>
       </>
     ),
-    background: isPicture && <RemoveColour clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} onPick={onPickColour} />,
+    background: isPicture && (
+      <>
+        {media && (media.original || onCutOut) && <RemoveBackground cutOut={Boolean(media.original)} onCutOut={onCutOut} onRestore={onRestore} onPeek={onPeek} />}
+        <RemoveColour clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} onPick={onPickColour} />
+      </>
+    ),
     speed: moving && (
       <>
         <div className="insp__field">
@@ -220,10 +242,12 @@ export function Inspector({
           {isBlock ? (clip.look || clip.effect ? `${clip.look ? "Filter" : "Effect"}: ${blockLabel(clip)}` : blockLabel(clip)) : isShape ? `Shape: ${shapeLabel(clip.shape)}` : isText ? "Text" : (media?.name ?? "Clip")}
         </h2>
       </header>
-      <p className="insp__meta">
-        {trackName} · <span className="mono">{formatClock(clip.start)}</span> → <span className="mono">{formatClock(clipEnd(clip))}</span> ·{" "}
-        <span className="mono">{formatClock(length)}</span> long
-      </p>
+      {!still && (
+        <p className="insp__meta">
+          {trackName} · <span className="mono">{formatClock(clip.start)}</span> → <span className="mono">{formatClock(clipEnd(clip))}</span> ·{" "}
+          <span className="mono">{formatClock(length)}</span> long
+        </p>
+      )}
       {media?.missing && (
         <p className="insp__warn">
           <Icon name="alert" size={13} />
@@ -276,7 +300,7 @@ export function Inspector({
                 ),
             )}
 
-          {onDuration && (
+          {onDuration && !still && (
             <div className="insp__slider">
               <label htmlFor="insp-duration">Duration</label>
               <input
@@ -468,7 +492,7 @@ export function Inspector({
             </div>
           )}
 
-          {!isBlock && (
+          {!isBlock && !still && (
           <fieldset className="insp__group">
             <legend>Fade</legend>
             <Slider id="insp-fade-in" label="In" min={0} max={maxFade} step={0.1} value={clip.fadeIn} format={sec} onCheckpoint={onCheckpoint} onChange={(fadeIn) => onChange({ fadeIn }, true)} />
@@ -478,6 +502,7 @@ export function Inspector({
 
           {!isText &&
             !isShape &&
+            !still &&
             !isImage &&
             !isBlock &&
             (hasSound ? (
@@ -566,10 +591,12 @@ export function Inspector({
           )}
 
           <div className="insp__actions">
-            <button type="button" className="btn btn--secondary" onClick={onSplit} disabled={!canSplit} title="Split at the playhead (S)">
-              <Icon name="scissors" size={14} />
-              Split
-            </button>
+            {!still && (
+              <button type="button" className="btn btn--secondary" onClick={onSplit} disabled={!canSplit} title="Split at the playhead (S)">
+                <Icon name="scissors" size={14} />
+                Split
+              </button>
+            )}
             <button type="button" className="btn btn--secondary" onClick={onDuplicate} title="Duplicate (Ctrl+D)">
               <Icon name="copy" size={14} />
               Duplicate
@@ -589,7 +616,7 @@ export function Inspector({
 type Look = { color?: string; font?: TextFont; edge?: TextEdge };
 
 /** A few quick colours, and any colour on the wheel (open already when the colour is none of the quick ones). */
-function ColorField({ color, onChange, onCheckpoint }: { color?: string; onChange: (color: string, live?: boolean) => void; onCheckpoint?: () => void }) {
+export function ColorField({ color, onChange, onCheckpoint }: { color?: string; onChange: (color: string, live?: boolean) => void; onCheckpoint?: () => void }) {
   const current = color ?? "#ffffff";
   const [wheel, setWheel] = useState(() => !TEXT_COLORS.some((c) => c.value === current));
   return (
@@ -731,6 +758,63 @@ const KEY_COLOURS = [
 export const KEY_START = { strength: 50, softness: 20 };
 
 /** Remove a colour (chroma key): a green or blue screen, or any colour picked on the preview, and how much goes. */
+/** Background tab, for a photo: the AI finds its subject and the rest turns see-through (lib/cutout.ts). */
+function RemoveBackground({
+  cutOut,
+  onCutOut,
+  onRestore,
+  onPeek,
+}: {
+  cutOut: boolean;
+  onCutOut?: (onStatus: (text: string) => void) => Promise<void>;
+  onRestore?: () => void;
+  onPeek?: (on: boolean) => void;
+}) {
+  const [status, setStatus] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const run = () => {
+    setFailed(null);
+    setStatus("Getting ready…");
+    onCutOut?.(setStatus)
+      .catch((err) => setFailed(err instanceof Error ? err.message : String(err)))
+      .finally(() => setStatus(null));
+  };
+  return (
+    <fieldset className="insp__group">
+      <legend>Remove background</legend>
+      {cutOut ? (
+        <div className="insp__actions">
+          <button
+            type="button"
+            className="btn btn--secondary"
+            onPointerDown={() => onPeek?.(true)}
+            onPointerUp={() => onPeek?.(false)}
+            onPointerLeave={() => onPeek?.(false)}
+            onKeyDown={(e) => (e.key === " " || e.key === "Enter") && onPeek?.(true)}
+            onKeyUp={() => onPeek?.(false)}
+            onBlur={() => onPeek?.(false)}
+          >
+            <Icon name="eye" size={14} />
+            Hold to see the original
+          </button>
+          <button type="button" className="btn btn--secondary" onClick={onRestore}>
+            <Icon name="undo" size={14} />
+            Restore
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="btn btn--secondary" disabled={status !== null} onClick={run}>
+          <Icon name="wand" size={14} />
+          Remove background
+        </button>
+      )}
+      {status && <p className="insp__hint">{status}</p>}
+      {failed && <p className="insp__hint">Couldn't remove the background: {failed}</p>}
+      {!cutOut && !status && <p className="insp__hint">Finds the subject and makes the rest see-through, on this PC. The AI model (170 MB) downloads the first time.</p>}
+    </fieldset>
+  );
+}
+
 function RemoveColour({ clip, onChange, onCheckpoint, onPick }: { clip: Clip; onChange: (patch: ClipPatch, live?: boolean) => void; onCheckpoint: () => void; onPick?: () => void }) {
   const key = clip.chroma;
   return (
@@ -813,6 +897,79 @@ function TextStyles({ clip, onChange }: { clip: Clip; onChange: (patch: ClipPatc
           </button>
         ))}
       </div>
+    </fieldset>
+  );
+}
+
+/** Text tab: how the text comes in, goes out and moves while shown (textMotion.ts), as tiles that show each move. */
+function TextAnimations({
+  clip,
+  onChange,
+  onCheckpoint,
+  onPreview,
+}: {
+  clip: Clip;
+  onChange: (patch: ClipPatch, live?: boolean) => void;
+  onCheckpoint: () => void;
+  onPreview?: (from: number, seconds: number) => void;
+}) {
+  const [part, setPart] = useState<keyof TextAnim>("in");
+  const anim = clip.anim ?? {};
+  // No part left: no `anim` at all, as before any was picked.
+  const set = (next: TextAnim, live?: boolean) => onChange({ anim: next.in || next.out || next.loop ? next : undefined }, live);
+  const on = anim[part];
+  const items = part === "in" ? TEXT_IN : part === "out" ? TEXT_OUT : TEXT_LOOP;
+  const sec = (v: number) => `${v.toFixed(1)} s`;
+  // A new pick plays once in the preview, as the popular editor does: the in or a loop from the start, the out to the end.
+  const pick = (item?: (typeof items)[number]) => {
+    if (on?.kind === item?.kind) return;
+    set({ ...anim, [part]: item && ("period" in item ? { kind: item.kind, period: item.period } : { kind: item.kind, length: item.length }) } as TextAnim);
+    if (!item) return;
+    const seconds = Math.min(clipLength(clip), "period" in item ? item.period : item.length);
+    onPreview?.(part === "out" ? clipEnd(clip) - seconds : clip.start, seconds);
+  };
+  return (
+    <fieldset className="insp__group">
+      <legend>Animation</legend>
+      <div className="segmented" role="group" aria-label="Animation">
+        {(["in", "out", "loop"] as const).map((p) => (
+          <button key={p} type="button" aria-pressed={part === p} onClick={() => setPart(p)}>
+            {{ in: "In", out: "Out", loop: "Loop" }[p]}
+            {anim[p] && " •"}
+          </button>
+        ))}
+      </div>
+      <div className="insp__styles">
+        {[undefined, ...items].map((item) => (
+          <button
+            key={item?.kind ?? "none"}
+            type="button"
+            className="insp__style"
+            aria-pressed={on?.kind === item?.kind}
+            // A new kind starts at its own length (typewriter's is longer).
+            onClick={() => pick(item)}
+          >
+            <span className={`insp__anim-sample${item ? ` is-${part}-${item.kind}` : ""}`}>Aa</span>
+            <span>{item?.label ?? "None"}</span>
+          </button>
+        ))}
+      </div>
+      {on &&
+        ("period" in on ? (
+          <Slider id="insp-anim-period" label="Speed" min={0.3} max={3} step={0.1} value={on.period} format={sec} onCheckpoint={onCheckpoint} onChange={(period) => set({ ...anim, loop: { ...on, period } }, true)} />
+        ) : (
+          <Slider
+            id="insp-anim-length"
+            label="Length"
+            min={0.1}
+            max={Math.max(0.1, Math.floor(clipLength(clip) * 10) / 10)}
+            step={0.1}
+            value={on.length}
+            format={sec}
+            onCheckpoint={onCheckpoint}
+            onChange={(length) => set({ ...anim, [part]: { ...on, length } } as TextAnim, true)}
+          />
+        ))}
     </fieldset>
   );
 }

@@ -33,15 +33,28 @@ export interface MediaPanelProps {
   onRecordVoice?: () => void;
   /** The Filters, Effects, Transitions and Shapes tiles (FxPanel), drawn in their tabs here. */
   fx: (tab: FxTab) => ReactNode;
+  /** The Image editor: its own Text and Size tabs instead of Audio and Transitions. */
+  still?: { text: ReactNode; size: ReactNode };
+  /** The Image editor's tool strip picked this tab: shown alone, without the panel's own tab row. */
+  only?: Tab;
 }
 
-const TABS: { id: "media" | "audio" | FxTab; label: string; icon: IconName }[] = [
+export type Tab = "media" | "audio" | "text" | "size" | FxTab;
+const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: "media", label: "Media", icon: "film" },
   { id: "audio", label: "Audio", icon: "music" },
   { id: "filters", label: "Filters", icon: "blend" },
   { id: "effects", label: "Effects", icon: "sparkle" },
   { id: "transitions", label: "Transitions", icon: "transition" },
   { id: "shapes", label: "Shapes", icon: "star" },
+];
+const STILL_TABS: { id: Tab; label: string; icon: IconName }[] = [
+  { id: "media", label: "Media", icon: "image" },
+  { id: "text", label: "Text", icon: "text" },
+  { id: "shapes", label: "Shapes", icon: "star" },
+  { id: "filters", label: "Filters", icon: "blend" },
+  { id: "effects", label: "Effects", icon: "sparkle" },
+  { id: "size", label: "Size", icon: "crop" },
 ];
 
 export function MediaPanel({
@@ -58,8 +71,11 @@ export function MediaPanel({
   usedMedia,
   onRecordVoice,
   fx,
+  still,
+  only,
 }: MediaPanelProps) {
-  const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("media");
+  const [picked, setTab] = useState<Tab>("media");
+  const tab = only ?? picked;
   const visuals = media.filter((m) => m.hasVideo);
   const sounds = media.filter((m) => !m.hasVideo);
 
@@ -132,9 +148,15 @@ export function MediaPanel({
 
   return (
     <section className="media-panel" aria-label="Media and audio">
-      <IconTabs tabs={TABS} value={tab} onPick={setTab} label="Media and audio" idPrefix="media-panel-tab" />
+      {!only && <IconTabs tabs={still ? STILL_TABS : TABS} value={tab} onPick={setTab} label="Media and audio" idPrefix="media-panel-tab" />}
 
-      {tab !== "media" && tab !== "audio" && (
+      {(tab === "text" || tab === "size") && (
+        <div className="media-panel__fx" id="media-panel-body" role="tabpanel" aria-labelledby={`media-panel-tab-${tab}`}>
+          {still?.[tab]}
+        </div>
+      )}
+
+      {tab !== "media" && tab !== "audio" && tab !== "text" && tab !== "size" && (
         <div className="media-panel__fx" id="media-panel-body" role="tabpanel" aria-labelledby={`media-panel-tab-${tab}`}>
           {fx(tab)}
         </div>

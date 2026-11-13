@@ -70,6 +70,8 @@ export interface MediaItem {
   id: string;
   name: string;
   source: MediaSource;
+  /** Remove background: the photo before its cut-out (`source`), for Restore. */
+  original?: MediaSource;
   hasVideo: boolean;
   hasAudio: boolean;
   /** Links: the yt-dlp format used when the picture is needed. */
@@ -195,7 +197,7 @@ export interface Clip {
   effectSpeed?: number;
   /** A shape clip: shapes.ts `SHAPES`. */
   shape?: ShapeId;
-  /** Shape clips: 0–1 (1 when absent). */
+  /** Shapes, pictures and text (an Image editor layer's opacity): 0–1 (1 when absent). */
   opacity?: number;
   /** Shape clips: 0 or absent = filled; > 0 = outline only, its thickness as a share of the frame height. */
   outline?: number;
@@ -231,6 +233,21 @@ export interface Clip {
    * longer shadow; 1 when absent). Absent both, text draws exactly as before them. */
   edgeColor?: string;
   edgeSize?: number;
+  /** A layer's own name (Image editor); its text, shape or file name when absent. */
+  name?: string;
+  /** Text animations (Text tab → Animation; drawn by textMotion.ts); still text when absent. */
+  anim?: TextAnim;
+}
+
+export type TextIn = "fade" | "pop" | "slide-up" | "typewriter";
+export type TextOut = "fade" | "shrink";
+export type TextLoop = "bounce" | "pulse";
+
+/** How a text comes in and goes out (each over `length` seconds), and how it moves while shown (once every `period` seconds). */
+export interface TextAnim {
+  in?: { kind: TextIn; length: number };
+  out?: { kind: TextOut; length: number };
+  loop?: { kind: TextLoop; period: number };
 }
 
 /** The colour a clip's picture loses (#rrggbb), how much of it goes and how soft its edges are (0–100 each; effects.ts `keyLine`). */
@@ -283,6 +300,8 @@ export interface Project {
   captionLayout?: CaptionLayout;
   /** Cover (on the main track): the project's picture (a JPEG data URL), also built into exported videos. */
   cover?: string;
+  /** An image (the Image editor): its size in pixels and background colour (#rrggbb); a video when absent. */
+  image?: { width: number; height: number; background: string };
 }
 
 /** `x`/`y` as for text clips; `size`: letter height as a fraction of the frame. The look is as for text clips. */
@@ -454,6 +473,26 @@ export function transitionMix(
 
 export function projectDuration(p: Project): number {
   return p.clips.reduce((max, c) => Math.max(max, clipEnd(c)), 0);
+}
+
+/** Image editor sizes (Size tab), in pixels. */
+export const IMAGE_SIZES = [
+  { id: "square", label: "Square post", width: 1080, height: 1080 },
+  { id: "portrait", label: "Portrait post", width: 1080, height: 1350 },
+  { id: "story", label: "Story", width: 1080, height: 1920 },
+  { id: "landscape", label: "Landscape", width: 1920, height: 1080 },
+  { id: "thumbnail", label: "Video thumbnail", width: 1280, height: 720 },
+  { id: "a4", label: "A4 print", width: 2480, height: 3508 },
+] as const;
+/** The largest side an image may have (project.rs `validate`). */
+export const MAX_IMAGE_SIDE = 8192;
+
+/** A new, empty image (Image editor). */
+export const newImageProject = (width = 1080, height = 1080, background = "#ffffff"): Project => ({ ...emptyProject(), image: { width, height, background } });
+
+/** An image's layers, top first: each track with its one clip (actions.ts `asLayers`); empty tracks left out. */
+export function layersOf(p: Project): { track: Track; clip: Clip }[] {
+  return p.tracks.flatMap((track) => p.clips.filter((c) => c.trackId === track.id).map((clip) => ({ track, clip })));
 }
 
 export function emptyProject(): Project {

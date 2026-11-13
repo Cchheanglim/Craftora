@@ -2,7 +2,7 @@ import type { EngineStatus } from "../lib/engine";
 import { Icon } from "./Icon";
 import "./Sidebar.css";
 
-export type View = "home" | "editor" | "projects" | "media" | "downloads" | "history" | "library" | "settings";
+export type View = "home" | "editor" | "image" | "projects" | "media" | "downloads" | "history" | "library" | "settings";
 
 /** Something running now, for the "Working on" box: a download, export, recording or captions. */
 export interface Activity {
@@ -46,6 +46,7 @@ export function Sidebar({
       items: [
         { id: "home" as const, label: "Home", icon: "logo" as const },
         { id: "editor" as const, label: "Editor", icon: "scissors" as const },
+        { id: "image" as const, label: "Image editor", icon: "image" as const },
         { id: "projects" as const, label: "Projects", icon: "grid" as const },
       ],
     },

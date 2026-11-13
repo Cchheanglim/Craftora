@@ -18,6 +18,8 @@ export interface ProjectEntry {
   clips: number;
   /** The first picture in the project (see `MediaSource.thumbnail`). */
   thumbnail?: string;
+  /** Made in the Image editor (opens there, and shows as an image in Projects). */
+  image?: boolean;
 }
 
 export interface SavedProject extends ProjectEntry {

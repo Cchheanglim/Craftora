@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AudioContainer, ExportSettings, VideoContainer } from "../types";
 import { FRAMES, formatSize, type ExportPlan } from "../project/exportPlan";
 import { Icon } from "./Icon";
+import { ImageExportOptions } from "./ImageExportOptions";
 import { useConfirm } from "./ConfirmDialog";
 import { Select } from "./Select";
 import { BrandIcon, type Brand } from "./BrandIcon";
@@ -28,6 +29,8 @@ interface ExportPanelProps {
   fastEncoder: string | null;
   /** A preset: picks the frame and sets every picture to fill it (or to fit). */
   onPreset: (frameId: string, fill: boolean) => void;
+  /** An image (Image editor), its size: PNG or JPG options, nothing about video or cutting. */
+  still?: { width: number; height: number };
   /** The selected clip's settings, shown above the export settings. */
 }
 
@@ -55,12 +58,13 @@ export function ExportPanel({
   onChooseOutputDir,
   fastEncoder,
   onPreset,
+  still,
 }: ExportPanelProps) {
   const [copied, setCopied] = useState(false);
   const [moreBelow, setMoreBelow] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  const isVideo = settings.output === "video";
+  const isVideo = !still && settings.output === "video";
   const ready = plan.kind !== "empty";
 
   // Show the "More settings below" bar while the end of the settings is out of view.
@@ -131,6 +135,9 @@ export function ExportPanel({
       <div ref={bodyRef} className="export__body">
         <h2 className="export__title">Export</h2>
 
+        {still ? (
+          <ImageExportOptions settings={settings} onChange={onChange} image={still} />
+        ) : (
         <fieldset>
           <legend className="section-label">Output</legend>
           <div className="export__output">
@@ -164,6 +171,7 @@ export function ExportPanel({
             )}
           </div>
         </fieldset>
+        )}
 
         {isVideo && hasPicture && (
           <fieldset>
@@ -215,6 +223,7 @@ export function ExportPanel({
           </fieldset>
         )}
 
+        {!still && (
         <fieldset>
           <legend className="section-label">Cut mode</legend>
           {cutModeApplies ? (
@@ -241,6 +250,7 @@ export function ExportPanel({
             </p>
           )}
         </fieldset>
+        )}
 
         {ready && (
           <details className="export__command">

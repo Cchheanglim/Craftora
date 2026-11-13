@@ -18,6 +18,8 @@ use crate::local::{normalize, OpenedFiles};
 pub(crate) enum Output {
     Video,
     Audio,
+    /// One still picture (the Image editor); timeline renders only.
+    Image,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq)]
@@ -28,6 +30,8 @@ pub(crate) enum Container {
     Mp3,
     Wav,
     Flac,
+    Png,
+    Jpg,
 }
 
 impl Container {
@@ -38,10 +42,15 @@ impl Container {
             Container::Mp3 => "mp3",
             Container::Wav => "wav",
             Container::Flac => "flac",
+            Container::Png => "png",
+            Container::Jpg => "jpg",
         }
     }
     pub(crate) fn is_video(self) -> bool {
         matches!(self, Container::Mp4 | Container::Mkv)
+    }
+    pub(crate) fn is_image(self) -> bool {
+        matches!(self, Container::Png | Container::Jpg)
     }
 }
 
@@ -265,7 +274,7 @@ pub async fn start_job(app: AppHandle, spec: JobSpec) -> Result<(), String> {
     if spec.end <= spec.start || spec.start < 0.0 {
         return Err("The clip range is empty.".into());
     }
-    if (spec.output == Output::Video) != spec.container.is_video() {
+    if (spec.output == Output::Video) != spec.container.is_video() || spec.output == Output::Image || spec.container.is_image() {
         return Err("That file type doesn't match the output.".into());
     }
     if spec.local {
@@ -663,7 +672,8 @@ async fn run_simple_in(app: &AppHandle, spec: &JobSpec, dir: &Path, work: &Path)
         precise: spec.cut_mode == CutMode::Precise,
         target: match spec.output {
             Output::Video => DownloadTarget::Video(ext),
-            Output::Audio => DownloadTarget::Audio(ext),
+            // An image never gets here (`start_job` refuses it).
+            Output::Audio | Output::Image => DownloadTarget::Audio(ext),
         },
     };
     let downloaded = download(app, &spec.id, &request, work, "download").await?;

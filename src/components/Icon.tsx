@@ -291,6 +291,9 @@ const paths = {
   ),
   snowflake: <path d="M12 2v20M4.9 7l14.2 10M4.9 17 19.1 7M9 4l3 2 3-2M9 20l3-2 3 2" />,
   crop: <path d="M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2" />,
+  // Image editor tools: the move arrow and the hand that pans the picture.
+  pointer: <path d="m5 3 14 8-6 2-2 6L5 3Z" />,
+  hand: <path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11.5v-8a1.5 1.5 0 0 1 3 0V12M14 11.5V5.5a1.5 1.5 0 0 1 3 0V14M8 13V10a1.5 1.5 0 0 0-3 0v4a7 7 0 0 0 7 7h1a7 7 0 0 0 4-1.5 6 6 0 0 0 2-4.5V9.5a1.5 1.5 0 0 0-3 0" />,
   eyedropper: <path d="m2 22 1-1h3l9-9M3 21v-3l9-9M15 6l3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" />,
   flip: <path d="M12 3v18M8 7l-5 5 5 5V7ZM16 7l5 5-5 5V7Z" />,
 } as const;

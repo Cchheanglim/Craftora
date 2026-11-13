@@ -361,3 +361,144 @@
   text-shadow: none;
   background: var(--edge-color, rgb(0 0 0 / 0.6));
 }
+
+/* Text → Animation: animated samples in tiles, resting a moment between cycles. */
+.insp__anim-sample {
+  display: inline-block;
+  font-family: "Segoe UI", var(--font-ui);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.insp__anim-sample.is-in-fade {
+  animation: insp-in-fade 1.8s ease-out infinite;
+}
+
+.insp__anim-sample.is-in-pop {
+  animation: insp-in-pop 1.8s ease-out infinite;
+}
+
+.insp__anim-sample.is-in-slide-up {
+  animation: insp-in-slide-up 1.8s ease-out infinite;
+}
+
+.insp__anim-sample.is-in-typewriter {
+  animation: insp-in-typewriter 1.8s steps(2, end) infinite;
+}
+
+.insp__anim-sample.is-out-fade {
+  animation: insp-out-fade 1.8s ease-out infinite;
+}
+
+.insp__anim-sample.is-out-shrink {
+  animation: insp-out-shrink 1.8s ease-out infinite;
+}
+
+.insp__anim-sample.is-loop-bounce {
+  animation: insp-loop-bounce 1.8s ease-in-out infinite;
+}
+
+.insp__anim-sample.is-loop-pulse {
+  animation: insp-loop-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes insp-in-fade {
+  0% {
+    opacity: 0;
+  }
+  50%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes insp-in-pop {
+  0% {
+    transform: scale(0);
+  }
+  35% {
+    transform: scale(1.1);
+  }
+  50%,
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes insp-in-slide-up {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  50%,
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes insp-in-typewriter {
+  0% {
+    clip-path: inset(0 100% 0 0);
+  }
+  50%,
+  100% {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes insp-out-fade {
+  0%,
+  20% {
+    opacity: 1;
+  }
+  60%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes insp-out-shrink {
+  0%,
+  20% {
+    transform: scale(1);
+  }
+  60%,
+  100% {
+    transform: scale(0);
+  }
+}
+
+@keyframes insp-loop-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes insp-loop-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  25% {
+    transform: scale(1.08);
+  }
+  50% {
+    transform: scale(1);
+  }
+  75% {
+    transform: scale(0.92);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .insp__anim-sample {
+    animation: none;
+  }
+}
+

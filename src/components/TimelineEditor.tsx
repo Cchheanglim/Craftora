@@ -2,6 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties,
 import { createPortal } from "react-dom";
 import { FPS } from "../project/exportPlan";
 import { shapeLabel } from "../project/shapes";
+import { animSpans } from "../project/textMotion";
 import { MIN_CLIP, SPEEDS, TRANSITION_KINDS, clipEnd, clipLength, clipPeaks, isBlock, mainTrack, showsPicture, mediaTimeAt, previousOnTrack, trackLabel, trackSilent, transitionLength, type Clip, type MediaItem, type Project, type Track, type TrackSize } from "../project/model";
 import { LOOKS, PICTURE_EFFECTS, blockLabel, type FxItem } from "../project/effects";
 import { packedTrack, slotOn } from "../project/actions";
@@ -1121,6 +1122,10 @@ export function TimelineEditor({
                         )}
                         {clip.fadeIn > 0 && <span className="tl__fade is-in" style={{ width: clip.fadeIn * pps }} aria-hidden="true" />}
                         {clip.fadeOut > 0 && <span className="tl__fade is-out" style={{ width: clip.fadeOut * pps }} aria-hidden="true" />}
+                        {/* A text's animations: where the in and the out play, and a loop along the whole clip. */}
+                        {clip.anim?.in && <span className="tl__anim is-in" style={{ width: animSpans(clip).in * pps }} aria-hidden="true" />}
+                        {clip.anim?.out && <span className="tl__anim is-out" style={{ width: animSpans(clip).out * pps }} aria-hidden="true" />}
+                        {clip.anim?.loop && <span className="tl__anim is-loop" aria-hidden="true" />}
                         {overlap(clip) > 0 && clip.transition && (
                           <span
                             className={selectedTransition === clip.id ? "tl__trans is-selected" : "tl__trans"}

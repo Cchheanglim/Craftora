@@ -4,6 +4,7 @@ mod captions;
 mod diag;
 mod encoders;
 mod engine;
+mod cutout;
 mod fonts;
 mod jobs;
 mod live;
@@ -167,6 +168,9 @@ pub fn run() {
             notify::notify,
             speech::make_captions,
             fonts::font_file,
+            cutout::cutout_model,
+            cutout::save_cutout,
+            cutout::cutout_source,
             speech::cancel_captions,
             store::save_snapshot,
             store::save_voice,

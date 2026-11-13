@@ -102,6 +102,11 @@
   box-shadow: inset 0 1px 0 var(--glass-hi), var(--glass-shadow);
 }
 
+/* The top bar sits over the editor: its long shadow darkened the top of a bright picture (a white image, a sunny video). */
+:root[data-theme] .toolbar {
+  box-shadow: inset 0 1px 0 var(--glass-hi), 0 8px 16px -8px rgb(0 0 0 / 0.5);
+}
+
 :root[data-theme] .preview {
   padding: 10px;
 }
