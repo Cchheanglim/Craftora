@@ -107,6 +107,13 @@ export function MediaPanel({
         play={item.hasVideo && !item.source.image && !item.source.previewHls && !item.source.live && item.source.previewUrl ? () => Promise.resolve(item.source.hoverUrl || item.source.previewUrl) : undefined}
       />
     );
+    // The Image editor: a click adds the photo as a layer.
+    if (still)
+      return (
+        <button type="button" className="media-panel__picture" aria-label={`Add ${item.name} as a layer`} onClick={() => onAddMedia(item.id)}>
+          {thumb}
+        </button>
+      );
     if (!onChangePicture) return thumb;
     return (
       <button type="button" className="media-panel__picture" aria-label={`Change the picture of ${item.name}`} onClick={() => onChangePicture(item.id)}>
@@ -135,7 +142,7 @@ export function MediaPanel({
           <Icon name="download" size={14} />
         </button>
       )}
-      <button type="button" className="btn btn--icon" aria-label={`Add ${item.name} to the timeline`} title="Add to the timeline" onClick={() => onAddMedia(item.id)}>
+      <button type="button" className="btn btn--icon" aria-label={still ? `Add ${item.name} as a layer` : `Add ${item.name} to the timeline`} title={still ? "Add as a layer" : "Add to the timeline"} onClick={() => onAddMedia(item.id)}>
         <Icon name="plus" size={14} />
       </button>
       {!usedMedia.has(item.id) && (
@@ -176,7 +183,7 @@ export function MediaPanel({
               )}
               <h2 className="section-label media-panel__label">In this project · {visuals.length}</h2>
               {visuals.length === 0 ? (
-                <p className="media-panel__hint">Import videos or pictures from this PC, or paste a link at the top.</p>
+                <p className="media-panel__hint">{still ? "Import pictures from this PC, then click one to add it as a layer." : "Import videos or pictures from this PC, or paste a link at the top."}</p>
               ) : (
                 <ul className="media-panel__grid">
                   {visuals.map((item) => (

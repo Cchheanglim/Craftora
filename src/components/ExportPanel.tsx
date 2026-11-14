@@ -81,6 +81,8 @@ export function ExportPanel({
   // What the file will be, before it's queued: quality, how it's made, size, where it goes.
   const confirmAdd = async () => {
     if (plan.kind === "empty") return;
+    // A picture saves straight away: the questions below are about video and sound.
+    if (still) return onAddToQueue();
     const how =
       plan.kind === "simple"
         ? !isVideo
@@ -319,7 +321,7 @@ export function ExportPanel({
         )}
         <button type="button" className="btn btn--primary export__add" onClick={() => void confirmAdd()} disabled={!ready}>
           <span key={queuedCount} className={queuedCount > 0 ? "export__add-label is-queued" : "export__add-label"}>
-            Add to queue
+            {still ? `Save ${plan.kind === "empty" ? "picture" : (plan.fileName.split(".").pop() ?? "").toUpperCase()}` : "Add to queue"}
           </span>
           <kbd>Ctrl ↵</kbd>
         </button>

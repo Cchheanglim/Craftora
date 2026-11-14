@@ -123,3 +123,31 @@
 .toolbar__error.is-info > svg {
   color: var(--text-3);
 }
+
+/* Image editor: the picture's name and size where the link box was, and the middle kept for the do-anything box */
+.toolbar__doc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.toolbar__doc-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar__doc-size {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font: 400 11.5px/1.4 var(--font-mono);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.toolbar__form--image {
+  justify-content: center;
+}

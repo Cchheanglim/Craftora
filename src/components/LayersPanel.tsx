@@ -21,7 +21,7 @@ interface DragInfo {
   dropIndex: number;
 }
 
-function layerName(clip: Clip, project: Project): string {
+export function layerName(clip: Clip, project: Project): string {
   if (clip.name) return clip.name;
   if (clip.mediaId) {
     const media = project.media.find((m) => m.id === clip.mediaId);
@@ -47,53 +47,6 @@ export function LayersPanel({
   const layers = layersOf(project);
   const selectedClip = selectedId ? project.clips.find((c) => c.id === selectedId) ?? null : null;
   const selectedTrack = selectedClip ? project.tracks.find((t) => t.id === selectedClip.trackId) ?? null : null;
-
-  // Opacity row state (clamped 0-100)
-  const [opacityText, setOpacityText] = useState("100");
-  useEffect(() => {
-    if (selectedClip) {
-      setOpacityText(String(Math.round((selectedClip.opacity ?? 1) * 100)));
-    } else {
-      setOpacityText("100");
-    }
-  }, [selectedClip?.id, selectedClip?.opacity]);
-
-  const applyOpacity = (val: string) => {
-    if (!selectedClip) return;
-    const num = Number(val);
-    const clamped = Number.isNaN(num)
-      ? Math.round((selectedClip.opacity ?? 1) * 100)
-      : Math.min(100, Math.max(0, Math.round(num)));
-    setOpacityText(String(clamped));
-    // Leaving the field unchanged isn't an edit (no empty Undo step).
-    if (clamped === Math.round((selectedClip.opacity ?? 1) * 100)) return;
-    api.edit({
-      type: "updateClip",
-      clipId: selectedClip.id,
-      patch: { opacity: clamped / 100 },
-    });
-  };
-
-  const handleOpacityKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!selectedClip) return;
-    if (e.key === "Enter") {
-      e.preventDefault();
-      applyOpacity(opacityText);
-      e.currentTarget.blur();
-    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-      e.preventDefault();
-      const delta = (e.shiftKey ? 10 : 1) * (e.key === "ArrowUp" ? 1 : -1);
-      const num = Number(opacityText);
-      const cur = Number.isNaN(num) ? Math.round((selectedClip.opacity ?? 1) * 100) : num;
-      const next = Math.min(100, Math.max(0, Math.round(cur + delta)));
-      setOpacityText(String(next));
-      api.edit({
-        type: "updateClip",
-        clipId: selectedClip.id,
-        patch: { opacity: next / 100 },
-      });
-    }
-  };
 
   // Inline rename state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -243,57 +196,116 @@ export function LayersPanel({
 
   return (
     <section className="layers-panel" aria-label="Layers">
-      {/* Opacity row */}
-      <div className="layers-panel__control-row">
-        <label htmlFor="layers-opacity-input" className="layers-panel__control-label">
-          Opacity
-        </label>
-        <div className="layers-panel__opacity-wrap">
-          <input
-            id="layers-opacity-input"
-            type="number"
-            min={0}
-            max={100}
-            step={1}
-            className="layers-panel__opacity-input"
-            value={selectedClip ? opacityText : "100"}
-            disabled={!selectedClip}
-            onChange={(e) => setOpacityText(e.target.value)}
-            onKeyDown={handleOpacityKeyDown}
-            onBlur={() => applyOpacity(opacityText)}
-          />
-          <span className="layers-panel__opacity-unit" aria-hidden="true">
-            %
-          </span>
+      {/* Header row */}
+      <div className="layers-panel__header">
+        <div className="layers-panel__header-left">
+          <span className="layers-panel__title">Layers</span>
+          <span className="layers-panel__count">{layers.length}</span>
         </div>
-      </div>
-
-      {/* Lock row */}
-      <div className="layers-panel__control-row">
-        <span className="layers-panel__control-label">Lock</span>
-        <button
-          type="button"
-          className="layers-panel__icon-btn"
-          aria-label="Lock layer"
-          aria-pressed={Boolean(selectedTrack?.locked)}
-          disabled={!selectedClip || !selectedTrack}
-          onClick={() => {
-            if (!selectedTrack) return;
-            api.edit({
-              type: "updateTrack",
-              trackId: selectedTrack.id,
-              patch: { locked: !selectedTrack.locked },
-            });
-          }}
-        >
-          <Icon name={selectedTrack?.locked ? "lock" : "unlock"} size={14} />
-        </button>
+        <div className="layers-panel__header-actions">
+          <button
+            type="button"
+            className="btn btn--icon"
+            style={{ width: 26, height: 26 }}
+            aria-label="Move layer up"
+            disabled={!selectedClip}
+            onClick={() => {
+              if (!selectedTrack) return;
+              const idx = project.tracks.findIndex((t) => t.id === selectedTrack.id);
+              if (idx > 0) {
+                api.edit({
+                  type: "moveTrack",
+                  trackId: selectedTrack.id,
+                  to: idx - 1,
+                });
+              }
+            }}
+          >
+            <svg
+              aria-hidden="true"
+              width={14}
+              height={14}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.75}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m18 15-6-6-6 6" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="btn btn--icon"
+            style={{ width: 26, height: 26 }}
+            aria-label="Move layer down"
+            disabled={!selectedClip}
+            onClick={() => {
+              if (!selectedTrack) return;
+              const idx = project.tracks.findIndex((t) => t.id === selectedTrack.id);
+              if (idx !== -1 && idx < project.tracks.length - 1) {
+                api.edit({
+                  type: "moveTrack",
+                  trackId: selectedTrack.id,
+                  to: idx + 1,
+                });
+              }
+            }}
+          >
+            <svg
+              aria-hidden="true"
+              width={14}
+              height={14}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.75}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="btn btn--icon"
+            style={{ width: 26, height: 26 }}
+            aria-label="Duplicate layer"
+            disabled={!selectedClip}
+            onClick={() => {
+              if (!selectedClip) return;
+              const newClipId = crypto.randomUUID();
+              api.edit({ type: "duplicateClip", clipId: selectedClip.id, newClipId });
+              onSelect(newClipId);
+            }}
+          >
+            <Icon name="copy" size={14} />
+          </button>
+          <button
+            type="button"
+            className="btn btn--icon"
+            style={{ width: 26, height: 26 }}
+            aria-label="Delete layer"
+            disabled={!selectedClip}
+            onClick={() => {
+              if (!selectedClip) return;
+              api.edit({
+                type: "deleteClip",
+                clipId: selectedClip.id,
+              });
+              onSelect(null);
+            }}
+          >
+            <Icon name="trash" size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Layers list */}
       <div className="layers-panel__list" ref={listRef}>
         {layers.length === 0 ? (
-          <p className="layers-panel__empty">Add a picture, text or shape from the left.</p>
+          <p className="layers-panel__empty">Add a picture, text or shape with the tools on the left.</p>
         ) : (
           layers.map(({ track, clip }, index) => {
             const isSelected = clip.id === selectedId;
@@ -356,7 +368,7 @@ export function LayersPanel({
                   <Icon name={track.hidden ? "eyeOff" : "eye"} size={14} />
                 </button>
 
-                {/* 28x28 Thumbnail */}
+                {/* 40x26 Thumbnail */}
                 {clip.mediaId ? (
                   <div className="layers-panel__thumb layers-panel__thumb--checker">
                     {src ? (
@@ -412,12 +424,23 @@ export function LayersPanel({
                   </span>
                 )}
 
-                {/* Lock indicator */}
-                {track.locked && (
-                  <span className="layers-panel__lock-indicator" role="img" aria-label="Locked">
-                    <Icon name="lock" size={12} />
-                  </span>
-                )}
+                {/* Small lock toggle button */}
+                <button
+                  type="button"
+                  className={`layers-panel__lock-btn${track.locked ? " is-locked" : ""}`}
+                  aria-label={track.locked ? "Unlock layer" : "Lock layer"}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    api.edit({
+                      type: "updateTrack",
+                      trackId: track.id,
+                      patch: { locked: !track.locked },
+                    });
+                  }}
+                >
+                  <Icon name={track.locked ? "lock" : "unlock"} size={14} />
+                </button>
               </div>
             );
           })
@@ -425,14 +448,14 @@ export function LayersPanel({
 
         {/* Background row (always last, not draggable, not selectable) */}
         <div className="layers-panel__row layers-panel__row--bg">
-          <div className="layers-panel__eye-placeholder" />
+          <div className="layers-panel__eye-placeholder" aria-hidden="true" />
           <div
-            className="layers-panel__thumb-bg"
+            className="layers-panel__thumb layers-panel__thumb-bg"
             style={{ backgroundColor: project.image?.background ?? "#000" }}
           />
           <span className="layers-panel__name layers-panel__name--bg">Background</span>
-          <span className="layers-panel__lock-indicator" role="img" aria-label="Locked">
-            <Icon name="lock" size={12} />
+          <span className="layers-panel__lock-indicator" aria-label="Locked">
+            <Icon name="lock" size={14} />
           </span>
         </div>
 
@@ -440,107 +463,6 @@ export function LayersPanel({
         {indicatorTop !== null && (
           <div className="layers-panel__drop-indicator" style={{ top: `${indicatorTop}px` }} />
         )}
-      </div>
-
-      {/* Bottom bar */}
-      <div className="layers-panel__bottom-bar">
-        <button
-          type="button"
-          className="layers-panel__icon-btn"
-          aria-label="Move layer up"
-          disabled={!selectedClip}
-          onClick={() => {
-            if (!selectedTrack) return;
-            const idx = project.tracks.findIndex((t) => t.id === selectedTrack.id);
-            if (idx > 0) {
-              api.edit({
-                type: "moveTrack",
-                trackId: selectedTrack.id,
-                to: idx - 1,
-              });
-            }
-          }}
-        >
-          <svg
-            aria-hidden="true"
-            width={14}
-            height={14}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.75}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="m18 15-6-6-6 6" />
-          </svg>
-        </button>
-
-        <button
-          type="button"
-          className="layers-panel__icon-btn"
-          aria-label="Move layer down"
-          disabled={!selectedClip}
-          onClick={() => {
-            if (!selectedTrack) return;
-            const idx = project.tracks.findIndex((t) => t.id === selectedTrack.id);
-            if (idx !== -1 && idx < project.tracks.length - 1) {
-              api.edit({
-                type: "moveTrack",
-                trackId: selectedTrack.id,
-                to: idx + 1,
-              });
-            }
-          }}
-        >
-          <svg
-            aria-hidden="true"
-            width={14}
-            height={14}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.75}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="m6 9 6 6 6-6" />
-          </svg>
-        </button>
-
-        <button
-          type="button"
-          className="layers-panel__icon-btn"
-          aria-label="Duplicate layer"
-          disabled={!selectedClip}
-          onClick={() => {
-            if (!selectedClip) return;
-            api.edit({
-              type: "duplicateClip",
-              clipId: selectedClip.id,
-              newClipId: crypto.randomUUID(),
-            });
-          }}
-        >
-          <Icon name="copy" size={14} />
-        </button>
-
-        <button
-          type="button"
-          className="layers-panel__icon-btn"
-          aria-label="Delete layer"
-          disabled={!selectedClip}
-          onClick={() => {
-            if (!selectedClip) return;
-            api.edit({
-              type: "deleteClip",
-              clipId: selectedClip.id,
-            });
-            onSelect(null);
-          }}
-        >
-          <Icon name="trash" size={14} />
-        </button>
       </div>
     </section>
   );

@@ -74,7 +74,7 @@ export type EditAction =
   | { type: "removeMedia"; mediaId: string }
   | { type: "setMediaFormat"; mediaId: string; videoFormat?: string; audioFormat?: string }
   /** Remove background: a photo shows its cut-out (`source`), or its original again (no `source`). */
-  | { type: "cutOut"; mediaId: string; source?: MediaItem["source"] }
+  | { type: "cutOut"; mediaId: string; source?: MediaItem["source"]; /** Only this layer changes: when others share its photo, it gets a photo entry of its own (`mediaId`). */ own?: { clipId: string; mediaId: string } }
   /**
    * Without a track: videos and pictures go to the main track, sound to a free track below it. On
    * a magnetic track `at` picks the slot; elsewhere it's the start time (playhead).
@@ -366,13 +366,20 @@ function edit(p: Project, action: EditAction): Project {
     case "importMedia":
       return { ...p, media: [...p.media, action.item] };
 
-    case "cutOut":
-      return {
-        ...p,
-        media: p.media.map((m) =>
-          m.id !== action.mediaId ? m : action.source ? { ...m, source: action.source, original: m.original ?? m.source } : m.original ? { ...m, source: m.original, original: undefined } : m,
-        ),
-      };
+    case "cutOut": {
+      const change = (m: MediaItem): MediaItem =>
+        action.source ? { ...m, source: action.source, original: m.original ?? m.source } : m.original ? { ...m, source: m.original, original: undefined } : m;
+      const own = action.own;
+      const photo = p.media.find((m) => m.id === action.mediaId);
+      if (own && photo && p.clips.some((c) => c.mediaId === action.mediaId && c.id !== own.clipId)) {
+        return {
+          ...p,
+          media: [...p.media, { ...change(photo), id: own.mediaId }],
+          clips: p.clips.map((c) => (c.id === own.clipId ? { ...c, mediaId: own.mediaId } : c)),
+        };
+      }
+      return { ...p, media: p.media.map((m) => (m.id !== action.mediaId ? m : change(m))) };
+    }
 
     case "removeMedia":
       return packMagnetic({

@@ -1,356 +1,351 @@
-/* Image editor layout */
+/* Image editor, laid out and sized like a photo editor: menu bar (the app's top bar, slim) | options bar | thin tool
+   column | (tool's panel) | name tab + grey work area + status line | dock (Properties over Layers). Neutral greys,
+   small text, no glass and no round buttons in this view. */
 
+/* The whole app while the Image editor is open: neutral greys and a slim top bar. */
+.app.app--image,
+:root[data-theme] .app.app--image {
+  --bg-input: #1f1f1f;
+  --bg-canvas: #262626;
+  --bg-rail: #2b2b2b;
+  --bg-panel: #323232;
+  --bg-raised: #383838;
+  --bg-hover: #404040;
+  --bg-selected: #4a4a4a;
+  --line-soft: #2b2b2b;
+  --line: #232323;
+  --line-strong: #4d4d4d;
+  --line-hover: #646464;
+  --text: #e6e6e6;
+  --text-2: #bdbdbd;
+  --text-3: #a0a0a0;
+  --toolbar-h: 30px;
+  gap: 0;
+  padding: 0;
+}
+
+/* Small controls and text in the bars and panels (the pop-up windows keep the app's sizes). */
+.toolbar--image,
 .image-ws {
-  /* Fills the window under the top bar, like the video editor (App.css .app__editor). */
+  --control-h: 22px;
+  --text-xs: 11px;
+  --text-sm: 11.5px;
+  --text-md: 12px;
+  --text-lg: 13px;
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 10px;
+  --radius: 2px;
+  --radius-sm: 2px;
+  font-size: 12px;
+}
+
+/* Square, flat icon buttons instead of the app's round glass ones. */
+:is(.toolbar--image, .image-ws) .btn--icon,
+:root[data-theme] :is(.toolbar--image, .image-ws) .btn--icon {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  box-shadow: none;
+}
+
+:is(.toolbar--image, .image-ws) .btn--icon:hover:not(:disabled) {
+  background: var(--bg-selected);
+}
+
+:is(.toolbar--image, .image-ws) .btn {
+  padding-inline: 8px;
+  font-weight: 400;
+}
+
+:is(.toolbar--image, .image-ws) .btn--icon {
+  padding: 0;
+}
+
+/* Menu bar: the app's top bar, slim and flat */
+.toolbar.toolbar--image,
+:root[data-theme] .toolbar.toolbar--image {
+  gap: 8px;
+  padding: 0 6px 0 4px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--bg-panel);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+.toolbar--image .toolbar__brand {
+  align-self: stretch;
+  gap: 4px;
+}
+
+.toolbar--image .toolbar__logo {
+  width: 16px;
+  height: 16px;
+  margin: 0 4px 0 2px;
+}
+
+.toolbar--image .toolbar__end {
+  gap: 6px;
+}
+
+.toolbar--image .cmd-box {
+  width: clamp(200px, calc(100vw - 900px), 340px);
+}
+
+.toolbar--image .cmd-box__field {
+  height: 22px;
+  padding: 0 6px;
+  gap: 6px;
+  border-radius: 2px;
+}
+
+.toolbar--image .cmd-box__input {
+  font-size: 12px;
+}
+
+/* The workspace */
+.image-ws {
   flex: 1;
   min-width: 0;
   min-height: 0;
-  margin: 14px var(--space-4) 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg-panel);
   display: grid;
-  grid-template-rows: 34px 1fr;
-  grid-template-columns: 44px auto 1fr auto;
-  position: relative;
-  overflow: hidden;
+  grid-template-columns: 36px minmax(0, 1fr) 300px;
+  grid-template-rows: 32px minmax(0, 1fr);
+  grid-template-areas:
+    "options options options"
+    "tools work dock";
+  background: var(--bg-canvas);
   font-family: var(--font-ui);
-  font-size: 12px;
   color: var(--text);
+  overflow: hidden;
 }
 
-/* Tab hides panels to give picture the whole window */
+.image-ws.has-flyout {
+  grid-template-columns: 36px 264px minmax(0, 1fr) 300px;
+  grid-template-areas:
+    "options options options options"
+    "tools flyout work dock";
+}
+
+/* A small window: the tool's panel narrows so the picture keeps room beside it. */
+@media (max-width: 1300px) {
+  .image-ws.has-flyout {
+    grid-template-columns: 36px 220px minmax(0, 1fr) 300px;
+  }
+}
+
+/* Tab hides the panels to give the picture the whole window. */
 .image-ws.image-ws--immersive {
-  grid-template-columns: 0 0 1fr 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "work";
 }
 
-.image-ws.image-ws--immersive .image-ws__tool-strip,
-.image-ws.image-ws--immersive .image-ws__flyout,
-.image-ws.image-ws--immersive .image-ws__sidebar {
+.image-ws--immersive :is(.image-ws__options, .image-ws__tools, .image-ws__flyout, .image-ws__dock) {
   display: none;
 }
 
-.image-ws.image-ws--immersive .image-ws__work-area {
-  grid-column: 1 / -1;
-}
-
-/* 1. Options bar (row 1, all columns) */
-.image-ws__options-bar {
-  grid-column: 1 / -1;
-  grid-row: 1;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--line);
-  padding: 0 8px;
-  box-sizing: border-box;
+/* Options bar: what the picked tool and layer can do */
+.image-ws__options {
+  grid-area: options;
   min-width: 0;
-  z-index: 3;
-}
-
-.image-ws__options-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-}
-
-.image-ws__history {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
+  padding: 0 8px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  overflow: hidden;
 }
 
-.image-ws__opt-btn {
-  width: 24px;
-  height: 24px;
-  padding: 0;
+.image-ws__opt-tool {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  background: transparent;
+  gap: 6px;
+  min-width: 76px;
+  color: var(--text);
+}
+
+.image-ws__opt-sep {
+  width: 1px;
+  height: 18px;
+  flex: none;
+  margin: 0 6px;
+  background: var(--line-strong);
+}
+
+.image-ws__opt-name {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+
+.image-ws__opt-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Tool column */
+.image-ws__tools {
+  grid-area: tools;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 0;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--line);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.image-ws__tool {
+  width: 28px;
+  height: 26px;
+  flex: none;
+  display: grid;
+  place-items: center;
   border: 0;
-  border-radius: 0;
+  border-radius: 2px;
+  background: transparent;
   color: var(--text-2);
   cursor: pointer;
 }
 
-.image-ws__opt-btn:hover:not(:disabled) {
+.image-ws__tool:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text);
 }
 
-.image-ws__opt-btn:disabled {
+.image-ws__tool.is-active {
+  background: var(--bg-input);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.image-ws__tool:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-/* 2. Tool strip (44px) */
-.image-ws__tool-strip {
-  grid-column: 1;
-  grid-row: 2;
-  width: 44px;
+.image-ws__tool-sep {
+  width: 20px;
+  height: 1px;
+  flex: none;
+  margin: 3px 0;
+  background: var(--line-strong);
+}
+
+/* The open tool's panel (Photos, Shapes, Canvas size), sized to its content */
+.image-ws__flyout {
+  grid-area: flyout;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
   background: var(--bg-panel);
   border-right: 1px solid var(--line);
-  padding: 6px 0;
-  box-sizing: border-box;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: none;
+  overflow: hidden;
 }
 
-.image-ws__tool-strip::-webkit-scrollbar {
-  display: none;
+.image-ws__flyout > * {
+  flex: 1;
+  min-height: 0;
 }
 
-.image-ws__tool-btn {
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
+/* The left panel (MediaPanel) filling the column, without the video editor's own frame or glass */
+.image-ws__flyout > .media-panel,
+:root[data-theme] .image-ws__flyout > .media-panel {
+  width: auto;
   border: 0;
   border-radius: 0;
-  color: var(--text-2);
-  cursor: pointer;
-  flex-shrink: 0;
-  padding: 0;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
 }
 
-.image-ws__tool-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+/* The picture's column: its name tab, the work area, the status line */
+.image-ws__stage {
+  grid-area: work;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.image-ws__tool-btn.is-active,
-.image-ws__tool-btn[aria-pressed="true"] {
-  background: var(--bg-selected);
-  color: var(--text);
+.image-ws__doctabs {
+  flex: none;
+  height: 24px;
+  display: flex;
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--line);
 }
 
-.image-ws__tool-sep {
-  width: 24px;
-  height: 1px;
-  background: var(--line);
-  margin: 6px auto;
-  flex-shrink: 0;
-}
-
-/* 3. Flyout (280px) */
-.image-ws__flyout {
-  grid-column: 2;
-  grid-row: 2;
-  width: 280px;
-  height: 100%;
-  box-sizing: border-box;
-  overflow-y: auto;
-  padding: 12px;
-  border-right: 1px solid var(--line);
-  background: var(--bg-panel);
-}
-
-/* 4. Work area */
-/* The owner asked for a grey work area so a white picture's edges are easy to see */
-.image-ws__work-area {
-  grid-column: 3;
-  grid-row: 2;
-  background: #3a3a3f;
-  position: relative;
+.image-ws__doctab {
+  max-width: 320px;
+  padding: 0 12px;
   overflow: hidden;
-  height: 100%;
-  width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--line);
+  font-size: 11.5px;
+  line-height: 24px;
+  color: var(--text);
+}
+
+.image-ws__status {
+  flex: none;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 8px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+/* Work area: the owner asked for a grey one so a white picture's edges are easy to see */
+.image-ws__work {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #3a3a3f;
   user-select: none;
   touch-action: none;
-  box-sizing: border-box;
 }
 
-.image-ws__work-area.is-grab {
+.image-ws__work.is-grab {
   cursor: grab;
 }
 
-.image-ws__work-area.is-grabbing {
+.image-ws__work.is-grabbing {
   cursor: grabbing;
 }
 
 .image-ws__camera {
   position: absolute;
-  top: 32px;
-  left: 32px;
-  right: 32px;
-  bottom: 32px;
+  inset: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   transform-origin: center;
-  box-sizing: border-box;
-}
-
-.image-ws__zoom-box {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  display: flex;
-  align-items: center;
-  height: 24px;
-  background: var(--bg-panel);
-  border: 1px solid var(--line);
-  border-radius: 0;
-  color: var(--text);
-  font-size: 12px;
-  z-index: 2;
-  box-sizing: border-box;
-}
-
-.image-ws__zoom-btn {
-  width: 24px;
-  height: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  color: var(--text-2);
-  cursor: pointer;
-  padding: 0;
-  font-size: 14px;
-  line-height: 1;
-}
-
-.image-ws__zoom-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.image-ws__zoom-pct {
-  padding: 0 6px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-  min-width: 42px;
-  text-align: center;
-  line-height: 24px;
-}
-
-.image-ws__zoom-fit {
-  height: 100%;
-  padding: 0 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 0;
-  border-left: 1px solid var(--line);
-  border-radius: 0;
-  color: var(--text-2);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.image-ws__zoom-fit:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-/* 5. Right sidebar (264px) */
-.image-ws__sidebar {
-  grid-column: 4;
-  grid-row: 2;
-  width: 264px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-panel);
-  border-left: 1px solid var(--line);
-  overflow: hidden;
-  box-sizing: border-box;
-}
-
-.image-ws__section {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.image-ws__sidebar-hdr {
-  height: 28px;
-  min-height: 28px;
-  width: 100%;
-  padding: 0 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--bg-panel);
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  color: var(--text-2);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  box-sizing: border-box;
-  text-align: left;
-}
-
-.image-ws__sidebar-hdr:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.image-ws__sidebar-title {
-  font-size: 12px;
-  line-height: 1;
-}
-
-.image-ws__chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-3);
-}
-
-.image-ws__chevron.is-collapsed {
-  transform: rotate(-90deg);
-}
-
-.image-ws__section--props {
-  flex-shrink: 0;
-  max-height: calc(45% + 28px);
-}
-
-.image-ws__section--props.is-expanded {
-  flex: 1;
-  max-height: 100%;
-}
-
-.image-ws__prop-body {
-  overflow-y: auto;
-  flex: 1;
-  min-height: 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.image-ws__section--layers {
-  flex: 1;
-}
-
-.image-ws__section--layers.is-collapsed {
-  flex: 0 0 auto;
-}
-
-.image-ws__layers-body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
 }
 
 /* The canvas is the editor's Preview: here it fills the camera and loses its video-panel frame and black backdrop, so
@@ -368,6 +363,301 @@
   backdrop-filter: none;
 }
 
-.image-ws__camera .preview__screen {
+.image-ws__camera .preview__screen,
+:root[data-theme] .image-ws__camera .preview__screen {
+  border: 0;
+  border-radius: 0;
   background: transparent;
+}
+
+/* Dock: the picked layer's Properties on top, a line that drags, Layers under it */
+.image-ws__dock {
+  grid-area: dock;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 5px var(--layers-h, 232px);
+  background: var(--bg-panel);
+  border-left: 1px solid var(--line);
+}
+
+.image-ws__layers {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.image-ws__layers > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.image-ws__grip {
+  background: var(--line);
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.image-ws__grip > span {
+  display: none;
+}
+
+.image-ws__grip:hover,
+.image-ws__grip:focus-visible {
+  background: var(--line-hover);
+  outline: none;
+}
+
+.image-ws__props {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.image-ws__props > .app__tabs {
+  flex: none;
+}
+
+.image-ws__props > .export {
+  flex: 1;
+  min-height: 0;
+}
+
+.image-ws__props .export__body {
+  padding: 10px 10px 0;
+  gap: 10px;
+}
+
+/* The Properties tabs as a row of small text tabs (no icons) */
+.image-ws__dock .icon-tabs-box {
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--line);
+}
+
+.image-ws__dock .icon-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0;
+}
+
+.image-ws__dock .icon-tabs__tab,
+:root[data-theme] .image-ws__dock .icon-tabs__tab {
+  flex: 1 1 auto;
+  height: 24px;
+  padding: 0 4px;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.image-ws__dock .icon-tabs__tab svg {
+  display: none;
+}
+
+.image-ws__dock .icon-tabs__tab:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+}
+
+.image-ws__dock .icon-tabs__tab[aria-selected="true"],
+:root[data-theme] .image-ws__dock .icon-tabs__tab[aria-selected="true"] {
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
+/* Layers, dense: a tab-like heading, 30px rows, small thumbnails */
+.image-ws .layers-panel {
+  font-size: 12px;
+}
+
+.image-ws .layers-panel__header {
+  height: 24px;
+  min-height: 24px;
+  max-height: 24px;
+  padding: 0 4px 0 0;
+  background: var(--bg-canvas);
+}
+
+.image-ws .layers-panel__header-left {
+  align-self: stretch;
+  padding: 0 8px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--line);
+}
+
+.image-ws .layers-panel__title {
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+}
+
+.image-ws .layers-panel__header-actions {
+  gap: 0;
+}
+
+.image-ws .layers-panel__header-actions .btn--icon {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+.image-ws .layers-panel__row {
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  gap: 6px;
+  padding: 0 4px 0 0;
+  font-size: 12px;
+}
+
+.image-ws .layers-panel__icon-btn,
+.image-ws .layers-panel__eye-placeholder {
+  width: 26px;
+  height: 100%;
+  border-right: 1px solid var(--line-soft);
+  border-radius: 0;
+}
+
+.image-ws :is(.layers-panel__thumb, .layers-panel__thumb-bg) {
+  width: 32px;
+  height: 22px;
+  border-radius: 0;
+}
+
+.image-ws .layers-panel__name {
+  font-size: 12px;
+}
+
+.image-ws .layers-panel__name-input {
+  height: 20px;
+  font-size: 12px;
+}
+
+.image-ws :is(.layers-panel__lock-btn, .layers-panel__lock-indicator) {
+  width: 20px;
+  height: 20px;
+}
+
+/* The options bar's zoom box */
+.image-ws__zoom {
+  width: 76px;
+}
+
+.toolbar--image .toolbar__brand {
+  margin-left: 0;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* The picture's preset sizes as a plain list (name, then pixels) instead of cards */
+.image-ws .image-size-panel {
+  padding: 10px;
+}
+
+.image-ws .image-size-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.image-ws .image-size-tile {
+  flex-direction: row;
+  justify-content: space-between;
+  height: 22px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+}
+
+.image-ws .image-size-tile:hover {
+  background: var(--bg-hover);
+}
+
+.image-ws .image-size-tile[aria-pressed="true"] {
+  background: var(--bg-selected);
+}
+
+.image-ws .image-size-tile__preview {
+  display: none;
+}
+
+.image-ws .image-size-tile__label {
+  font-weight: 400;
+}
+
+/* The picked layer's settings, dense */
+.image-ws .insp__head h2 {
+  font-size: 12px;
+}
+
+.image-ws .insp__styles {
+  gap: 3px;
+}
+
+.image-ws .insp__style {
+  gap: 1px;
+  padding: 4px 0 3px;
+  font-size: 10.5px;
+}
+
+.image-ws .insp__style-sample {
+  font-size: 14px;
+}
+
+.image-ws .insp__font {
+  height: 24px;
+  padding: 0 6px;
+}
+
+.image-ws .insp__font > span:first-child {
+  font-size: 12px !important;
+}
+
+.image-ws .insp__swatch {
+  width: 18px;
+  height: 18px;
+}
+
+/* Tiles (shapes, filters, effects), smaller: shapes are a grid of small pictures, their names kept for screen readers */
+.image-ws .fx__grid {
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 4px;
+}
+
+.image-ws .fx__grid.is-shapes {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.image-ws .fx-tile {
+  gap: 3px;
+  padding: 3px;
+  font-size: 11px;
+}
+
+.image-ws .fx-tile.is-shape {
+  border-color: transparent;
+  background: transparent;
+}
+
+.image-ws .fx-tile.is-shape:hover {
+  background: var(--bg-hover);
+}
+
+.image-ws .fx-tile.is-shape .fx-tile__stage svg {
+  width: 64%;
+  height: 64%;
+}
+
+.image-ws .fx-tile.is-shape .fx-tile__name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }

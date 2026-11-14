@@ -3,7 +3,7 @@ import { PanelHead } from "./SoundPanel";
 import "./ExportDialog.css";
 
 /** The export settings in a pop-up, opened by Export next to Queue. Back and X both close it: nothing comes before it. */
-export function ExportDialog({ sub, onClose, children }: { sub: string; onClose: () => void; children: ReactNode }) {
+export function ExportDialog({ sub, onClose, children, picture }: { sub: string; onClose: () => void; children: ReactNode; /** The Image editor's: beside the layers, which stay in view. */ picture?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -16,7 +16,7 @@ export function ExportDialog({ sub, onClose, children }: { sub: string; onClose:
   return (
     <dialog
       ref={ref}
-      className="export-dialog"
+      className={`export-dialog${picture ? " is-picture" : ""}`}
       aria-labelledby="export-dialog-title"
       tabIndex={-1}
       // Escape closes a modal dialog by itself; let React unmount it instead.
@@ -29,7 +29,7 @@ export function ExportDialog({ sub, onClose, children }: { sub: string; onClose:
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <PanelHead id="export-dialog-title" title="Export" sub={sub} onBack={onClose} onClose={onClose} />
+      <PanelHead id="export-dialog-title" title={picture ? "Export picture" : "Export"} sub={sub} onBack={onClose} onClose={onClose} />
       {children}
     </dialog>
   );

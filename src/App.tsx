@@ -98,12 +98,15 @@ import {
   previousOnTrack,
   clipLength,
   isBlock,
+  isText,
+  POSITIONS,
   meets,
   trackOrder,
   projectDuration,
   projectName,
   newImageProject,
   MAX_IMAGE_SIDE,
+  IMAGE_SIZES,
   silencesFromPeaks,
   upgradeProject,
   layersOf,
@@ -114,16 +117,18 @@ import {
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { MediaPanel, type Tab as MediaTab } from "./components/MediaPanel";
-import { LayersPanel } from "./components/LayersPanel";
+import { LayersPanel, layerName } from "./components/LayersPanel";
+import { CommandBox, type Command } from "./components/CommandBox";
 import { removeBackground } from "./lib/cutout";
 import { ImageSizePanel } from "./components/ImageSizePanel";
 import { NewImageDialog } from "./components/NewImageDialog";
-import { ImageWorkspace, type ImageTool } from "./components/ImageWorkspace";
+import { MenuBar, type Menu, type MenuItem } from "./components/MenuBar";
+import { ImageWorkspace, ZoomSelect, useImageView, type ImageTool } from "./components/ImageWorkspace";
 import { Home, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
 import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/EdgeResizer";
-import { dropEdits, type FxItem } from "./project/effects";
-import { FxPanel, type FxTab } from "./components/FxPanel";
+import { LOOKS, PICTURE_EFFECTS, dropEdits, type FxItem } from "./project/effects";
+import { FxPanel, STILL_EFFECTS, type FxTab } from "./components/FxPanel";
 import { CropDialog } from "./components/CropDialog";
 import { IconTabs } from "./components/IconTabs";
 import { loadFont } from "./lib/fonts";
@@ -134,7 +139,7 @@ import { Tooltip } from "./components/Tooltip";
 import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
 import { TimelineEditor, type ClipCommand } from "./components/TimelineEditor";
-import { AddText, CaptionStyle, Inspector, KEY_START, type ClipSection } from "./components/Inspector";
+import { AddText, CaptionStyle, Inspector, KEY_START, Slider, type ClipSection } from "./components/Inspector";
 import { ExportPanel } from "./components/ExportPanel";
 import { ExportDialog } from "./components/ExportDialog";
 import { QueueDock } from "./components/QueueDock";
@@ -172,17 +177,35 @@ const PANEL_TABS: { id: "edit" | "transcript" | "assistant" | (typeof CLIP_TABS)
   { id: "transcript", label: "Transcript", icon: "captions" },
   { id: "assistant", label: "Assistant", icon: "sparkle" },
 ];
-/** The Image editor's tool strip: the panel tools' ids are MediaPanel tabs. */
+/** The Image editor's tool strip: the panel tools' ids are MediaPanel tabs; Cut out and Crop act on the picked photo. */
 const IMAGE_TOOLS: ImageTool[] = [
-  { id: "move", label: "Move", icon: "pointer", group: "select" },
-  { id: "hand", label: "Hand", icon: "hand", group: "select" },
+  { id: "move", label: "Move", icon: "pointer", group: "select", key: "V" },
+  { id: "hand", label: "Hand", icon: "hand", group: "select", key: "H" },
+  { id: "text", label: "Text", icon: "text", group: "content", key: "T" },
+  { id: "shapes", label: "Shapes", icon: "star", group: "content", key: "U" },
   { id: "media", label: "Photos", icon: "image", group: "content" },
-  { id: "text", label: "Text", icon: "text", group: "content" },
-  { id: "shapes", label: "Shapes", icon: "star", group: "content" },
-  { id: "filters", label: "Filters", icon: "blend", group: "edit" },
-  { id: "effects", label: "Effects", icon: "sparkle", group: "edit" },
-  { id: "size", label: "Canvas size", icon: "crop", group: "edit" },
+  { id: "cutout", label: "Cut out", icon: "scissors", group: "edit" },
+  { id: "crop", label: "Crop", icon: "crop", group: "edit", key: "C" },
+  { id: "size", label: "Canvas size", icon: "fit", group: "edit" },
 ];
+/** The Image editor's Properties tabs: always all six, the ones the picked layer can't use greyed (Enhance heads Adjust). */
+const IMAGE_PANEL_TABS = [
+  { id: "edit", label: "Edit", icon: "pencil" },
+  { id: "text", label: "Text", icon: "text" },
+  { id: "adjust", label: "Adjust", icon: "sliders" },
+  { id: "filters", label: "Filters", icon: "blend" },
+  { id: "effects", label: "Effects", icon: "sparkle" },
+  { id: "background", label: "Cut out", icon: "scissors" },
+  { id: "assistant", label: "Assistant", icon: "sparkle" },
+] as const satisfies readonly { id: string; label: string; icon: IconName }[];
+/** A colour that shows on `background` (#rrggbb): near-black on a light one, white on a dark one. */
+const inkOn = (background: string) => {
+  const n = parseInt(background.slice(1, 7), 16);
+  const luma = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  return luma > 150 ? "#111111" : "#ffffff";
+};
+/** No image open: the Image editor's view measures nothing. */
+const NO_IMAGE = { width: 0, height: 0 };
 /** Quiet time after the last edit before the project is saved. */
 const AUTOSAVE_MS = 600;
 /** The label of captions Craftora made from the sound (whisper). */
@@ -342,8 +365,8 @@ export default function App() {
   const [newImageOpen, setNewImageOpen] = useState(false);
   /** Image editor: the tool picked in its tool strip (a panel's tool opens that panel beside it). */
   const [imageTool, setImageTool] = useState("move");
-  /** Image editor's options bar → Remove background: what it's doing, while it runs. */
-  const [cutting, setCutting] = useState<string | null>(null);
+  /** The do-anything box asked to remove this layer's background: its Cut out tab starts it. */
+  const [cutRequest, setCutRequest] = useState<string | null>(null);
   const [leftOpen, setLeftOpen] = useState(() => remembered("craftora.left", true));
   // Always open at start: it has no button any more (owner, 2026-11-12), only Ctrl+Alt+B hides it.
   const [rightOpen, setRightOpen] = useState(true);
@@ -440,6 +463,7 @@ export default function App() {
   const { project } = api;
   // The Image editor is the editor's layout for an image project (Layers instead of the timeline, nothing timed).
   const imageMode = inEditor && Boolean(project.image);
+  const imageView = useImageView(project.image ?? NO_IMAGE);
   const duration = projectDuration(project);
   const playback = usePlayback(duration);
   // The editor's players go away with its page, but the clock wouldn't: leaving the editor pauses.
@@ -624,8 +648,8 @@ export default function App() {
   // A filter, effect or transition picked on the timeline shows its settings here; let go of it, and the panel goes back to Edit.
   const fxOpen = fxDetail !== null && fxDetail === selectedId;
   useEffect(() => {
-    if ((FX_TABS as readonly string[]).includes(rightTab) && !fxOpen) setRightTab("edit");
-  }, [rightTab, fxOpen]);
+    if ((FX_TABS as readonly string[]).includes(rightTab) && !fxOpen && !imageMode) setRightTab("edit");
+  }, [rightTab, fxOpen, imageMode]);
   // A selected transition belongs to the selected clip, while it still has one.
   const transitionClip = selected && selectedTransition === selected.id && selected.transition ? selected : null;
 
@@ -808,7 +832,8 @@ export default function App() {
   }, [taskbar]);
 
   // While Craftora is in the background, Windows says when a download, export or recording ends.
-  // A finished download or export also plays Craftora's sound (public/mixkitvideogametreasure_edit.mp3), focused or not.
+  // A finished download or video export also plays Craftora's sound (public/mixkitvideogametreasure_edit.mp3), focused or
+  // not; a picture from the Image editor doesn't (owner).
   const lastStatus = useRef(new Map<string, Job["status"]>());
   useEffect(() => {
     const before = lastStatus.current;
@@ -818,7 +843,7 @@ export default function App() {
       const was = before.get(j.id);
       return (was === "downloading" || was === "encoding") && (j.status === "finished" || j.status === "failed") && !j.prefetch?.forExport;
     });
-    if (preference("finishSound") && ended.some((j) => j.status === "finished" && !j.record?.live)) void new Audio("/mixkitvideogametreasure_edit.mp3").play().catch(() => {});
+    if (preference("finishSound") && ended.some((j) => j.status === "finished" && !j.record?.live && j.render?.output !== "image")) void new Audio("/mixkitvideogametreasure_edit.mp3").play().catch(() => {});
     if (!inDesktopApp || document.hasFocus()) return;
     for (const j of ended) {
       const what = j.record?.live ? "Recording" : j.prefetch || j.record ? "Download" : "Export";
@@ -1304,7 +1329,10 @@ export default function App() {
       const item = mediaFromSource(source);
       let next = newImageProject(Math.round(img.naturalWidth * k), Math.round(img.naturalHeight * k));
       next = applyEdit(next, { type: "importMedia", item });
-      startProject(applyEdit(next, { type: "addClip", clipId: crypto.randomUUID(), mediaId: item.id, at: 0 }));
+      const clipId = crypto.randomUUID();
+      startProject(applyEdit(next, { type: "addClip", clipId, mediaId: item.id, at: 0 }));
+      // The photo comes picked, its Filters and Cut out ready.
+      setSelectedId(clipId);
     } catch (err) {
       setError(`Couldn't open that photo: ${errorText(err)}`);
     }
@@ -1438,6 +1466,9 @@ export default function App() {
     setError(null);
     api.checkpoint();
     for (const edit of done.edits) api.editLive(edit);
+    // A new shape on a picture: in a colour that shows on its background.
+    if (imageMode && project.image && item.kind === "shape" && done.select)
+      api.editLive({ type: "updateClip", clipId: done.select, patch: { color: inkOn(project.image.background) } });
     if (done.select) setSelectedId(done.select);
     // A transition just added is the one selected.
     setSelectedTransition(item.kind === "transition" ? (done.select ?? null) : null);
@@ -1547,6 +1578,9 @@ export default function App() {
     const clipId = crypto.randomUUID();
     api.checkpoint();
     api.editLive({ type: "addText", clipId, at: playback.time });
+    // A picture's new text goes in the middle; a video's at the bottom, like a subtitle.
+    if (imageMode && project.image)
+      api.editLive({ type: "updateClip", clipId, patch: { x: POSITIONS.center.x, y: POSITIONS.center.y, color: inkOn(project.image.background) } });
     if (size) api.editLive({ type: "updateClip", clipId, patch: { size } });
     setSelectedId(clipId);
     setView("editor");
@@ -1808,8 +1842,11 @@ export default function App() {
       s: split,
       delete: remove,
       backspace: remove,
-      t: () => (imageMode ? setImageTool("text") : addText()),
+      t: () => addText(),
       v: () => imageMode && setImageTool("move"),
+      h: () => imageMode && setImageTool("hand"),
+      u: () => imageMode && setImageTool("shapes"),
+      c: () => imageMode && selected && showsPicture(project, selected) && openCrop(selected, 0),
       f: () => window.dispatchEvent(new Event("craftora:toggle-fullscreen")),
       // As in video players: 5 s; Shift steps one frame for exact edits.
       // The Image editor's arrows nudge the layer instead (Preview).
@@ -1866,6 +1903,7 @@ export default function App() {
   const fxPanel = (tab: FxTab, detail: boolean) => (
     <FxPanel
       tab={tab}
+      still={imageMode}
       project={project}
       time={playback.time}
       playing={playback.playing}
@@ -1969,75 +2007,15 @@ export default function App() {
     if (!photo?.source.image || !photo.source.local || !inDesktopApp || photo.original) return undefined;
     return async (onStatus: (text: string) => void) => {
       const path = await removeBackground(photo.source.url, onStatus);
-      api.edit({ type: "cutOut", mediaId: photo.id, source: await openLocal(path) });
+      api.edit({ type: "cutOut", mediaId: photo.id, source: await openLocal(path), own: clip ? { clipId: clip.id, mediaId: crypto.randomUUID() } : undefined });
     };
   };
-  const quickCut = cutOutOf(selected);
-  // The options bar: the selected layer's quick actions, or how to start a new image.
-  const imageOptions = !selected ? (
-    <>
-      <button type="button" className="ws-opt" onClick={() => setNewImageOpen(true)}>
-        New image…
-      </button>
-      <button type="button" className="ws-opt" onClick={() => void openPhoto()}>
-        Open a photo…
-      </button>
-      {project.image && (
-        <span className="ws-opt__note mono">
-          {project.image.width} × {project.image.height}
-        </span>
-      )}
-    </>
-  ) : (
-    <>
-      <span className="ws-opt__name">{selected.name ?? (selected.text?.split("\n")[0] || project.media.find((m) => m.id === selected.mediaId)?.name || "Layer")}</span>
-      {(quickCut || cutting) && (
-        <button
-          type="button"
-          className="ws-opt"
-          disabled={Boolean(cutting)}
-          onClick={() => {
-            setCutting("Getting ready…");
-            quickCut?.(setCutting)
-              .catch((err) => setError(`Couldn't remove the background: ${errorText(err)}`))
-              .finally(() => setCutting(null));
-          }}
-        >
-          <Icon name="wand" size={13} />
-          {cutting ?? "Remove background"}
-        </button>
-      )}
-      {selected.mediaId && project.media.find((m) => m.id === selected.mediaId)?.original && (
-        <button type="button" className="ws-opt" onClick={() => selected.mediaId && api.edit({ type: "cutOut", mediaId: selected.mediaId })}>
-          Restore
-        </button>
-      )}
-      {showsPicture(project, selected) && (
-        <>
-          <button type="button" className="ws-opt" onClick={() => openCrop(selected, 0)}>
-            Crop
-          </button>
-          <button type="button" className="ws-opt" onClick={() => api.edit({ type: "updateClip", clipId: selected.id, patch: { mirror: !selected.mirror } })}>
-            Flip
-          </button>
-          <button type="button" className="ws-opt" onClick={() => api.edit({ type: "updateClip", clipId: selected.id, patch: { rotate: ((selected.rotate ?? 0) + 90) % 360 } })}>
-            Turn
-          </button>
-        </>
-      )}
-      <button type="button" className="ws-opt" onClick={() => duplicate()}>
-        Duplicate
-      </button>
-      <button type="button" className="ws-opt" onClick={remove}>
-        Delete
-      </button>
-    </>
-  );
+
 
   // The editor's pieces, shared by the video editor's layout and the Image editor's (ImageWorkspace).
   const mediaPanel = (only?: MediaTab) => (
     <MediaPanel
-      still={imageMode ? { text: <AddText onAdd={addText} />, size: (
+      still={imageMode ? { text: <AddText onAdd={addText} still />, size: (
           <>
             <button type="button" className="btn btn--secondary" onClick={() => void openPhoto()}>
               Open a photo as a new image
@@ -2107,13 +2085,228 @@ export default function App() {
       }
     />
   );
+  // Image editor: Text needs a text (or nothing picked, to add one); the picture tabs need a picture.
+  const picturePicked = Boolean(selected && showsPicture(project, selected));
+  const imageTabs = IMAGE_PANEL_TABS.map((t) => ({
+    ...t,
+    disabled: t.id === "text" ? Boolean(selected && !isText(selected)) : ["adjust", "filters", "effects", "background"].includes(t.id) && !picturePicked,
+  }));
+  // The Image editor's do-anything box (Ctrl K): what the picked layer can do first, then adding, the picture and the view.
+  // Each of these also has a button somewhere; the box is the quick way to them.
+  const moveLayer = (by: -1 | 1) => {
+    if (!selected) return;
+    const layers = layersOf(project);
+    const next = layers[layers.findIndex((l) => l.clip.id === selected.id) + by];
+    if (next) api.edit({ type: "moveTrack", trackId: selected.trackId, to: project.tracks.indexOf(next.track) });
+  };
+  const picked = selected ? layerName(selected, project) : "";
+  const pictureCommands = (clip: Clip): Command[] => [
+    { id: "cut", label: "Remove background", detail: "keeps the subject, clears the rest", icon: "scissors", group: picked, disabled: !cutOutOf(clip), run: () => (setCutRequest(clip.id), pickTab("background")) },
+    { id: "colour", label: "Remove a colour", detail: "green or blue screen", icon: "eyedropper", group: picked, run: () => pickTab("background") },
+    { id: "crop", label: "Crop", keys: "C", icon: "crop", group: picked, run: () => openCrop(clip, 0) },
+    { id: "turn", label: "Turn 90°", icon: "rotate", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { rotate: ((clip.rotate ?? 0) + 90) % 360 } }) },
+    { id: "mirror", label: "Mirror", icon: "flip", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { mirror: !clip.mirror } }) },
+    { id: "adjust", label: "Adjust colours", detail: "brightness, contrast, warmth…", icon: "sliders", group: picked, run: () => pickTab("adjust") },
+    { id: "enhance", label: clip.adjust?.enhance ? "Turn Enhance off" : "Enhance", detail: "clearer and brighter in one click", icon: "wand", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { adjust: { ...clip.adjust, enhance: clip.adjust?.enhance ? 0 : 1 } } }) },
+    ...LOOKS.map((look): Command => ({ id: `look-${look.id}`, label: `${look.label} filter`, icon: "blend", group: picked, run: () => (applyFx({ kind: "filter", id: look.id }, clip.trackId, clip.start), pickTab("filters")) })),
+    ...PICTURE_EFFECTS.filter((e) => STILL_EFFECTS.includes(e.id)).map((effect): Command => ({ id: `effect-${effect.id}`, label: `${effect.label} effect`, icon: "sparkle", group: picked, run: () => (applyFx({ kind: "effect", id: effect.id }, clip.trackId, clip.start), pickTab("effects")) })),
+    ...(clip.look ? [{ id: "nolook", label: "Remove the filter", icon: "blend", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { look: undefined, lookAmount: undefined } }) } satisfies Command] : []),
+    ...(clip.effect ? [{ id: "noeffect", label: "Remove the effect", icon: "sparkle", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { effect: undefined, effectStrength: undefined, effectSpeed: undefined } }) } satisfies Command] : []),
+  ];
+  const commands: Command[] = !imageMode
+    ? []
+    : [
+        ...(selected
+          ? [
+              ...(picturePicked ? pictureCommands(selected) : []),
+              ...(isText(selected) ? [{ id: "style", label: "Text style and font", icon: "text", group: picked, run: () => pickTab("text") } satisfies Command] : []),
+              { id: "dup", label: "Duplicate layer", keys: "Ctrl J", icon: "copy", group: picked, run: () => duplicate() },
+              { id: "up", label: "Move layer up", keys: "Ctrl ]", icon: "chevronUp", group: picked, run: () => moveLayer(-1) },
+              { id: "down", label: "Move layer down", keys: "Ctrl [", icon: "chevronDown", group: picked, run: () => moveLayer(1) },
+              { id: "delete", label: "Delete layer", keys: "Delete", icon: "trash", group: picked, run: remove },
+            ] satisfies Command[]
+          : []),
+        { id: "addtext", label: "Add text", keys: "T", icon: "text", group: "Add", run: () => (addText(), pickTab("text")) },
+        { id: "addshape", label: "Add a shape", keys: "U", icon: "star", group: "Add", run: () => setImageTool("shapes") },
+        { id: "addphoto", label: "Add a photo", icon: "image", group: "Add", run: () => setImageTool("media") },
+        ...layersOf(project).map((l): Command => ({ id: `layer-${l.clip.id}`, label: `Pick “${layerName(l.clip, project)}”`, icon: "eye", group: "Layers", run: () => setSelectedId(l.clip.id) })),
+        ...IMAGE_SIZES.map((size): Command => ({ id: `size-${size.id}`, label: `Resize to ${size.label}`, detail: `${size.width} × ${size.height}`, icon: "fit", group: "Picture", run: () => api.edit({ type: "setImage", patch: { width: size.width, height: size.height } }) })),
+        { id: "bg", label: "Background colour", detail: "and the picture's size", icon: "fit", group: "Picture", run: () => (setSelectedId(null), pickTab("edit")) },
+        { id: "export", label: "Export picture", detail: "PNG or JPG", icon: "upload", group: "Picture", run: () => setExportOpen(true) },
+        { id: "new", label: "New image", icon: "plus", group: "Picture", run: () => setNewImageOpen(true) },
+        { id: "open", label: "Open a photo", icon: "folder", group: "Picture", run: () => void openPhoto() },
+        { id: "fit", label: "Zoom to fit", keys: "Ctrl 0", icon: "fit", group: "View", run: imageView.fit },
+        { id: "z100", label: "Zoom to 100%", icon: "search", group: "View", run: () => imageView.zoomTo(100) },
+      ];
+  // The Image editor's menu bar: the same actions as the box, sorted into a photo editor's menus (greyed when the picked
+  // layer can't do them).
+  const menuItem = (id: string, label: string, keys?: string): MenuItem => {
+    const c = commands.find((x) => x.id === id);
+    return { id, label, keys: keys ?? c?.keys?.replace(/ /g, "+"), disabled: !c || c.disabled, run: () => c?.run() };
+  };
+  // Sent from the body: the key handlers read the pressed element.
+  const pressKey = (key: string, ctrlKey = false) => document.body.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey, bubbles: true }));
+  const imageMenus: Menu[] = !imageMode
+    ? []
+    : [
+        { label: "File", items: [menuItem("new", "New image…"), menuItem("open", "Open a photo…"), "sep", menuItem("export", "Export picture…")] },
+        {
+          label: "Edit",
+          items: [
+            { id: "undo", label: "Undo", keys: "Ctrl+Z", disabled: !api.canUndo, run: api.undo },
+            { id: "redo", label: "Redo", keys: "Ctrl+Shift+Z", disabled: !api.canRedo, run: api.redo },
+            "sep",
+            menuItem("dup", "Duplicate layer"),
+            menuItem("delete", "Delete layer"),
+            "sep",
+            { id: "search", label: "Search actions…", keys: "Ctrl+K", run: () => pressKey("k", true) },
+          ],
+        },
+        {
+          label: "Image",
+          items: [
+            { id: "canvas", label: "Canvas size and background…", run: () => setImageTool("size") },
+            ...IMAGE_SIZES.map((size) => menuItem(`size-${size.id}`, `Resize to ${size.label}`)),
+            "sep",
+            menuItem("crop", "Crop…"),
+            menuItem("turn", "Turn 90°"),
+            menuItem("mirror", "Mirror"),
+          ],
+        },
+        {
+          label: "Layer",
+          items: [menuItem("addtext", "New text layer"), menuItem("addshape", "New shape layer…"), menuItem("addphoto", "New photo layer…"), "sep", menuItem("dup", "Duplicate layer"), menuItem("up", "Bring forward"), menuItem("down", "Send backward"), "sep", menuItem("delete", "Delete layer")],
+        },
+        {
+          label: "Select",
+          items: [
+            { id: "none", label: "Deselect", disabled: !selected, run: () => setSelectedId(null) },
+            "sep",
+            ...layersOf(project).map((l): MenuItem => ({ id: `layer-${l.clip.id}`, label: layerName(l.clip, project), checked: l.clip.id === selectedId, run: () => setSelectedId(l.clip.id) })),
+          ],
+        },
+        {
+          label: "Filter",
+          items: [
+            menuItem("enhance", "Enhance"),
+            menuItem("adjust", "Adjust colours…"),
+            menuItem("cut", "Remove background"),
+            menuItem("colour", "Remove a colour…"),
+            "sep",
+            ...LOOKS.map((look) => menuItem(`look-${look.id}`, look.label)),
+            menuItem("nolook", "Remove the filter"),
+            "sep",
+            ...PICTURE_EFFECTS.filter((e) => STILL_EFFECTS.includes(e.id)).map((effect) => menuItem(`effect-${effect.id}`, effect.label)),
+            menuItem("noeffect", "Remove the effect"),
+          ],
+        },
+        {
+          label: "View",
+          items: [
+            { id: "in", label: "Zoom in", keys: "Ctrl++", run: imageView.zoomIn },
+            { id: "out", label: "Zoom out", keys: "Ctrl+-", run: imageView.zoomOut },
+            menuItem("fit", "Fit on screen"),
+            menuItem("z100", "100%"),
+            { id: "z200", label: "200%", run: () => imageView.zoomTo(200) },
+            "sep",
+            { id: "panels", label: "Show or hide panels", keys: "Tab", run: () => pressKey("Tab") },
+          ],
+        },
+        {
+          label: "Window",
+          items: [
+            { id: "assistant", label: "Assistant", run: () => pickTab("assistant") },
+            "sep",
+            { id: "home", label: "Home", run: () => go("home") },
+            { id: "projects", label: "Projects", run: () => go("projects") },
+            { id: "editor", label: "Video editor", run: () => go("editor") },
+            { id: "library", label: "Exports", run: () => go("library") },
+            { id: "settings", label: "Settings", run: () => go("settings") },
+          ],
+        },
+        { label: "Help", items: [{ id: "welcome", label: "Welcome guide", run: () => setWelcoming(true) }] },
+      ];
+  // Its options bar: the tool, then what the picked layer can do right now.
+  const toolNow = IMAGE_TOOLS.find((t) => t.id === imageTool) ?? IMAGE_TOOLS[0];
+  const optionButton = (c: Command) => (
+    <button key={c.id} type="button" className="btn btn--ghost" disabled={c.disabled} onClick={c.run}>
+      <Icon name={c.icon} size={13} />
+      {c.label}
+    </button>
+  );
+  const imageOptions = imageMode && (
+    <>
+      <span className="image-ws__opt-tool">
+        <Icon name={toolNow.icon} size={14} />
+        {toolNow.label}
+      </span>
+      <span className="image-ws__opt-sep" />
+      <span className="image-ws__opt-name">{selected ? picked : "No layer picked"}</span>
+      <span className="image-ws__opt-sep" />
+      {commands.filter((c) => (selected ? ["crop", "turn", "mirror", "cut", "dup", "delete"] : ["addtext", "addshape", "addphoto", "open"]).includes(c.id)).map(optionButton)}
+      <span className="image-ws__opt-end">
+        <button type="button" className="btn btn--icon" aria-label="Undo" disabled={!api.canUndo} onClick={api.undo}>
+          <Icon name="undo" size={14} />
+        </button>
+        <button type="button" className="btn btn--icon" aria-label="Redo" disabled={!api.canRedo} onClick={api.redo}>
+          <Icon name="redo" size={14} />
+        </button>
+        <ZoomSelect view={imageView} />
+      </span>
+    </>
+  );
+  const tabOff = imageMode && imageTabs.some((t) => t.id === rightTab && t.disabled);
+  useEffect(() => {
+    if (tabOff) setRightTab("edit");
+  }, [tabOff]);
   const panelBody = (
     <>
       {/* All eight in one row that scrolls sideways, ‹ › at its ends (like the popular editor). */}
       <div className="app__tabs">
-        <IconTabs tabs={imageMode ? PANEL_TABS.filter((t) => !["speed", "transcript"].includes(t.id)) : PANEL_TABS} value={rightTab === "sound" || rightTab === "voice" || (FX_TABS as readonly string[]).includes(rightTab) ? null : (rightTab as (typeof PANEL_TABS)[number]["id"])} onPick={pickTab} label="Right panel" idPrefix="right-tab" />
+        {imageMode ? (
+          <IconTabs tabs={imageTabs} value={imageTabs.find((t) => t.id === rightTab && !t.disabled)?.id ?? "edit"} onPick={pickTab} label="Properties" idPrefix="right-tab" />
+        ) : (
+          <IconTabs tabs={PANEL_TABS} value={rightTab === "sound" || rightTab === "voice" || (FX_TABS as readonly string[]).includes(rightTab) ? null : (rightTab as (typeof PANEL_TABS)[number]["id"])} onPick={pickTab} label="Right panel" idPrefix="right-tab" />
+        )}
       </div>
-      {fxOpen && (FX_TABS as readonly string[]).includes(rightTab) ? (
+      {imageMode && (rightTab === "filters" || rightTab === "effects") && picturePicked && selected ? (
+        // Image editor: the tiles go into the picked layer; the one it has is marked.
+        <aside className="export" aria-label={rightTab === "filters" ? "Filters" : "Effects"}>
+          <div className="export__body is-edit">
+            {(rightTab === "filters" ? selected.look : selected.effect) && (
+              <>
+                {rightTab === "filters" && selected.look && (
+                  <Slider
+                    id="image-look-strength"
+                    label="Strength"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={selected.lookAmount ?? 1}
+                    format={(v) => `${Math.round(v * 100)}%`}
+                    onCheckpoint={api.checkpoint}
+                    onChange={(lookAmount) => api.editLive({ type: "updateClip", clipId: selected.id, patch: { lookAmount } })}
+                  />
+                )}
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={() =>
+                    api.edit({
+                      type: "updateClip",
+                      clipId: selected.id,
+                      patch: rightTab === "filters" ? { look: undefined, lookAmount: undefined } : { effect: undefined, effectStrength: undefined, effectSpeed: undefined },
+                    })
+                  }
+                >
+                  Remove
+                </button>
+              </>
+            )}
+            {fxPanel(rightTab, false)}
+          </div>
+        </aside>
+      ) : fxOpen && (FX_TABS as readonly string[]).includes(rightTab) ? (
         fxPanel(rightTab as FxTab, true)
       ) : rightTab === "transcript" ? (
         <Transcript
@@ -2167,7 +2360,9 @@ export default function App() {
         // Edit: the selected clip's settings (and the captions' style).
         <aside className="export" aria-label="Clip settings">
           <div className="export__body is-edit">
-          {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} /> : <p className="export__hint">{imageMode ? "Click a layer to change it here." : "Click a clip on the timeline to change it here."}</p>)}
+          {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} still={imageMode} /> : <p className="export__hint">{imageMode ? "Click a layer to change it here." : "Click a clip on the timeline to change it here."}</p>)}
+          {/* Nothing picked in the Image editor: the picture's own size and background. */}
+          {imageMode && !selected && rightTab !== "text" && <ImageSizePanel project={project} api={api} />}
           {rightTab === "edit" && (selectedId === SHOWN_CAPTIONS || selectedTrack?.name === "Captions") && (
             <CaptionStyle
               layout={project.captionLayout ?? CAPTIONS}
@@ -2198,7 +2393,9 @@ export default function App() {
               still={imageMode}
               imageSize={project.image}
               onCutOut={cutOutOf(selected)}
-              onRestore={() => selected.mediaId && api.edit({ type: "cutOut", mediaId: selected.mediaId })}
+              startCut={cutRequest === selected.id}
+              onCutStarted={() => setCutRequest(null)}
+              onRestore={() => selected.mediaId && api.edit({ type: "cutOut", mediaId: selected.mediaId, own: { clipId: selected.id, mediaId: crypto.randomUUID() } })}
               onPeek={(on) => setPeek(on ? (selected.mediaId ?? null) : null)}
               onPreview={(from, seconds) => {
                 const back = playback.time;
@@ -2259,7 +2456,7 @@ export default function App() {
   );
 
   return (
-    <div className="app" style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen && inEditor ? sideWidth : 0, PANEL_WIDTH)}px` } as CSSProperties}>
+    <div className={imageMode ? "app app--image" : "app"} style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen && inEditor ? sideWidth : 0, PANEL_WIDTH)}px` } as CSSProperties}>
       <Ambient active={theme !== "classic"} />
       <Tooltip />
       {fetchReview.dialog}
@@ -2281,7 +2478,7 @@ export default function App() {
         onClose={() => setNewImageOpen(false)}
       />
       {exportOpen && inEditor && (
-        <ExportDialog sub={projectName(project)} onClose={() => setExportOpen(false)}>
+        <ExportDialog sub={projectName(project)} picture={imageMode} onClose={() => setExportOpen(false)}>
           <ExportPanel
             settings={effective}
             onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
@@ -2342,6 +2539,15 @@ export default function App() {
         onImport={inDesktopApp ? () => void importFiles() : undefined}
         inputRef={urlRef}
         menu={inEditor ? mainMenu(false) : undefined}
+        image={
+          imageMode && project.image
+            ? {
+                start: <MenuBar menus={imageMenus} />,
+                middle: <CommandBox commands={commands} onAsk={(text) => (pickTab("assistant"), setAiAsk({ id: crypto.randomUUID(), text }))} />,
+                end: null,
+              }
+            : undefined
+        }
         update={
           updates.status.kind === "available"
             ? { label: `Update to v${updates.status.version}`, onClick: () => void updates.install() }
@@ -2427,20 +2633,26 @@ export default function App() {
         )}
         {imageMode && project.image ? (
           <ImageWorkspace
-            tools={IMAGE_TOOLS}
+            // Cut out and Crop act on the picked photo, so they wait for one.
+            tools={IMAGE_TOOLS.map((tool) =>
+              tool.id === "cutout" || tool.id === "crop" ? { ...tool, disabled: !(selected && showsPicture(project, selected)) } : tool,
+            )}
             activeTool={imageTool}
-            // A panel's tool picked again closes its panel.
-            onTool={(id) => setImageTool((now) => (now === id && id !== "move" ? "move" : id))}
-            flyout={imageTool !== "move" && imageTool !== "hand" ? mediaPanel(imageTool as MediaTab) : null}
+            onTool={(id) => {
+              if (id === "cutout") return pickTab("background");
+              // Text goes straight into the middle, its styles open beside it.
+              if (id === "text") return (addText(), pickTab("text"), setImageTool("move"));
+              if (id === "crop") return selected && openCrop(selected, 0);
+              // A panel's tool picked again closes its panel.
+              setImageTool((now) => (now === id && id !== "move" ? "move" : id));
+            }}
             options={imageOptions}
+            doc={{ name: project.media.length ? projectName(project) : "Untitled image", ...project.image }}
+            flyout={imageTool !== "move" && imageTool !== "hand" ? mediaPanel(imageTool as MediaTab) : null}
             canvas={preview}
-            imageSize={project.image}
+            view={imageView}
             properties={panelBody}
             layers={<LayersPanel project={project} api={api} selectedId={selectedId} onSelect={setSelectedId} />}
-            canUndo={api.canUndo}
-            canRedo={api.canRedo}
-            onUndo={api.undo}
-            onRedo={api.redo}
           />
         ) : inEditor && (
           <div

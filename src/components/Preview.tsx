@@ -9,7 +9,7 @@ import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
-import { RGB_SHARE, adjustSteps, blocksStyle, keyLine, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
+import { RGB_SHARE, adjustSteps, blocksStyle, keyLine, posterLevels, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
@@ -644,7 +644,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 <ShapeLayer
                   key={clip.id}
                   clip={clip}
-                  frame={frame}
+                  // Drawn at the size shown, so an outline is as thick against the picture as in the export.
+                  frame={{ ...frame, width: stageRef.current?.clientWidth ?? frame.width, height: stageRef.current?.clientHeight ?? frame.height }}
                   opacity={fadeAt(clip, time)}
                   selected={isSelected}
                   onPointerDown={beginGesture(clip, "move")}
@@ -929,7 +930,7 @@ function AdjustFilters({ clips }: { clips: Clip[] }) {
     const steps = new Map<string, LookStep>();
     for (const c of clips) {
       for (const step of adjustSteps(c.adjust)) {
-        if (["exposure", "highlights", "shadows", "sharpen"].includes(step[0])) steps.set(`${step[0]}-${Math.round(step[1] * 100)}`, step);
+        if (["exposure", "highlights", "shadows", "posterize", "sharpen"].includes(step[0])) steps.set(`${step[0]}-${Math.round(step[1] * 100)}`, step);
       }
     }
     return [...steps];
@@ -946,13 +947,19 @@ function AdjustFilters({ clips }: { clips: Clip[] }) {
             </filter>
           );
         }
-        const table = Array.from({ length: 33 }, (_, i) => toneCurve(op as ToneOp, v, i / 32).toFixed(4)).join(" ");
+        // Posterize: flat steps (the n-th share of the range shows the n-th of `levels` even values).
+        const levels = posterLevels(v);
+        const type = op === "posterize" ? "discrete" : "table";
+        const table =
+          op === "posterize"
+            ? Array.from({ length: levels }, (_, i) => (i / (levels - 1)).toFixed(4)).join(" ")
+            : Array.from({ length: 33 }, (_, i) => toneCurve(op as ToneOp, v, i / 32).toFixed(4)).join(" ");
         return (
           <filter key={id} id={id} colorInterpolationFilters="sRGB">
             <feComponentTransfer>
-              <feFuncR type="table" tableValues={table} />
-              <feFuncG type="table" tableValues={table} />
-              <feFuncB type="table" tableValues={table} />
+              <feFuncR type={type} tableValues={table} />
+              <feFuncG type={type} tableValues={table} />
+              <feFuncB type={type} tableValues={table} />
             </feComponentTransfer>
           </filter>
         );

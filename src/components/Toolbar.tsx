@@ -29,6 +29,8 @@ interface ToolbarProps {
   inputRef: RefObject<HTMLInputElement | null>;
   /** A newer version: a button to install it, or its progress (no `onClick`) while installing. */
   update?: { label: string; onClick?: () => void };
+  /** The Image editor's slim bar instead of the link box: its menus, the middle, and tools before Export. */
+  image?: { start: ReactNode; middle: ReactNode; end: ReactNode };
 }
 
 export function Toolbar({
@@ -46,6 +48,7 @@ export function Toolbar({
   onExport,
   inputRef,
   update,
+  image,
 }: ToolbarProps) {
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -153,7 +156,7 @@ export function Toolbar({
   };
 
   return (
-    <header className="toolbar">
+    <header className={image ? "toolbar toolbar--image" : "toolbar"}>
       <div className="toolbar__brand">
         {menu && (
         <div
@@ -183,9 +186,20 @@ export function Toolbar({
         </div>
         )}
         <img src="/craftora.svg" width={22} height={22} alt="" className="toolbar__logo" />
-        <span>Craftora</span>
+        {image ? image.start : <span>Craftora</span>}
       </div>
 
+      {image ? (
+        <div className="toolbar__form toolbar__form--image">
+          {image.middle}
+          {error && (
+            <p className="toolbar__error" role="alert">
+              <Icon name="alert" size={13} />
+              {error}
+            </p>
+          )}
+        </div>
+      ) : (
       <form className="toolbar__form" onSubmit={submit} role="search" aria-label="Fetch media">
         <div className="toolbar__url">
           <label htmlFor="media-url" className="sr-only">
@@ -260,6 +274,7 @@ export function Toolbar({
           )
         )}
       </form>
+      )}
 
       <div className="toolbar__end">
         {update && (
@@ -274,14 +289,15 @@ export function Toolbar({
             {update.label}
           </button>
         )}
+        {image?.end}
         {queue}
         {onExport && (
-          <button type="button" className="btn btn--primary" onClick={onExport} title="Export this project (pick where it's going, then Add to queue)">
+          <button type="button" className="btn btn--primary" onClick={onExport} title={image ? undefined : "Export this project (pick where it's going, then Add to queue)"}>
             <Icon name="film" size={14} />
             Export
           </button>
         )}
-        {onImport && (
+        {onImport && !image && (
           <button type="button" className="btn btn--secondary" onClick={onImport} disabled={fetching} title="Import files (Ctrl+O)">
             <Icon name="upload" size={14} />
             Import

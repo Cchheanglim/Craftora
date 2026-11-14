@@ -55,6 +55,12 @@ export function ColorWheel({ color, onChange, onCheckpoint }: { color: string; o
   };
   const [h, s, v] = hsv;
   const angle = (h * Math.PI) / 180;
+  const applyCode = () => {
+    const hex = `#${code.replace("#", "").toLowerCase()}`;
+    if (!/^#[0-9a-f]{6}$/.test(hex)) return false;
+    if (hex !== color.toLowerCase()) onChange(hex);
+    return true;
+  };
   return (
     <div className="color-wheel" style={{ "--full": hsvToHex([h, s, 1]) } as CSSProperties}>
       <div
@@ -87,12 +93,9 @@ export function ColorWheel({ color, onChange, onCheckpoint }: { color: string; o
         maxLength={7}
         spellCheck={false}
         onChange={(e) => setCode(e.target.value)}
-        onBlur={() => setCode(color)}
-        onKeyDown={(e) => {
-          if (e.key !== "Enter") return;
-          const hex = `#${code.replace("#", "").toLowerCase()}`;
-          if (/^#[0-9a-f]{6}$/.test(hex)) onChange(hex);
-        }}
+        // Leaving the box applies a whole code too; half a code goes back to the colour.
+        onBlur={() => (applyCode() ? undefined : setCode(color))}
+        onKeyDown={(e) => e.key === "Enter" && applyCode()}
       />
     </div>
   );

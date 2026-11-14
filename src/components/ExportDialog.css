@@ -34,3 +34,17 @@
 .export-dialog .export__title {
   display: none;
 }
+
+/* The Image editor's: under the top bar, left of the layers dock (340px), which stays in view and undimmed. */
+.export-dialog.is-picture {
+  margin: calc(var(--toolbar-h) + 4px) 352px auto auto;
+  width: 340px;
+}
+
+.export-dialog.is-picture::backdrop {
+  background: transparent;
+}
+
+.export-dialog.is-picture[open] {
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.45);
+}

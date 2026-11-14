@@ -502,3 +502,17 @@
   }
 }
 
+
+/* A download's progress (Remove background's first run) */
+.insp__bar {
+  position: relative;
+  height: 4px;
+  background: var(--line-strong);
+  overflow: hidden;
+}
+
+.insp__bar > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--text);
+}

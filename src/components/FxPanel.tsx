@@ -47,6 +47,9 @@ function pictureAt(project: Project | undefined, time: number): { url: string; i
  * A tab of tiles to drag onto the timeline; clicking a tile (or Enter) puts it at the playhead instead.
  * Filters show the current frame at the playhead with each filter's CSS; effects and transitions loop on Craftora's cat.
  */
+/** Effects that look the same in every frame, so they mean something on a still picture. */
+export const STILL_EFFECTS = ["blur", "mirror", "bars", "vignette", "rgb-split"];
+
 export function FxPanel({
   tab,
   project,
@@ -64,6 +67,7 @@ export function FxPanel({
   detail,
   onBack,
   onClose,
+  still,
 }: {
   tab: FxTab;
   project?: Project;
@@ -86,6 +90,8 @@ export function FxPanel({
   onBack?: () => void;
   /** X: close the right panel. */
   onClose?: () => void;
+  /** The Image editor: a click adds the tile; no timeline words. */
+  still?: boolean;
 }) {
   const [frame, setFrame] = useState<string>();
   const [shapeQuery, setShapeQuery] = useState("");
@@ -135,8 +141,9 @@ export function FxPanel({
     <button
       key={`${item.kind}-${item.id}`}
       type="button"
+      aria-pressed={still && block ? (item.kind === "filter" && block.look === item.id) || (item.kind === "effect" && block.effect === item.id) : undefined}
       className={`fx-tile is-${item.kind === "filter" || item.kind === "adjust" ? "filter" : item.kind === "shape" ? "shape" : item.kind === "fade" ? `fade-${item.id}` : item.id}`}
-      title={`Drag onto the timeline, or click to add at the playhead`}
+      title={still ? undefined : "Drag onto the timeline, or click to add at the playhead"}
       onPointerDown={(e: ReactPointerEvent) => {
         if (e.button === 0) beginFxDrag(item, e);
       }}
@@ -337,15 +344,19 @@ export function FxPanel({
     <section className="fx-panel" aria-label={tab === "filters" ? "Filters" : tab === "effects" ? "Effects" : tab === "transitions" ? "Transitions" : "Shapes"}>
       {tab === "filters" && (
         <>
-          <p className="fx-panel__hint">Drag a filter onto a video: it goes inside that clip. Drop it on empty track space for a block of its own that colours every picture under it (not text). Click it on the timeline for its settings.</p>
+          {!still && <p className="fx-panel__hint">Drag a filter onto a video: it goes inside that clip. Drop it on empty track space for a block of its own that colours every picture under it (not text). Click it on the timeline for its settings.</p>}
           <div className="fx__grid">
             {/* Its own Adjust sliders (its settings panel) for every picture under it; the tile hints at a change. */}
-            {tile({ kind: "adjust", id: "layer" }, "Adjust layer", "brightness(1.1) contrast(1.1) saturate(1.3)")}
+            {!still && tile({ kind: "adjust", id: "layer" }, "Adjust layer", "brightness(1.1) contrast(1.1) saturate(1.3)")}
             {LOOKS.map((look) => tile({ kind: "filter", id: look.id }, look.label, lookFilter(look.id)))}
           </div>
         </>
       )}
-      {tab === "effects" && (
+      {tab === "effects" && still && (
+        // A picture is one moment: only the effects that don't move.
+        <div className="fx__grid">{PICTURE_EFFECTS.filter((e) => STILL_EFFECTS.includes(e.id)).map((effect) => tile({ kind: "effect", id: effect.id }, effect.label))}</div>
+      )}
+      {tab === "effects" && !still && (
         <>
           <p className="fx-panel__hint">Drag an effect onto a video: it goes inside that clip. Drop it on empty track space for a block of its own that you can stretch over several clips. Click it on the timeline for its settings.</p>
           <h3 className="section-label">Camera</h3>
@@ -379,9 +390,11 @@ export function FxPanel({
       )}
       {tab === "shapes" && (
         <>
-          <p className="fx-panel__hint">
-            Drag a shape onto the timeline; select it to change its colour, outline, see-through and angle; drag it in the preview to move or resize it.
-          </p>
+          {!still && (
+            <p className="fx-panel__hint">
+              Drag a shape onto the timeline; select it to change its colour, outline, see-through and angle; drag it in the preview to move or resize it.
+            </p>
+          )}
           <input
             type="search"
             className="field fx-panel__search"

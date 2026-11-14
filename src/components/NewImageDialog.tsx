@@ -5,20 +5,39 @@ import { ColorField } from "./Inspector";
 import { Icon } from "./Icon";
 import "./NewImageDialog.css";
 
-/** Draws a rectangle in the item's proportions up to 40×40. */
+/** Draws a rectangle in the item's proportions fitting the 44×36 box. */
 function rectDims(width: number, height: number): { width: number; height: number } {
-  const MAX = 40;
+  const MAX_W = 44;
+  const MAX_H = 36;
   const w = Math.max(1, width);
   const h = Math.max(1, height);
-  if (w >= h) {
+  if (w / h >= MAX_W / MAX_H) {
     return {
-      width: MAX,
-      height: Math.max(8, Math.round(MAX * (h / w))),
+      width: MAX_W,
+      height: Math.max(8, Math.round(MAX_W * (h / w))),
     };
   }
   return {
-    width: Math.max(8, Math.round(MAX * (w / h))),
-    height: MAX,
+    width: Math.max(8, Math.round(MAX_H * (w / h))),
+    height: MAX_H,
+  };
+}
+
+/** Draws a preview rectangle in the chosen proportions fitting at most 176×96. */
+function previewDims(width: number, height: number): { width: number; height: number } {
+  const MAX_W = 176;
+  const MAX_H = 96;
+  const w = Math.max(1, width);
+  const h = Math.max(1, height);
+  if (w / h >= MAX_W / MAX_H) {
+    return {
+      width: MAX_W,
+      height: Math.max(4, Math.round(MAX_W * (h / w))),
+    };
+  }
+  return {
+    width: Math.max(4, Math.round(MAX_H * (w / h))),
+    height: MAX_H,
   };
 }
 
@@ -90,7 +109,7 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
 
   const customW = clampSide(width);
   const customH = clampSide(height);
-  const customDims = rectDims(customW, customH);
+  const preview = previewDims(customW, customH);
   const recentCards = recent.slice(0, 6);
 
   return (
@@ -114,6 +133,7 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
           className="btn btn--icon"
           aria-label="Close"
           onClick={onClose}
+          style={{ width: 26, height: 26 }}
         >
           <Icon name="x" size={14} />
         </button>
@@ -121,8 +141,20 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
 
       <div className="new-image__body">
         <div className="new-image__left">
+          <button
+            type="button"
+            className="btn btn--secondary new-image__open-photo"
+            onClick={onOpenPhoto}
+          >
+            <Icon name="folder" size={18} />
+            <span className="new-image__open-photo-text">
+              <span className="new-image__open-photo-title">Open a photo…</span>
+              <span className="new-image__open-photo-desc">The picture starts at the photo's own size</span>
+            </span>
+          </button>
+
           <div className="new-image__section">
-            <h3 className="new-image__section-title">Blank sizes</h3>
+            <div className="new-image__label">Blank sizes</div>
             <div className="new-image__grid">
               {IMAGE_SIZES.map((item) => {
                 const dims = rectDims(item.width, item.height);
@@ -131,7 +163,7 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
                   <button
                     key={item.id}
                     type="button"
-                    className="new-image__tile"
+                    className="new-image__card"
                     aria-pressed={isPicked}
                     onClick={() => {
                       setSelectedId(item.id);
@@ -140,16 +172,16 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
                     }}
                     onDoubleClick={() => onCreate(item.width, item.height, background)}
                   >
-                    <div className="new-image__tile-preview">
+                    <div className="new-image__card-preview">
                       <span
-                        className="new-image__tile-rect"
+                        className="new-image__card-rect"
                         style={{ width: `${dims.width}px`, height: `${dims.height}px` }}
                         aria-hidden="true"
                       />
                     </div>
-                    <span className="new-image__tile-label">{item.label}</span>
-                    <span className="new-image__tile-dims">
-                      {item.width} × {item.height} px
+                    <span className="new-image__card-name">{item.label}</span>
+                    <span className="new-image__card-size">
+                      {item.width} × {item.height}
                     </span>
                   </button>
                 );
@@ -157,7 +189,7 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
 
               <button
                 type="button"
-                className="new-image__tile"
+                className="new-image__card"
                 aria-pressed={selectedId === "custom"}
                 onClick={() => {
                   setSelectedId("custom");
@@ -166,25 +198,22 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
                 }}
                 onDoubleClick={handleCreate}
               >
-                <div className="new-image__tile-preview">
+                <div className="new-image__card-preview">
                   <span
-                    className="new-image__tile-rect"
-                    style={{ width: `${customDims.width}px`, height: `${customDims.height}px` }}
+                    className="new-image__card-rect new-image__card-rect--dashed"
                     aria-hidden="true"
                   />
                 </div>
-                <span className="new-image__tile-label">Custom</span>
-                <span className="new-image__tile-dims">
-                  {customW} × {customH} px
-                </span>
+                <span className="new-image__card-name">Your own</span>
+                <span className="new-image__card-size">any size</span>
               </button>
             </div>
           </div>
 
           {recentCards.length > 0 && (
             <div className="new-image__section">
-              <h3 className="new-image__section-title">Recent images</h3>
-              <div className="new-image__recent-grid">
+              <div className="new-image__label">Recent</div>
+              <div className="new-image__recent-row">
                 {recentCards.map((item) => (
                   <button
                     key={item.id}
@@ -192,19 +221,15 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
                     className="new-image__recent-card"
                     onClick={() => onOpenProject(item.id)}
                   >
-                    <div className="new-image__recent-thumb">
-                      {item.thumbnail ? (
-                        <img
-                          src={item.thumbnail}
-                          alt=""
-                          className="new-image__recent-img"
-                        />
-                      ) : (
-                        <div className="new-image__recent-placeholder" aria-hidden="true">
-                          <Icon name="image" size={24} />
-                        </div>
-                      )}
-                    </div>
+                    {item.thumbnail ? (
+                      <img
+                        src={item.thumbnail}
+                        alt=""
+                        className="new-image__recent-thumb"
+                      />
+                    ) : (
+                      <div className="new-image__recent-placeholder" aria-hidden="true" />
+                    )}
                     <span className="new-image__recent-name">{item.name}</span>
                   </button>
                 ))}
@@ -214,87 +239,89 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
         </div>
 
         <div className="new-image__right">
-          <div className="new-image__dims">
-            <div className="new-image__dims-row">
-              <div className="new-image__field">
-                <label htmlFor="new-image-width">Width</label>
-                <div className="new-image__input-wrap">
-                  <input
-                    ref={widthRef}
-                    id="new-image-width"
-                    type="number"
-                    className="field mono"
-                    min={16}
-                    max={MAX_IMAGE_SIDE}
-                    step={1}
-                    value={width}
-                    onChange={(e) => handleWidthChange(e.target.value)}
-                    onBlur={() => setWidth((prev) => clampSide(prev))}
-                    onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                  />
-                  <span className="new-image__suffix" aria-hidden="true">px</span>
-                </div>
-              </div>
-              <div className="new-image__field">
-                <label htmlFor="new-image-height">Height</label>
-                <div className="new-image__input-wrap">
-                  <input
-                    id="new-image-height"
-                    type="number"
-                    className="field mono"
-                    min={16}
-                    max={MAX_IMAGE_SIDE}
-                    step={1}
-                    value={height}
-                    onChange={(e) => handleHeightChange(e.target.value)}
-                    onBlur={() => setHeight((prev) => clampSide(prev))}
-                    onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                  />
-                  <span className="new-image__suffix" aria-hidden="true">px</span>
-                </div>
-              </div>
+          <div className="new-image__label">Size</div>
+          <div className="new-image__size-row">
+            <div className="new-image__input-wrap">
+              <span className="new-image__input-prefix" aria-hidden="true">W</span>
+              <input
+                ref={widthRef}
+                id="new-image-width"
+                type="number"
+                className="field mono"
+                min={16}
+                max={MAX_IMAGE_SIDE}
+                step={1}
+                value={width}
+                onChange={(e) => handleWidthChange(e.target.value)}
+                onBlur={() => setWidth((prev) => clampSide(prev))}
+                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                aria-label="Width"
+              />
             </div>
             <button
               type="button"
-              className="btn btn--secondary new-image__swap"
+              className="btn btn--icon"
+              style={{ width: 26, height: 26 }}
               onClick={handleSwap}
+              aria-label="Swap"
             >
               <Icon name="flip" size={13} />
-              Swap
             </button>
-          </div>
-
-          <div className="new-image__section">
-            <label className="new-image__label">Background</label>
-            <ColorField color={background} onChange={(c) => setBackground(c)} />
-          </div>
-
-          <div className="new-image__actions">
-            <button
-              type="button"
-              className="btn btn--secondary new-image__btn-photo"
-              onClick={onOpenPhoto}
-            >
-              Open a photo…
-            </button>
-            <div className="new-image__actions-row">
-              <button
-                type="button"
-                className="btn btn--secondary"
-                onClick={onClose}
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                className="btn btn--primary"
-                onClick={handleCreate}
-              >
-                Create
-              </button>
+            <div className="new-image__input-wrap">
+              <span className="new-image__input-prefix" aria-hidden="true">H</span>
+              <input
+                id="new-image-height"
+                type="number"
+                className="field mono"
+                min={16}
+                max={MAX_IMAGE_SIDE}
+                step={1}
+                value={height}
+                onChange={(e) => handleHeightChange(e.target.value)}
+                onBlur={() => setHeight((prev) => clampSide(prev))}
+                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                aria-label="Height"
+              />
             </div>
           </div>
+          <div className="new-image__note">
+            Up to <span className="mono">8192</span> px a side.
+          </div>
+
+          <div className="new-image__label">Background</div>
+          <ColorField color={background} onChange={(c) => setBackground(c)} />
+
+          <div className="new-image__label">Preview</div>
+          <div className="new-image__preview-box">
+            <div
+              className="new-image__preview-rect"
+              style={{
+                width: `${preview.width}px`,
+                height: `${preview.height}px`,
+                background,
+              }}
+            />
+          </div>
         </div>
+      </div>
+
+      <div className="new-image__foot">
+        <button
+          type="button"
+          className="btn btn--secondary"
+          style={{ width: 110 }}
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn btn--primary"
+          style={{ width: 110 }}
+          onClick={handleCreate}
+        >
+          Create
+        </button>
       </div>
     </dialog>
   );

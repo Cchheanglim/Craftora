@@ -774,3 +774,9 @@
     display: none;
   }
 }
+
+/* The Image editor: the picked layer's filter or effect */
+.fx-tile[aria-pressed="true"] {
+  border-color: var(--text-3);
+  background: var(--bg-selected);
+}
