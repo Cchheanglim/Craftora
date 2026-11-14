@@ -234,7 +234,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   });
 
   const title = used[0]?.name ?? "Project";
-  const fileName = `${settings.name?.trim() || `${slug(title)}_edit`}.${container}`;
+  // A blank picture is an image of its own, not an edit of something.
+  const fileName = `${settings.name?.trim() || (still && !used.length ? "Image" : `${slug(title)}_edit`)}.${container}`;
   // Rough: ~8 Mbit/s for 1080p video plus 192 kbit/s sound.
   const pixels = (frame.width * frame.height) / (1920 * 1080);
   const sizeMb = still ? pixels * (container === "png" ? 3 : 0.6) : isVideo ? duration * (1 + 0.024) * Math.max(0.4, pixels) : duration * (container === "wav" ? 0.18 : container === "flac" ? 0.1 : 0.04);

@@ -2478,7 +2478,7 @@ export default function App() {
         onClose={() => setNewImageOpen(false)}
       />
       {exportOpen && inEditor && (
-        <ExportDialog sub={projectName(project)} picture={imageMode} onClose={() => setExportOpen(false)}>
+        <ExportDialog sub={imageMode && !project.media.length ? "Untitled image" : projectName(project)} picture={imageMode} onClose={() => setExportOpen(false)}>
           <ExportPanel
             settings={effective}
             onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
