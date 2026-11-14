@@ -217,7 +217,7 @@ export interface RenderClip {
   /** Text animations (textMotion.ts), drawn by project.rs as the preview draws them. */
   motion?: TextMotion;
   /** Shapes: how to draw it (shapes.ts `shapeSvg`); `startRender` turns it into `picture`. */
-  shape?: Partial<Pick<Clip, "shape" | "color" | "size" | "aspect" | "x" | "y" | "rotate" | "opacity" | "outline">>;
+  shape?: Partial<Pick<Clip, "shape" | "color" | "size" | "aspect" | "x" | "y" | "rotate" | "opacity" | "outline" | "points">>;
   /** Shapes: the whole frame as a PNG data URL with the shape drawn on it, laid over the video. */
   picture?: string;
 }

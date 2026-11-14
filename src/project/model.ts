@@ -201,6 +201,8 @@ export interface Clip {
   opacity?: number;
   /** Shape clips: 0 or absent = filled; > 0 = outline only, its thickness as a share of the frame height. */
   outline?: number;
+  /** Star shapes: how many points (5 when absent). */
+  points?: number;
   /** Shape clips: box height / box width in frame pixels (1 when absent). */
   aspect?: number;
   /** Seconds of fade from black/silence at the start and to black/silence at the end. */

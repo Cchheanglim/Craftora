@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { isShape, isText } from "../src/project/model";
-import { SHAPES, newShapeClip, shapeBox, shapeSvg } from "../src/project/shapes";
+import { SHAPES, newShapeClip, shapeBox, shapeSvg, starPath } from "../src/project/shapes";
 
 test("every shape has a unique id and a non-empty SVG path", () => {
   expect(SHAPES.length).toBeGreaterThan(0);
@@ -41,4 +41,12 @@ test("newShapeClip creates a shape clip without text", () => {
   expect(clip.text).toBeUndefined();
   expect(isShape(clip)).toBe(true);
   expect(isText(clip)).toBe(false);
+});
+
+test("a star draws as many points as asked; 5 keeps the original star", () => {
+  const corners = (svg: string) => (svg.match(/ d="([^"]*)"/)![1].match(/[ML]/g) ?? []).length;
+  expect(corners(shapeSvg({ shape: "star", points: 8 }, 100, 100))).toBe(16);
+  expect(corners(shapeSvg({ shape: "star", points: 3 }, 100, 100))).toBe(6);
+  expect(shapeSvg({ shape: "star", points: 5 }, 100, 100)).toBe(shapeSvg({ shape: "star" }, 100, 100));
+  expect(starPath(4).startsWith("M 50.00 0.00")).toBe(true);
 });

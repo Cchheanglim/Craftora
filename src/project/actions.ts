@@ -49,6 +49,7 @@ export type ClipPatch = Partial<
     | "opacity"
     | "name"
     | "outline"
+    | "points"
     | "aspect"
     | "size"
     | "fill"

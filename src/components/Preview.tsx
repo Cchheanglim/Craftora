@@ -1157,7 +1157,7 @@ interface ShapeLayerProps {
 function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles }: ShapeLayerProps) {
   const src = useMemo(
     () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(shapeSvg(clip, frame.width, frame.height))}`,
-    [clip.shape, clip.color, clip.size, clip.aspect, clip.x, clip.y, clip.opacity, clip.outline, clip.rotate, frame.width, frame.height],
+    [clip.shape, clip.color, clip.size, clip.aspect, clip.x, clip.y, clip.opacity, clip.outline, clip.rotate, clip.points, frame.width, frame.height],
   );
   const box = shapeBox(clip, frame.width, frame.height);
   return (

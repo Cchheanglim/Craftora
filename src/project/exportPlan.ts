@@ -212,7 +212,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       y: c.y,
       text: textLines(c.text ?? "", c.size, frame, c.font, c.spacing),
       motion: role === "text" ? textMotion(c, textLines(c.text ?? "", c.size, frame, c.font)) : undefined,
-      shape: c.shape ? { shape: c.shape, color: c.color, size: c.size, aspect: c.aspect, x: c.x, y: c.y, rotate: c.rotate, opacity: c.opacity, outline: c.outline } : undefined,
+      shape: c.shape ? { shape: c.shape, color: c.color, size: c.size, aspect: c.aspect, x: c.x, y: c.y, rotate: c.rotate, opacity: c.opacity, outline: c.outline, points: c.points } : undefined,
       color: c.color ?? "#ffffff",
       font: c.font,
       edge: c.edge,

@@ -82,6 +82,14 @@ export const SHAPES: readonly { id: ShapeId; label: string; path: string; line?:
 
 export const shapeLabel = (id?: string) => SHAPES.find((s) => s.id === id)?.label ?? "Shape";
 
+/** A star with `n` points in the 0..100 box (the inner corners at 40% of the way out), its first point at the top. */
+export const starPath = (n: number) =>
+  `${Array.from({ length: 2 * n }, (_, i) => {
+    const r = i % 2 ? 20 : 50;
+    const a = (Math.PI * i) / n - Math.PI / 2;
+    return `${i ? "L" : "M"} ${(50 + r * Math.cos(a)).toFixed(2)} ${(50 + r * Math.sin(a)).toFixed(2)}`;
+  }).join(" ")} Z`;
+
 /** A shape clip's bounding box in frame pixels (`W` × `H`). */
 export function shapeBox(
   clip: Partial<Pick<Clip, "size" | "aspect" | "x" | "y">>,
@@ -97,7 +105,7 @@ export function shapeBox(
 
 /** Whole-frame SVG document for a shape clip on a `W` × `H` frame. */
 export function shapeSvg(
-  clip: Partial<Pick<Clip, "shape" | "color" | "size" | "aspect" | "x" | "y" | "opacity" | "outline" | "rotate">>,
+  clip: Partial<Pick<Clip, "shape" | "color" | "size" | "aspect" | "x" | "y" | "opacity" | "outline" | "rotate" | "points">>,
   W: number,
   H: number,
 ): string {
@@ -113,12 +121,12 @@ export function shapeSvg(
   const paint = stroked
     ? `fill="none" stroke="${color}" stroke-width="${(clip.outline && clip.outline > 0 ? clip.outline : 0.01) * H}" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"`
     : `fill="${color}" fill-rule="evenodd"`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><g transform="translate(${cx} ${cy}) rotate(${angle}) translate(${-w / 2} ${-h / 2}) scale(${w / 100} ${h / 100})" opacity="${opacity}"><path d="${def.path}" ${paint} /></g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><g transform="translate(${cx} ${cy}) rotate(${angle}) translate(${-w / 2} ${-h / 2}) scale(${w / 100} ${h / 100})" opacity="${opacity}"><path d="${def.id === "star" && clip.points && clip.points !== 5 ? starPath(clip.points) : def.path}" ${paint} /></g></svg>`;
 }
 
 /** Rasterises `shapeSvg` onto a `W` × `H` canvas as a PNG data URL (undefined on failure). */
 export function shapePng(
-  clip: Partial<Pick<Clip, "shape" | "color" | "size" | "aspect" | "x" | "y" | "opacity" | "outline" | "rotate">>,
+  clip: Partial<Pick<Clip, "shape" | "color" | "size" | "aspect" | "x" | "y" | "opacity" | "outline" | "rotate" | "points">>,
   W: number,
   H: number,
 ): Promise<string | undefined> {

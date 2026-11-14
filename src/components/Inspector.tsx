@@ -384,6 +384,9 @@ export function Inspector({
                   </div>
                 </fieldset>
               )}
+              {clip.shape === "star" && (
+                <Slider id="insp-points" label="Points" min={3} max={12} step={1} value={clip.points ?? 5} format={String} onCheckpoint={onCheckpoint} onChange={(points) => onChange({ points: points === 5 ? undefined : points }, true)} />
+              )}
               {outlined && (
                 <Slider
                   id="insp-outline"
