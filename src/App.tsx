@@ -2665,7 +2665,7 @@ export default function App() {
             canvas={preview}
             view={imageView}
             properties={panelBody}
-            layers={<LayersPanel project={project} api={api} selectedId={selectedId} onSelect={setSelectedId} />}
+            layers={<LayersPanel project={project} api={api} selectedId={selectedId} onSelect={setSelectedId} menu={[menuItem("dup", "Duplicate layer"), menuItem("up", "Bring forward"), menuItem("down", "Send backward"), "sep", menuItem("crop", "Crop…"), menuItem("turn", "Turn 90°"), menuItem("mirror", "Mirror"), "sep", menuItem("delete", "Delete layer")]} />}
           />
         ) : inEditor && (
           <div

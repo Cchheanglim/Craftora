@@ -4,7 +4,22 @@ import { layersOf } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
 import { shapeLabel } from "../project/shapes";
 import { Icon } from "./Icon";
+import type { MenuItem } from "./MenuBar";
 import "./LayersPanel.css";
+
+/** A menu that just opened, moved up and left by as much as it would run out of the window (a ref callback). */
+function keepInside(el: HTMLElement | null) {
+  if (!el) return;
+  // Measured where it opened (React may call this twice) and without its pop-in, which shrinks it for a moment (it
+  // still plays after).
+  el.style.translate = "";
+  el.style.animation = "none";
+  const r = el.getBoundingClientRect();
+  el.style.animation = "";
+  const dx = Math.max(8 - r.left, Math.min(0, window.innerWidth - 8 - r.right));
+  const dy = Math.max(8 - r.top, Math.min(0, window.innerHeight - 8 - r.bottom));
+  el.style.translate = `${Math.round(dx)}px ${Math.round(dy)}px`;
+}
 
 interface DragState {
   index: number;
@@ -38,11 +53,14 @@ export function LayersPanel({
   api,
   selectedId,
   onSelect,
+  menu,
 }: {
   project: Project;
   api: ProjectApi;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /** The picked layer's commands (App's Layer menu); shown under the panel's own items. */
+  menu?: (MenuItem | "sep")[];
 }) {
   const layers = layersOf(project);
   const selectedClip = selectedId ? project.clips.find((c) => c.id === selectedId) ?? null : null;
@@ -54,12 +72,83 @@ export function LayersPanel({
   const editInputRef = useRef<HTMLInputElement>(null);
   const editingCancelledRef = useRef(false);
 
+  // Context menu state
+  const [ctxMenu, setCtxMenu] = useState<{ clipId: string; x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const ctxLayer = ctxMenu ? layers.find((l) => l.clip.id === ctxMenu.clipId) ?? null : null;
+
   useEffect(() => {
     if (editingId && editInputRef.current) {
       editInputRef.current.focus();
       editInputRef.current.select();
     }
   }, [editingId]);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const first = menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
+    first?.focus();
+    const onPointerDown = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) {
+        setCtxMenu(null);
+      }
+    };
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setCtxMenu(null);
+      }
+    };
+    const close = () => setCtxMenu(null);
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", close);
+    window.addEventListener("blur", close);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [ctxMenu]);
+
+  const startRename = (clip: Clip) => {
+    editingCancelledRef.current = false;
+    setEditingId(clip.id);
+    setEditingName(clip.name ?? layerName(clip, project));
+  };
+
+  const toggleHidden = (trackId: string, hidden?: boolean) => {
+    api.edit({
+      type: "updateTrack",
+      trackId,
+      patch: { hidden: !hidden },
+    });
+  };
+
+  const toggleLocked = (trackId: string, locked?: boolean) => {
+    api.edit({
+      type: "updateTrack",
+      trackId,
+      patch: { locked: !locked },
+    });
+  };
+
+  const runMenuItem = (item: MenuItem) => {
+    if (item.disabled) return;
+    setCtxMenu(null);
+    item.run();
+  };
+
+  const ctxItems: (MenuItem | "sep")[] = ctxLayer
+    ? [
+        { id: "rename", label: "Rename", run: () => startRename(ctxLayer.clip) },
+        { id: "hide", label: ctxLayer.track.hidden ? "Show" : "Hide", run: () => toggleHidden(ctxLayer.track.id, ctxLayer.track.hidden) },
+        { id: "lock", label: ctxLayer.track.locked ? "Unlock" : "Lock", run: () => toggleLocked(ctxLayer.track.id, ctxLayer.track.locked) },
+        ...(menu && menu.length > 0 ? (["sep", ...menu] as const) : []),
+      ]
+    : [];
 
   const saveName = (clipId: string, val: string) => {
     if (editingCancelledRef.current) return;
@@ -340,6 +429,11 @@ export function LayersPanel({
                     onSelect(clip.id);
                   }
                 }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  onSelect(clip.id);
+                  setCtxMenu({ clipId: clip.id, x: e.clientX, y: e.clientY });
+                }}
                 onKeyDown={(e) => {
                   if (editingId || e.target !== e.currentTarget) return;
                   if (e.key === "Enter" || e.key === " ") {
@@ -358,11 +452,7 @@ export function LayersPanel({
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
-                    api.edit({
-                      type: "updateTrack",
-                      trackId: track.id,
-                      patch: { hidden: !track.hidden },
-                    });
+                    toggleHidden(track.id, track.hidden);
                   }}
                 >
                   <Icon name={track.hidden ? "eyeOff" : "eye"} size={14} />
@@ -415,9 +505,7 @@ export function LayersPanel({
                     className="layers-panel__name"
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      editingCancelledRef.current = false;
-                      setEditingId(clip.id);
-                      setEditingName(clip.name ?? layerName(clip, project));
+                      startRename(clip);
                     }}
                   >
                     {layerName(clip, project)}
@@ -432,11 +520,7 @@ export function LayersPanel({
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
-                    api.edit({
-                      type: "updateTrack",
-                      trackId: track.id,
-                      patch: { locked: !track.locked },
-                    });
+                    toggleLocked(track.id, track.locked);
                   }}
                 >
                   <Icon name={track.locked ? "lock" : "unlock"} size={14} />
@@ -464,6 +548,63 @@ export function LayersPanel({
           <div className="layers-panel__drop-indicator" style={{ top: `${indicatorTop}px` }} />
         )}
       </div>
+
+      {ctxMenu && ctxLayer && (
+        <div
+          ref={(el) => {
+            menuRef.current = el;
+            keepInside(el);
+          }}
+          className="layers-panel__menu"
+          role="menu"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          onContextMenu={(e) => e.preventDefault()}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              e.stopPropagation();
+              const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []);
+              if (items.length === 0) return;
+              const at = items.indexOf(document.activeElement as HTMLButtonElement);
+              const next = e.key === "ArrowDown" ? (at === -1 ? 0 : (at + 1) % items.length) : at <= 0 ? items.length - 1 : at - 1;
+              items[next]?.focus();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              setCtxMenu(null);
+            }
+          }}
+        >
+          {ctxItems.map((item, i) =>
+            item === "sep" ? (
+              <div key={`sep-${i}`} className="layers-panel__menu-sep" role="separator" />
+            ) : (
+              <button
+                key={`${item.id}-${i}`}
+                type="button"
+                className="layers-panel__menu-item"
+                role="menuitem"
+                tabIndex={-1}
+                disabled={item.disabled}
+                onClick={() => runMenuItem(item)}
+                onPointerEnter={(e) => {
+                  if (!item.disabled) e.currentTarget.focus();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    runMenuItem(item);
+                  }
+                }}
+              >
+                <span>{item.label}</span>
+                {item.keys && <span className="layers-panel__menu-keys">{item.keys}</span>}
+              </button>
+            ),
+          )}
+        </div>
+      )}
     </section>
   );
 }
