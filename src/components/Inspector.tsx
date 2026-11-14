@@ -188,7 +188,7 @@ export function Inspector({
                 <Slider id="insp-text-edge" label={clip.edge ? "Thickness" : "Distance"} min={0.5} max={4} step={0.1} value={clip.edgeSize ?? 1} format={(v) => `${v.toFixed(1)}×`} onCheckpoint={onCheckpoint} onChange={(edgeSize) => onChange({ edgeSize }, true)} />
               )}
               {!clip.edge && <Slider id="insp-text-soft" label="Softness" min={0} max={0.5} step={0.01} value={clip.edgeBlur ?? 0} format={pct} onCheckpoint={onCheckpoint} onChange={(edgeBlur) => onChange({ edgeBlur: edgeBlur || undefined }, true)} />}
-              <ColorField label="Edge color" color={clip.edgeColor ?? "#000000"} onChange={(edgeColor, live) => onChange({ edgeColor }, live)} onCheckpoint={onCheckpoint} />
+              <ColorField label="Edge color" color={clip.edgeColor ?? "#111111"} onChange={(edgeColor, live) => onChange({ edgeColor }, live)} onCheckpoint={onCheckpoint} />
               <Slider id="insp-text-glow" label="Glow" min={0} max={0.5} step={0.01} value={clip.glow ?? 0} format={pct} onCheckpoint={onCheckpoint} onChange={(glow) => onChange({ glow: glow || undefined }, true)} />
               {Boolean(clip.glow) && <ColorField label="Glow color" color={clip.glowColor ?? "#ffffff"} onChange={(glowColor, live) => onChange({ glowColor }, live)} onCheckpoint={onCheckpoint} />}
               <Slider id="insp-text-spacing" label="Spacing" min={-0.1} max={0.5} step={0.01} value={clip.spacing ?? 0} format={pct} onCheckpoint={onCheckpoint} onChange={(spacing) => onChange({ spacing: spacing || undefined }, true)} />
