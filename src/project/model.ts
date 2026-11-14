@@ -312,7 +312,8 @@ export type TextEdge = "outline" | "box";
  * image's height, so they scale with the picture; opacities 0–1; colours #rrggbb.
  */
 export interface LayerStyle {
-  /** Under the layer, moved `distance` towards `angle` (degrees, 0 = right, 90 = up, as photo editors measure it) and blurred by `size`. */
+  /** Under the layer, as if lit from `angle` (degrees, 0 = right, 90 = above, as photo editors measure it): moved
+   * `distance` the other way and blurred by `size`. */
   shadow?: { color: string; opacity: number; angle: number; distance: number; size: number };
   /** A soft light all round the layer, `size` wide. */
   glow?: { color: string; opacity: number; size: number };

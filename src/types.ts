@@ -4,7 +4,7 @@ import type { TextMotion } from "./project/textMotion";
 export type OutputKind = "video" | "audio";
 export type VideoContainer = "mp4" | "mkv";
 export type AudioContainer = "mp3" | "wav" | "flac";
-export type ImageContainer = "png" | "jpg";
+export type ImageContainer = "png" | "jpg" | "webp";
 export type CutMode = "fast" | "precise";
 
 /** One downloadable stream that yt-dlp reported for a source. */

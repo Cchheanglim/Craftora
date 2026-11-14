@@ -12,6 +12,7 @@ import { formatTimecode } from "../lib/timecode";
 import { RGB_SHARE, adjustSteps, blocksStyle, keyLine, posterLevels, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
 import { textShadowFilter } from "../lib/textPicture";
+import { hasStyle, styleFilter } from "../lib/layerStyle";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
 import { SyncedMedia } from "./SyncedMedia";
@@ -519,6 +520,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           )}
           {WARMTH_FILTERS}
           <AdjustFilters clips={project.clips} />
+          {still && <StyleFilters clips={project.clips} height={stageRef.current?.clientHeight ?? frame.height} />}
           <KeyFilters clips={project.clips} />
           <div
             className="preview__pictures"
@@ -542,7 +544,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 stageAspect={stageAspect}
                 stageWidth={stageRef.current?.clientWidth ?? frame.width}
                 visible={t !== null && !trackHidden(clip)}
-                opacity={t === null ? 0 : mix(clip).picture * (clip.opacity ?? 1) * (clip.fillOpacity ?? 1)}
+                opacity={t === null ? 0 : mix(clip).picture * (clip.opacity ?? 1) * ownFill(clip)}
                 white={t === null ? 0 : mix(clip).white}
                 shift={t === null ? 0 : mix(clip).shift}
                 lift={t === null ? 0 : mix(clip).lift}
@@ -652,7 +654,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   clip={clip}
                   // Drawn at the size shown, so an outline is as thick against the picture as in the export.
                   frame={{ ...frame, width: stageRef.current?.clientWidth ?? frame.width, height: stageRef.current?.clientHeight ?? frame.height }}
-                  opacity={fadeAt(clip, time) * (clip.fillOpacity ?? 1)}
+                  opacity={fadeAt(clip, time) * ownFill(clip)}
                   selected={isSelected}
                   onPointerDown={beginGesture(clip, "move")}
                   handles={isSelected ? handles(clip) : null}
@@ -676,10 +678,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   scale: pose.scale,
                   fontSize: `${clip.size * 100}cqh`,
                   color: clip.color,
-                  opacity: fadeAt(clip, time) * pose.alpha * (clip.opacity ?? 1) * (clip.fillOpacity ?? 1),
+                  opacity: fadeAt(clip, time) * pose.alpha * (clip.opacity ?? 1) * ownFill(clip),
                   // The Image editor's layer blend mode (lib/compose.ts draws the same with globalCompositeOperation).
                   mixBlendMode: clip.blend,
                   zIndex: stack?.get(clip.id),
+                  filter: styled(clip),
                   ...textFont(clip),
                   // The Image editor's own (textPicture.ts draws them into the saved picture).
                   ...(still && { textShadow: shadows ? "none" : undefined, letterSpacing: clip.spacing ? `${clip.spacing}em` : undefined, rotate: clip.rotate ? `${clip.rotate}deg` : undefined }),
@@ -938,6 +941,17 @@ function KeyFilters({ clips }: { clips: Clip[] }) {
   );
 }
 
+/** Image editor layer styles (lib/layerStyle.ts), sized for the stage as it's shown. */
+function StyleFilters({ clips, height }: { clips: Clip[]; height: number }) {
+  const markup = clips.filter((c) => hasStyle(c.style)).map((c) => styleFilter(`style-${c.id}`, c.style!, height, c.fillOpacity ?? 1)).join("");
+  return markup ? <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: markup }} /> : null;
+}
+
+/** A layer's style filter (it draws the layer's Fill itself), or none. */
+const styled = (clip: Clip) => (hasStyle(clip.style) ? `url(#style-${clip.id})` : undefined);
+/** The Fill a layer's opacity carries: none when its style filter draws it. */
+const ownFill = (clip: Clip) => (hasStyle(clip.style) ? 1 : (clip.fillOpacity ?? 1));
+
 function AdjustFilters({ clips }: { clips: Clip[] }) {
   const used = useMemo(() => {
     const steps = new Map<string, LookStep>();
@@ -1098,7 +1112,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
     <div
       className={selected ? "preview__picture is-selected" : "preview__picture"}
       data-clip={clip.id}
-      style={{ ...box, visibility: visible ? "visible" : "hidden", opacity, mixBlendMode: clip.blend, zIndex: z }}
+      style={{ ...box, visibility: visible ? "visible" : "hidden", opacity, mixBlendMode: clip.blend, zIndex: z, filter: styled(clip) }}
       onPointerDown={onPointerDown}
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
     >
@@ -1174,7 +1188,7 @@ function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles, z 
   const box = shapeBox(clip, frame.width, frame.height);
   return (
     <>
-      <img className="preview__shape" src={src} alt="" draggable={false} style={{ opacity, mixBlendMode: clip.blend, zIndex: z }} />
+      <img className="preview__shape" src={src} alt="" draggable={false} style={{ opacity, mixBlendMode: clip.blend, zIndex: z, filter: styled(clip) }} />
       <div
         className={selected ? "preview__shape-box is-selected" : "preview__shape-box"}
         style={{

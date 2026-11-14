@@ -9,6 +9,7 @@ import { layerBox } from "../project/layerBox";
 import { clipEnd, isShape, isText, showsPicture, textLines, trackOrder, type Clip, type Project } from "../project/model";
 import { shapeSvg } from "../project/shapes";
 import { allowLocal } from "./engine";
+import { hasStyle, styleFilter } from "./layerStyle";
 import { textCanvas } from "./textPicture";
 
 /** How to save: the picture's size, see-through or on its background colour, and the file type. */
@@ -16,8 +17,8 @@ export interface ComposeOptions {
   width: number;
   height: number;
   transparent?: boolean;
-  type: "image/png" | "image/jpeg";
-  /** JPG: 1–100. */
+  type: "image/png" | "image/jpeg" | "image/webp";
+  /** JPG and WebP: 1–100. */
   quality?: number;
 }
 
@@ -62,11 +63,15 @@ async function photo(path: string): Promise<HTMLImageElement> {
  * canvas takes the same mode names, "normal" being "source-over").
  */
 function mixed(ctx: CanvasRenderingContext2D, clip: Clip, opacity: number, draw: () => void) {
-  ctx.globalAlpha = opacity * (clip.fillOpacity ?? 1);
+  // A layer style's filter draws the Fill itself (it leaves the effects at full).
+  const styled = hasStyle(clip.style);
+  ctx.globalAlpha = opacity * (styled ? 1 : (clip.fillOpacity ?? 1));
   ctx.globalCompositeOperation = clip.blend && clip.blend !== "normal" ? clip.blend : "source-over";
+  ctx.filter = styled ? `url(#compose-style-${clip.id})` : "none";
   draw();
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = "source-over";
+  ctx.filter = "none";
 }
 
 /** One photo layer as `PictureLayer` draws it: crop window, mirror, filter and effects, quarter turn, then its box. */
@@ -141,6 +146,28 @@ export async function composeImage(project: Project, options: ComposeOptions): P
     ctx.fillStyle = project.image.background;
     ctx.fillRect(0, 0, W, H);
   }
+  // Layer styles at this size, on the page while drawing (a canvas filter points at them like CSS does).
+  const styles = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  styles.setAttribute("width", "0");
+  styles.setAttribute("height", "0");
+  styles.style.position = "absolute";
+  styles.innerHTML = project.clips
+    .filter((c) => hasStyle(c.style))
+    .map((c) => styleFilter(`compose-style-${c.id}`, c.style!, H, c.fillOpacity ?? 1, { x: -W, y: -H, width: 3 * W, height: 3 * H }))
+    .join("");
+  document.body.append(styles);
+  try {
+    await drawLayers(project, ctx, W, H);
+  } finally {
+    styles.remove();
+  }
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, options.type, options.type === "image/png" ? undefined : (options.quality ?? 95) / 100));
+  if (!blob) throw new Error("The picture couldn't be made. Try a smaller size.");
+  return blob;
+}
+
+/** Every layer from the bottom of the Layers list up. */
+async function drawLayers(project: Project, ctx: CanvasRenderingContext2D, W: number, H: number) {
   // The Layers order, as the preview stacks them (z-index): bottom track first; on a track, later clips over earlier ones.
   const trackIndex = new Map(project.tracks.map((t, i) => [t.id, i]));
   const order = (c: Clip) => (project.tracks.length - (trackIndex.get(c.trackId) ?? 0)) * 10_000 + trackOrder(project, c.trackId).indexOf(c);
@@ -164,8 +191,4 @@ export async function composeImage(project: Project, options: ComposeOptions): P
     // The whole text fades as one, as CSS opacity does.
     mixed(ctx, clip, clip.opacity ?? 1, () => ctx.drawImage(text.canvas, text.x, text.y));
   }
-
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, options.type, options.type === "image/jpeg" ? (options.quality ?? 92) / 100 : undefined));
-  if (!blob) throw new Error("The picture couldn't be made. Try a smaller size.");
-  return blob;
 }

@@ -143,6 +143,7 @@ import { TimelineEditor, type ClipCommand } from "./components/TimelineEditor";
 import { AddText, CaptionStyle, Inspector, KEY_START, Slider, type ClipSection } from "./components/Inspector";
 import { ExportPanel } from "./components/ExportPanel";
 import { ExportDialog } from "./components/ExportDialog";
+import { LayerStyleDialog } from "./components/LayerStyleDialog";
 import { QueueDock } from "./components/QueueDock";
 import { Library } from "./components/Library";
 import { Projects } from "./components/Projects";
@@ -435,6 +436,8 @@ export default function App() {
   const [aiAsk, setAiAsk] = useState<{ id: string; text: string } | null>(null);
   /** The export pop-up (Export, next to Queue). */
   const [exportOpen, setExportOpen] = useState(false);
+  /** The Image editor's Layer style window, for the picked layer. */
+  const [styleOpen, setStyleOpen] = useState(false);
   // Where the Sound or Voice-over panel's Back button goes: the tab it was opened from.
   const panelBack = useRef<typeof rightTab>("edit");
   // A voice-over take: where on the timeline it started, and the preview kept quiet while it records.
@@ -1621,7 +1624,7 @@ export default function App() {
       // The Image editor draws its picture now, as the preview shows it (lib/compose.ts); Rust only saves it.
       picture:
         inDesktopApp && plan.kind === "render" && source.image
-          ? composeImage(source, { width: plan.spec.width, height: plan.spec.height, transparent: plan.spec.transparent, type: plan.spec.container === "jpg" ? "image/jpeg" : "image/png", quality: plan.spec.imageQuality })
+          ? composeImage(source, { width: plan.spec.width, height: plan.spec.height, transparent: plan.spec.transparent, type: plan.spec.container === "jpg" ? "image/jpeg" : plan.spec.container === "webp" ? "image/webp" : "image/png", quality: plan.spec.imageQuality })
           : undefined,
       after: after.length ? after : undefined,
       thumbnail: coverOf(source),
@@ -2127,6 +2130,7 @@ export default function App() {
               ...(picturePicked ? pictureCommands(selected) : []),
               ...(isText(selected) ? [{ id: "style", label: "Text style and font", icon: "text", group: picked, run: () => pickTab("text") } satisfies Command] : []),
               { id: "dup", label: "Duplicate layer", keys: "Ctrl J", icon: "copy", group: picked, run: () => duplicate() },
+              { id: "layerstyle", label: "Layer style…", detail: "drop shadow, outer glow, stroke", icon: "sparkle", group: picked, run: () => setStyleOpen(true) },
               { id: "up", label: "Move layer up", keys: "Ctrl ]", icon: "chevronUp", group: picked, run: () => moveLayer(-1) },
               { id: "down", label: "Move layer down", keys: "Ctrl [", icon: "chevronDown", group: picked, run: () => moveLayer(1) },
               { id: "delete", label: "Delete layer", keys: "Delete", icon: "trash", group: picked, run: remove },
@@ -2181,7 +2185,7 @@ export default function App() {
         },
         {
           label: "Layer",
-          items: [menuItem("addtext", "New text layer"), menuItem("addshape", "New shape layer…"), menuItem("addphoto", "New photo layer…"), "sep", menuItem("dup", "Duplicate layer"), menuItem("up", "Bring forward"), menuItem("down", "Send backward"), "sep", menuItem("delete", "Delete layer")],
+          items: [menuItem("addtext", "New text layer"), menuItem("addshape", "New shape layer…"), menuItem("addphoto", "New photo layer…"), "sep", menuItem("dup", "Duplicate layer"), menuItem("layerstyle", "Layer style…"), menuItem("up", "Bring forward"), menuItem("down", "Send backward"), "sep", menuItem("delete", "Delete layer")],
         },
         {
           label: "Select",
@@ -2496,6 +2500,14 @@ export default function App() {
         }}
         onClose={() => setNewImageOpen(false)}
       />
+      {styleOpen && imageMode && selected && (
+        <LayerStyleDialog
+          style={selected.style}
+          onChange={(style, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch: { style } })}
+          onCheckpoint={api.checkpoint}
+          onClose={() => setStyleOpen(false)}
+        />
+      )}
       {exportOpen && inEditor && (
         <ExportDialog sub={imageMode && !project.media.length ? "Untitled image" : projectName(project)} picture={imageMode} onClose={() => setExportOpen(false)}>
           <ExportPanel
@@ -2671,7 +2683,7 @@ export default function App() {
             canvas={preview}
             view={imageView}
             properties={panelBody}
-            layers={<LayersPanel project={project} api={api} selectedId={selectedId} onSelect={setSelectedId} menu={[menuItem("dup", "Duplicate layer"), menuItem("up", "Bring forward"), menuItem("down", "Send backward"), "sep", menuItem("crop", "Crop…"), menuItem("turn", "Turn 90°"), menuItem("mirror", "Mirror"), "sep", menuItem("delete", "Delete layer")]} />}
+            layers={<LayersPanel project={project} api={api} selectedId={selectedId} onSelect={setSelectedId} menu={[menuItem("dup", "Duplicate layer"), menuItem("layerstyle", "Layer style…"), menuItem("up", "Bring forward"), menuItem("down", "Send backward"), "sep", menuItem("crop", "Crop…"), menuItem("turn", "Turn 90°"), menuItem("mirror", "Mirror"), "sep", menuItem("delete", "Delete layer")]} />}
           />
         ) : inEditor && (
           <div
