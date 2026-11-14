@@ -180,6 +180,8 @@ export interface Clip {
   reverse: boolean;
   /** Pictures: turned clockwise by this many degrees (90, 180 or 270); shapes and Image editor text: any angle about the box centre; upright when absent. */
   rotate?: number;
+  /** Image editor photos: turned this many degrees clockwise about the box centre, on top of `rotate`'s quarter turns. */
+  angle?: number;
   /** Slowed down with in-between frames made in the export (Smooth slow-mo), not each frame shown longer. */
   smooth?: boolean;
   /** A filter block: its colour look, effects.ts `LOOKS`. */
@@ -197,6 +199,13 @@ export interface Clip {
   effectSpeed?: number;
   /** A shape clip: shapes.ts `SHAPES`. */
   shape?: ShapeId;
+  /** Image editor: how the layer mixes with what's under it (`BLEND_MODES`; CSS mix-blend-mode = canvas
+   * globalCompositeOperation); normal when absent. */
+  blend?: BlendMode;
+  /** Image editor: the layer's own pixels' opacity, 0–1, leaving its layer style at full (1 when absent). */
+  fillOpacity?: number;
+  /** Image editor layer style (Layer → Layer style): its effects, each on while present. */
+  style?: LayerStyle;
   /** Shapes, pictures and text (an Image editor layer's opacity): 0–1 (1 when absent). */
   opacity?: number;
   /** Shape clips: 0 or absent = filled; > 0 = outline only, its thickness as a share of the frame height. */
@@ -299,6 +308,53 @@ export const TEXT_FONTS = [
 export const libraryFont = (id?: string) => TEXT_FONTS.find((f) => f.id === id && "file" in f) as Extract<(typeof TEXT_FONTS)[number], { file: string }> | undefined;
 export type TextFont = (typeof TEXT_FONTS)[number]["id"];
 export type TextEdge = "outline" | "box";
+
+/**
+ * A layer's effects, drawn round its own pixels (lib/compose.ts and the preview). Sizes and distances are shares of the
+ * image's height, so they scale with the picture; opacities 0–1; colours #rrggbb.
+ */
+export interface LayerStyle {
+  /** Under the layer, as if lit from `angle` (degrees, 0 = right, 90 = above, as photo editors measure it): moved
+   * `distance` the other way and blurred by `size`. */
+  shadow?: { color: string; opacity: number; angle: number; distance: number; size: number };
+  /** A soft light all round the layer, `size` wide. */
+  glow?: { color: string; opacity: number; size: number };
+  /** A solid line `size` wide round the outside of the layer's shape. */
+  stroke?: { color: string; size: number };
+}
+
+/** Each effect's settings when it's switched on. */
+export const STYLE_START: Required<LayerStyle> = {
+  shadow: { color: "#111111", opacity: 0.75, angle: 120, distance: 0.008, size: 0.008 },
+  glow: { color: "#ffffbe", opacity: 0.75, size: 0.015 },
+  stroke: { color: "#111111", size: 0.004 },
+};
+
+/** Layer blend modes in a photo editor's order and groups ("sep" between groups); the ids are CSS mix-blend-mode values. */
+export const BLEND_MODES = [
+  ["normal", "Normal"],
+  "sep",
+  ["darken", "Darken"],
+  ["multiply", "Multiply"],
+  ["color-burn", "Color burn"],
+  "sep",
+  ["lighten", "Lighten"],
+  ["screen", "Screen"],
+  ["color-dodge", "Color dodge"],
+  "sep",
+  ["overlay", "Overlay"],
+  ["soft-light", "Soft light"],
+  ["hard-light", "Hard light"],
+  "sep",
+  ["difference", "Difference"],
+  ["exclusion", "Exclusion"],
+  "sep",
+  ["hue", "Hue"],
+  ["saturation", "Saturation"],
+  ["color", "Color"],
+  ["luminosity", "Luminosity"],
+] as const;
+export type BlendMode = Extract<(typeof BLEND_MODES)[number], readonly [string, string]>[0];
 
 export interface Project {
   media: MediaItem[];

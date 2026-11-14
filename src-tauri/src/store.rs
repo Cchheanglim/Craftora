@@ -360,6 +360,55 @@ pub fn save_snapshot(
     Ok(normalized.to_string_lossy().into_owned())
 }
 
+/// The biggest picture the Image editor saves: a PNG of 2× an A4 print is well under it.
+const MAX_IMAGE_BYTES: usize = 400_000_000;
+
+/// What `save_image` is saving: the queue job it reports to, the name, and the file type.
+#[derive(Deserialize)]
+struct ImageHead {
+    id: String,
+    name: String,
+    ext: String,
+}
+
+/// The first bytes of each file type the Image editor saves.
+fn image_kind(ext: &str, bytes: &[u8]) -> bool {
+    match ext {
+        "png" => bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]),
+        "jpg" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
+        "webp" => bytes.len() > 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP",
+        _ => false,
+    }
+}
+
+/// Saves the Image editor's picture, drawn by the page (lib/compose.ts), into the export folder as a queue job
+/// (`job-event` done or failed, so it shows in Exports like any export). The raw request body is a little-endian u32
+/// length, that many bytes of JSON (`ImageHead`), then the file.
+#[tauri::command]
+pub fn save_image(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(body) = request.body() else {
+        return Err("Couldn't save the picture.".into());
+    };
+    let size = body.get(..4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize).unwrap_or(usize::MAX);
+    let (Some(head), Some(file)) = (body.get(4..4usize.saturating_add(size)), body.get(4usize.saturating_add(size)..)) else {
+        return Err("Couldn't save the picture.".into());
+    };
+    let head: ImageHead = serde_json::from_slice(head).map_err(|_| "Couldn't save the picture.".to_string())?;
+    if file.len() > MAX_IMAGE_BYTES || !image_kind(&head.ext, file) {
+        return Err("Couldn't save the picture.".into());
+    }
+    let dir = crate::jobs::output_dir(&app)?;
+    let file = file.to_vec();
+    let ImageHead { id, name, ext } = head;
+    let tmp = dir.join(format!(".craftora-image-{id}.{ext}"));
+    crate::jobs::spawn_job(app, id, async move {
+        std::fs::write(&tmp, &file).map_err(|e| format!("Couldn't save the picture: {e}"))?;
+        crate::jobs::deliver(&tmp, &dir, &crate::jobs::safe_stem(&name), &ext).inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })
+    })
+}
+
 /// The longest voice-over take accepted: about 5 hours at the recorder's 128 kbit/s.
 const MAX_VOICE_BYTES: usize = 300_000_000;
 

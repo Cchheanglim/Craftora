@@ -37,6 +37,7 @@ export type ClipPatch = Partial<
     | "mirror"
     | "reverse"
     | "rotate"
+    | "angle"
     | "smooth"
     | "look"
     | "lookAmount"
@@ -47,6 +48,9 @@ export type ClipPatch = Partial<
     | "effect"
     | "shape"
     | "opacity"
+    | "blend"
+    | "fillOpacity"
+    | "style"
     | "name"
     | "outline"
     | "points"
@@ -661,13 +665,16 @@ function edit(p: Project, action: EditAction): Project {
         // Inside the picture, keeping at least 5% of it each way (a side pushed past the other gives way).
         patch.crop = cropOf(boxOf({ left: clamp(c.left, 0, MAX_CROP), top: clamp(c.top, 0, MAX_CROP), right: clamp(c.right, 0, MAX_CROP), bottom: clamp(c.bottom, 0, MAX_CROP) }));
       }
-      if (patch.x !== undefined) patch.x = clamp(patch.x, 0, 1);
-      if (patch.y !== undefined) patch.y = clamp(patch.y, 0, 1);
+      // An Image editor layer may sit partly or wholly past the picture's edges, as in photo editors; a video stays in.
+      const [lo, hi] = p.image ? [-5, 6] : [0, 1];
+      if (patch.x !== undefined) patch.x = clamp(patch.x, lo, hi);
+      if (patch.y !== undefined) patch.y = clamp(patch.y, lo, hi);
       if (patch.lookAmount !== undefined) patch.lookAmount = clamp(patch.lookAmount, 0, 1);
       if (patch.effectStrength !== undefined) patch.effectStrength = clamp(patch.effectStrength, 0, 100);
       if (patch.effectSpeed !== undefined) patch.effectSpeed = clamp(patch.effectSpeed, 0.5, 3);
       if (patch.adjust) patch.adjust = Object.fromEntries(Object.entries(patch.adjust).map(([k, v]) => [k, Math.round(clamp(v ?? 0, -100, 100))]));
       if (patch.opacity !== undefined) patch.opacity = clamp(patch.opacity, 0, 1);
+      if (patch.fillOpacity !== undefined) patch.fillOpacity = clamp(patch.fillOpacity, 0, 1);
       if (patch.outline !== undefined) patch.outline = Math.max(0, patch.outline);
       return { ...p, clips: p.clips.map((c) => (c.id === action.clipId ? fitFades({ ...c, ...patch }) : c)) };
     }

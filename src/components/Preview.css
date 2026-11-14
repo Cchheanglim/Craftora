@@ -382,9 +382,10 @@
 
 /* Remove a colour → Pick: a crosshair over the picture until a colour is clicked. */
 .preview__picker {
+  /* Over every Image editor layer (each has its place in the stack as its z-index). */
   position: absolute;
   inset: 0;
-  z-index: 20;
+  z-index: 100000;
   cursor: crosshair;
 }
 

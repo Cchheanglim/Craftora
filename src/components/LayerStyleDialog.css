@@ -1,0 +1,237 @@
+.layer-style-dialog,
+:root[data-theme] .layer-style-dialog {
+  --bg-input: #1f1f1f;
+  --bg-canvas: #262626;
+  --bg-rail: #2b2b2b;
+  --bg-panel: #323232;
+  --bg-raised: #383838;
+  --bg-hover: #404040;
+  --bg-selected: #4a4a4a;
+  --line-soft: #2b2b2b;
+  --line: #232323;
+  --line-strong: #4d4d4d;
+  --line-hover: #646464;
+  --text: #e6e6e6;
+  --text-2: #bdbdbd;
+  --text-3: #a0a0a0;
+  --control-h: 22px;
+  --text-xs: 11px;
+  --text-sm: 11.5px;
+  --text-md: 12px;
+  --text-lg: 13px;
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 10px;
+  --radius: 2px;
+  --radius-sm: 2px;
+  padding: 0;
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  border: 1px solid #4d4d4d;
+  border-radius: 2px;
+  background: #323232;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.45);
+}
+
+.layer-style-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.layer-style-dialog:focus {
+  outline: none;
+}
+
+.layer-style-dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+.layer-style-dialog__head {
+  height: 28px;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.layer-style-dialog__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1;
+}
+
+.layer-style-dialog__body {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  min-height: 210px;
+}
+
+.layer-style-dialog__list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  background: var(--bg-rail);
+  border-right: 1px solid var(--line);
+}
+
+.layer-style-dialog__row {
+  height: 24px;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 0 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.layer-style-dialog__row:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.layer-style-dialog__row.is-picked {
+  background: #4a4a4a;
+  color: var(--text);
+}
+
+.layer-style-dialog__check {
+  margin: 0;
+  width: 13px;
+  height: 13px;
+  flex: none;
+  accent-color: var(--text);
+  cursor: pointer;
+}
+
+.layer-style-dialog__name {
+  flex: 1;
+  height: 100%;
+  padding: 0 8px 0 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.layer-style-dialog__pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.layer-style-dialog__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.3;
+}
+
+.layer-style-dialog__settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.layer-style-dialog__settings.is-off {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.layer-style-dialog .insp__slider {
+  height: 24px;
+  grid-template-columns: 60px minmax(0, 1fr) 48px;
+  gap: 6px;
+}
+
+.layer-style-dialog .insp__slider > label {
+  font-size: 11px;
+}
+
+.layer-style-dialog .insp__slider .mono {
+  font-size: 11px;
+}
+
+.layer-style-dialog .insp__swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 2px;
+}
+
+.layer-style-dialog__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-top: 1px solid var(--line);
+}
+
+.layer-style-dialog .btn,
+:root[data-theme] .layer-style-dialog .btn {
+  height: 22px;
+  min-height: 22px;
+  padding: 0 10px;
+  border-radius: 2px;
+  font-size: 12px;
+  font-weight: 400;
+  box-shadow: none;
+}
+
+.layer-style-dialog .btn--secondary,
+:root[data-theme] .layer-style-dialog .btn--secondary {
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+}
+
+.layer-style-dialog .btn--secondary:hover:not(:disabled),
+:root[data-theme] .layer-style-dialog .btn--secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--line-hover);
+}
+
+.layer-style-dialog .btn--primary,
+:root[data-theme] .layer-style-dialog .btn--primary {
+  background: var(--accent-fill, #2680eb);
+  border: 1px solid transparent;
+  color: var(--text-on-accent, #ffffff);
+  font-weight: 500;
+}
+
+.layer-style-dialog .btn--primary:hover:not(:disabled),
+:root[data-theme] .layer-style-dialog .btn--primary:hover:not(:disabled) {
+  background: var(--accent-fill-hover, #1473e6);
+}
+
+.layer-style-dialog .btn--icon,
+:root[data-theme] .layer-style-dialog .btn--icon {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-2);
+  box-shadow: none;
+}
+
+.layer-style-dialog .btn--icon:hover:not(:disabled),
+:root[data-theme] .layer-style-dialog .btn--icon:hover:not(:disabled) {
+  background: #4a4a4a;
+  color: var(--text);
+}

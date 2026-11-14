@@ -14,7 +14,10 @@ export function ImageExportOptions({
   onChange: (patch: Partial<ExportSettings>) => void;
   image: { width: number; height: number };
 }) {
-  const png = (settings.imageContainer ?? "png") === "png";
+  const format = settings.imageContainer ?? "png";
+  const png = format === "png";
+  // PNG and WebP keep see-through areas; JPG and WebP have a quality.
+  const clear = format !== "jpg";
   const scale = settings.imageScale ?? 1;
   const maxSide = Math.max(image.width, image.height) || 1;
   const k = Math.min(scale, MAX_IMAGE_SIDE / maxSide);
@@ -27,23 +30,14 @@ export function ImageExportOptions({
       <fieldset>
         <legend className="section-label">Format</legend>
         <div className="segmented" role="group" aria-label="Format">
-          <button
-            type="button"
-            aria-pressed={png}
-            onClick={() => onChange({ imageContainer: "png" })}
-          >
-            PNG
-          </button>
-          <button
-            type="button"
-            aria-pressed={!png}
-            onClick={() => onChange({ imageContainer: "jpg" })}
-          >
-            JPG
-          </button>
+          {(["png", "jpg", "webp"] as const).map((f) => (
+            <button key={f} type="button" aria-pressed={format === f} onClick={() => onChange({ imageContainer: f })}>
+              {f === "webp" ? "WebP" : f.toUpperCase()}
+            </button>
+          ))}
         </div>
         <p className="image-export__hint">
-          {png ? "Sharpest, keeps see-through areas." : "Smaller file, for photos."}
+          {png ? "Sharpest, keeps see-through areas." : format === "jpg" ? "Smaller file, for photos." : "Smallest file, keeps see-through areas; for the web."}
         </p>
       </fieldset>
 
@@ -52,16 +46,16 @@ export function ImageExportOptions({
         <label className="option">
           <input
             type="checkbox"
-            checked={png && Boolean(settings.transparent)}
-            disabled={!png}
+            checked={clear && Boolean(settings.transparent)}
+            disabled={!clear}
             onChange={(e) => onChange({ transparent: e.target.checked })}
           />
           <span>Transparent background</span>
         </label>
         <p className="image-export__hint">
-          {png
+          {clear
             ? "Saves without the background colour: only the layers."
-            : "PNG only: JPG can't keep see-through areas."}
+            : "PNG or WebP only: JPG can't keep see-through areas."}
         </p>
       </fieldset>
 

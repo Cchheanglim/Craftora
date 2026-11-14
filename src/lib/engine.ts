@@ -437,6 +437,22 @@ export async function startRender(spec: RenderSpec): Promise<void> {
   }
 }
 
+/** Saves the Image editor's picture (drawn by lib/compose.ts) into the export folder as job `id`; `done` arrives as a job event. */
+export async function saveImage(id: string, fileName: string, picture: Blob): Promise<void> {
+  try {
+    const head = new TextEncoder().encode(JSON.stringify({ id, name: fileName, ext: fileName.split(".").pop() ?? "png" }));
+    const file = new Uint8Array(await picture.arrayBuffer());
+    // A little-endian length, the JSON, then the file (store.rs `save_image`).
+    const body = new Uint8Array(4 + head.length + file.length);
+    new DataView(body.buffer).setUint32(0, head.length, true);
+    body.set(head, 4);
+    body.set(file, 4 + head.length);
+    await invoke("save_image", body);
+  } catch (err) {
+    throw new Error(message(err));
+  }
+}
+
 export const cancelJob = (id: string) => invoke<boolean>("cancel_job", { id });
 
 /** Downloads a whole link into the Downloads folder (Craftora's own with `forExport`); progress arrives as job events. */

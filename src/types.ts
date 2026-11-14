@@ -4,7 +4,7 @@ import type { TextMotion } from "./project/textMotion";
 export type OutputKind = "video" | "audio";
 export type VideoContainer = "mp4" | "mkv";
 export type AudioContainer = "mp3" | "wav" | "flac";
-export type ImageContainer = "png" | "jpg";
+export type ImageContainer = "png" | "jpg" | "webp";
 export type CutMode = "fast" | "precise";
 
 /** One downloadable stream that yt-dlp reported for a source. */
@@ -241,6 +241,8 @@ export interface Job {
   spec?: JobSpec;
   /** A timeline the real engines render. Absent (with `spec`) for simulated demo jobs. */
   render?: RenderSpec;
+  /** The Image editor's picture, drawn by the page (lib/compose.ts) when it was queued: saved as it is, not rendered. */
+  picture?: Promise<Blob>;
   /** A whole link downloaded so it can be edited like a file on this PC ("Download first"). */
   prefetch?: { mediaId: string; url: string; format: string; title: string; audioOnly: boolean; forExport?: boolean };
   /** The downloads (queue job ids) an export from links waits for; it then renders their files. */
