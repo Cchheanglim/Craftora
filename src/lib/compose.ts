@@ -62,12 +62,12 @@ async function photo(path: string): Promise<HTMLImageElement> {
  * Draws a layer at `opacity` times its Fill, in its blend mode (the preview's `opacity` and `mix-blend-mode`: the
  * canvas takes the same mode names, "normal" being "source-over").
  */
-function mixed(ctx: CanvasRenderingContext2D, clip: Clip, opacity: number, draw: () => void) {
+function mixed(ctx: CanvasRenderingContext2D, clip: Clip, opacity: number, draw: () => void, styleDrawn = false) {
   // A layer style's filter draws the Fill itself (it leaves the effects at full).
   const styled = hasStyle(clip.style);
   ctx.globalAlpha = opacity * (styled ? 1 : (clip.fillOpacity ?? 1));
   ctx.globalCompositeOperation = clip.blend && clip.blend !== "normal" ? clip.blend : "source-over";
-  ctx.filter = styled ? `url(#compose-style-${clip.id})` : "none";
+  ctx.filter = styled && !styleDrawn ? `url(#compose-style-${clip.id})` : "none";
   draw();
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = "source-over";
@@ -135,16 +135,35 @@ async function drawPicture(out: CanvasRenderingContext2D, clip: Clip, path: stri
     lctx.fillRect(0, 0, bw, own.bars * bh);
     lctx.fillRect(0, bh - own.bars * bh, bw, own.bars * bh);
   }
-  mixed(out, clip, clip.opacity ?? 1, () => {
-    // Turned about its middle (the preview's CSS `rotate`); its style's light keeps its direction (filters work on the canvas).
-    const [left, top] = [Math.round(box.left), Math.round(box.top)];
-    if (!clip.angle) return out.drawImage(layer, left, top);
-    out.save();
-    out.translate(left + bw / 2, top + bh / 2);
-    out.rotate((clip.angle * Math.PI) / 180);
-    out.drawImage(layer, -bw / 2, -bh / 2);
-    out.restore();
-  });
+  const [x, y] = [Math.round(box.left), Math.round(box.top)];
+  if (!clip.angle) return mixed(out, clip, clip.opacity ?? 1, () => out.drawImage(layer, x, y));
+  // Turned about its middle after its style, as the preview's CSS `rotate` comes after its filter: the style drawn on the
+  // upright layer with room round it (its filter knows the turn, so the shadow still falls the way the light says).
+  // Rule: never draw with a canvas `filter` under a rotation (Chromium filters in the turned space: the stroke came out
+  // distorted); text arrives already turned and is filtered with no transform, which is why it passes no turn.
+  let turned = layer;
+  let m = 0;
+  if (hasStyle(clip.style)) {
+    const s = clip.style!;
+    m = Math.ceil(H * ((s.stroke?.size ?? 0) + (s.shadow ? s.shadow.distance + 1.5 * s.shadow.size : 0) + (s.glow ? 1.5 * s.glow.size : 0))) + 4;
+    const [styled, sctx] = sheet(bw + 2 * m, bh + 2 * m);
+    sctx.filter = `url(#compose-style-${clip.id})`;
+    sctx.drawImage(layer, m, m);
+    turned = styled;
+  }
+  mixed(
+    out,
+    clip,
+    clip.opacity ?? 1,
+    () => {
+      out.save();
+      out.translate(x + bw / 2, y + bh / 2);
+      out.rotate((clip.angle! * Math.PI) / 180);
+      out.drawImage(turned, -bw / 2 - m, -bh / 2 - m);
+      out.restore();
+    },
+    true,
+  );
 }
 
 /** Draws the picture: the background colour (unless see-through), then every layer from the bottom of the Layers list up. */
