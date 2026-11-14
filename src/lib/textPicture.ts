@@ -31,10 +31,28 @@ export const textShadowFilter = (c: Parameters<typeof textShadows>[0]) =>
   c.edgeBlur || c.glow ? textShadows(c).map((s) => `drop-shadow(${s.x}em ${s.y}em ${s.blur}em ${s.color})`).join(" ") : undefined;
 
 /**
- * An Image editor text drawn as the preview draws it (Preview.css `.preview__text`: its font, 1.15 line height, centred
- * lines, edge, shadows, letter spacing, angle and opacity) onto a see-through `W` × `H` PNG, laid over the picture like a
- * shape. drawtext places and outlines letters its own way, so the saved picture didn't match the screen. A library font
- * must be loaded first.
+ * How a text lies on a `W` × `H` image as the preview lays it out (Preview.css `.preview__text`: its font, 1.15em lines
+ * centred in the widest): its lines and their widths, and its box in pixels, placed in shares of the free space as
+ * `left: x%` with `translate: -x%` does (before any turn). `ctx` is left set to the text's font.
+ */
+export function textLayout(c: Pick<TextLook, "text" | "size" | "x" | "y" | "font" | "spacing">, W: number, H: number, ctx = document.createElement("canvas").getContext("2d")!) {
+  const font = TEXT_FONTS.find((f) => f.id === c.font);
+  const size = c.size * H;
+  ctx.font = `${font?.id === "impact" ? 400 : 700} ${size}px ${font ? `${font.css}, "Segoe UI", sans-serif` : '"Segoe UI", "Geist Variable", system-ui, sans-serif'}`;
+  ctx.letterSpacing = `${(c.spacing ?? 0) * size}px`;
+  const lines = c.text.split("\n");
+  const widths = lines.map((line) => ctx.measureText(line).width);
+  const { fontBoundingBoxAscent: ascent, fontBoundingBoxDescent: descent } = ctx.measureText(c.text);
+  const lineHeight = 1.15 * size;
+  const width = Math.max(0, ...widths);
+  const height = lines.length * lineHeight;
+  return { size, lines, widths, ascent, descent, lineHeight, left: (W - width) * c.x, top: (H - height) * c.y, width, height };
+}
+
+/**
+ * An Image editor text drawn as the preview draws it (`textLayout`, then its edge, shadows, angle and opacity) onto a
+ * see-through `W` × `H` PNG, laid over the picture like a shape. drawtext places and outlines letters its own way, so the
+ * saved picture didn't match the screen. A library font must be loaded first.
  */
 export function textPng(c: TextLook, W: number, H: number): string | undefined {
   if (typeof document === "undefined") return undefined;
@@ -46,19 +64,8 @@ export function textPng(c: TextLook, W: number, H: number): string | undefined {
   };
   try {
     const [letters, ctx] = sheet();
-    const font = TEXT_FONTS.find((f) => f.id === c.font);
-    const size = c.size * H;
-    ctx.font = `${font?.id === "impact" ? 400 : 700} ${size}px ${font ? `${font.css}, "Segoe UI", sans-serif` : '"Segoe UI", "Geist Variable", system-ui, sans-serif'}`;
-    if (c.spacing) ctx.letterSpacing = `${c.spacing * size}px`;
-    const lines = c.text.split("\n");
-    const widths = lines.map((line) => ctx.measureText(line).width);
-    const { fontBoundingBoxAscent: ascent, fontBoundingBoxDescent: descent } = ctx.measureText(c.text);
-    const lineHeight = 1.15 * size;
-    const width = Math.max(0, ...widths);
-    const height = lines.length * lineHeight;
-    // Placed in shares of the free space, as `left: x%` with `translate: -x%` does, then turned about its middle.
-    const left = (W - width) * c.x;
-    const top = (H - height) * c.y;
+    const { size, lines, widths, ascent, descent, lineHeight, left, top, width, height } = textLayout(c, W, H, ctx);
+    // Turned about its middle.
     const angle = ((c.rotate ?? 0) * Math.PI) / 180;
     const turn = (g: CanvasRenderingContext2D) => {
       g.translate(left + width / 2, top + height / 2);

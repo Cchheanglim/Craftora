@@ -466,6 +466,7 @@ export function Inspector({
               {track.name !== "Captions" && (
                 <>
                   {!still && <PositionSelect clip={clip} onChange={onChange} />}
+                  {still && imageSize && <LayerPlace clip={clip} image={imageSize} onChange={onChange} />}
                 </>
               )}
             </>
