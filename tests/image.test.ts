@@ -78,3 +78,14 @@ test("a video project is untouched by the image rules", () => {
   expect(p.clips[0].start).toBe(5);
   expect(upgradeProject(JSON.parse(JSON.stringify(p))).image).toBeUndefined();
 });
+
+test("an image layer may go past the picture's edges, a video clip stays inside; WebP keeps see-through areas", () => {
+  const p = applyEdit(imageProject(), { type: "updateClip", clipId: "photo", patch: { x: -1.5, y: 2.5 } });
+  expect([p.clips.find((c) => c.id === "photo")?.x, p.clips.find((c) => c.id === "photo")?.y]).toEqual([-1.5, 2.5]);
+  const video = { ...imageProject(), image: undefined };
+  const kept = applyEdit(video, { type: "updateClip", clipId: "photo", patch: { x: -1.5, y: 2.5 } });
+  expect([kept.clips.find((c) => c.id === "photo")?.x, kept.clips.find((c) => c.id === "photo")?.y]).toEqual([0, 1]);
+  const plan = planExport(p, { ...settings, imageContainer: "webp", transparent: true, imageQuality: 70 });
+  if (plan.kind !== "render") throw new Error(plan.kind);
+  expect([plan.spec.container, plan.spec.transparent, plan.spec.imageQuality]).toEqual(["webp", true, 70]);
+});

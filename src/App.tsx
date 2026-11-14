@@ -2114,6 +2114,7 @@ export default function App() {
     { id: "colour", label: "Remove a colour", detail: "green or blue screen", icon: "eyedropper", group: picked, run: () => pickTab("background") },
     { id: "crop", label: "Crop", keys: "C", icon: "crop", group: picked, run: () => openCrop(clip, 0) },
     { id: "turn", label: "Turn 90°", icon: "rotate", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { rotate: ((clip.rotate ?? 0) + 90) % 360 } }) },
+    { id: "flipv", label: "Flip vertical", icon: "flip", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { rotate: ((clip.rotate ?? 0) + 180) % 360, mirror: !clip.mirror } }) },
     { id: "mirror", label: "Mirror", icon: "flip", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { mirror: !clip.mirror } }) },
     { id: "adjust", label: "Adjust colours", detail: "brightness, contrast, warmth…", icon: "sliders", group: picked, run: () => pickTab("adjust") },
     { id: "enhance", label: clip.adjust?.enhance ? "Turn Enhance off" : "Enhance", detail: "clearer and brighter in one click", icon: "wand", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { adjust: { ...clip.adjust, enhance: clip.adjust?.enhance ? 0 : 1 } } }) },
@@ -2180,7 +2181,8 @@ export default function App() {
             "sep",
             menuItem("crop", "Crop…"),
             menuItem("turn", "Turn 90°"),
-            menuItem("mirror", "Mirror"),
+            menuItem("mirror", "Flip horizontal"),
+            menuItem("flipv", "Flip vertical"),
           ],
         },
         {

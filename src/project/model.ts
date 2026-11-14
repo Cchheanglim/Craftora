@@ -180,6 +180,8 @@ export interface Clip {
   reverse: boolean;
   /** Pictures: turned clockwise by this many degrees (90, 180 or 270); shapes and Image editor text: any angle about the box centre; upright when absent. */
   rotate?: number;
+  /** Image editor photos: turned this many degrees clockwise about the box centre, on top of `rotate`'s quarter turns. */
+  angle?: number;
   /** Slowed down with in-between frames made in the export (Smooth slow-mo), not each frame shown longer. */
   smooth?: boolean;
   /** A filter block: its colour look, effects.ts `LOOKS`. */
@@ -323,9 +325,9 @@ export interface LayerStyle {
 
 /** Each effect's settings when it's switched on. */
 export const STYLE_START: Required<LayerStyle> = {
-  shadow: { color: "#000000", opacity: 0.75, angle: 120, distance: 0.008, size: 0.008 },
+  shadow: { color: "#111111", opacity: 0.75, angle: 120, distance: 0.008, size: 0.008 },
   glow: { color: "#ffffbe", opacity: 0.75, size: 0.015 },
-  stroke: { color: "#000000", size: 0.004 },
+  stroke: { color: "#111111", size: 0.004 },
 };
 
 /** Layer blend modes in a photo editor's order and groups ("sep" between groups); the ids are CSS mix-blend-mode values. */

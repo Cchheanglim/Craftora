@@ -8,8 +8,10 @@ const num = (v: number) => (Number.isFinite(v) ? Number(v.toFixed(3)) : 0);
  * lib/compose.ts (canvas `filter`). From the bottom: drop shadow, outer glow, stroke, then the layer at its Fill (`fill`,
  * which fades the layer's own pixels but not its effects). `px` = pixels per share of the image height where it's
  * drawn; `region` is the filter's area in that drawing's own pixels (the canvas), or the layer's box when absent.
+ * `turn`: degrees the layer is turned clockwise inside the filter (the preview's CSS `rotate`), so its shadow still falls
+ * the way the light says.
  */
-export function styleFilter(id: string, style: LayerStyle, px: number, fill = 1, region?: { x: number; y: number; width: number; height: number }): string {
+export function styleFilter(id: string, style: LayerStyle, px: number, fill = 1, region?: { x: number; y: number; width: number; height: number }, turn = 0): string {
   const area = region
     ? `filterUnits="userSpaceOnUse" x="${num(region.x)}" y="${num(region.y)}" width="${num(region.width)}" height="${num(region.height)}"`
     : `x="-100%" y="-100%" width="300%" height="300%"`;
@@ -26,7 +28,8 @@ export function styleFilter(id: string, style: LayerStyle, px: number, fill = 1,
     // Lit from `angle` (0 = right, 90 = above), so the shadow falls the other way; Size blurs it as far as it says.
     const a = (style.shadow.angle * Math.PI) / 180;
     const d = style.shadow.distance * px;
-    parts.push(`<feOffset in="${shape}" dx="${num(-Math.cos(a) * d)}" dy="${num(Math.sin(a) * d)}"/>`);
+    const [x, y, t] = [-Math.cos(a) * d, Math.sin(a) * d, (-turn * Math.PI) / 180];
+    parts.push(`<feOffset in="${shape}" dx="${num(x * Math.cos(t) - y * Math.sin(t))}" dy="${num(x * Math.sin(t) + y * Math.cos(t))}"/>`);
     parts.push(`<feGaussianBlur stdDeviation="${num((style.shadow.size * px) / 2)}" result="shadowShape"/>`);
     parts.push(`<feFlood flood-color="${colour(style.shadow.color)}" flood-opacity="${num(style.shadow.opacity)}"/><feComposite in2="shadowShape" operator="in"/>`);
     // Cut out under the layer, as photo editors do: a see-through layer (low Fill) doesn't show its shadow through itself.

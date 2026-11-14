@@ -479,14 +479,21 @@ export function Inspector({
               {!still && <PositionSelect clip={clip} onChange={onChange} />}
               {imageSize && <LayerPlace clip={clip} media={media} image={imageSize} onChange={onChange} />}
               {still && (
-                <div className="insp__actions">
-                  <button type="button" className="btn btn--secondary" onClick={() => onChange({ rotate: ((clip.rotate ?? 0) + 90) % 360 })}>
-                    <Icon name="rotate" size={13} /> Turn 90°
-                  </button>
-                  <button type="button" className="btn btn--secondary" onClick={() => onChange({ mirror: !clip.mirror })}>
-                    <Icon name="flip" size={13} /> Mirror
-                  </button>
-                </div>
+                <>
+                  <Slider id="insp-angle" label="Angle" min={-180} max={180} step={1} value={clip.angle ?? 0} format={(v) => `${Math.round(v)}°`} onCheckpoint={onCheckpoint} onChange={(angle) => onChange({ angle: angle || undefined }, true)} />
+                  <div className="insp__actions">
+                    <button type="button" className="btn btn--secondary" onClick={() => onChange({ rotate: ((clip.rotate ?? 0) + 90) % 360 })}>
+                      <Icon name="rotate" size={13} /> Turn 90°
+                    </button>
+                    <button type="button" className="btn btn--secondary" onClick={() => onChange({ mirror: !clip.mirror })}>
+                      <Icon name="flip" size={13} /> Mirror
+                    </button>
+                    {/* Upside down and mirrored is the picture flipped top to bottom. */}
+                    <button type="button" className="btn btn--secondary" onClick={() => onChange({ rotate: ((clip.rotate ?? 0) + 180) % 360, mirror: !clip.mirror })}>
+                      <Icon name="flip" size={13} /> Flip vertical
+                    </button>
+                  </div>
+                </>
               )}
             </>
           )}

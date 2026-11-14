@@ -134,6 +134,9 @@ interface Gesture {
   /** A caption: moves and resizes every caption together. */
   captions: boolean;
   moved: boolean;
+  /** Where it was (shares of the free space), kept when it can't move along an axis. */
+  x: number;
+  y: number;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -143,6 +146,16 @@ function placeAlong(offset: number, free: number): number {
   if (free <= 0) return 0.5;
   for (const target of [0, free / 2, free]) if (Math.abs(offset - target) < SNAP_PX) return target / free;
   return clamp(offset / free, 0, 1);
+}
+
+/**
+ * The Image editor's `placeAlong`: past the edges too, and a layer bigger than the picture moves as well (its share
+ * of the free space, which is then negative). `old` stays when the layer is exactly as big as the picture.
+ */
+function placeFree(offset: number, free: number, old: number): number {
+  if (Math.abs(free) < 1) return old;
+  for (const target of [0, free / 2, free]) if (Math.abs(offset - target) < SNAP_PX) return target / free;
+  return offset / free;
 }
 
 /** Plays the timeline: every clip's media follows the playhead, stacked like the export. */
@@ -366,7 +379,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const change = (patch: { x: number; y: number; size?: number; aspect?: number }) =>
       api.editLive(g.captions ? { type: "layoutCaptions", patch } : { type: "updateClip", clipId: g.clipId, patch });
     if (g.mode === "move") {
-      change({ x: placeAlong(left0 + dx, stage.width - box.width), y: placeAlong(top0 + dy, stage.height - box.height) });
+      change(
+        still
+          ? { x: placeFree(left0 + dx, stage.width - box.width, g.x), y: placeFree(top0 + dy, stage.height - box.height, g.y) }
+          : { x: placeAlong(left0 + dx, stage.width - box.width), y: placeAlong(top0 + dy, stage.height - box.height) },
+      );
       return;
     }
     const free = (total: number, used: number, offset: number) => (total - used <= 0 ? 0.5 : clamp(offset / (total - used), 0, 1));
@@ -411,15 +428,20 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     // Captions not on the timeline aren't clips: they're picked as a whole.
     onSelect(clip.trackId.startsWith(SHOWN_CAPTIONS) ? SHOWN_CAPTIONS : clip.id);
     const stage = stageRef.current.getBoundingClientRect();
-    const elBox = (mode === "move" ? e.currentTarget : e.currentTarget.parentElement!).getBoundingClientRect();
+    const el = mode === "move" ? e.currentTarget : e.currentTarget.parentElement!;
+    const elBox = el.getBoundingClientRect();
     // A rotated shape's DOM bounding rect is its wider axis-aligned envelope; keep the unrotated box for drag maths.
+    // A turned text or photo: its own box, about the same middle (its layout size, scaled as the stage is shown).
+    const k = stage.width / Math.max(1, stageRef.current.offsetWidth);
     const box =
       isShape(clip) && clip.rotate && stage.width > 0 && stage.height > 0
         ? (() => {
             const b = shapeBox(clip, stage.width, stage.height);
             return new DOMRect(stage.left + b.left, stage.top + b.top, b.width, b.height);
           })()
-        : elBox;
+        : !isShape(clip) && (clip.mediaId ? clip.angle : clip.rotate)
+          ? new DOMRect(elBox.left + (elBox.width - el.offsetWidth * k) / 2, elBox.top + (elBox.height - el.offsetHeight * k) / 2, el.offsetWidth * k, el.offsetHeight * k)
+          : elBox;
     gestureRef.current = {
       clipId: clip.id,
       mode,
@@ -432,6 +454,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
       isShape: isShape(clip),
       captions,
       moved: false,
+      x: clip.x,
+      y: clip.y,
     };
     const move = (ev: PointerEvent) => onPointerMove.current(ev);
     const up = () => {
@@ -943,7 +967,11 @@ function KeyFilters({ clips }: { clips: Clip[] }) {
 
 /** Image editor layer styles (lib/layerStyle.ts), sized for the stage as it's shown. */
 function StyleFilters({ clips, height }: { clips: Clip[]; height: number }) {
-  const markup = clips.filter((c) => hasStyle(c.style)).map((c) => styleFilter(`style-${c.id}`, c.style!, height, c.fillOpacity ?? 1)).join("");
+  // A text or photo is turned by CSS after its filter; a shape is drawn turned.
+  const markup = clips
+    .filter((c) => hasStyle(c.style))
+    .map((c) => styleFilter(`style-${c.id}`, c.style!, height, c.fillOpacity ?? 1, undefined, c.shape ? 0 : c.mediaId ? (c.angle ?? 0) : (c.rotate ?? 0)))
+    .join("");
   return markup ? <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: markup }} /> : null;
 }
 
@@ -1112,7 +1140,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
     <div
       className={selected ? "preview__picture is-selected" : "preview__picture"}
       data-clip={clip.id}
-      style={{ ...box, visibility: visible ? "visible" : "hidden", opacity, mixBlendMode: clip.blend, zIndex: z, filter: styled(clip) }}
+      style={{ ...box, visibility: visible ? "visible" : "hidden", opacity, mixBlendMode: clip.blend, zIndex: z, filter: styled(clip), rotate: clip.angle ? `${clip.angle}deg` : undefined }}
       onPointerDown={onPointerDown}
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
     >

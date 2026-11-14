@@ -135,7 +135,16 @@ async function drawPicture(out: CanvasRenderingContext2D, clip: Clip, path: stri
     lctx.fillRect(0, 0, bw, own.bars * bh);
     lctx.fillRect(0, bh - own.bars * bh, bw, own.bars * bh);
   }
-  mixed(out, clip, clip.opacity ?? 1, () => out.drawImage(layer, Math.round(box.left), Math.round(box.top)));
+  mixed(out, clip, clip.opacity ?? 1, () => {
+    // Turned about its middle (the preview's CSS `rotate`); its style's light keeps its direction (filters work on the canvas).
+    const [left, top] = [Math.round(box.left), Math.round(box.top)];
+    if (!clip.angle) return out.drawImage(layer, left, top);
+    out.save();
+    out.translate(left + bw / 2, top + bh / 2);
+    out.rotate((clip.angle * Math.PI) / 180);
+    out.drawImage(layer, -bw / 2, -bh / 2);
+    out.restore();
+  });
 }
 
 /** Draws the picture: the background colour (unless see-through), then every layer from the bottom of the Layers list up. */
@@ -153,7 +162,8 @@ export async function composeImage(project: Project, options: ComposeOptions): P
   styles.style.position = "absolute";
   styles.innerHTML = project.clips
     .filter((c) => hasStyle(c.style))
-    .map((c) => styleFilter(`compose-style-${c.id}`, c.style!, H, c.fillOpacity ?? 1, { x: -W, y: -H, width: 3 * W, height: 3 * H }))
+    // A photo is drawn turned and its filter works in the turned drawing, as CSS does; text arrives already turned.
+    .map((c) => styleFilter(`compose-style-${c.id}`, c.style!, H, c.fillOpacity ?? 1, { x: -W, y: -H, width: 3 * W, height: 3 * H }, c.mediaId ? (c.angle ?? 0) : 0))
     .join("");
   document.body.append(styles);
   try {
