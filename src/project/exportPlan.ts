@@ -210,7 +210,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       opacity: c.shape ? undefined : c.opacity,
       x: c.x,
       y: c.y,
-      text: textLines(c.text ?? "", c.size, frame, c.font),
+      text: textLines(c.text ?? "", c.size, frame, c.font, c.spacing),
       motion: role === "text" ? textMotion(c, textLines(c.text ?? "", c.size, frame, c.font)) : undefined,
       shape: c.shape ? { shape: c.shape, color: c.color, size: c.size, aspect: c.aspect, x: c.x, y: c.y, rotate: c.rotate, opacity: c.opacity, outline: c.outline } : undefined,
       color: c.color ?? "#ffffff",
@@ -218,6 +218,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       edge: c.edge,
       edgeColor: c.edgeColor,
       edgeSize: c.edgeSize,
+      ...(still && role === "text" && { edgeBlur: c.edgeBlur, glow: c.glow, glowColor: c.glowColor, spacing: c.spacing }),
     };
   });
   const media = used.map((m) => {

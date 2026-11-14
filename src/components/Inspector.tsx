@@ -181,6 +181,20 @@ export function Inspector({
               ))}
             </div>
           </fieldset>
+          {still && (
+            // The Image editor draws its text itself (textPicture.ts), so it can have what FFmpeg's text can't.
+            <>
+              {clip.edge !== "box" && (
+                <Slider id="insp-text-edge" label={clip.edge ? "Thickness" : "Distance"} min={0.5} max={4} step={0.1} value={clip.edgeSize ?? 1} format={(v) => `${v.toFixed(1)}×`} onCheckpoint={onCheckpoint} onChange={(edgeSize) => onChange({ edgeSize }, true)} />
+              )}
+              {!clip.edge && <Slider id="insp-text-soft" label="Softness" min={0} max={0.5} step={0.01} value={clip.edgeBlur ?? 0} format={pct} onCheckpoint={onCheckpoint} onChange={(edgeBlur) => onChange({ edgeBlur: edgeBlur || undefined }, true)} />}
+              <ColorField label="Edge color" color={clip.edgeColor ?? "#000000"} onChange={(edgeColor, live) => onChange({ edgeColor }, live)} onCheckpoint={onCheckpoint} />
+              <Slider id="insp-text-glow" label="Glow" min={0} max={0.5} step={0.01} value={clip.glow ?? 0} format={pct} onCheckpoint={onCheckpoint} onChange={(glow) => onChange({ glow: glow || undefined }, true)} />
+              {Boolean(clip.glow) && <ColorField label="Glow color" color={clip.glowColor ?? "#ffffff"} onChange={(glowColor, live) => onChange({ glowColor }, live)} onCheckpoint={onCheckpoint} />}
+              <Slider id="insp-text-spacing" label="Spacing" min={-0.1} max={0.5} step={0.01} value={clip.spacing ?? 0} format={pct} onCheckpoint={onCheckpoint} onChange={(spacing) => onChange({ spacing: spacing || undefined }, true)} />
+              <Slider id="insp-text-angle" label="Angle" min={-180} max={180} step={1} value={clip.rotate ?? 0} format={(v) => `${Math.round(v)}°`} onCheckpoint={onCheckpoint} onChange={(rotate) => onChange({ rotate: rotate || undefined }, true)} />
+            </>
+          )}
           <FontLibrary selected={clip.font} onChange={onChange} />
         </>
       )
@@ -646,12 +660,12 @@ export function Inspector({
 type Look = { color?: string; font?: TextFont; edge?: TextEdge };
 
 /** A few quick colours, and any colour on the wheel (open already when the colour is none of the quick ones). */
-export function ColorField({ color, onChange, onCheckpoint }: { color?: string; onChange: (color: string, live?: boolean) => void; onCheckpoint?: () => void }) {
+export function ColorField({ color, onChange, onCheckpoint, label = "Color" }: { color?: string; onChange: (color: string, live?: boolean) => void; onCheckpoint?: () => void; label?: string }) {
   const current = color ?? "#ffffff";
   const [wheel, setWheel] = useState(() => !TEXT_COLORS.some((c) => c.value === current));
   return (
     <fieldset className="insp__field">
-      <legend>Color</legend>
+      <legend>{label}</legend>
       <div className="insp__swatches">
         {TEXT_COLORS.map((c) => (
           <button

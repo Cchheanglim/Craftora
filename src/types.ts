@@ -207,6 +207,11 @@ export interface RenderClip {
   /** Text style presets (model.ts `Clip`): the edge's colour and strength. */
   edgeColor?: string;
   edgeSize?: number;
+  /** Image editor text only (textPicture.ts draws it; project.rs never sees these): model.ts `Clip`. */
+  edgeBlur?: number;
+  glow?: number;
+  glowColor?: string;
+  spacing?: number;
   /** Pictures and text: an Image editor layer's opacity (shapes draw theirs into `picture`). */
   opacity?: number;
   /** Text animations (textMotion.ts), drawn by project.rs as the preview draws them. */

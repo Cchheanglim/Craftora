@@ -11,6 +11,7 @@ import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
 import { RGB_SHARE, adjustSteps, blocksStyle, keyLine, posterLevels, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
 import { setWindowFullscreen } from "../lib/engine";
+import { textShadowFilter } from "../lib/textPicture";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
 import { SyncedMedia } from "./SyncedMedia";
@@ -655,8 +656,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             }
             // Its animation at this moment, as the export draws it (textMotion.ts). Picked and paused, it shows as set: a
             // text added at the playhead would otherwise sit at its own first moment, invisible, and couldn't be dragged.
-            const lines = textLines(clip.text ?? "", clip.size, frame, clip.font);
+            const lines = textLines(clip.text ?? "", clip.size, frame, clip.font, clip.spacing);
             const pose = motionAt(isSelected && !playing ? undefined : textMotion(clip, lines), time - clip.start, lines);
+            const shadows = still && textShadowFilter(clip);
             return (
               <div
                 key={clip.id}
@@ -671,11 +673,14 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   color: clip.color,
                   opacity: fadeAt(clip, time) * pose.alpha * (clip.opacity ?? 1),
                   ...textFont(clip),
+                  // The Image editor's own (textPicture.ts draws them into the saved picture).
+                  ...(still && { textShadow: shadows ? "none" : undefined, letterSpacing: clip.spacing ? `${clip.spacing}em` : undefined, rotate: clip.rotate ? `${clip.rotate}deg` : undefined }),
                 }}
                 onPointerDown={beginGesture(clip, "move")}
                 onClick={(e) => e.stopPropagation()}
               >
-                {pose.text}
+                {/* Softness and glow on the letters only: not the box edge or the selection outline. */}
+                {shadows ? <span style={{ display: "block", filter: shadows }}>{pose.text}</span> : pose.text}
                 {isSelected && handles(clip)}
               </div>
             );
