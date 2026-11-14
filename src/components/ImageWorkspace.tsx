@@ -9,7 +9,7 @@ export interface ImageTool {
   icon: IconName;
   /** Tools are drawn in groups with a thin line between groups. */
   group: "select" | "content" | "edit";
-  /** Its key, shown small in the button's corner. */
+  /** Its key (read out with its name). */
   key?: string;
   disabled?: boolean;
 }
@@ -175,7 +175,7 @@ export function ZoomSelect({ view }: { view: ImageView }) {
   );
 }
 
-/** How tall the Layers list starts, and the Properties' least room under it. */
+/** How tall the Layers list starts, and the Properties' least room over it. */
 const LAYERS_H = 232;
 const PROPS_MIN = 200;
 const LAYERS_KEY = "craftora.imageLayersHeight";
@@ -190,13 +190,18 @@ function savedLayersHeight(): number {
 }
 
 /**
- * The Image editor: a tool strip at the left (with a tool's panel beside it), the picture in a grey work area, and a dock
- * at the right with the layers on top and the picked layer's settings under them (a line between them drags).
+ * The Image editor, laid out like a photo editor: an options bar across the top, a thin tool column at the left (with a
+ * tool's panel beside it), the picture in a grey work area under its name tab and over a status line, and a dock at the
+ * right with the picked layer's settings over the layers (a line between them drags).
  */
 export function ImageWorkspace(props: {
   tools: ImageTool[];
   activeTool: string;
   onTool: (id: string) => void;
+  /** The options bar's contents: what the picked tool and layer can do. */
+  options: ReactNode;
+  /** The picture's name and size, for its tab and the status line. */
+  doc: { name: string; width: number; height: number };
   /** The open tool's panel (photos, shapes, canvas size…), in a 300px column next to the tool strip; null = none. */
   flyout: ReactNode | null;
   /** The picture (it fits its box by itself). */
@@ -205,7 +210,7 @@ export function ImageWorkspace(props: {
   properties: ReactNode;
   layers: ReactNode;
 }) {
-  const { tools, activeTool, onTool, flyout, canvas, view, properties, layers } = props;
+  const { tools, activeTool, onTool, options, doc, flyout, canvas, view, properties, layers } = props;
 
   const [panelsVisible, setPanelsVisible] = useState(true);
   const [spaceDown, setSpaceDown] = useState(false);
@@ -314,6 +319,8 @@ export function ImageWorkspace(props: {
 
   return (
     <div className={`image-ws${panelsVisible ? "" : " image-ws--immersive"}${flyout !== null ? " has-flyout" : ""}`}>
+      <div className="image-ws__options">{options}</div>
+
       <nav className="image-ws__tools" aria-label="Tools">
         {tools.map((tool, idx) => {
           const prevTool = tools[idx - 1];
@@ -329,8 +336,7 @@ export function ImageWorkspace(props: {
                 disabled={tool.disabled}
                 onClick={() => onTool(tool.id)}
               >
-                <Icon name={tool.icon} size={18} />
-                {tool.key && <span className="image-ws__tool-key mono" aria-hidden="true">{tool.key}</span>}
+                <Icon name={tool.icon} size={16} />
               </button>
             </Fragment>
           );
@@ -339,6 +345,12 @@ export function ImageWorkspace(props: {
 
       {flyout !== null && <aside className="image-ws__flyout">{flyout}</aside>}
 
+      <div className="image-ws__stage">
+      <div className="image-ws__doctabs">
+        <span className="image-ws__doctab">
+          {doc.name} @ {view.pct}%
+        </span>
+      </div>
       <main
         ref={(el) => {
           workAreaRef.current = el;
@@ -368,10 +380,17 @@ export function ImageWorkspace(props: {
           {canvas}
         </div>
       </main>
+      <footer className="image-ws__status mono">
+        <span>{view.pct}%</span>
+        <span>
+          {doc.width} px × {doc.height} px
+        </span>
+      </footer>
+      </div>
 
       <aside ref={dockRef} className="image-ws__dock" style={{ "--layers-h": `${layersH}px` } as CSSProperties}>
-        <section className="image-ws__layers" aria-label="Layers">
-          {layers}
+        <section className="image-ws__props" aria-label="Properties">
+          {properties}
         </section>
         <div
           className="image-ws__grip"
@@ -384,7 +403,7 @@ export function ImageWorkspace(props: {
             if (e.button !== 0) return;
             e.preventDefault();
             const start = { y: e.clientY, h: layersH };
-            const move = (ev: PointerEvent) => setLayersHeight(start.h + ev.clientY - start.y);
+            const move = (ev: PointerEvent) => setLayersHeight(start.h - (ev.clientY - start.y));
             const up = () => {
               window.removeEventListener("pointermove", move);
               window.removeEventListener("pointerup", up);
@@ -395,14 +414,14 @@ export function ImageWorkspace(props: {
           onKeyDown={(e) => {
             if (e.key === "ArrowUp" || e.key === "ArrowDown") {
               e.preventDefault();
-              setLayersHeight(layersH + (e.key === "ArrowUp" ? -16 : 16));
+              setLayersHeight(layersH + (e.key === "ArrowUp" ? 16 : -16));
             }
           }}
         >
           <span />
         </div>
-        <section className="image-ws__props" aria-label="Properties">
-          {properties}
+        <section className="image-ws__layers" aria-label="Layers">
+          {layers}
         </section>
       </aside>
     </div>

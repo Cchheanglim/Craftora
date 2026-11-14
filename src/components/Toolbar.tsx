@@ -29,7 +29,7 @@ interface ToolbarProps {
   inputRef: RefObject<HTMLInputElement | null>;
   /** A newer version: a button to install it, or its progress (no `onClick`) while installing. */
   update?: { label: string; onClick?: () => void };
-  /** The Image editor's bar instead of the link box: its name and file buttons, the middle, and tools before Export. */
+  /** The Image editor's slim bar instead of the link box: its menus, the middle, and tools before Export. */
   image?: { start: ReactNode; middle: ReactNode; end: ReactNode };
 }
 
@@ -156,7 +156,7 @@ export function Toolbar({
   };
 
   return (
-    <header className="toolbar">
+    <header className={image ? "toolbar toolbar--image" : "toolbar"}>
       <div className="toolbar__brand">
         {menu && (
         <div

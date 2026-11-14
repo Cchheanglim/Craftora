@@ -1,0 +1,96 @@
+.menubar {
+  display: flex;
+  height: 100%;
+  align-items: stretch;
+  user-select: none;
+}
+
+.menubar__group {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.menubar__title {
+  display: flex;
+  align-items: center;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: 12px var(--font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+}
+
+.menubar__title:hover,
+.menubar__title:focus-visible,
+.menubar__title[aria-expanded="true"] {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.menubar__menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  min-width: 230px;
+  padding: 4px 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 0 0 3px 3px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.45);
+}
+
+.menubar__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 24px;
+  padding: 0 12px 0 26px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: 12px var(--font-ui);
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+}
+
+.menubar__item > svg {
+  position: absolute;
+  left: 9px;
+  flex: none;
+}
+
+.menubar__keys {
+  margin-left: auto;
+  padding-left: 24px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.menubar__item:hover:not(:disabled),
+.menubar__item:focus:not(:disabled) {
+  background: var(--bg-selected);
+}
+
+.menubar__item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.menubar__sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--line);
+}

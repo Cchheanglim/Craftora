@@ -122,6 +122,7 @@ import { CommandBox, type Command } from "./components/CommandBox";
 import { removeBackground } from "./lib/cutout";
 import { ImageSizePanel } from "./components/ImageSizePanel";
 import { NewImageDialog } from "./components/NewImageDialog";
+import { MenuBar, type Menu, type MenuItem } from "./components/MenuBar";
 import { ImageWorkspace, ZoomSelect, useImageView, type ImageTool } from "./components/ImageWorkspace";
 import { Home, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
@@ -2137,6 +2138,123 @@ export default function App() {
         { id: "fit", label: "Zoom to fit", keys: "Ctrl 0", icon: "fit", group: "View", run: imageView.fit },
         { id: "z100", label: "Zoom to 100%", icon: "search", group: "View", run: () => imageView.zoomTo(100) },
       ];
+  // The Image editor's menu bar: the same actions as the box, sorted into a photo editor's menus (greyed when the picked
+  // layer can't do them).
+  const menuItem = (id: string, label: string, keys?: string): MenuItem => {
+    const c = commands.find((x) => x.id === id);
+    return { id, label, keys: keys ?? c?.keys?.replace(/ /g, "+"), disabled: !c || c.disabled, run: () => c?.run() };
+  };
+  // Sent from the body: the key handlers read the pressed element.
+  const pressKey = (key: string, ctrlKey = false) => document.body.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey, bubbles: true }));
+  const imageMenus: Menu[] = !imageMode
+    ? []
+    : [
+        { label: "File", items: [menuItem("new", "New image…"), menuItem("open", "Open a photo…"), "sep", menuItem("export", "Export picture…")] },
+        {
+          label: "Edit",
+          items: [
+            { id: "undo", label: "Undo", keys: "Ctrl+Z", disabled: !api.canUndo, run: api.undo },
+            { id: "redo", label: "Redo", keys: "Ctrl+Shift+Z", disabled: !api.canRedo, run: api.redo },
+            "sep",
+            menuItem("dup", "Duplicate layer"),
+            menuItem("delete", "Delete layer"),
+            "sep",
+            { id: "search", label: "Search actions…", keys: "Ctrl+K", run: () => pressKey("k", true) },
+          ],
+        },
+        {
+          label: "Image",
+          items: [
+            { id: "canvas", label: "Canvas size and background…", run: () => setImageTool("size") },
+            ...IMAGE_SIZES.map((size) => menuItem(`size-${size.id}`, `Resize to ${size.label}`)),
+            "sep",
+            menuItem("crop", "Crop…"),
+            menuItem("turn", "Turn 90°"),
+            menuItem("mirror", "Mirror"),
+          ],
+        },
+        {
+          label: "Layer",
+          items: [menuItem("addtext", "New text layer"), menuItem("addshape", "New shape layer…"), menuItem("addphoto", "New photo layer…"), "sep", menuItem("dup", "Duplicate layer"), menuItem("up", "Bring forward"), menuItem("down", "Send backward"), "sep", menuItem("delete", "Delete layer")],
+        },
+        {
+          label: "Select",
+          items: [
+            { id: "none", label: "Deselect", disabled: !selected, run: () => setSelectedId(null) },
+            "sep",
+            ...layersOf(project).map((l): MenuItem => ({ id: `layer-${l.clip.id}`, label: layerName(l.clip, project), checked: l.clip.id === selectedId, run: () => setSelectedId(l.clip.id) })),
+          ],
+        },
+        {
+          label: "Filter",
+          items: [
+            menuItem("enhance", "Enhance"),
+            menuItem("adjust", "Adjust colours…"),
+            menuItem("cut", "Remove background"),
+            menuItem("colour", "Remove a colour…"),
+            "sep",
+            ...LOOKS.map((look) => menuItem(`look-${look.id}`, look.label)),
+            menuItem("nolook", "Remove the filter"),
+            "sep",
+            ...PICTURE_EFFECTS.filter((e) => STILL_EFFECTS.includes(e.id)).map((effect) => menuItem(`effect-${effect.id}`, effect.label)),
+            menuItem("noeffect", "Remove the effect"),
+          ],
+        },
+        {
+          label: "View",
+          items: [
+            { id: "in", label: "Zoom in", keys: "Ctrl++", run: imageView.zoomIn },
+            { id: "out", label: "Zoom out", keys: "Ctrl+-", run: imageView.zoomOut },
+            menuItem("fit", "Fit on screen"),
+            menuItem("z100", "100%"),
+            { id: "z200", label: "200%", run: () => imageView.zoomTo(200) },
+            "sep",
+            { id: "panels", label: "Show or hide panels", keys: "Tab", run: () => pressKey("Tab") },
+          ],
+        },
+        {
+          label: "Window",
+          items: [
+            { id: "assistant", label: "Assistant", run: () => pickTab("assistant") },
+            "sep",
+            { id: "home", label: "Home", run: () => go("home") },
+            { id: "projects", label: "Projects", run: () => go("projects") },
+            { id: "editor", label: "Video editor", run: () => go("editor") },
+            { id: "library", label: "Exports", run: () => go("library") },
+            { id: "settings", label: "Settings", run: () => go("settings") },
+          ],
+        },
+        { label: "Help", items: [{ id: "welcome", label: "Welcome guide", run: () => setWelcoming(true) }] },
+      ];
+  // Its options bar: the tool, then what the picked layer can do right now.
+  const toolNow = IMAGE_TOOLS.find((t) => t.id === imageTool) ?? IMAGE_TOOLS[0];
+  const optionButton = (c: Command) => (
+    <button key={c.id} type="button" className="btn btn--ghost" disabled={c.disabled} onClick={c.run}>
+      <Icon name={c.icon} size={13} />
+      {c.label}
+    </button>
+  );
+  const imageOptions = imageMode && (
+    <>
+      <span className="image-ws__opt-tool">
+        <Icon name={toolNow.icon} size={14} />
+        {toolNow.label}
+      </span>
+      <span className="image-ws__opt-sep" />
+      <span className="image-ws__opt-name">{selected ? picked : "No layer picked"}</span>
+      <span className="image-ws__opt-sep" />
+      {commands.filter((c) => (selected ? ["crop", "turn", "mirror", "cut", "dup", "delete"] : ["addtext", "addshape", "addphoto", "open"]).includes(c.id)).map(optionButton)}
+      <span className="image-ws__opt-end">
+        <button type="button" className="btn btn--icon" aria-label="Undo" disabled={!api.canUndo} onClick={api.undo}>
+          <Icon name="undo" size={14} />
+        </button>
+        <button type="button" className="btn btn--icon" aria-label="Redo" disabled={!api.canRedo} onClick={api.redo}>
+          <Icon name="redo" size={14} />
+        </button>
+        <ZoomSelect view={imageView} />
+      </span>
+    </>
+  );
   const tabOff = imageMode && imageTabs.some((t) => t.id === rightTab && t.disabled);
   useEffect(() => {
     if (tabOff) setRightTab("edit");
@@ -2338,7 +2456,7 @@ export default function App() {
   );
 
   return (
-    <div className="app" style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen && inEditor ? sideWidth : 0, PANEL_WIDTH)}px` } as CSSProperties}>
+    <div className={imageMode ? "app app--image" : "app"} style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen && inEditor ? sideWidth : 0, PANEL_WIDTH)}px` } as CSSProperties}>
       <Ambient active={theme !== "classic"} />
       <Tooltip />
       {fetchReview.dialog}
@@ -2424,32 +2542,9 @@ export default function App() {
         image={
           imageMode && project.image
             ? {
-                start: (
-                  <span className="toolbar__doc">
-                    <span className="toolbar__doc-name">{project.media.length ? projectName(project) : "Untitled image"}</span>
-                    <span className="toolbar__doc-size">
-                      {project.image.width} × {project.image.height}
-                    </span>
-                    <button type="button" className="btn btn--icon" aria-label="New image" onClick={() => setNewImageOpen(true)}>
-                      <Icon name="plus" size={15} />
-                    </button>
-                    <button type="button" className="btn btn--icon" aria-label="Open a photo" onClick={() => void openPhoto()}>
-                      <Icon name="folder" size={15} />
-                    </button>
-                  </span>
-                ),
+                start: <MenuBar menus={imageMenus} />,
                 middle: <CommandBox commands={commands} onAsk={(text) => (pickTab("assistant"), setAiAsk({ id: crypto.randomUUID(), text }))} />,
-                end: (
-                  <>
-                    <button type="button" className="btn btn--icon" aria-label="Undo" disabled={!api.canUndo} onClick={api.undo}>
-                      <Icon name="undo" size={15} />
-                    </button>
-                    <button type="button" className="btn btn--icon" aria-label="Redo" disabled={!api.canRedo} onClick={api.redo}>
-                      <Icon name="redo" size={15} />
-                    </button>
-                    <ZoomSelect view={imageView} />
-                  </>
-                ),
+                end: null,
               }
             : undefined
         }
@@ -2551,6 +2646,8 @@ export default function App() {
               // A panel's tool picked again closes its panel.
               setImageTool((now) => (now === id && id !== "move" ? "move" : id));
             }}
+            options={imageOptions}
+            doc={{ name: project.media.length ? projectName(project) : "Untitled image", ...project.image }}
             flyout={imageTool !== "move" && imageTool !== "hand" ? mediaPanel(imageTool as MediaTab) : null}
             canvas={preview}
             view={imageView}
