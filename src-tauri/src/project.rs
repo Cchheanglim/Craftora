@@ -1510,6 +1510,13 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
         }
         "highlights" if within(-1.0, 1.0) => curve(format!("X{amount:+.4}*X*X*(1-X)")),
         "shadows" if within(-1.0, 1.0) => curve(format!("X{amount:+.4}*X*(1-X)*(1-X)")),
+        // Edit → Adjust → Posterize: 8 down to 2 flat steps a colour (effects.ts `posterLevels`), as SVG's discrete
+        // transfer draws them in the preview.
+        "posterize" if within(0.0, 1.0) => {
+            let n = (8.0 - 6.0 * amount).round();
+            let channel = format!("'maxval*min(floor(val/maxval*{n}),{})/{}'", n - 1.0, n - 1.0);
+            Some(format!(",lutrgb=r={channel}:g={channel}:b={channel}"))
+        }
         // Edit → Adjust → Sharpen: each neighbour's weight 0.5 × amount taken away (effects.ts `sharpenWeight`), in
         // thousandths, as convolution takes whole numbers; the same on every colour plane, alpha left alone.
         "sharpen" if within(0.0, 1.0) => {
@@ -1731,6 +1738,8 @@ mod tests {
         assert!(look_filter("shadows", -0.25).unwrap().starts_with(",lutrgb=r='maxval*((val/maxval)-0.2500*(val/maxval)*(1-(val/maxval))*(1-(val/maxval)))'"));
         assert_eq!(look_filter("sharpen", 0.5).unwrap(), ",convolution=0m='0 -250 0 -250 2000 -250 0 -250 0':1m='0 -250 0 -250 2000 -250 0 -250 0':2m='0 -250 0 -250 2000 -250 0 -250 0':0rdiv=0.001:1rdiv=0.001:2rdiv=0.001");
         assert!(look_filter("sharpen", -0.5).is_none());
+        assert!(look_filter("posterize", 1.0).unwrap().starts_with(",lutrgb=r='maxval*min(floor(val/maxval*2),1)/1'"));
+        assert!(look_filter("posterize", 2.0).is_none());
         assert!(look_filter("exposure", 1.5).is_none());
         // Remove a colour: effects.ts `keyLine` for #00b140 at 50 / 20; numbers it never sends are refused.
         assert_eq!(

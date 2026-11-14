@@ -840,9 +840,10 @@ function RemoveBackground({
             onKeyDown={(e) => (e.key === " " || e.key === "Enter") && onPeek?.(true)}
             onKeyUp={() => onPeek?.(false)}
             onBlur={() => onPeek?.(false)}
+            title="Hold to see the original"
           >
             <Icon name="eye" size={14} />
-            Hold to see the original
+            Original
           </button>
           <button type="button" className="btn btn--secondary" onClick={onRestore}>
             <Icon name="undo" size={14} />

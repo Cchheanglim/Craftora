@@ -2007,7 +2007,7 @@ export default function App() {
     if (!photo?.source.image || !photo.source.local || !inDesktopApp || photo.original) return undefined;
     return async (onStatus: (text: string) => void) => {
       const path = await removeBackground(photo.source.url, onStatus);
-      api.edit({ type: "cutOut", mediaId: photo.id, source: await openLocal(path) });
+      api.edit({ type: "cutOut", mediaId: photo.id, source: await openLocal(path), own: clip ? { clipId: clip.id, mediaId: crypto.randomUUID() } : undefined });
     };
   };
 
@@ -2395,7 +2395,7 @@ export default function App() {
               onCutOut={cutOutOf(selected)}
               startCut={cutRequest === selected.id}
               onCutStarted={() => setCutRequest(null)}
-              onRestore={() => selected.mediaId && api.edit({ type: "cutOut", mediaId: selected.mediaId })}
+              onRestore={() => selected.mediaId && api.edit({ type: "cutOut", mediaId: selected.mediaId, own: { clipId: selected.id, mediaId: crypto.randomUUID() } })}
               onPeek={(on) => setPeek(on ? (selected.mediaId ?? null) : null)}
               onPreview={(from, seconds) => {
                 const back = playback.time;
@@ -2641,7 +2641,7 @@ export default function App() {
             onTool={(id) => {
               if (id === "cutout") return pickTab("background");
               // Text goes straight into the middle, its styles open beside it.
-              if (id === "text") return (addText(), pickTab("text"));
+              if (id === "text") return (addText(), pickTab("text"), setImageTool("move"));
               if (id === "crop") return selected && openCrop(selected, 0);
               // A panel's tool picked again closes its panel.
               setImageTool((now) => (now === id && id !== "move" ? "move" : id));

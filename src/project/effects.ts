@@ -16,7 +16,7 @@ import type { CSSProperties } from "react";
  * preview applies the steps in order; the export draws the same maths (project.rs `look_filter`).
  */
 export type LookStep = readonly [
-  "grayscale" | "sepia" | "saturate" | "hue-rotate" | "brightness" | "contrast" | "invert" | "warmth" | ToneOp | "sharpen",
+  "grayscale" | "sepia" | "saturate" | "hue-rotate" | "brightness" | "contrast" | "invert" | "warmth" | ToneOp | "posterize" | "sharpen",
   number,
 ];
 
@@ -60,6 +60,7 @@ export const ADJUSTMENTS = [
   { id: "highlights", label: "Highlights" },
   { id: "shadows", label: "Shadows" },
   { id: "warmth", label: "Warmth" },
+  { id: "posterize", label: "Posterize" },
   { id: "sharpen", label: "Sharpen" },
 ] as const;
 /** `enhance`: 1 = Enhance is on (a checkbox, not a slider). */
@@ -72,7 +73,13 @@ export type Adjust = Partial<Record<(typeof ADJUSTMENTS)[number]["id"] | "enhanc
 export const ENHANCE: LookStep[] = [["shadows", 0.3], ["highlights", -0.2], ["contrast", 1.08], ["saturate", 1.2], ["sharpen", 0.3]];
 
 /** Where an Adjust slider starts: Sharpen only sharpens. */
-export const adjustMin = (id: keyof Adjust) => (id === "sharpen" ? 0 : -100);
+export const adjustMin = (id: keyof Adjust) => (id === "sharpen" || id === "posterize" ? 0 : -100);
+
+/**
+ * Posterize at `v` (0 to 1): how many flat steps each of red, green and blue keeps, from 8 down to 2 (a poster's few
+ * colours). project.rs `look_filter` uses the same.
+ */
+export const posterLevels = (v: number) => Math.round(8 - 6 * clamp(v, 0, 1));
 
 /** A clip's adjustments as colour steps (Enhance first), drawn after its filter; none for all at 0. */
 export function adjustSteps(adjust?: Adjust): LookStep[] {
@@ -85,6 +92,7 @@ export function adjustSteps(adjust?: Adjust): LookStep[] {
   if (v("shadows")) steps.push(["shadows", v("shadows")]);
   if (v("saturation")) steps.push(["saturate", round4(1 + v("saturation"))]);
   if (v("warmth")) steps.push(["warmth", v("warmth")]);
+  if (v("posterize")) steps.push(["posterize", v("posterize")]);
   if (v("sharpen")) steps.push(["sharpen", v("sharpen")]);
   return steps;
 }
@@ -152,7 +160,7 @@ export function warmthMatrix(w: number): string {
 }
 
 /** Adjust's steps that CSS has no function for: the preview draws them as SVG filters with ids `<op>-<slider value>`. */
-export const SVG_STEPS = ["warmth", "exposure", "highlights", "shadows", "sharpen"] as const;
+export const SVG_STEPS = ["warmth", "exposure", "highlights", "shadows", "posterize", "sharpen"] as const;
 const isSvgStep = (op: LookStep[0]): op is (typeof SVG_STEPS)[number] => (SVG_STEPS as readonly string[]).includes(op);
 
 /**

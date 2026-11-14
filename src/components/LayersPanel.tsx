@@ -275,11 +275,9 @@ export function LayersPanel({
             disabled={!selectedClip}
             onClick={() => {
               if (!selectedClip) return;
-              api.edit({
-                type: "duplicateClip",
-                clipId: selectedClip.id,
-                newClipId: crypto.randomUUID(),
-              });
+              const newClipId = crypto.randomUUID();
+              api.edit({ type: "duplicateClip", clipId: selectedClip.id, newClipId });
+              onSelect(newClipId);
             }}
           >
             <Icon name="copy" size={14} />
