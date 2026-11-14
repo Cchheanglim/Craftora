@@ -120,6 +120,7 @@ import { MediaPanel, type Tab as MediaTab } from "./components/MediaPanel";
 import { LayersPanel, layerName } from "./components/LayersPanel";
 import { CommandBox, type Command } from "./components/CommandBox";
 import { removeBackground } from "./lib/cutout";
+import { composeImage } from "./lib/compose";
 import { ImageSizePanel } from "./components/ImageSizePanel";
 import { NewImageDialog } from "./components/NewImageDialog";
 import { MenuBar, type Menu, type MenuItem } from "./components/MenuBar";
@@ -354,7 +355,7 @@ async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource>
 const FREEZE_LENGTH = 3;
 
 /** Finished exports as kept in the history: without what only a running job needs. */
-const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined, after: undefined });
+const forHistory = (j: Job): Job => ({ ...j, spec: undefined, render: undefined, after: undefined, picture: undefined });
 
 export default function App() {
   const [view, setView] = useState<View>(inDesktopApp ? "home" : "editor");
@@ -1617,6 +1618,11 @@ export default function App() {
       command: plan.command,
       spec: inDesktopApp && plan.kind === "simple" ? { ...plan.spec, id } : undefined,
       render: inDesktopApp && plan.kind === "render" ? { ...plan.spec, id } : undefined,
+      // The Image editor draws its picture now, as the preview shows it (lib/compose.ts); Rust only saves it.
+      picture:
+        inDesktopApp && plan.kind === "render" && source.image
+          ? composeImage(source, { width: plan.spec.width, height: plan.spec.height, transparent: plan.spec.transparent, type: plan.spec.container === "jpg" ? "image/jpeg" : "image/png", quality: plan.spec.imageQuality })
+          : undefined,
       after: after.length ? after : undefined,
       thumbnail: coverOf(source),
     };

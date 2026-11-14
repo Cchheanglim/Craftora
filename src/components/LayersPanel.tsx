@@ -1,11 +1,20 @@
-import { useEffect, useRef, useState } from "react";
-import type { Clip, Project } from "../project/model";
-import { layersOf } from "../project/model";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { BLEND_MODES, layersOf, type BlendMode, type Clip, type Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
 import { shapeLabel } from "../project/shapes";
 import { Icon } from "./Icon";
 import type { MenuItem } from "./MenuBar";
+import { Select } from "./Select";
 import "./LayersPanel.css";
+
+const BLEND_OPTIONS = BLEND_MODES.flatMap((m) => (m === "sep" ? [] : [{ value: m[0], label: m[1] }]));
+
+const PCT_FIELDS = [
+  ["opacity", "Opacity", "layers-opacity"],
+  ["fillOpacity", "Fill", "layers-fill"],
+] as const;
+type PctKey = (typeof PCT_FIELDS)[number][0];
+const pct = (v?: number) => Math.round((v ?? 1) * 100);
 
 /** A menu that just opened, moved up and left by as much as it would run out of the window (a ref callback). */
 function keepInside(el: HTMLElement | null) {
@@ -65,6 +74,31 @@ export function LayersPanel({
   const layers = layersOf(project);
   const selectedClip = selectedId ? project.clips.find((c) => c.id === selectedId) ?? null : null;
   const selectedTrack = selectedClip ? project.tracks.find((t) => t.id === selectedClip.trackId) ?? null : null;
+
+  // Opacity / Fill typing state
+  const [typed, setTyped] = useState<Partial<Record<PctKey, string>>>({});
+  const pctCancelledRef = useRef(false);
+
+  useEffect(() => {
+    setTyped({});
+  }, [selectedId]);
+
+  const setPct = (key: PctKey, rawPct: number) => {
+    if (!selectedClip) return;
+    const clamped = Math.min(100, Math.max(0, Math.round(rawPct)));
+    const next = clamped === 100 ? undefined : clamped / 100;
+    if ((selectedClip[key] ?? 1) === (next ?? 1)) return;
+    api.edit({ type: "updateClip", clipId: selectedClip.id, patch: { [key]: next } });
+  };
+
+  const applyPct = (key: PctKey) => {
+    const raw = typed[key]?.replace(/%$/, "").trim();
+    const value = Number(raw);
+    setTyped({});
+    if (pctCancelledRef.current) return void (pctCancelledRef.current = false);
+    if (!raw || !Number.isFinite(value)) return;
+    setPct(key, value);
+  };
 
   // Inline rename state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -389,6 +423,64 @@ export function LayersPanel({
             <Icon name="trash" size={14} />
           </button>
         </div>
+      </div>
+
+      {/* Blend mode, Opacity and Fill row */}
+      <div className="layers-panel__mix">
+        <Select<BlendMode>
+          value={selectedClip?.blend ?? "normal"}
+          options={BLEND_OPTIONS}
+          disabled={!selectedClip}
+          className="layers-panel__blend"
+          title="Blend mode"
+          onChange={(blend) => {
+            if (!selectedClip) return;
+            api.edit({
+              type: "updateClip",
+              clipId: selectedClip.id,
+              patch: { blend: blend === "normal" ? undefined : blend },
+            });
+          }}
+        />
+        {PCT_FIELDS.map(([key, label, id]) => (
+          <Fragment key={key}>
+            <label className="layers-panel__mix-label" htmlFor={id}>
+              {label}
+            </label>
+            <input
+              id={id}
+              type="text"
+              className="field mono layers-panel__pct"
+              inputMode="numeric"
+              disabled={!selectedClip}
+              value={typed[key] ?? `${pct(selectedClip?.[key])}%`}
+              onChange={(e) => setTyped({ [key]: e.target.value })}
+              onBlur={() => applyPct(key)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                  e.preventDefault();
+                  const raw = typed[key]?.replace(/%$/, "").trim();
+                  const cur = raw && Number.isFinite(Number(raw)) ? Number(raw) : pct(selectedClip?.[key]);
+                  const step = (e.shiftKey ? 10 : 1) * (e.key === "ArrowUp" ? 1 : -1);
+                  setTyped({});
+                  setPct(key, cur + step);
+                } else if (e.key === "Enter") {
+                  e.preventDefault();
+                  applyPct(key);
+                  pctCancelledRef.current = true;
+                  e.currentTarget.blur();
+                  pctCancelledRef.current = false;
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  setTyped({});
+                  pctCancelledRef.current = true;
+                  e.currentTarget.blur();
+                  pctCancelledRef.current = false;
+                }
+              }}
+            />
+          </Fragment>
+        ))}
       </div>
 
       {/* Layers list */}

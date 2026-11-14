@@ -173,6 +173,7 @@ pub fn run() {
             cutout::cutout_source,
             speech::cancel_captions,
             store::save_snapshot,
+            store::save_image,
             store::save_voice,
             virustotal::site_check_available,
             virustotal::set_site_check_key,

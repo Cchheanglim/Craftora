@@ -47,6 +47,9 @@ export type ClipPatch = Partial<
     | "effect"
     | "shape"
     | "opacity"
+    | "blend"
+    | "fillOpacity"
+    | "style"
     | "name"
     | "outline"
     | "points"
@@ -668,6 +671,7 @@ function edit(p: Project, action: EditAction): Project {
       if (patch.effectSpeed !== undefined) patch.effectSpeed = clamp(patch.effectSpeed, 0.5, 3);
       if (patch.adjust) patch.adjust = Object.fromEntries(Object.entries(patch.adjust).map(([k, v]) => [k, Math.round(clamp(v ?? 0, -100, 100))]));
       if (patch.opacity !== undefined) patch.opacity = clamp(patch.opacity, 0, 1);
+      if (patch.fillOpacity !== undefined) patch.fillOpacity = clamp(patch.fillOpacity, 0, 1);
       if (patch.outline !== undefined) patch.outline = Math.max(0, patch.outline);
       return { ...p, clips: p.clips.map((c) => (c.id === action.clipId ? fitFades({ ...c, ...patch }) : c)) };
     }

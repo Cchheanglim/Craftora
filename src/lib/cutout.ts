@@ -6,6 +6,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { allowLocal } from "./engine";
 import type { InferenceSession } from "onnxruntime-web";
 // The engine's own files, shipped with the app (by default it would fetch them from a website).
 import wasm from "../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm?url";
@@ -43,6 +44,8 @@ export async function removeBackground(path: string, onStatus: (text: string) =>
   });
 
   onStatus("Removing the background…");
+  // A project reopened after a restart hasn't let this file be read yet.
+  await allowLocal(path);
   const bytes = await invoke<ArrayBuffer>("cutout_source", { path });
   const src = URL.createObjectURL(new Blob([bytes]));
   const img = await picture(src).finally(() => URL.revokeObjectURL(src));

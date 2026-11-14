@@ -253,6 +253,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const texts = project.clips.filter((c) => isText(c) && !trackHidden(c)).sort(byLayer);
   const shapes = project.clips.filter((c) => isShape(c) && !trackHidden(c)).sort(byLayer);
   const overlays = [...texts, ...shapes].sort(byLayer);
+  // The Image editor stacks every layer by the Layers order (photos over text too), 1 at the bottom (lib/compose.ts
+  // draws the same order); the video editor keeps pictures under text, as its export does.
+  const stack = still ? new Map([...pictures, ...overlays].sort(byLayer).map((c, i) => [c.id, i + 1])) : undefined;
   // Filter and effect blocks showing now change the pictures (not text), lowest track first.
   const blocks = blocksStyle(
     project.clips.filter((c) => isBlock(c) && active(c) && !trackHidden(c)).sort(byLayer),
@@ -533,12 +536,13 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             return (
               <PictureLayer
                 key={clip.id}
+                z={stack?.get(clip.id)}
                 clip={clip}
                 time={time}
                 stageAspect={stageAspect}
                 stageWidth={stageRef.current?.clientWidth ?? frame.width}
                 visible={t !== null && !trackHidden(clip)}
-                opacity={t === null ? 0 : mix(clip).picture * (clip.opacity ?? 1)}
+                opacity={t === null ? 0 : mix(clip).picture * (clip.opacity ?? 1) * (clip.fillOpacity ?? 1)}
                 white={t === null ? 0 : mix(clip).white}
                 shift={t === null ? 0 : mix(clip).shift}
                 lift={t === null ? 0 : mix(clip).lift}
@@ -644,10 +648,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               return (
                 <ShapeLayer
                   key={clip.id}
+                  z={stack?.get(clip.id)}
                   clip={clip}
                   // Drawn at the size shown, so an outline is as thick against the picture as in the export.
                   frame={{ ...frame, width: stageRef.current?.clientWidth ?? frame.width, height: stageRef.current?.clientHeight ?? frame.height }}
-                  opacity={fadeAt(clip, time)}
+                  opacity={fadeAt(clip, time) * (clip.fillOpacity ?? 1)}
                   selected={isSelected}
                   onPointerDown={beginGesture(clip, "move")}
                   handles={isSelected ? handles(clip) : null}
@@ -671,7 +676,10 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   scale: pose.scale,
                   fontSize: `${clip.size * 100}cqh`,
                   color: clip.color,
-                  opacity: fadeAt(clip, time) * pose.alpha * (clip.opacity ?? 1),
+                  opacity: fadeAt(clip, time) * pose.alpha * (clip.opacity ?? 1) * (clip.fillOpacity ?? 1),
+                  // The Image editor's layer blend mode (lib/compose.ts draws the same with globalCompositeOperation).
+                  mixBlendMode: clip.blend,
+                  zIndex: stack?.get(clip.id),
                   ...textFont(clip),
                   // The Image editor's own (textPicture.ts draws them into the saved picture).
                   ...(still && { textShadow: shadows ? "none" : undefined, letterSpacing: clip.spacing ? `${clip.spacing}em` : undefined, rotate: clip.rotate ? `${clip.rotate}deg` : undefined }),
@@ -1027,6 +1035,8 @@ interface PictureLayerProps {
   poster?: string;
   onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
   handles: ReactNode;
+  /** The Image editor: its place in the stack (Layers order), photos and text and shapes together. */
+  z?: number;
   /** Renders the picture: a video or an image. It reports its pixel size and when it's ready. */
   children: (onShape: (width: number, height: number) => void, style: CSSProperties, onReady: () => void) => ReactNode;
 }
@@ -1035,7 +1045,7 @@ interface PictureLayerProps {
  * One picture on the stage, placed like the export: fitted inside the frame, scaled by its
  * size, at its position. The crop is a window onto the video.
  */
-function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, selected, poster, onPointerDown, handles, children }: PictureLayerProps) {
+function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, selected, poster, onPointerDown, handles, z, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
@@ -1088,7 +1098,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
     <div
       className={selected ? "preview__picture is-selected" : "preview__picture"}
       data-clip={clip.id}
-      style={{ ...box, visibility: visible ? "visible" : "hidden", opacity }}
+      style={{ ...box, visibility: visible ? "visible" : "hidden", opacity, mixBlendMode: clip.blend, zIndex: z }}
       onPointerDown={onPointerDown}
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
     >
@@ -1151,10 +1161,12 @@ interface ShapeLayerProps {
   selected: boolean;
   onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
   handles: ReactNode;
+  /** The Image editor: its place in the stack (Layers order), photos and text and shapes together. */
+  z?: number;
 }
 
 /** One shape on the stage: a full-frame SVG picture with a hit box over its bounding box. */
-function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles }: ShapeLayerProps) {
+function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles, z }: ShapeLayerProps) {
   const src = useMemo(
     () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(shapeSvg(clip, frame.width, frame.height))}`,
     [clip.shape, clip.color, clip.size, clip.aspect, clip.x, clip.y, clip.opacity, clip.outline, clip.rotate, clip.points, frame.width, frame.height],
@@ -1162,7 +1174,7 @@ function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles }: 
   const box = shapeBox(clip, frame.width, frame.height);
   return (
     <>
-      <img className="preview__shape" src={src} alt="" draggable={false} style={{ opacity }} />
+      <img className="preview__shape" src={src} alt="" draggable={false} style={{ opacity, mixBlendMode: clip.blend, zIndex: z }} />
       <div
         className={selected ? "preview__shape-box is-selected" : "preview__shape-box"}
         style={{
@@ -1171,6 +1183,7 @@ function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles }: 
           width: `${(box.width / frame.width) * 100}%`,
           height: `${(box.height / frame.height) * 100}%`,
           transform: clip.rotate ? `rotate(${clip.rotate}deg)` : undefined,
+          zIndex: z,
         }}
         onPointerDown={onPointerDown}
         onClick={(e) => e.stopPropagation()}

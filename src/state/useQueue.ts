@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { Job } from "../types";
-import { cancelJob, discardDownload, downloadMedia, onJobEvent, pauseJob, startJob, startRender, type JobEvent } from "../lib/engine";
+import { cancelJob, discardDownload, downloadMedia, onJobEvent, pauseJob, saveImage, startJob, startRender, type JobEvent } from "../lib/engine";
 import { loadPausedDownloads, savePausedDownloads } from "../lib/storage";
 
 /** How many jobs may download or encode at the same time, unless Settings says otherwise. */
@@ -206,7 +206,13 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
       }
       free--;
       dispatch({ type: "started", id: job.id });
-      const run = job.prefetch ? downloadMedia({ id: job.id, ...job.prefetch }) : job.render ? startRender(job.render) : startJob(job.spec!);
+      const run = job.prefetch
+        ? downloadMedia({ id: job.id, ...job.prefetch })
+        : job.picture
+          ? job.picture.then((blob) => saveImage(job.id, job.fileName, blob))
+          : job.render
+            ? startRender(job.render)
+            : startJob(job.spec!);
       run.catch((err: Error) => dispatch({ type: "failed", id: job.id, message: err.message }));
     }
   }, [jobs, real, maxRunning]);

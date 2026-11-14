@@ -219,9 +219,13 @@ export const RGB_SHARE = 0.008;
 
 /** Vignette: FFmpeg's lens falloff, cos(angle × distance / half-diagonal)⁴, as a black see-through gradient over the picture. */
 export function vignetteGradient(s: number): string {
+  return `radial-gradient(circle farthest-corner at 50% 50%, ${vignetteStops(s).map(([at, colour]) => `${colour} ${at * 100}%`).join(", ")})`;
+}
+
+/** Vignette's gradient stops (0–1 of the way out to the farthest corner, colour), for the preview and the Image editor's picture. */
+export function vignetteStops(s: number): [number, string][] {
   const angle = Math.min(Math.PI / 2, (Math.PI / 5) * s);
-  const stops = Array.from({ length: 11 }, (_, i) => `rgba(0,0,0,${round4(1 - Math.cos((angle * i) / 10) ** 4)}) ${i * 10}%`);
-  return `radial-gradient(circle farthest-corner at 50% 50%, ${stops.join(", ")})`;
+  return Array.from({ length: 11 }, (_, i) => [i / 10, `rgba(0,0,0,${round4(1 - Math.cos((angle * i) / 10) ** 4)})`]);
 }
 
 /** Film grain's texture for the preview (the export draws FFmpeg's own noise): grey fractal noise, tiled. */
