@@ -127,7 +127,7 @@ import { ImageWorkspace, ZoomSelect, useImageView, type ImageTool } from "./comp
 import { Home, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
 import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/EdgeResizer";
-import { LOOKS, PICTURE_EFFECTS, dropEdits, type FxItem } from "./project/effects";
+import { EFFECT_SETTINGS, LOOKS, PICTURE_EFFECTS, dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, STILL_EFFECTS, type FxTab } from "./components/FxPanel";
 import { CropDialog } from "./components/CropDialog";
 import { IconTabs } from "./components/IconTabs";
@@ -2286,6 +2286,19 @@ export default function App() {
                     format={(v) => `${Math.round(v * 100)}%`}
                     onCheckpoint={api.checkpoint}
                     onChange={(lookAmount) => api.editLive({ type: "updateClip", clipId: selected.id, patch: { lookAmount } })}
+                  />
+                )}
+                {rightTab === "effects" && selected.effect && EFFECT_SETTINGS[selected.effect]?.includes("strength") && (
+                  <Slider
+                    id="image-effect-strength"
+                    label="Strength"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={selected.effectStrength ?? 50}
+                    format={(v) => String(Math.round(v))}
+                    onCheckpoint={api.checkpoint}
+                    onChange={(effectStrength) => api.editLive({ type: "updateClip", clipId: selected.id, patch: { effectStrength } })}
                   />
                 )}
                 <button

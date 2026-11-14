@@ -308,3 +308,109 @@
   color: var(--text-3);
   line-height: 1.45;
 }
+
+/* Dense photo-editor look for the Export picture window */
+.export-dialog.is-picture .export__body {
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.export-dialog.is-picture .export__end {
+  height: 1px;
+  margin-top: -8px;
+}
+
+.export-dialog.is-picture .export__more,
+:root[data-theme] .export-dialog.is-picture .export__more {
+  height: 24px;
+  margin: auto -12px -10px;
+  padding: 0 8px;
+  background: var(--bg-raised);
+  border-top: 1px solid var(--line-strong);
+  color: var(--text-2);
+  font-size: 11px;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+.export-dialog.is-picture .export__foot {
+  padding: 10px 12px;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.export-dialog.is-picture .export__summary {
+  gap: 6px 8px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.export-dialog.is-picture .export__summary dt,
+.export-dialog.is-picture .export__summary dt label {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.export-dialog.is-picture .export__summary dd {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.export-dialog.is-picture .export__name {
+  gap: 4px;
+}
+
+.export-dialog.is-picture .export__name .field {
+  height: 22px;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 2px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.export-dialog.is-picture .export__folder {
+  gap: 6px;
+}
+
+.export-dialog.is-picture .export__change {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.export-dialog.is-picture .export__change:hover {
+  color: var(--text);
+}
+
+.export-dialog.is-picture .export__add,
+:root[data-theme] .export-dialog.is-picture .export__add {
+  height: 24px;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 2px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--accent-fill);
+  background-image: none;
+  box-shadow: none;
+}
+
+.export-dialog.is-picture .export__add:hover:not(:disabled),
+:root[data-theme] .export-dialog.is-picture .export__add:hover:not(:disabled) {
+  background: var(--accent-fill-hover);
+}
+
+.export-dialog.is-picture .export__add kbd {
+  padding: 1px 4px;
+  border-bottom-width: 1px;
+  border-radius: 2px;
+  font-size: 10.5px;
+}
+
+.export-dialog.is-picture .export__hint {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.3;
+}
