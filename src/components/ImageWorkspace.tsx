@@ -281,7 +281,9 @@ export function ImageWorkspace(props: {
       const v = viewRef.current;
       if (e.ctrlKey || e.metaKey) {
         const rect = el.getBoundingClientRect();
-        v.zoomAround(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX - rect.left, e.clientY - rect.top);
+        // As far as it scrolled: a mouse notch (100 px) is about 10%, a touchpad pinch's many small events stay small.
+        const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+        v.zoomAround(Math.exp(-Math.max(-300, Math.min(300, dy)) / 1000), e.clientX - rect.left, e.clientY - rect.top);
       } else {
         const dx = e.shiftKey ? (e.deltaX !== 0 ? e.deltaX : e.deltaY) : e.deltaX;
         const dy = e.shiftKey ? 0 : e.deltaY;

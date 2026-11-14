@@ -34,7 +34,7 @@ export function layerBox(clip: Placed, picture: number, W: number, H: number): P
 }
 
 // x/y are shares of the free space; with none (exactly as wide as the image) any x draws the same, so keep the old one.
-const share = (offset: number, free: number, old: number) => (Math.abs(free) < 1e-9 ? old : offset / free);
+export const share = (offset: number, free: number, old: number) => (Math.abs(free) < 1e-9 ? old : offset / free);
 
 /**
  * The clip fields that put a layer at `box`, within what the Edit sliders allow (the export refuses a picture bigger than

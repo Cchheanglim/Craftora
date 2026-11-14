@@ -254,7 +254,7 @@ export function ExportPanel({
         </fieldset>
         )}
 
-        {ready && (
+        {ready && !still && (
           <details className="export__command">
             <summary>
               <Icon name="terminal" size={14} />

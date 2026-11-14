@@ -23,10 +23,10 @@ function rectDims(width: number, height: number): { width: number; height: numbe
   };
 }
 
-/** Draws a preview rectangle in the chosen proportions fitting at most 176×96. */
+/** Draws a preview rectangle in the chosen proportions fitting at most 140×77. */
 function previewDims(width: number, height: number): { width: number; height: number } {
-  const MAX_W = 176;
-  const MAX_H = 96;
+  const MAX_W = 140;
+  const MAX_H = 77;
   const w = Math.max(1, width);
   const h = Math.max(1, height);
   if (w / h >= MAX_W / MAX_H) {
@@ -133,7 +133,7 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
           className="btn btn--icon"
           aria-label="Close"
           onClick={onClose}
-          style={{ width: 26, height: 26 }}
+          style={{ width: 22, height: 22 }}
         >
           <Icon name="x" size={14} />
         </button>
@@ -261,7 +261,7 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
             <button
               type="button"
               className="btn btn--icon"
-              style={{ width: 26, height: 26 }}
+              style={{ width: 22, height: 22 }}
               onClick={handleSwap}
               aria-label="Swap"
             >
@@ -309,7 +309,7 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
         <button
           type="button"
           className="btn btn--secondary"
-          style={{ width: 110 }}
+          style={{ width: 80 }}
           onClick={onClose}
         >
           Cancel
@@ -317,7 +317,7 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
         <button
           type="button"
           className="btn btn--primary"
-          style={{ width: 110 }}
+          style={{ width: 80 }}
           onClick={handleCreate}
         >
           Create

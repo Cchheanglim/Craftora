@@ -127,7 +127,7 @@ import { ImageWorkspace, ZoomSelect, useImageView, type ImageTool } from "./comp
 import { Home, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
 import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/EdgeResizer";
-import { LOOKS, PICTURE_EFFECTS, dropEdits, type FxItem } from "./project/effects";
+import { EFFECT_SETTINGS, LOOKS, PICTURE_EFFECTS, dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, STILL_EFFECTS, type FxTab } from "./components/FxPanel";
 import { CropDialog } from "./components/CropDialog";
 import { IconTabs } from "./components/IconTabs";
@@ -2288,6 +2288,19 @@ export default function App() {
                     onChange={(lookAmount) => api.editLive({ type: "updateClip", clipId: selected.id, patch: { lookAmount } })}
                   />
                 )}
+                {rightTab === "effects" && selected.effect && EFFECT_SETTINGS[selected.effect]?.includes("strength") && (
+                  <Slider
+                    id="image-effect-strength"
+                    label="Strength"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={selected.effectStrength ?? 50}
+                    format={(v) => String(Math.round(v))}
+                    onCheckpoint={api.checkpoint}
+                    onChange={(effectStrength) => api.editLive({ type: "updateClip", clipId: selected.id, patch: { effectStrength } })}
+                  />
+                )}
                 <button
                   type="button"
                   className="btn btn--ghost"
@@ -2478,7 +2491,7 @@ export default function App() {
         onClose={() => setNewImageOpen(false)}
       />
       {exportOpen && inEditor && (
-        <ExportDialog sub={projectName(project)} picture={imageMode} onClose={() => setExportOpen(false)}>
+        <ExportDialog sub={imageMode && !project.media.length ? "Untitled image" : projectName(project)} picture={imageMode} onClose={() => setExportOpen(false)}>
           <ExportPanel
             settings={effective}
             onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
@@ -2652,7 +2665,7 @@ export default function App() {
             canvas={preview}
             view={imageView}
             properties={panelBody}
-            layers={<LayersPanel project={project} api={api} selectedId={selectedId} onSelect={setSelectedId} />}
+            layers={<LayersPanel project={project} api={api} selectedId={selectedId} onSelect={setSelectedId} menu={[menuItem("dup", "Duplicate layer"), menuItem("up", "Bring forward"), menuItem("down", "Send backward"), "sep", menuItem("crop", "Crop…"), menuItem("turn", "Turn 90°"), menuItem("mirror", "Mirror"), "sep", menuItem("delete", "Delete layer")]} />}
           />
         ) : inEditor && (
           <div

@@ -11,6 +11,7 @@ import type { Caption, JobSpec, MediaSource, RenderSpec } from "../types";
 import { shapePng } from "../project/shapes";
 import { captureThumbnail } from "./thumbnail";
 import { loadFont } from "./fonts";
+import { textPng } from "./textPicture";
 
 export const inDesktopApp = "__TAURI_INTERNALS__" in window;
 
@@ -414,15 +415,22 @@ export async function startJob(spec: JobSpec): Promise<void> {
 /** Renders a whole timeline in one FFmpeg pass. */
 export async function startRender(spec: RenderSpec): Promise<void> {
   try {
-    // Shapes are drawn here, at the export's size, with the preview's own drawing (shapes.ts), so both look the same.
-    const clips = await Promise.all(
-      spec.clips.map(async (c) => (c.role === "shape" && c.shape ? { ...c, picture: await shapePng(c.shape, spec.width, spec.height) } : c)),
-    );
-    if (clips.some((c) => c.role === "shape" && !c.picture)) throw new Error("A shape couldn't be drawn for the export.");
-    // A text's library font must be on this PC: the export draws with its file (fonts.rs).
-    await Promise.all(clips.map((c) => loadFont(c.font))).catch(() => {
+    // A text's library font must be on this PC: the export draws with its file (fonts.rs), an image's text with the page's.
+    await Promise.all(spec.clips.map((c) => loadFont(c.font))).catch(() => {
       throw new Error("Couldn't download a font this video's text uses. Check the internet connection, then export again.");
     });
+    // Shapes are drawn here, at the export's size, with the preview's own drawing (shapes.ts), so both look the same; so is
+    // an image's text (textPicture.ts), laid over it like a shape.
+    const clips = await Promise.all(
+      spec.clips.map(async (c) =>
+        c.role === "shape" && c.shape
+          ? { ...c, picture: await shapePng(c.shape, spec.width, spec.height) }
+          : c.role === "text" && spec.output === "image"
+            ? { ...c, role: "shape" as const, size: 1, rotate: 0, opacity: undefined, motion: undefined, picture: textPng(c, spec.width, spec.height) }
+            : c,
+      ),
+    );
+    if (clips.some((c) => c.role === "shape" && !c.picture)) throw new Error("A shape or text couldn't be drawn for the export.");
     await invoke("start_render", { spec: { ...spec, clips } });
   } catch (err) {
     throw new Error(message(err));

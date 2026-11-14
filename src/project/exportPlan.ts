@@ -210,14 +210,15 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       opacity: c.shape ? undefined : c.opacity,
       x: c.x,
       y: c.y,
-      text: textLines(c.text ?? "", c.size, frame, c.font),
+      text: textLines(c.text ?? "", c.size, frame, c.font, c.spacing),
       motion: role === "text" ? textMotion(c, textLines(c.text ?? "", c.size, frame, c.font)) : undefined,
-      shape: c.shape ? { shape: c.shape, color: c.color, size: c.size, aspect: c.aspect, x: c.x, y: c.y, rotate: c.rotate, opacity: c.opacity, outline: c.outline } : undefined,
+      shape: c.shape ? { shape: c.shape, color: c.color, size: c.size, aspect: c.aspect, x: c.x, y: c.y, rotate: c.rotate, opacity: c.opacity, outline: c.outline, points: c.points } : undefined,
       color: c.color ?? "#ffffff",
       font: c.font,
       edge: c.edge,
       edgeColor: c.edgeColor,
       edgeSize: c.edgeSize,
+      ...(still && role === "text" && { edgeBlur: c.edgeBlur, glow: c.glow, glowColor: c.glowColor, spacing: c.spacing }),
     };
   });
   const media = used.map((m) => {
@@ -233,7 +234,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   });
 
   const title = used[0]?.name ?? "Project";
-  const fileName = `${settings.name?.trim() || `${slug(title)}_edit`}.${container}`;
+  // A blank picture is an image of its own, not an edit of something.
+  const fileName = `${settings.name?.trim() || (still && !used.length ? "Image" : `${slug(title)}_edit`)}.${container}`;
   // Rough: ~8 Mbit/s for 1080p video plus 192 kbit/s sound.
   const pixels = (frame.width * frame.height) / (1920 * 1080);
   const sizeMb = still ? pixels * (container === "png" ? 3 : 0.6) : isVideo ? duration * (1 + 0.024) * Math.max(0.4, pixels) : duration * (container === "wav" ? 0.18 : container === "flac" ? 0.1 : 0.04);

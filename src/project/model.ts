@@ -178,7 +178,7 @@ export interface Clip {
   volume: number;
   mirror: boolean;
   reverse: boolean;
-  /** Pictures: turned clockwise by this many degrees (90, 180 or 270); shapes: any angle about the box centre; upright when absent. */
+  /** Pictures: turned clockwise by this many degrees (90, 180 or 270); shapes and Image editor text: any angle about the box centre; upright when absent. */
   rotate?: number;
   /** Slowed down with in-between frames made in the export (Smooth slow-mo), not each frame shown longer. */
   smooth?: boolean;
@@ -201,6 +201,8 @@ export interface Clip {
   opacity?: number;
   /** Shape clips: 0 or absent = filled; > 0 = outline only, its thickness as a share of the frame height. */
   outline?: number;
+  /** Star shapes: how many points (5 when absent). */
+  points?: number;
   /** Shape clips: box height / box width in frame pixels (1 when absent). */
   aspect?: number;
   /** Seconds of fade from black/silence at the start and to black/silence at the end. */
@@ -233,6 +235,12 @@ export interface Clip {
    * longer shadow; 1 when absent). Absent both, text draws exactly as before them. */
   edgeColor?: string;
   edgeSize?: number;
+  /** Image editor text (drawn by textPicture.ts, not FFmpeg): its shadow's softness and a glow round the letters, in
+   * shares of the letter height (none when absent), the glow's colour (#rrggbb), and extra space between letters. */
+  edgeBlur?: number;
+  glow?: number;
+  glowColor?: string;
+  spacing?: number;
   /** A layer's own name (Image editor); its text, shape or file name when absent. */
   name?: string;
   /** Text animations (Text tab → Animation; drawn by textMotion.ts); still text when absent. */
@@ -661,10 +669,10 @@ export function wrapText(text: string, max: number): string {
 }
 
 /** A text clip's lines in a frame, the same in the preview and the export. */
-export function textLines(text: string, size: number, frame: { width: number; height: number }, font?: string): string {
+export function textLines(text: string, size: number, frame: { width: number; height: number }, font?: string, spacing = 0): string {
   // Letters of bold text are about 0.6 of their height wide (with room to spare); lines fill up to 92% of the width. A
   // library font is that much wider or narrower than the default (Windows' own fonts wrap as they always have).
-  const letter = 0.6 * ((libraryFont(font)?.width ?? 0.473) / 0.473);
+  const letter = 0.6 * ((libraryFont(font)?.width ?? 0.473) / 0.473) + spacing;
   return wrapText(text, Math.max(8, Math.floor((0.92 * frame.width) / (letter * size * frame.height))));
 }
 

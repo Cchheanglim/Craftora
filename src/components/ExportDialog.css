@@ -36,15 +36,171 @@
 }
 
 /* The Image editor's: under the top bar, left of the layers dock (340px), which stays in view and undimmed. */
-.export-dialog.is-picture {
+.export-dialog.is-picture,
+:root[data-theme] .export-dialog.is-picture {
+  --bg-input: #1f1f1f;
+  --bg-canvas: #262626;
+  --bg-rail: #2b2b2b;
+  --bg-panel: #323232;
+  --bg-raised: #383838;
+  --bg-hover: #404040;
+  --bg-selected: #4a4a4a;
+  --line-soft: #2b2b2b;
+  --line: #232323;
+  --line-strong: #4d4d4d;
+  --line-hover: #646464;
+  --text: #e6e6e6;
+  --text-2: #bdbdbd;
+  --text-3: #a0a0a0;
+  --control-h: 22px;
+  --text-xs: 11px;
+  --text-sm: 11.5px;
+  --text-md: 12px;
+  --text-lg: 13px;
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 10px;
+  --radius: 2px;
+  --radius-sm: 2px;
   margin: calc(var(--toolbar-h) + 4px) 352px auto auto;
   width: 340px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 12px;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.45);
 }
 
 .export-dialog.is-picture::backdrop {
   background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .export-dialog.is-picture[open] {
-  box-shadow: 0 6px 18px rgb(0 0 0 / 0.45);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.45);
+}
+
+.export-dialog.is-picture .panel-head {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 4px 0 8px;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.export-dialog.is-picture .panel-head > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.export-dialog.is-picture .panel-head__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.export-dialog.is-picture .panel-head__sub {
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1;
+}
+
+.export-dialog.is-picture .btn,
+:root[data-theme] .export-dialog.is-picture .btn {
+  height: 22px;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 2px;
+  font-size: 12px;
+  font-weight: 400;
+  background-image: none;
+  box-shadow: none;
+}
+
+.export-dialog.is-picture .btn--secondary,
+:root[data-theme] .export-dialog.is-picture .btn--secondary {
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+}
+
+.export-dialog.is-picture .btn--secondary:hover:not(:disabled),
+:root[data-theme] .export-dialog.is-picture .btn--secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--line-hover);
+}
+
+.export-dialog.is-picture .btn--primary,
+:root[data-theme] .export-dialog.is-picture .btn--primary {
+  background: var(--accent-fill);
+  background-image: none;
+  border: 1px solid transparent;
+  color: var(--text-on-accent);
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.export-dialog.is-picture .btn--primary:hover:not(:disabled),
+:root[data-theme] .export-dialog.is-picture .btn--primary:hover:not(:disabled) {
+  background: var(--accent-fill-hover);
+}
+
+.export-dialog.is-picture .btn--icon,
+:root[data-theme] .export-dialog.is-picture .btn--icon {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-2);
+  box-shadow: none;
+}
+
+.export-dialog.is-picture .btn--icon:hover:not(:disabled),
+:root[data-theme] .export-dialog.is-picture .btn--icon:hover:not(:disabled) {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.export-dialog.is-picture .btn--icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.export-dialog.is-picture .field,
+.export-dialog.is-picture .select {
+  height: 22px;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 2px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--line-strong);
+  box-shadow: none;
+}
+
+.export-dialog.is-picture .section-label {
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-3);
+  margin-bottom: 4px;
+  line-height: 1.2;
 }
