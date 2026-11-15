@@ -432,6 +432,7 @@ export default function App() {
   // A typed file name belongs to the project it was typed in.
   useEffect(() => setSettings((s) => (s.name === undefined ? s : { ...s, name: undefined })), [projectId]);
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
+  const projectsLoad = useRef<Promise<ProjectEntry[]>>(null);
   const [history, setHistory] = useState<Job[] | null>(null);
   /** Links fetched before, newest first. */
   const [fetchHistory, setFetchHistory] = useState<FetchEntry[]>(loadFetchHistory);
@@ -519,7 +520,8 @@ export default function App() {
       void exportEncoder().then(setFastEncoder).catch(() => setFastEncoder("the processor"));
       void siteCheckAvailable().then(setSiteChecks).catch(() => {});
     }
-    void listProjects().then(setProjects).catch(() => setProjects([]));
+    projectsLoad.current = listProjects().catch(() => []);
+    void projectsLoad.current.then(setProjects);
     void loadHistory().then(setHistory);
     void getOutputDir().then(setOutputDirState).catch(() => {});
     void getDownloadsDir().then(setDownloadsDirState).catch(() => {});
@@ -1356,15 +1358,19 @@ export default function App() {
     }
   };
 
-  /** Editor and Image editor each open the last project of their kind, or a new one. */
-  const go = (next: View) => {
+  /**
+   * Editor and Image editor each open the last project of their kind, or a new one. Entering the Image editor also
+   * offers the recent pictures and new sizes (closing that keeps the picture behind it).
+   */
+  const go = async (next: View) => {
     const image = next === "image";
+    if (image && view !== "image") setNewImageOpen(true);
     if ((next === "editor" || image) && Boolean(project.image) !== image) {
-      const last = projects.find((p) => Boolean(p.image) === image);
+      // Right after start the list may not be in yet.
+      const list = projects.length ? projects : await (projectsLoad.current ?? Promise.resolve(projects));
+      const last = list.find((p) => Boolean(p.image) === image);
       if (last) void openProject(last.id);
       else newProject(image);
-      // The first image: pick its size (or a photo) first.
-      if (image && !last) setNewImageOpen(true);
       return;
     }
     setView(next);
@@ -2578,7 +2584,9 @@ export default function App() {
       {fetchReview.dialog}
       <NewImageDialog
         open={newImageOpen}
-        recent={projects.filter((p) => p.image).slice(0, 6)}
+        // The open picture first.
+        recent={projects.filter((p) => p.image).sort((a, b) => Number(b.id === projectId) - Number(a.id === projectId))}
+        openId={project.image ? projectId : undefined}
         onCreate={(width, height, background) => {
           setNewImageOpen(false);
           startProject(newImageProject(width, height, background));
@@ -2589,7 +2597,8 @@ export default function App() {
         }}
         onOpenProject={(id) => {
           setNewImageOpen(false);
-          void openProject(id);
+          // The open one just stays (reopening it would drop its undo steps).
+          if (id !== projectId || !project.image) void openProject(id);
         }}
         onClose={() => setNewImageOpen(false)}
       />

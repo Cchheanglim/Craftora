@@ -3,6 +3,7 @@ import type { ProjectEntry } from "../lib/storage";
 import { IMAGE_SIZES, MAX_IMAGE_SIDE } from "../project/model";
 import { ColorField } from "./Inspector";
 import { Icon } from "./Icon";
+import { Thumb } from "./Thumb";
 import "./NewImageDialog.css";
 
 /** Draws a rectangle in the item's proportions fitting the 44×36 box. */
@@ -47,10 +48,12 @@ function clampSide(val: number | string): number {
   return Math.max(16, Math.min(MAX_IMAGE_SIDE, Math.round(n)));
 }
 
-export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProject, onClose }: {
+export function NewImageDialog({ open, recent, openId, onCreate, onOpenPhoto, onOpenProject, onClose }: {
   open: boolean;
-  /** Recent image projects, newest first. */
+  /** Recent image projects, newest first (the open one first). */
   recent: ProjectEntry[];
+  /** The picture open behind the window, marked in Recent. */
+  openId?: string;
   onCreate: (width: number, height: number, background: string) => void;
   onOpenPhoto: () => void;
   onOpenProject: (id: string) => void;
@@ -63,6 +66,8 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
   const [width, setWidth] = useState<number | string>(IMAGE_SIZES[0].width);
   const [height, setHeight] = useState<number | string>(IMAGE_SIZES[0].height);
   const [background, setBackground] = useState("#ffffff");
+  // W and H show once "Your own" is picked, and stay while typing (even when the numbers match a preset).
+  const [own, setOwn] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -74,7 +79,14 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
     setWidth(IMAGE_SIZES[0].width);
     setHeight(IMAGE_SIZES[0].height);
     setBackground("#ffffff");
+    setOwn(false);
   }, [open]);
+
+  useEffect(() => {
+    if (!own) return;
+    widthRef.current?.focus();
+    widthRef.current?.select();
+  }, [own]);
 
   if (!open) return null;
 
@@ -110,7 +122,7 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
   const customW = clampSide(width);
   const customH = clampSide(height);
   const preview = previewDims(customW, customH);
-  const recentCards = recent.slice(0, 6);
+  const recentCards = recent.slice(0, 12);
 
   return (
     <dialog
@@ -127,7 +139,7 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
       }}
     >
       <div className="new-image__head">
-        <h2 id="new-image-title">New image</h2>
+        <h2 id="new-image-title">{recentCards.length ? "Image editor" : "New image"}</h2>
         <button
           type="button"
           className="btn btn--icon"
@@ -140,21 +152,32 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
       </div>
 
       <div className="new-image__body">
+        {recentCards.length > 0 && (
+          <div className="new-image__recent">
+            <div className="new-image__label">Recent pictures</div>
+            <div className="new-image__hint">Click one to carry on</div>
+            <div className="new-image__recent-list">
+              {recentCards.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="new-image__recent-card"
+                  aria-current={item.id === openId || undefined}
+                  onClick={() => onOpenProject(item.id)}
+                >
+                  <Thumb src={item.thumbnail} icon="image" />
+                  <span className="new-image__recent-text">
+                    <span className="new-image__recent-name">{item.name}</span>
+                    {item.id === openId && <span className="new-image__recent-open">Open now</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="new-image__left">
-          <button
-            type="button"
-            className="btn btn--secondary new-image__open-photo"
-            onClick={onOpenPhoto}
-          >
-            <Icon name="folder" size={18} />
-            <span className="new-image__open-photo-text">
-              <span className="new-image__open-photo-title">Open a photo…</span>
-              <span className="new-image__open-photo-desc">The picture starts at the photo's own size</span>
-            </span>
-          </button>
-
           <div className="new-image__section">
-            <div className="new-image__label">Blank sizes</div>
+            <div className="new-image__label">New picture</div>
             <div className="new-image__grid">
               {IMAGE_SIZES.map((item) => {
                 const dims = rectDims(item.width, item.height);
@@ -169,6 +192,7 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
                       setSelectedId(item.id);
                       setWidth(item.width);
                       setHeight(item.height);
+                      setOwn(false);
                     }}
                     onDoubleClick={() => onCreate(item.width, item.height, background)}
                   >
@@ -193,8 +217,7 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
                 aria-pressed={selectedId === "custom"}
                 onClick={() => {
                   setSelectedId("custom");
-                  widthRef.current?.focus();
-                  widthRef.current?.select();
+                  setOwn(true);
                 }}
                 onDoubleClick={handleCreate}
               >
@@ -207,39 +230,27 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
                 <span className="new-image__card-name">Your own</span>
                 <span className="new-image__card-size">any size</span>
               </button>
+
+              <button type="button" className="new-image__card" onClick={onOpenPhoto}>
+                <div className="new-image__card-preview">
+                  <Icon name="folder" size={18} />
+                </div>
+                <span className="new-image__card-name">Open a photo…</span>
+                <span className="new-image__card-size">its own size</span>
+              </button>
             </div>
           </div>
 
-          {recentCards.length > 0 && (
-            <div className="new-image__section">
-              <div className="new-image__label">Recent</div>
-              <div className="new-image__recent-row">
-                {recentCards.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="new-image__recent-card"
-                    onClick={() => onOpenProject(item.id)}
-                  >
-                    {item.thumbnail ? (
-                      <img
-                        src={item.thumbnail}
-                        alt=""
-                        className="new-image__recent-thumb"
-                      />
-                    ) : (
-                      <div className="new-image__recent-placeholder" aria-hidden="true" />
-                    )}
-                    <span className="new-image__recent-name">{item.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="new-image__right">
           <div className="new-image__label">Size</div>
+          {!own ? (
+            <div className="new-image__size-summary">
+              <span className="mono">{customW} × {customH}</span> px
+            </div>
+          ) : (
+          <>
           <div className="new-image__size-row">
             <div className="new-image__input-wrap">
               <span className="new-image__input-prefix" aria-hidden="true">W</span>
@@ -287,6 +298,8 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
           <div className="new-image__note">
             Up to <span className="mono">8192</span> px a side.
           </div>
+          </>
+          )}
 
           <div className="new-image__label">Background</div>
           <ColorField color={background} onChange={(c) => setBackground(c)} />
@@ -317,10 +330,10 @@ export function NewImageDialog({ open, recent, onCreate, onOpenPhoto, onOpenProj
         <button
           type="button"
           className="btn btn--primary"
-          style={{ width: 80 }}
+          style={{ minWidth: 80 }}
           onClick={handleCreate}
         >
-          Create
+          {recentCards.length ? "Create new" : "Create"}
         </button>
       </div>
     </dialog>

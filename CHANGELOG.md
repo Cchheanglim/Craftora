@@ -173,6 +173,10 @@
   resets to black and white). They paint the picked photo layer, wherever it's moved, turned, mirrored or cropped; with
   no photo layer picked, the first stroke makes a new layer for itself. Layer → New layer (Ctrl+Shift+N) adds an empty
   one. Each stroke is one undo step, and the saved picture matches the screen.
+- **Image editor: your pictures first**: going into the Image editor (menu, Home or the video editor) shows a window
+  with your recent pictures on the left (the open one marked "Open now": click to carry on) and the new sizes and Open a
+  photo on the right; closing it keeps the picture behind it (your last one). Fixed: right after starting Craftora it
+  could show a new blank picture instead of your last one.
 
 **Fixed**
 
