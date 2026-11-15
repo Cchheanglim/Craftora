@@ -93,8 +93,15 @@ function tipOf(width: number, hardness: number, colour: string) {
   return canvas;
 }
 
-const pngOf = (canvas: HTMLCanvasElement) =>
-  new Promise<Blob>((done, fail) => canvas.toBlob((b) => (b ? done(b) : fail(new Error("The painting couldn't be saved."))), "image/png"));
+/**
+ * The canvas as a PNG. Not `toBlob`: it waits for the page to be idle, which right after a stroke took 7 s in the
+ * test copy (an off-screen copy encodes at once).
+ */
+export function pngOf(canvas: HTMLCanvasElement) {
+  const copy = new OffscreenCanvas(canvas.width, canvas.height);
+  copy.getContext("2d")!.drawImage(canvas, 0, 0);
+  return copy.convertToBlob({ type: "image/png" });
+}
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -110,6 +117,8 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
   // Read by the handlers between renders.
   const now = useRef({ painting, project });
   now.current = { painting, project };
+  // shortcut: every stroke leaves a PNG in AppData/cutouts (undo needs the old ones); sweep files no project uses once
+  // there are many.
   // Each layer's latest pixels while saved and after (`url` = its file once saved), so the next stroke builds on them.
   const latest = useRef(new Map<string, { canvas: HTMLCanvasElement; url: string | null }>());
   // The picked photo's pixels, read ahead so the first stroke starts at once.

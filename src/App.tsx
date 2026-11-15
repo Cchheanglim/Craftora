@@ -1595,9 +1595,10 @@ export default function App() {
   /** Image editor: an empty (see-through) layer the picture's size, picked; its clip id. One undo step. */
   const newPaintLayer = async () => {
     const { width, height } = projectRef.current.image ?? NO_IMAGE;
-    const blank = document.createElement("canvas");
-    [blank.width, blank.height] = [width, height];
-    const png = await new Promise<Blob>((done, fail) => blank.toBlob((b) => (b ? done(b) : fail(new Error("the layer couldn't be made"))), "image/png"));
+    // Not a page canvas's `toBlob`: it waits for an idle page (seconds, right after a stroke).
+    const blank = new OffscreenCanvas(width, height);
+    blank.getContext("2d");
+    const png = await blank.convertToBlob({ type: "image/png" });
     const source = await openLocal(await savePicture(png));
     const taken = new Set(projectRef.current.clips.map((c) => c.name));
     let n = 1;
