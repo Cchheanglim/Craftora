@@ -480,6 +480,7 @@ export default function App() {
   const { project } = api;
   // The Image editor is the editor's layout for an image project (Layers instead of the timeline, nothing timed).
   const imageMode = inEditor && Boolean(project.image);
+  const paintTool = imageMode && PAINT_TOOLS.includes(imageTool) ? (imageTool as PaintTool) : null;
   const imageView = useImageView(project.image ?? NO_IMAGE);
   const duration = projectDuration(project);
   const playback = usePlayback(duration);
@@ -2323,7 +2324,6 @@ export default function App() {
       ];
   // Its options bar: the tool, then what the picked layer can do right now.
   const toolNow = IMAGE_TOOLS.find((t) => t.id === imageTool) ?? IMAGE_TOOLS[0];
-  const paintTool = imageMode && PAINT_TOOLS.includes(imageTool) ? (imageTool as PaintTool) : null;
   const optionButton = (c: Command) => (
     <button key={c.id} type="button" className="btn btn--ghost" disabled={c.disabled} onClick={c.run}>
       <Icon name={c.icon} size={13} />

@@ -1,0 +1,68 @@
+/* Options bar controls for the Image editor's painting tools (Brush, Eraser, Bucket, Gradient, Eyedropper). */
+
+.paint-opts__slider,
+.paint-opts__check {
+  height: 22px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 10px between adjacent controls inside the options bar (which already has a 4px flex gap). */
+:is(.paint-opts__slider, .paint-opts__check, .paint-opts__seg) + :is(.paint-opts__slider, .paint-opts__check, .paint-opts__seg) {
+  margin-left: 6px;
+}
+
+.paint-opts__label {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.paint-opts__range {
+  width: 80px;
+  margin: 0;
+  accent-color: var(--text);
+  cursor: pointer;
+}
+
+.paint-opts__val {
+  width: 44px;
+  font-size: 11px;
+  color: var(--text-2);
+  text-align: right;
+}
+
+.paint-opts__check {
+  font-size: 11px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.paint-opts__check:hover {
+  color: var(--text);
+}
+
+.paint-opts__seg {
+  height: 22px;
+  padding: 1px;
+  flex: none;
+}
+
+.paint-opts__seg::before {
+  top: 1px;
+  bottom: 1px;
+  left: 1px;
+  width: calc((100% - 2px) / var(--count, 2));
+}
+
+.paint-opts__seg button {
+  height: 18px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.paint-opts__hint {
+  font-size: 11px;
+  color: var(--text-2);
+}

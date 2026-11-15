@@ -116,6 +116,11 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
   const read = useRef<{ url: string; pixels: Promise<HTMLCanvasElement> } | null>(null);
   // Saves land in the order they were painted.
   const saving = useRef(Promise.resolve());
+  // The new layer the last stroke made, until it's the picked layer (strokes before that go onto it too).
+  const fresh = useRef<{ made: Promise<string>; canvas: HTMLCanvasElement } | null>(null);
+  useEffect(() => {
+    fresh.current = null;
+  }, [painting.clipId]);
 
   const target = painting.clipId ? project.clips.find((c) => c.id === painting.clipId) : undefined;
   const targetUrl = project.media.find((m) => m.id === target?.mediaId)?.source.url;
@@ -137,9 +142,6 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
   }, [targetUrl, painting.tool]);
 
   const brushWidth = painting.tool === "brush" || painting.tool === "eraser" ? painting.settings[painting.tool].size : 0;
-  useLayoutEffect(() => {
-    if (cursor.current) cursor.current.style.width = `${(brushWidth / W) * 100}%`;
-  }, [brushWidth, W]);
 
   /** Where the pointer is on the picture, in its pixels. */
   const at = (e: { clientX: number; clientY: number }): Pt => {
@@ -153,11 +155,9 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
     const clip = p.clipId ? proj.clips.find((c) => c.id === p.clipId) : undefined;
     const media = proj.media.find((m) => m.id === clip?.mediaId);
     if (!clip || !media) {
-      const [base] = canvasOf(W, H);
-      const made = p.onNewLayer();
-      // Its failure is reported when the stroke is saved.
-      made.catch(() => {});
-      return { clipId: null, made, toLayer: [1, 0, 0, 1, 0, 0], base, live: copyOf(base), width: 0, carry: 0 };
+      // A new layer, or the one the last stroke is still making (it isn't picked yet).
+      const base = fresh.current?.canvas ?? canvasOf(W, H)[0];
+      return { clipId: null, toLayer: [1, 0, 0, 1, 0, 0], base, live: copyOf(base), width: 0, carry: 0 };
     }
     const known = latest.current.get(clip.id);
     const base = known && (known.url === null || known.url === media.source.url) ? known.canvas : await pixelsOf(media.source.url);
@@ -169,6 +169,20 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
 
   /** The session's result becomes the layer's photo (after the saves before it). */
   const save = (s: Session) => {
+    if (s.clipId === null) {
+      // The layer is made once something is painted on it.
+      if (!fresh.current) {
+        const made = now.current.painting.onNewLayer();
+        // Its failure is reported below.
+        made.catch(() => {});
+        fresh.current = { made, canvas: s.live };
+      }
+      fresh.current.canvas = s.live;
+      s.made = fresh.current.made;
+    }
+    // Made into a file now, while the saves before it finish.
+    const png = pngOf(s.live);
+    png.catch(() => {});
     saving.current = saving.current.then(async () => {
       const entry = { canvas: s.live, url: null as string | null };
       let clipId: string | undefined;
@@ -179,7 +193,7 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
         known.set(clipId, entry);
         // Only the last few layers' pixels are kept; the others are read from their files again.
         for (const old of known.keys()) if (known.size > 4) known.delete(old);
-        entry.url = await now.current.painting.onPainted(clipId, await pngOf(s.live));
+        entry.url = await now.current.painting.onPainted(clipId, await png);
         onLive({ clipId, canvas: s.live, settled: true });
       } catch (err) {
         if (clipId && latest.current.get(clipId) === entry) latest.current.delete(clipId);
