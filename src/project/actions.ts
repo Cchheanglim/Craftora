@@ -85,6 +85,11 @@ export type EditAction =
   /** Remove background: a photo shows its cut-out (`source`), or its original again (no `source`). */
   | { type: "cutOut"; mediaId: string; source?: MediaItem["source"]; /** Only this layer changes: when others share its photo, it gets a photo entry of its own (`mediaId`). */ own?: { clipId: string; mediaId: string } }
   /**
+   * Image editor: layer `clipId`'s photo painted on (brush, eraser, bucket, gradient); the cut-out's `original` stays.
+   * When other layers share its photo, it gets a photo entry of its own, `newMediaId`.
+   */
+  | { type: "paint"; clipId: string; source: MediaItem["source"]; newMediaId: string }
+  /**
    * Without a track: videos and pictures go to the main track, sound to a free track below it. On
    * a magnetic track `at` picks the slot; elsewhere it's the start time (playhead).
    */
@@ -375,19 +380,29 @@ function edit(p: Project, action: EditAction): Project {
     case "importMedia":
       return { ...p, media: [...p.media, action.item] };
 
-    case "cutOut": {
+    case "cutOut":
+    case "paint": {
       const change = (m: MediaItem): MediaItem =>
-        action.source ? { ...m, source: action.source, original: m.original ?? m.source } : m.original ? { ...m, source: m.original, original: undefined } : m;
-      const own = action.own;
-      const photo = p.media.find((m) => m.id === action.mediaId);
-      if (own && photo && p.clips.some((c) => c.mediaId === action.mediaId && c.id !== own.clipId)) {
+        action.type === "paint"
+          ? { ...m, source: action.source }
+          : action.source
+            ? { ...m, source: action.source, original: m.original ?? m.source }
+            : m.original
+              ? { ...m, source: m.original, original: undefined }
+              : m;
+      // A paint finds the layer's photo as it is when it lands (an earlier stroke may have given it its own).
+      const mediaId = action.type === "paint" ? p.clips.find((c) => c.id === action.clipId)?.mediaId : action.mediaId;
+      const own = action.type === "paint" ? { clipId: action.clipId, mediaId: action.newMediaId } : action.own;
+      const photo = p.media.find((m) => m.id === mediaId);
+      if (!photo) return p;
+      if (own && p.clips.some((c) => c.mediaId === mediaId && c.id !== own.clipId)) {
         return {
           ...p,
           media: [...p.media, { ...change(photo), id: own.mediaId }],
           clips: p.clips.map((c) => (c.id === own.clipId ? { ...c, mediaId: own.mediaId } : c)),
         };
       }
-      return { ...p, media: p.media.map((m) => (m.id !== action.mediaId ? m : change(m))) };
+      return { ...p, media: p.media.map((m) => (m.id !== mediaId ? m : change(m))) };
     }
 
     case "removeMedia":

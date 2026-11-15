@@ -51,7 +51,7 @@ function checkFilters(filter: string) {
  * A photo opened in Craftora, read through Rust (cutout.rs `cutout_source`): drawn from its preview address it would
  * mark the canvas as another site's, which then can't be saved.
  */
-async function photo(path: string): Promise<HTMLImageElement> {
+export async function photo(path: string): Promise<HTMLImageElement> {
   // A project reopened after a restart hasn't let this file be read yet.
   await allowLocal(path);
   const src = URL.createObjectURL(new Blob([await invoke<ArrayBuffer>("cutout_source", { path })]));
@@ -168,6 +168,14 @@ async function drawPicture(out: CanvasRenderingContext2D, clip: Clip, path: stri
 
 /** Draws the picture: the background colour (unless see-through), then every layer from the bottom of the Layers list up. */
 export async function composeImage(project: Project, options: ComposeOptions): Promise<Blob> {
+  const canvas = await composeCanvas(project, options);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, options.type, options.type === "image/png" ? undefined : (options.quality ?? 95) / 100));
+  if (!blob) throw new Error("The picture couldn't be made. Try a smaller size.");
+  return blob;
+}
+
+/** The picture drawn on a canvas (`composeImage` before it's a file; the eyedropper reads it). */
+export async function composeCanvas(project: Project, options: Pick<ComposeOptions, "width" | "height" | "transparent">): Promise<HTMLCanvasElement> {
   const { width: W, height: H } = options;
   const [canvas, ctx] = sheet(W, H);
   if (!options.transparent && project.image?.background) {
@@ -190,9 +198,7 @@ export async function composeImage(project: Project, options: ComposeOptions): P
   } finally {
     styles.remove();
   }
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, options.type, options.type === "image/png" ? undefined : (options.quality ?? 95) / 100));
-  if (!blob) throw new Error("The picture couldn't be made. Try a smaller size.");
-  return blob;
+  return canvas;
 }
 
 /** Every layer from the bottom of the Layers list up. */

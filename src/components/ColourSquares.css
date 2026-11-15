@@ -1,0 +1,105 @@
+/* Foreground over background colour squares at the bottom of the Image editor's tool column, plus their colour wheel popover. */
+.colour-squares {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  margin-top: auto;
+}
+
+.colour-squares__swatch {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid #8a8a8a;
+  border-radius: 1px;
+  box-shadow: inset 0 0 0 1px #1e1e1e;
+  cursor: pointer;
+}
+
+.colour-squares__swatch--fg {
+  top: 0;
+  left: 0;
+  z-index: 2;
+}
+
+.colour-squares__swatch--bg {
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+}
+
+.colour-squares__swatch:hover {
+  border-color: var(--text, #e6e6e6);
+}
+
+.colour-squares__swatch.is-open,
+.colour-squares__swatch:focus-visible {
+  border-color: #ffffff;
+  outline: 1px solid #ffffff;
+  outline-offset: -1px;
+}
+
+.colour-squares__swap,
+.colour-squares__reset {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 1px;
+  background: transparent;
+  color: var(--text-2, #bdbdbd);
+  cursor: pointer;
+}
+
+.colour-squares__swap {
+  top: 0;
+  right: 0;
+}
+
+.colour-squares__reset {
+  bottom: 0;
+  left: 0;
+}
+
+.colour-squares__swap:hover,
+.colour-squares__reset:hover {
+  color: var(--text, #e6e6e6);
+}
+
+.colour-squares__swap:focus-visible,
+.colour-squares__reset:focus-visible {
+  outline: 1px solid #ffffff;
+}
+
+.colour-squares__panel {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: 220px;
+  padding: 8px;
+  border: 1px solid #4d4d4d;
+  border-radius: 2px;
+  background: #323232;
+  color: var(--text, #e6e6e6);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
+}
+
+.colour-squares__panel:popover-open {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.colour-squares__title {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 500;
+  color: var(--text-2, #bdbdbd);
+  user-select: none;
+}

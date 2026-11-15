@@ -389,6 +389,56 @@
   cursor: crosshair;
 }
 
+/* The Image editor's painting tools take every click on the picture. */
+.preview__paint {
+  position: absolute;
+  inset: 0;
+  z-index: 100000;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.preview__paint.is-brush,
+.preview__paint.is-eraser {
+  cursor: none;
+}
+
+/* The brush tip's size, as photo editors show it: a thin ring seen on light and dark. */
+.preview__brush {
+  position: absolute;
+  display: none;
+  aspect-ratio: 1;
+  min-width: 3px;
+  translate: -50% -50%;
+  border: 1px solid #fff;
+  border-radius: 50%;
+  mix-blend-mode: difference;
+  pointer-events: none;
+}
+
+.preview__guide {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.preview__guide line {
+  stroke: #fff;
+  stroke-width: 1px;
+  mix-blend-mode: difference;
+}
+
+/* A new layer's first stroke, over everything until its layer exists. */
+.preview__paint-live {
+  position: absolute;
+  inset: 0;
+  z-index: 99999;
+  pointer-events: none;
+}
+
 .preview__picker-hint {
   position: absolute;
   top: 8px;
