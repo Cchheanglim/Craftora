@@ -1,10 +1,11 @@
 import type { EngineStatus } from "../lib/engine";
 import { Icon } from "./Icon";
+import { Thumb } from "./Thumb";
 import "./Sidebar.css";
 
 export type View = "home" | "editor" | "image" | "projects" | "media" | "downloads" | "history" | "library" | "settings";
 
-/** Something running now, for the "Working on" box: a download, export, recording or captions. */
+/** Something running now, for the "Running now" box: a download, export, recording or captions. */
 export interface Activity {
   id: string;
   /** "Downloading", "Exporting", "Making captions"… */
@@ -29,6 +30,8 @@ export interface SidebarProps {
   activity: Activity[];
   /** A column at the left of the pages (Home, Projects…) instead of the editor's pop-up menu. */
   rail?: boolean;
+  /** The project open in the editor (rail only): a card under "Working on" that goes back to it. */
+  current?: { name: string; image: boolean; thumbnail?: string; when: string; onOpen: () => void };
 }
 
 export function Sidebar({
@@ -39,6 +42,7 @@ export function Sidebar({
   engines,
   activity,
   rail,
+  current,
 }: SidebarProps) {
   const groups = [
     {
@@ -80,6 +84,20 @@ export function Sidebar({
 
   return (
     <nav className={rail ? "side is-rail" : "side"} aria-label="Main">
+      {rail && current && (
+        <div className="side__group">
+          <h2 className="section-label side__group-label">Working on</h2>
+          <button type="button" className="side__current" aria-label={`Open ${current.name}`} onClick={current.onOpen}>
+            <Thumb src={current.thumbnail} icon={current.image ? "image" : "scissors"} />
+            <span className="side__current-text">
+              <span className="truncate">{current.name}</span>
+              <span className="side__current-meta">
+                <span className={current.image ? "is-picture" : "is-video"}>{current.image ? "Picture" : "Video"}</span> · {current.when}
+              </span>
+            </span>
+          </button>
+        </div>
+      )}
       {groups.map((group) => (
         <div key={group.label} className="side__group">
           <h2 className="section-label side__group-label">{group.label}</h2>
@@ -90,7 +108,7 @@ export function Sidebar({
       {activity.length > 0 && (
         <section className="side__activity" aria-labelledby="activity-title">
           <h2 id="activity-title" className="section-label">
-            Working on
+            Running now
           </h2>
           {activity.map((a) => (
             <div key={a.id} className="side__task">

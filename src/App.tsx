@@ -75,7 +75,7 @@ import {
 import { captureFrame, captureThumbnail, coverFrame } from "./lib/thumbnail";
 import { MAX_RUNNING, folded, resumable, useQueue } from "./state/useQueue";
 import { storeEdition, useUpdates } from "./lib/updates";
-import { formatClock } from "./lib/timecode";
+import { formatClock, formatWhen } from "./lib/timecode";
 import { applyTheme, saveTheme, savedTheme, type Theme } from "./lib/theme";
 import { preference } from "./lib/preferences";
 import { useGlideScroll } from "./lib/glide";
@@ -2056,6 +2056,10 @@ export default function App() {
   const mainMenu = (rail: boolean) => (
     <Sidebar
       rail={rail}
+      current={(() => {
+        const open = project.clips.length || project.media.length ? projects.find((p) => p.id === projectId) : undefined;
+        return open && { name: open.name, image: Boolean(open.image), thumbnail: open.thumbnail, when: `edited ${formatWhen(open.savedAt)}`, onOpen: () => setView("editor") };
+      })()}
       view={imageMode ? "image" : view === "image" ? "editor" : view}
       onViewChange={go}
       libraryCount={shownExports.length}
