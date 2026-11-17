@@ -2588,7 +2588,7 @@ export default function App() {
 
   return (
     <div className={imageMode ? "app app--image" : "app"} style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen && inEditor ? sideWidth : 0, PANEL_WIDTH)}px` } as CSSProperties}>
-      <Ambient active={theme !== "classic"} />
+      <Ambient active={theme.glass} />
       <Tooltip />
       {fetchReview.dialog}
       <NewImageDialog

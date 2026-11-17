@@ -5,15 +5,15 @@ import { Icon } from "./Icon";
 import { AiConnections } from "./AiConnections";
 import { Links, UpdateControls, type LinkSettings } from "./Home";
 import type { Updates } from "../lib/updates";
-import type { Theme } from "../lib/theme";
+import type { Colour, Theme } from "../lib/theme";
 import { preference, setPreference, type Preference } from "../lib/preferences";
 import { setShowHiddenLists, showHiddenLists } from "./Hidden";
 import "./Library.css";
 
-const THEMES: [Theme, string][] = [
-  ["classic", "Classic"],
-  ["dark", "Dark glass"],
-  ["light", "Light glass"],
+const COLOURS: [Colour, string][] = [
+  ["red", "Craftora red"],
+  ["lively", "Lively"],
+  ["light", "Light"],
 ];
 
 interface SettingsProps {
@@ -43,17 +43,24 @@ export function Settings({ theme, onTheme, outputDir, onChooseOutputDir, downloa
       </header>
 
       <div className="library__group">
-        <h2 className="section-label">Theme</h2>
-        <div className="segmented library__choice" role="group" aria-label="Theme">
-          {THEMES.map(([id, label]) => (
-            <button key={id} type="button" aria-pressed={theme === id} onClick={() => onTheme(id)}>
+        <h2 className="section-label">Look</h2>
+        <div className="segmented library__choice" role="group" aria-label="Colour">
+          {COLOURS.map(([id, label]) => (
+            <button key={id} type="button" aria-pressed={theme.colour === id} onClick={() => onTheme({ ...theme, colour: id })}>
               {label}
             </button>
           ))}
         </div>
+        <div className="segmented library__choice" role="group" aria-label="Glass">
+          {([false, true] as const).map((glass) => (
+            <button key={String(glass)} type="button" aria-pressed={theme.glass === glass} onClick={() => onTheme({ ...theme, glass })}>
+              {glass ? "Glass on" : "Glass off"}
+            </button>
+          ))}
+        </div>
         <p className="library__muted">
-          Classic is Craftora's flat dark look. The glass themes are see-through and glow softly with the colours of the video
-          playing.
+          Lively gives videos, pictures and links their own colours. Glass makes the panels see-through, glowing softly with
+          the colours of the video playing.
         </p>
       </div>
 

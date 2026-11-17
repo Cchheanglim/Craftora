@@ -2,7 +2,59 @@
  * The glass themes (Settings → Theme, lib/theme.ts): see-through panels over a soft glow taken
  * from the video playing (components/Ambient.tsx). Classic is tokens.css as it is: no data-theme.
  * Only tokens and surfaces change here; the layout and every control stay the same.
+ * Settings → Look → Colour sets data-colour (none = Craftora red, tokens.css). Glass on sets data-theme too: "light"
+ * with the Light colour, "dark" with the others. The colours come first so the glass surfaces win over them.
  */
+
+/* Lively: still dark, each kind of thing in its own colour; red stays the action. */
+:root[data-colour="lively"] {
+  --kind-video: #4fd1d9;
+  --kind-video-wash: rgb(47 179 187 / 0.18);
+  --kind-picture: #f5b75a;
+  --kind-picture-wash: rgb(242 169 59 / 0.18);
+  --kind-link: #7aa9ff;
+  --kind-link-wash: rgb(76 141 255 / 0.18);
+}
+
+/* Light, flat: the light glass's colours on solid surfaces. */
+:root[data-colour="light"] {
+  color-scheme: light;
+  --bg-input: #ffffff;
+  --bg-canvas: #f4f4f5;
+  --bg-rail: #ebebee;
+  --bg-panel: #ffffff;
+  --bg-raised: #f7f7f8;
+  --bg-hover: #ececef;
+  --bg-selected: #e2e2e7;
+  --line-soft: #ebebee;
+  --line: #dedee3;
+  --line-strong: #c8c8cf;
+  --line-hover: #a9a9b2;
+  --text: #17171a;
+  --text-2: #4f4f57;
+  --text-3: #66666f;
+  --accent: #d81e3a;
+  --accent-fill: #d81e3a;
+  --accent-fill-hover: #c01733;
+  --accent-wash: rgb(216 30 58 / 0.1);
+  --kind-video: #b3162f;
+  --kind-video-wash: rgb(216 30 58 / 0.1);
+  --kind-picture: #b3162f;
+  --kind-picture-wash: rgb(216 30 58 / 0.1);
+  --kind-link: #b3162f;
+  --kind-link-wash: rgb(216 30 58 / 0.1);
+  --clip-video: rgb(40 150 160 / 0.24);
+  --clip-video-line: rgb(30 130 140 / 0.6);
+  --clip-audio: rgb(52 160 104 / 0.2);
+  --clip-audio-line: rgb(44 140 92 / 0.5);
+  --clip-text: rgb(214 152 40 / 0.22);
+  --clip-text-line: rgb(186 128 24 / 0.5);
+  --clip-effect: rgb(96 136 214 / 0.22);
+  --clip-effect-line: rgb(74 112 196 / 0.5);
+  --ok: #187a3b;
+  --warn: #9a5b00;
+  --danger: #cc2929;
+}
 
 :root[data-theme="dark"] {
   --bg-input: rgb(0 0 0 / 0.28);
@@ -137,8 +189,8 @@
   border-radius: 12px;
 }
 
-/* On Light glass the clips' teal is pale: their names in the usual dark text, not white. */
-:root[data-theme="light"] .tl__clip.is-media .tl__label {
+/* On Light the clips' teal is pale: their names in the usual dark text, not white. */
+:root[data-colour="light"] .tl__clip.is-media .tl__label {
   color: var(--text);
 }
 
@@ -158,7 +210,7 @@
   background: rgb(34 34 40 / 0.97);
 }
 
-:root[data-theme="light"] :is(.export__more, .select__list, .cmd-box__list) {
+:root[data-colour="light"] :is(.export__more, .select__list, .cmd-box__list) {
   background: rgb(250 251 253 / 0.97);
 }
 
@@ -182,72 +234,72 @@
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 8px 22px rgb(229 25 61 / 0.32);
 }
 
-/* Light glass: what Classic draws in white on dark turns dark on light. */
-:root[data-theme="light"] .btn--secondary {
+/* Light (flat or glass): what the dark colours draw in white on dark turns dark on light. */
+:root[data-colour="light"] .btn--secondary {
   background: rgb(255 255 255 / 0.8);
 }
 
-:root[data-theme="light"] .btn--secondary:hover:not(:disabled) {
+:root[data-colour="light"] .btn--secondary:hover:not(:disabled) {
   background: #ffffff;
 }
 
-:root[data-theme="light"] .btn--icon {
+:root[data-colour="light"] .btn--icon {
   border-color: rgb(15 23 42 / 0.08);
   background: rgb(255 255 255 / 0.65);
   box-shadow: inset 0 1px 0 #ffffff, 0 1px 2px rgb(15 23 42 / 0.06);
 }
 
-:root[data-theme="light"] .btn--icon:hover:not(:disabled) {
+:root[data-colour="light"] .btn--icon:hover:not(:disabled) {
   border-color: rgb(15 23 42 / 0.14);
   background: #ffffff;
 }
 
-:root[data-theme="light"] .preview__play:hover:not(:disabled) {
+:root[data-colour="light"] .preview__play:hover:not(:disabled) {
   background: #000000;
 }
 
-:root[data-theme="light"] .preview__wave > span {
+:root[data-colour="light"] .preview__wave > span {
   background: rgb(15 23 42 / 0.22);
 }
 
-:root[data-theme="light"] :is(.tl__lane, .tl__head) {
+:root[data-colour="light"] :is(.tl__lane, .tl__head) {
   background-color: rgb(15 23 42 / 0.04);
 }
 
-:root[data-theme="light"] .tl__lane:hover {
+:root[data-colour="light"] .tl__lane:hover {
   background-color: rgb(15 23 42 / 0.06);
 }
 
-:root[data-theme="light"] .tl__wave > span {
+:root[data-colour="light"] .tl__wave > span {
   background: rgb(15 23 42 / 0.3);
 }
 
-:root[data-theme="light"] .tl__chapter {
+:root[data-colour="light"] .tl__chapter {
   background: rgb(15 23 42 / 0.55);
 }
 
-:root[data-theme="light"] .tl__trans {
+:root[data-colour="light"] .tl__trans {
   background: rgb(15 23 42 / 0.08);
   border-right-color: rgb(15 23 42 / 0.4);
 }
 
-:root[data-theme="light"] .tl__clip:hover .tl__trim {
+:root[data-colour="light"] .tl__clip:hover .tl__trim {
   background: rgb(15 23 42 / 0.3);
 }
 
-:root[data-theme="light"] .tl__clip.is-selected .tl__trim {
+:root[data-colour="light"] .tl__clip.is-selected .tl__trim {
   background: rgb(15 23 42 / 0.7);
 }
 
-:root[data-theme="light"] .export__code pre {
+:root[data-colour="light"] .export__code pre {
   color: var(--text-2);
 }
 
-:root[data-theme="light"] .export__more {
+:root[data-colour="light"] .export__more {
   box-shadow: inset 0 1px 0 var(--glass-hi), 0 -8px 16px -8px rgb(40 50 80 / 0.18);
 }
 
-:root[data-theme="light"] .transcript__text .is-picked {
+:root[data-colour="light"] .transcript__text .is-picked {
   background: rgb(229 25 61 / 0.12);
   color: #b5122f;
 }
