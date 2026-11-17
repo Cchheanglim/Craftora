@@ -16,7 +16,13 @@ import "./Home.css";
 interface HomeProps {
   /** Absent in the browser preview. */
   onImport?: () => void;
-  onPasteLink: () => void;
+  /** Starts a new image (opens the New image window). */
+  onNewImage: () => void;
+  /** The link box (shared with the top bar's). */
+  url: string;
+  onUrlChange: (url: string) => void;
+  onFetch: (url: string) => void;
+  fetching: boolean;
   busy: boolean;
   /** Saved projects, most recent first. */
   projects: ProjectEntry[];
@@ -32,10 +38,24 @@ interface HomeProps {
   onOpenWelcome: () => void;
   /** Opens the Projects page, where all of them are. */
   onSeeProjects: () => void;
+  /** Settings, where the link tools live (sign in, site check, yt-dlp update). */
+  onOpenSettings: () => void;
 }
 
-/** Projects Home lists; the rest are a click away on the Projects page. */
-const HOME_PROJECTS = 3;
+type ProjectTab = "recent" | "videos" | "pictures" | "all";
+
+const PROJECT_TABS: { id: ProjectTab; label: string }[] = [
+  { id: "recent", label: "Recent" },
+  { id: "videos", label: "Videos" },
+  { id: "pictures", label: "Pictures" },
+  { id: "all", label: "All" },
+];
+
+function exportKind(job: Job, name: string): { label: string; tone: "video" | "picture" | "link" } {
+  if (job.kind === "audio") return { label: "Sound", tone: "link" };
+  if (/\.(png|jpe?g|webp)$/i.test(name)) return { label: "Picture", tone: "picture" };
+  return { label: "Video", tone: "video" };
+}
 
 export interface LinkSettings {
   onSignOut: () => void;
@@ -195,21 +215,26 @@ export function ProjectList({
 
 export function Home({
   onImport,
-  onPasteLink,
+  onNewImage,
+  url,
+  onUrlChange,
+  onFetch,
+  fetching,
   busy,
   projects,
   currentId,
   onOpenProject,
   onNewProject,
-  onDeleteProject,
   recent,
   outputDir,
   updates,
   onOpenWelcome,
   onSeeProjects,
+  onOpenSettings,
 }: HomeProps) {
   const hiddenProjects = useHidden("projects");
   const shownProjects = projects.filter((p) => !hiddenProjects.isHidden(p.id));
+  const [tab, setTab] = useState<ProjectTab>("recent");
   // Some people don't want their exports' pictures on the start screen; remembered.
   const [hideRecent, setHideRecent] = useState(() => {
     try {
@@ -227,112 +252,232 @@ export function Home({
     }
   };
 
+  const submitLink = (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = url.trim();
+    if (trimmed && !fetching) onFetch(trimmed);
+  };
+
+  const visibleProjects =
+    tab === "videos"
+      ? shownProjects.filter((p) => !p.image).slice(0, 4)
+      : tab === "pictures"
+        ? shownProjects.filter((p) => p.image).slice(0, 4)
+        : tab === "all"
+          ? shownProjects.slice(0, 8)
+          : shownProjects.slice(0, 4);
+
+  const emptyProjectsText =
+    tab === "videos"
+      ? "No videos yet."
+      : tab === "pictures"
+        ? "No pictures yet."
+        : "Your projects save themselves as you edit and show up here.";
+
   return (
     <section className="home" aria-labelledby="home-title">
-      <div className="home__inner">
-        <header className="home__head">
-          <h1 id="home-title">Craftora</h1>
-          <p>Bring in video and sound, cut them on the timeline, add text, and export a clean file. Files on this PC work offline.</p>
-        </header>
+      <div className="home__wrap">
+        <h1 id="home-title" className="home__title">
+          Home
+        </h1>
 
-        <div className="home__grid">
-          <div className="home__col">
-            <h2 className="section-label">Start</h2>
-            <ul className="home__actions">
-              {onImport && (
-                <li>
-                  <button type="button" className="home__action" onClick={onImport} disabled={busy}>
-                    <Icon name="upload" size={18} />
-                    <span>
-                      <strong>Import files</strong>
-                      <span>Videos, music or voice-overs from this PC</span>
+        <section className="home__start" aria-labelledby="home-start-title">
+          <h2 id="home-start-title" className="home__heading">
+            Start something
+          </h2>
+          <form className="home__link-form" onSubmit={submitLink}>
+            <label htmlFor="home-link" className="sr-only">
+              Video link
+            </label>
+            <div className="home__link-box">
+              <Icon name="link" size={18} />
+              <input
+                id="home-link"
+                type="url"
+                value={url}
+                onChange={(e) => onUrlChange(e.target.value)}
+                placeholder="Paste a video link from any site"
+                spellCheck={false}
+              />
+            </div>
+            <button type="submit" className="btn btn--primary home__fetch" disabled={fetching || !url.trim()}>
+              {fetching ? "Fetching…" : "Fetch"}
+            </button>
+          </form>
+          <div className="home__starts">
+            <button type="button" className="home__start-btn" onClick={onNewProject}>
+              <span className="home__start-icon is-video">
+                <Icon name="film" size={24} />
+              </span>
+              <span className="home__start-text">
+                <span className="home__start-label">New video</span>
+                <span className="home__start-sub">Edit clips on a timeline</span>
+              </span>
+            </button>
+            <button type="button" className="home__start-btn" onClick={onNewImage}>
+              <span className="home__start-icon is-picture">
+                <Icon name="image" size={24} />
+              </span>
+              <span className="home__start-text">
+                <span className="home__start-label">New image</span>
+                <span className="home__start-sub">Photos, posters, thumbnails</span>
+              </span>
+            </button>
+            {onImport && (
+              <button type="button" className="home__start-btn" onClick={onImport} disabled={busy}>
+                <span className="home__start-icon is-link">
+                  <Icon name="upload" size={24} />
+                </span>
+                <span className="home__start-text">
+                  <span className="home__start-label">Import files</span>
+                  <span className="home__start-sub">Videos, music or voice-overs from this PC</span>
+                </span>
+              </button>
+            )}
+          </div>
+        </section>
+
+        <section className="home__projects-section" aria-labelledby="home-projects-title">
+          <div className="home__projects-head">
+            <div className="home__projects-tabs-group">
+              <h2 id="home-projects-title" className="home__heading">
+                Your projects
+              </h2>
+              <div className="home__tabs" role="tablist" aria-label="Show">
+                {PROJECT_TABS.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    className="home__tab"
+                    aria-selected={tab === t.id}
+                    onClick={() => setTab(t.id)}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {shownProjects.length > 0 && (
+              <button type="button" className="home__see-all" onClick={onSeeProjects}>
+                See all {shownProjects.length}
+              </button>
+            )}
+          </div>
+          {visibleProjects.length === 0 ? (
+            <p className="home__muted">{emptyProjectsText}</p>
+          ) : (
+            <div className="home__cards">
+              {visibleProjects.map((p) => {
+                const isOpen = p.id === currentId;
+                return (
+                  <button key={p.id} type="button" className="home__card" onClick={() => onOpenProject(p.id)}>
+                    <span className="home__card-thumb">
+                      <Thumb src={p.thumbnail} icon={p.image ? "image" : "scissors"} play={() => projectVideo(p.id)} />
+                      <span className={isOpen ? "home__card-tag is-open" : "home__card-tag"}>
+                        {isOpen ? "Open now" : p.image ? "Picture" : "Video"}
+                      </span>
+                      <span className="home__card-badge mono">
+                        {p.image ? `${p.clips} layer${p.clips === 1 ? "" : "s"}` : formatClock(p.duration)}
+                      </span>
+                    </span>
+                    <span className="home__card-meta">
+                      <span className="home__card-name truncate">{p.name}</span>
+                      <span className="home__card-when">Edited {ago(p.savedAt)}</span>
                     </span>
                   </button>
-                </li>
-              )}
-              <li>
-                <button type="button" className="home__action" onClick={onPasteLink}>
-                  <Icon name="link" size={18} />
-                  <span>
-                    <strong>Paste a link</strong>
-                    <span>YouTube and many other sites, through yt-dlp</span>
-                  </span>
-                </button>
-              </li>
-            </ul>
-
-            <div className="home__section-head home__gap">
-              <h2 className="section-label">Projects</h2>
-              <button type="button" className="btn btn--ghost" onClick={onNewProject}>
-                <Icon name="plus" size={13} />
-                New project
-              </button>
+                );
+              })}
             </div>
-            <ProjectList projects={shownProjects.slice(0, HOME_PROJECTS)} currentId={currentId} onOpenProject={onOpenProject} onDeleteProject={onDeleteProject} />
-            {shownProjects.length > HOME_PROJECTS && (
-              <button type="button" className="btn btn--ghost home__more" onClick={onSeeProjects}>
-                See all {shownProjects.length} projects
+          )}
+        </section>
+
+        <section className="home__exports" aria-labelledby="home-exports-title">
+          <div className="home__exports-head">
+            <h2 id="home-exports-title" className="home__heading">
+              Recent exports
+            </h2>
+            {recent.length > 0 && (
+              <button type="button" className="btn btn--ghost" aria-pressed={hideRecent} onClick={() => toggleRecent(!hideRecent)}>
+                {hideRecent ? "Show" : "Hide"}
               </button>
             )}
           </div>
-
-          <div className="home__col">
-            <div className="home__section-head">
-              <h2 className="section-label">Recent exports</h2>
-              {recent.length > 0 && (
-                <button type="button" className="btn btn--ghost" aria-pressed={hideRecent} onClick={() => toggleRecent(!hideRecent)}>
-                  {hideRecent ? "Show" : "Hide"}
-                </button>
-              )}
-            </div>
-            {hideRecent && recent.length > 0 ? (
-              <p className="home__muted">Hidden. Your exports are still in Exports and in your save folder.</p>
-            ) : recent.length === 0 ? (
-              <p className="home__muted">
-                Nothing exported yet. Finished files land in <span className="mono">{outputDir}</span>.
-              </p>
-            ) : (
-              <ul className="home__recent">
-                {recent.slice(0, 5).map((job) => (
-                  <li key={job.id}>
-                    <Thumb src={job.thumbnail} icon={job.kind === "audio" ? "music" : "film"} play={job.kind !== "audio" && job.outputPath ? () => playableFile(job.outputPath!) : undefined} />
-                    <span className="truncate mono">{job.outputPath?.split(/[\\/]/).pop() ?? job.fileName}</span>
+          {hideRecent && recent.length > 0 ? (
+            <p className="home__muted">Hidden. Your exports are still in Exports and in your save folder.</p>
+          ) : recent.length === 0 ? (
+            <p className="home__muted">
+              Nothing exported yet. Finished files land in <span className="mono">{outputDir}</span>.
+            </p>
+          ) : (
+            <ul className="home__export-grid">
+              {recent.slice(0, 4).map((job) => {
+                const name = job.outputPath?.split(/[\\/]/).pop() ?? job.fileName;
+                const kind = exportKind(job, name);
+                return (
+                  <li key={job.id} className="home__export-card">
+                    <Thumb
+                      src={job.thumbnail}
+                      icon={job.kind === "audio" ? "music" : "film"}
+                      play={job.kind !== "audio" && job.outputPath ? () => playableFile(job.outputPath!) : undefined}
+                    />
+                    <span className="home__export-info">
+                      <span className={job.outputPath ? "home__export-name has-actions truncate" : "home__export-name truncate"}>{name}</span>
+                      <span className="home__export-meta">
+                        <span className={`home__export-kind is-${kind.tone}`}>{kind.label}</span>
+                        <span className="truncate">{job.summary}</span>
+                      </span>
+                    </span>
                     {job.outputPath && (
-                      <>
+                      <span className="home__export-actions">
                         <PlayFile path={job.outputPath} name={job.fileName} />
-                        <button type="button" className="btn btn--icon" aria-label={`Show ${job.fileName} in folder`} title="Show in folder" onClick={() => void revealFile(job.outputPath!)}>
+                        <button
+                          type="button"
+                          className="btn btn--icon"
+                          aria-label={`Show ${job.fileName} in folder`}
+                          title="Show in folder"
+                          onClick={() => void revealFile(job.outputPath!)}
+                        >
                           <Icon name="folder" size={14} />
                         </button>
-                      </>
+                      </span>
                     )}
                   </li>
-                ))}
-              </ul>
-            )}
+                );
+              })}
+            </ul>
+          )}
+        </section>
 
-
-            <h2 className="section-label home__gap">About</h2>
-            <div className="home__about">
-              <p>
-                Craftora{updates.version ? ` ${updates.version}` : ""}
-                {/* The number only changes at a release; dev runs already have the newer work. */}
-                {import.meta.env.DEV ? " (development build)" : ""} · MIT License · includes FFmpeg (GPL) and yt-dlp
-              </p>
-              <UpdateControls updates={updates} />
-              <p className="home__links">
-                <button type="button" onClick={onOpenWelcome}>
-                  Welcome guide
-                </button>
-                {inDesktopApp &&
-                  LINKS.map((link) => (
-                    <button key={link.label} type="button" onClick={() => void openUrl(link.url)}>
-                      {link.label}
-                    </button>
-                  ))}
-              </p>
-            </div>
-          </div>
+        <div className="home__strip">
+          <span className="home__strip-label">Links</span>
+          <button type="button" className="home__strip-btn" onClick={onOpenSettings}>
+            Sign in to a site
+          </button>
+          <button type="button" className="home__strip-btn" onClick={onOpenSettings}>
+            Is this link safe?
+          </button>
+          <button type="button" className="home__strip-btn" onClick={onOpenSettings}>
+            Update yt-dlp
+          </button>
         </div>
+
+        <footer className="home__footer">
+          <span>
+            Craftora{updates.version ? ` ${updates.version}` : ""}
+            {/* The number only changes at a release; dev runs already have the newer work. */}
+            {import.meta.env.DEV ? " (development build)" : ""} · MIT License · includes FFmpeg (GPL) and yt-dlp
+          </span>
+          <button type="button" onClick={onOpenWelcome}>
+            Welcome guide
+          </button>
+          {inDesktopApp &&
+            LINKS.map((link) => (
+              <button key={link.label} type="button" onClick={() => void openUrl(link.url)}>
+                {link.label}
+              </button>
+            ))}
+        </footer>
       </div>
     </section>
   );
