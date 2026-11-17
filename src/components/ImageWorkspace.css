@@ -5,6 +5,7 @@
 /* The whole app while the Image editor is open: neutral greys and a slim top bar. */
 .app.app--image,
 :root[data-theme] .app.app--image {
+  color-scheme: dark;
   --bg-input: #1f1f1f;
   --bg-canvas: #262626;
   --bg-rail: #2b2b2b;
