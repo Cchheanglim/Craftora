@@ -271,6 +271,10 @@
   color: var(--text-on-accent);
 }
 
+.pcard.is-picking .pcard__tag {
+  left: 38px;
+}
+
 .pcard.is-picked .pcard__box {
   border-color: var(--accent-fill);
   background: var(--accent-fill);
