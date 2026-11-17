@@ -482,7 +482,9 @@ async fn fetch_picture(url: &str, referer: &str) -> Result<Vec<u8>, String> {
 /// `engine` off: the sign-in window already found what the page plays, which beats the engine there.
 async fn read_link(app: &AppHandle, url: &str, engine: bool) -> Result<Info, String> {
     let yt_dlp = read_link_yt_dlp(app, url).await;
-    if !engine || yt_dlp.as_ref().is_ok_and(|info| !info.formats.is_empty()) {
+    // A page the site says is gone (404, 410) is gone for the engine too: no seconds spent finding that out.
+    let gone = yt_dlp.as_ref().is_err_and(|e| e.contains("HTTP Error 404") || e.contains("HTTP Error 410"));
+    if !engine || gone || yt_dlp.as_ref().is_ok_and(|info| !info.formats.is_empty()) {
         return yt_dlp;
     }
     read_link_engine(app, url).await.map_or(yt_dlp, Ok)
