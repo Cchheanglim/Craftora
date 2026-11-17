@@ -123,7 +123,9 @@ const FIND_MEDIA: &str = r#"(() => {
   pick(loaded.filter((u) => !(loadedAt.get(u) >= now)));
   document.querySelectorAll("iframe[src]").forEach((e) => add(e.src));
   const meta = (name) => document.querySelector(`meta[property="${name}"], meta[name="${name}"]`)?.content;
-  const image = meta("og:image") || meta("twitter:image") || document.querySelector("video[poster]")?.poster || "";
+  // Pages often give it relative to themselves ("/meta.png").
+  const full = (u) => { try { return new URL(u, location.href).href; } catch { return ""; } };
+  const image = full(meta("og:image") || meta("twitter:image") || document.querySelector("video[poster]")?.poster || "");
   const playing = [...(window.__craftoraPlaying || [])];
   if ([...document.querySelectorAll("video")].some((v) => v.srcObject)) playing.push("webrtc");
   return { title: document.title, image: /^https?:/.test(image) ? image : "", media: media.slice(0, 5), playing, agent: navigator.userAgent };
@@ -159,6 +161,9 @@ pub(crate) async fn link_args(app: &AppHandle, link: &str) -> (Vec<String>, Opti
     let (url, referer) = split_referer(link);
     if let Some(page) = referer {
         args.extend(["--referer".into(), page.into()]);
+        if let Some(origin) = origin_of(page) {
+            args.extend(["--add-header".into(), format!("Origin:{origin}")]);
+        }
     }
     if bot_checked(url) {
         // Look like the browser that passed the site's check: its kind of connection, and its
@@ -179,6 +184,8 @@ static CHALLENGED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 static BROWSER_AGENT: Mutex<String> = Mutex::new(String::new());
 /// The page the sign-in window last fetched from, to open it again if it was closed (page_fetch.rs).
 static LAST_PAGE: Mutex<String> = Mutex::new(String::new());
+/// The link the sign-in window is loading behind the scenes, while the app offers to open it.
+static PRELOADED: Mutex<String> = Mutex::new(String::new());
 
 pub(crate) fn remember_page(page: &str) {
     *LAST_PAGE.lock().unwrap() = page.to_string();
@@ -215,6 +222,24 @@ pub(crate) fn note_bot_check(link: &str) -> bool {
 /// Whether `link`'s site checks for bots: then only yt-dlp (posing as a browser) gets through.
 pub(crate) fn bot_checked(link: &str) -> bool {
     host_of(link).is_some_and(|host| CHALLENGED.lock().unwrap().contains(&host))
+}
+
+/// The page's origin ("https://site.example"), sent as `Origin` with the page as `Referer`: a page's
+/// player asks for its video from script, so the browser sends both, and some video servers refuse
+/// requests without the Origin (lightspeed.st: 404 with only the Referer, 2026-11-17).
+pub(crate) fn origin_of(page: &str) -> Option<String> {
+    let origin = Url::parse(page).ok()?.origin();
+    origin.is_tuple().then(|| origin.ascii_serialization())
+}
+
+/// The page's headers for FFmpeg and FFprobe (`-headers`), without line breaks from the address:
+/// they would let it add headers of its own.
+pub(crate) fn page_headers(page: &str) -> String {
+    let page = page.replace(['\r', '\n'], "");
+    match origin_of(&page) {
+        Some(origin) => format!("Referer: {page}\r\nOrigin: {origin}\r\n"),
+        None => format!("Referer: {page}\r\n"),
+    }
 }
 
 pub(crate) fn split_referer(link: &str) -> (&str, Option<&str>) {
@@ -286,12 +311,27 @@ async fn cookie_args(app: &AppHandle) -> (Vec<String>, Option<TempCookies>) {
 /// browses. Its menu bar's "Fetch this video" sends `fetch-page` with the page being shown and
 /// the media it plays, so the main window fetches it with the login.
 #[tauri::command]
-pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
+pub async fn open_sign_in(app: AppHandle, site: String, hidden: Option<bool>) -> Result<(), String> {
+    let hidden = hidden.unwrap_or(false);
     let site = site.trim();
     let link = if site.starts_with("https://") || site.starts_with("http://") { site.to_string() } else { format!("https://{site}") };
     let url: Url = link.parse().map_err(|_| "That doesn't look like a website address.".to_string())?;
     if let Some(window) = app.get_webview_window(WINDOW) {
-        window.navigate(url).map_err(|e| e.to_string())?;
+        if hidden {
+            // Never take a page the user is looking at away from them.
+            if window.is_visible().unwrap_or(true) {
+                return Ok(());
+            }
+            *PRELOADED.lock().unwrap() = link;
+            return window.navigate(url).map_err(|e| e.to_string());
+        }
+        // Loaded behind the scenes for this link: shown as it is, already drawn.
+        if std::mem::take(&mut *PRELOADED.lock().unwrap()) != link {
+            window.navigate(url).map_err(|e| e.to_string())?;
+        }
+        set_muted(&window, false);
+        let _ = window.unminimize();
+        window.show().map_err(|e| e.to_string())?;
         return window.set_focus().map_err(|e| e.to_string());
     }
     let fetch = MenuItem::with_id(&app, FETCH_ITEM, "Fetch this video", true, None::<&str>).map_err(|e| e.to_string())?;
@@ -299,6 +339,7 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
     let window = WebviewWindowBuilder::new(&app, WINDOW, WebviewUrl::External(url))
         .title("Craftora · log in if needed, play the video, then click Fetch this video")
         .inner_size(900.0, 760.0)
+        .visible(!hidden)
         .initialization_script_for_all_frames(WATCH_MEDIA)
         // Websites here can't reach Craftora's commands (no capability names this window), but a
         // bad site or ad could still push malware: so no pop-ups (but real sign-in ones), no
@@ -340,7 +381,42 @@ pub async fn open_sign_in(app: AppHandle, site: String) -> Result<(), String> {
         .build()
         .map_err(|e| format!("Couldn't open the sign-in window: {e}"))?;
     block_other_programs(&window);
+    if hidden {
+        // A page loading behind the scenes mustn't play sound (an ad, a trailer) nobody can see.
+        set_muted(&window, true);
+        *PRELOADED.lock().unwrap() = link;
+    }
     Ok(())
+}
+
+/// Closes the sign-in window loaded behind the scenes (`open_sign_in` with `hidden`) when its button
+/// goes away unclicked. A window the user has seen stays open.
+#[tauri::command]
+pub fn close_sign_in_preload(app: AppHandle) {
+    if let Some(window) = app.get_webview_window(WINDOW)
+        && !window.is_visible().unwrap_or(true)
+    {
+        PRELOADED.lock().unwrap().clear();
+        let _ = window.close();
+    }
+}
+
+fn set_muted(window: &tauri::WebviewWindow, muted: bool) {
+    #[cfg(windows)]
+    let _ = window.with_webview(move |webview| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_8;
+        use windows_core::Interface;
+        // SAFETY: `with_webview` runs on the window's own thread.
+        let _ = unsafe {
+            webview
+                .controller()
+                .CoreWebView2()
+                .and_then(|core| core.cast::<ICoreWebView2_8>())
+                .and_then(|core| core.SetIsMuted(muted))
+        };
+    });
+    #[cfg(not(windows))]
+    let _ = (window, muted);
 }
 
 /// No page in the sign-in window can start another program on the PC (zoommtg:, ms-msdt:, an
@@ -618,5 +694,8 @@ mod tests {
         let link = format!("https://cdn.example/v/index.m3u8?t=1{REFERER_MARK}https://site.example/watch?id=9#top");
         assert_eq!(split_referer(&link), ("https://cdn.example/v/index.m3u8?t=1", Some("https://site.example/watch?id=9#top")));
         assert_eq!(split_referer("https://youtu.be/x"), ("https://youtu.be/x", None));
+        assert_eq!(origin_of("https://cinejoy.pk/watch/tv/62560/2/5").as_deref(), Some("https://cinejoy.pk"));
+        assert_eq!(origin_of("not a page"), None);
+        assert_eq!(page_headers("https://site.example/p\r\nX: y"), "Referer: https://site.example/pX: y\r\nOrigin: https://site.example\r\n");
     }
 }

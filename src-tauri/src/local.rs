@@ -597,8 +597,7 @@ pub async fn link_peaks(app: AppHandle, url: String) -> Result<Vec<u8>, String> 
     if !(file.starts_with("https://") || file.starts_with("http://")) {
         return Err("Not a web address.".into());
     }
-    // No line breaks from a page address: they would let it add headers of its own.
-    let headers = page.map(|p| format!("Referer: {}\r\n", p.replace(['\r', '\n'], "")));
+    let headers = page.map(crate::signin::page_headers);
     let peaks = peaks_of(&app, file, headers.as_deref()).await?;
     if peaks.is_empty() {
         return Err("Couldn't read the link's sound.".into());

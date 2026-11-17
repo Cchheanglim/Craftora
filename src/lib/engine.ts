@@ -55,7 +55,9 @@ export const updateYtDlp = () => invoke<string>("update_yt_dlp");
 
 
 /** Opens a website or a video's page in a Craftora window, to log in and pick a video there. */
-export const openSignIn = (site: string) => invoke<void>("open_sign_in", { site });
+export const openSignIn = (site: string, hidden = false) => invoke<void>("open_sign_in", { site, hidden });
+/** Closes the window `openSignIn(…, true)` loaded behind the scenes, if nobody opened it. */
+export const closeSignInPreload = () => invoke<void>("close_sign_in_preload");
 export const signOutEverywhere = () => invoke<void>("sign_out_everywhere");
 /** A website Craftora keeps a login for, such as "youtube.com", and when it was last used (ms), if known. */
 export interface SignedInSite {
@@ -153,10 +155,13 @@ export const stopRecording = (id: string) => invoke<boolean>("stop_recording", {
 /** Lets the preview and exports read a file on this PC without probing it. */
 export const allowLocal = (path: string) => invoke("allow_local", { path });
 
-/** Reads a link. Its preview plays the best quality the video has, or the highest up to `height`. */
-export async function fetchMedia(url: string, height?: number): Promise<MediaSource> {
+/**
+ * Reads a link. Its preview plays the best quality the video has, or the highest up to `height`.
+ * `engine`: whether Craftora's own fetch engine tries when yt-dlp can't read the link.
+ */
+export async function fetchMedia(url: string, height?: number, engine = true): Promise<MediaSource> {
   try {
-    const source = await invoke<MediaSource>("fetch_media", { url, height: height ?? null });
+    const source = await invoke<MediaSource>("fetch_media", { url, height: height ?? null, engine });
     // The preview plays through the disk cache, so parts already fetched scrub instantly.
     const ids: string[] = [];
     const cached = async (remote?: string) => {

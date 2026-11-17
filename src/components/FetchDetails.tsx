@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { MediaSource } from "../types";
 import { checkSite, errorText, keptThumbnail } from "../lib/engine";
+import { captureThumbnail } from "../lib/thumbnail";
 import { formatClock } from "../lib/timecode";
 import { formatSize } from "../project/exportPlan";
 import { mediaFromSource } from "../project/model";
@@ -35,11 +36,25 @@ function FetchDetails({ source, link, canCheckSite, onClose }: { source: MediaSo
   // so this shows the same picture the editor will.
   const [picture, setPicture] = useState<string>();
   const [pictureFailed, setPictureFailed] = useState(false);
+  // No picture from the site (a bare stream, a picture that won't load): a frame of the video itself,
+  // as the editor's media list shows.
+  const [useFrame, setUseFrame] = useState(false);
   useEffect(() => {
     const pictures = [source.thumbnail, ...(source.thumbnails ?? [])].filter((p): p is string => Boolean(p));
     if (pictures.length) void keptThumbnail(pictures, link).then(setPicture);
-    else setPictureFailed(true);
+    else setUseFrame(true);
   }, [source, link]);
+  useEffect(() => {
+    if (!useFrame) return;
+    if (!source.previewUrl) return setPictureFailed(true);
+    let live = true;
+    void captureThumbnail(source.previewUrl, source.image, source.previewHls).then((frame) => {
+      if (live) (frame ? setPicture(frame) : setPictureFailed(true));
+    });
+    return () => {
+      live = false;
+    };
+  }, [useFrame, source]);
   const [checking, setChecking] = useState(false);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const check = async () => {
@@ -93,7 +108,7 @@ function FetchDetails({ source, link, canCheckSite, onClose }: { source: MediaSo
       <div className="confirm__box">
         <div className="fetch-details__picture">
           {picture && !pictureFailed ? (
-            <img src={picture} alt="" referrerPolicy="no-referrer" onError={() => setPictureFailed(true)} />
+            <img src={picture} alt="" referrerPolicy="no-referrer" onError={() => (useFrame ? setPictureFailed(true) : setUseFrame(true))} />
           ) : !pictureFailed ? (
             <span className="fetch-details__no-picture">Loading the picture…</span>
           ) : (

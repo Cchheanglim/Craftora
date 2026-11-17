@@ -11,6 +11,9 @@ pub const YT_DLP: &str = "yt-dlp";
 pub const FFMPEG: &str = "ffmpeg";
 /// whisper.cpp's command-line tool (speech to text), bundled as the `whisper` resource folder.
 pub const WHISPER: &str = "whisper";
+/// Craftora's own fetch engine, for links yt-dlp can't read (bundled as the `craftora-observer`
+/// resource folder). It takes yt-dlp's arguments and answers like `--dump-single-json`.
+pub const OBSERVER: &str = "craftora-observer";
 
 /// The bundled FFmpeg: ffmpeg.exe and ffprobe.exe with the libraries they share, as the `ffmpeg`
 /// resource folder (one copy of the libraries instead of one built into each, 127 MB less).
@@ -36,6 +39,17 @@ pub fn command(app: &AppHandle, name: &str) -> Result<Command, String> {
         // The proxy, for yt-dlp and for the FFmpeg it runs itself.
         return Ok(match crate::privacy::proxy() {
             Some(proxy) => command.args(["--proxy", &proxy]).env("http_proxy", &proxy).env("https_proxy", &proxy),
+            None => command,
+        });
+    }
+    if name == OBSERVER {
+        let exe = app.path().resource_dir().map_err(|e| e.to_string())?.join(OBSERVER).join("craftora-observer.exe");
+        if !exe.is_file() {
+            return Err("The fetch engine is not bundled.".into());
+        }
+        let command = app.shell().command(exe);
+        return Ok(match crate::privacy::proxy() {
+            Some(proxy) => command.args(["--proxy", &proxy]),
             None => command,
         });
     }

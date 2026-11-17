@@ -174,6 +174,9 @@ async fn fetch(entry: &Entry, start: u64, len: u64) -> Result<Vec<u8>, String> {
             let mut request = client().get(url).header(header::RANGE, format!("bytes={start}-{end}"));
             if let Some(page) = page {
                 request = request.header(header::REFERER, page);
+                if let Some(origin) = crate::signin::origin_of(page) {
+                    request = request.header(header::ORIGIN, origin);
+                }
             }
             let response = request
                 .send()
@@ -454,6 +457,9 @@ async fn relay_hls(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<
     let mut outgoing = client().get(url);
     if let Some(page) = page {
         outgoing = outgoing.header(header::REFERER, page);
+        if let Some(origin) = crate::signin::origin_of(page) {
+            outgoing = outgoing.header(header::ORIGIN, origin);
+        }
     }
     if let Some(range) = request.headers().get(header::RANGE) {
         outgoing = outgoing.header(header::RANGE, range.clone());

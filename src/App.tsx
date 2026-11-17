@@ -43,6 +43,7 @@ import {
   pickPicture,
   fileThumbnail,
   openSignIn,
+  closeSignInPreload,
   onFetchPage,
   type FoundPage,
   signOutEverywhere,
@@ -343,7 +344,8 @@ function siteOf(link: string): string | null {
  */
 async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource> {
   try {
-    return await fetchMedia(link);
+    // With what the page played in hand, the engine reading the page again only adds seconds.
+    return await fetchMedia(link, undefined, !found?.media.length);
   } catch (err) {
     if (!found?.media.length || !/unsupported url/i.test(errorText(err))) throw err;
     let firstProblem: unknown;
@@ -472,6 +474,13 @@ export default function App() {
   const [siteChecks, setSiteChecks] = useState({ available: false, ownKey: false });
   /** A link that failed in a way the sign-in window can fix: a login, or a page yt-dlp doesn't know. */
   const [pageAction, setPageAction] = useState<{ label: string; link: string } | null>(null);
+  // While its button shows, the page loads in a hidden window, so the window opens already drawn
+  // (heavy sites take seconds to draw). Closed again if the button goes away unclicked.
+  useEffect(() => {
+    if (!inDesktopApp || !pageAction || !error) return;
+    void openSignIn(pageAction.link, true).catch(() => {});
+    return () => void closeSignInPreload().catch(() => {});
+  }, [pageAction, error]);
   const [ytDlpUpdate, setYtDlpUpdate] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null });
   const urlRef = useRef<HTMLInputElement>(null);
   /** The first-launch guide is open (it shows until it's closed once). */

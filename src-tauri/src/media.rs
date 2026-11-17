@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-use crate::engine::{last_error, run_to_end, YT_DLP};
+use crate::engine::{last_error, run_to_end, OBSERVER, YT_DLP};
 
 /// The subset of `yt-dlp --dump-single-json` that Craftora uses.
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
@@ -302,6 +302,9 @@ async fn first_served<'a>(choices: &[&'a Format], page: Option<&str>) -> Option<
         let mut request = crate::media_cache::client().get(url).header("Range", "bytes=0-0").timeout(std::time::Duration::from_secs(5));
         if let Some(page) = page {
             request = request.header("Referer", page);
+            if let Some(origin) = crate::signin::origin_of(page) {
+                request = request.header("Origin", origin);
+            }
         }
         match request.send().await.map(|r| r.status().as_u16()) {
             Ok(code @ (401 | 403 | 404 | 410)) => crate::diag::note(format!("preview file {url} refused ({code}), trying the next")),
@@ -336,30 +339,37 @@ pub(crate) fn parse_mpd_duration(xml: &str) -> Option<f64> {
 
 /// A file's length in seconds, read by FFprobe from its header (or from a DASH manifest).
 async fn probe_length(app: &AppHandle, file: &str, page: Option<&str>) -> Option<f64> {
-    // No line breaks from a page address: they would let it add headers of its own.
-    let headers = page.map(|p| format!("Referer: {}\r\n", p.replace(['\r', '\n'], "")));
+    // A DASH manifest says its length: one small request, where FFprobe opening the stream took 9 s.
+    if file.to_ascii_lowercase().contains(".mpd") {
+        let mut req = crate::media_cache::client().get(file);
+        if let Some(page) = page {
+            req = req.header(reqwest::header::REFERER, page);
+            if let Some(origin) = crate::signin::origin_of(page) {
+                req = req.header(reqwest::header::ORIGIN, origin);
+            }
+        }
+        let read = async { parse_mpd_duration(&req.send().await.ok()?.text().await.ok()?) };
+        if let Some(d) = read.await {
+            return Some(d);
+        }
+    }
+    let headers = page.map(crate::signin::page_headers);
     let mut args = vec!["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1"];
     if let Some(headers) = &headers {
         args.extend(["-headers", headers]);
     }
     args.push(file);
-    if let Some(d) = run_to_end(app, crate::local::FFPROBE, &args)
+    run_to_end(app, crate::local::FFPROBE, &args)
         .await
         .ok()
         .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok())
         .filter(|d: &f64| *d > 0.0)
-    {
-        return Some(d);
-    }
-    if !file.to_ascii_lowercase().contains(".mpd") {
-        return None;
-    }
-    let mut req = crate::media_cache::client().get(file);
-    if let Some(page) = page {
-        req = req.header(reqwest::header::REFERER, page);
-    }
-    let xml = req.send().await.ok()?.text().await.ok()?;
-    parse_mpd_duration(&xml)
+}
+
+/// A link straight to a video or sound file: yt-dlp doesn't open the file, so it can't say how long it is.
+fn is_media_file(link: &str) -> bool {
+    let path = link.split(['?', '#']).next().unwrap_or(link).to_ascii_lowercase();
+    [".mp4", ".webm", ".mov", ".m4v", ".mkv", ".mp3", ".m4a", ".wav", ".flac", ".ogg"].iter().any(|ext| path.ends_with(ext))
 }
 
 /// A stream playlist (HLS) for sites that only offer those: the master playlist when there is
@@ -466,9 +476,45 @@ async fn fetch_picture(url: &str, referer: &str) -> Result<Vec<u8>, String> {
     Ok(bytes.to_vec())
 }
 
+/// What a link contains: yt-dlp first; when it can't read the link, or finds no video in it (a page
+/// it reads as a list), Craftora's own fetch engine. When the engine finds nothing either, yt-dlp's
+/// answer stands (the engine's message goes to "Copy report").
+/// `engine` off: the sign-in window already found what the page plays, which beats the engine there.
+async fn read_link(app: &AppHandle, url: &str, engine: bool) -> Result<Info, String> {
+    let yt_dlp = read_link_yt_dlp(app, url).await;
+    if !engine || yt_dlp.as_ref().is_ok_and(|info| !info.formats.is_empty()) {
+        return yt_dlp;
+    }
+    read_link_engine(app, url).await.map_or(yt_dlp, Ok)
+}
+
+async fn read_link_engine(app: &AppHandle, url: &str) -> Option<Info> {
+    let mut args: Vec<String> = ["--dump-single-json", "--no-playlist", "--no-warnings"].map(String::from).to_vec();
+    let (link, _cookie_file) = crate::signin::link_args(app, url).await;
+    args.extend(link);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let started = std::time::Instant::now();
+    let output = match run_to_end(app, OBSERVER, &args).await {
+        Ok(output) => output,
+        Err(e) => {
+            crate::diag::note(format!("fetch engine: {e}"));
+            return None;
+        }
+    };
+    if output.status.success()
+        && let Ok(info) = serde_json::from_slice::<Info>(&output.stdout)
+    {
+        crate::diag::note(format!("fetch engine read {url} in {:.1}s", started.elapsed().as_secs_f64()));
+        return Some(info);
+    }
+    let engine_error = last_error(&String::from_utf8_lossy(&output.stderr)).unwrap_or_else(|| "unexpected answer".into());
+    crate::diag::note(format!("fetch engine read {url}: {engine_error}"));
+    None
+}
+
 /// What yt-dlp says a link contains. A site whose bot check turns yt-dlp away is tried once more
 /// with yt-dlp posing as a browser (and remembered, so downloads from it do the same).
-async fn read_link(app: &AppHandle, url: &str) -> Result<Info, String> {
+async fn read_link_yt_dlp(app: &AppHandle, url: &str) -> Result<Info, String> {
     let mut retried = false;
     let mut hiccup = false;
     loop {
@@ -519,13 +565,25 @@ pub(crate) fn is_bot_check(error: &str) -> bool {
 
 /// Runs `yt-dlp --dump-single-json` on a link and maps the result for the editor.
 #[tauri::command]
-pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Result<MediaSource, String> {
+pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>, engine: Option<bool>) -> Result<MediaSource, String> {
     let url = url.trim().to_string();
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return Err("That doesn't look like a web link. Paste a link starting with https://".into());
     }
 
-    let info = read_link(&app, &url).await?;
+    // A file link's length is read while yt-dlp runs (about 1 s of a 3 s fetch), not after it.
+    let early_length = {
+        let (file, page) = crate::signin::split_referer(&url);
+        let (app, file, page) = (app.clone(), file.to_string(), page.map(str::to_string));
+        is_media_file(&file).then(|| tauri::async_runtime::spawn(async move { probe_length(&app, &file, page.as_deref()).await }))
+    };
+    let info = match read_link(&app, &url, engine.unwrap_or(true)).await {
+        Ok(info) => info,
+        Err(e) => {
+            early_length.inspect(|probe| probe.abort());
+            return Err(e);
+        }
+    };
     // Behind a bot check only yt-dlp (posing as a browser) gets through: there's no length probe
     // or preview, so the video is downloaded first and edits as a file on this PC.
     let bot_checked = crate::signin::bot_checked(&url);
@@ -568,12 +626,20 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
         crate::signin::remember_page(page);
     }
     if let Some(page) = page.as_ref().filter(|_| bot_checked && app.get_webview_window(crate::signin::WINDOW).is_none())
-        && crate::signin::open_sign_in(app.clone(), page.clone()).await.is_ok()
+        && crate::signin::open_sign_in(app.clone(), page.clone(), None).await.is_ok()
         && let Some(window) = app.get_webview_window(crate::signin::WINDOW)
     {
         let _ = window.minimize();
     }
-    let duration = match info.duration.filter(|d| *d > 0.0) {
+    let early_length = match early_length {
+        Some(probe) if !bot_checked && info.duration.filter(|d| *d > 0.0).is_none() => probe.await.ok().flatten(),
+        Some(probe) => {
+            probe.abort();
+            None
+        }
+        None => None,
+    };
+    let duration = match info.duration.filter(|d| *d > 0.0).or(early_length) {
         Some(d) => Some(d),
         // Plain video-file and DASH (.mpd) links: yt-dlp doesn't open the file, so it reports no length.
         // Behind a bot check FFprobe reads it through the page window (page_fetch.rs).
@@ -707,14 +773,14 @@ pub(crate) async fn live_inputs(app: &AppHandle, url: &str, format: Option<&str>
         let formats = match cached {
             Some(formats) => formats,
             None => {
-                let mut info = read_link(app, url).await?;
+                let mut info = read_link(app, url, true).await?;
                 stamp_referer(&mut info.formats, crate::signin::split_referer(url).1);
                 info.formats
             }
         };
         return pick_stream(&formats, format_id).ok_or_else(|| "No stream to record was found at this link.".into());
     }
-    let info = read_link(app, url).await?;
+    let info = read_link(app, url, true).await?;
     if info.is_live != Some(true) {
         return Err("This stream isn't live any more. Fetch the link again to edit the saved video.".into());
     }

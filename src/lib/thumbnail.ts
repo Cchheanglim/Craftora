@@ -63,6 +63,12 @@ export function captureThumbnail(previewUrl: string, image?: boolean, hls?: bool
           player.on(Hls.Events.ERROR, (_event, data) => {
             if (data.fatal) done();
           });
+          // The smallest quality still as wide as the picture: a 1080p part could take longer than
+          // the 10 s allowed (a found stream through the relay did), for a picture 480 wide.
+          player.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
+            const fits = data.levels.findIndex((level) => (level.width || 0) >= width);
+            if (fits >= 0 && player) player.currentLevel = fits;
+          });
           player.loadSource(previewUrl);
           player.attachMedia(video);
         },
