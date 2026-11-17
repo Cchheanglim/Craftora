@@ -43,6 +43,14 @@
   --clip-effect: #273142;
   --clip-effect-line: #415372;
 
+  /* What a thing is (Home tags and start buttons): all red here; Settings → Colour → Lively gives each its own (themes.css). */
+  --kind-video: #ff6b7f;
+  --kind-video-wash: rgb(250 45 72 / 0.16);
+  --kind-picture: #ff6b7f;
+  --kind-picture-wash: rgb(250 45 72 / 0.16);
+  --kind-link: #ff6b7f;
+  --kind-link-wash: rgb(250 45 72 / 0.16);
+
   /* State */
   --ok: #30d158;
   --warn: #ffb340;
