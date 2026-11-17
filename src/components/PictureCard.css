@@ -358,3 +358,20 @@
 .pcard__action.is-on svg {
   fill: currentColor;
 }
+
+/* Rename: the name as a box, the same size as the name. */
+.pcard__rename {
+  width: 100%;
+  height: 22px;
+  padding: 0 4px;
+  margin: -1px 0 -1px -5px;
+  box-sizing: content-box;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+}

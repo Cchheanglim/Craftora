@@ -314,6 +314,17 @@ const isTyping = (el: EventTarget | null) =>
  * The project's picture for lists (Projects, Home, Exports): one kept in the app (a data URL) or a
  * website's picture. Not a file's preview address: it stops working once Craftora restarts.
  */
+/** What the project list shows of a project, saved beside it. */
+const projectEntry = (id: string, project: Project): ProjectEntry => ({
+  id,
+  name: projectName(project),
+  savedAt: Date.now(),
+  duration: projectDuration(project),
+  clips: project.clips.length,
+  thumbnail: coverOf(project),
+  image: project.image ? true : undefined,
+});
+
 const coverOf = (project: Project) =>
   project.cover ??
   project.media.map((m) => m.source.thumbnail).find((t) => t?.startsWith("data:") || (t?.startsWith("http") && !t.includes("asset.localhost")));
@@ -553,15 +564,7 @@ export default function App() {
     if (project.media.length === 0 && project.clips.length === 0) return;
     const save = () => {
       pendingSave.current = undefined;
-      const entry: ProjectEntry = {
-        id: projectId,
-        name: projectName(project),
-        savedAt: Date.now(),
-        duration: projectDuration(project),
-        clips: project.clips.length,
-        thumbnail: coverOf(project),
-        image: project.image ? true : undefined,
-      };
+      const entry = projectEntry(projectId, project);
       saveProject({ ...entry, version: 1, project })
         .then(() => setProjects((list) => [entry, ...list.filter((p) => p.id !== entry.id)]))
         .catch((err) => setError(`Couldn't save the project: ${errorText(err)}`));
@@ -1383,6 +1386,38 @@ export default function App() {
       return;
     }
     setView(next);
+  };
+
+  /** Right-click a project → Rename. The open one is renamed as an edit (Ctrl Z undoes it); the others in their file. */
+  const renameProject = async (id: string, name: string) => {
+    if (id === projectId) {
+      api.edit({ type: "renameProject", name });
+      return;
+    }
+    try {
+      const saved = await loadProject(id);
+      const renamed = applyEdit(upgradeProject(saved.project), { type: "renameProject", name });
+      // Keeps its place in the list: a new name isn't an edit of the picture.
+      const entry = { ...projectEntry(id, renamed), savedAt: saved.savedAt };
+      await saveProject({ ...entry, version: 1, project: renamed });
+      setProjects((list) => list.map((p) => (p.id === id ? entry : p)));
+    } catch (err) {
+      setError(`Couldn't rename the project: ${errorText(err)}`);
+    }
+  };
+
+  /** Right-click a project → Duplicate: a copy named "… copy", first in the list. */
+  const duplicateProject = async (id: string) => {
+    try {
+      // The open project as it is now (its last change may not be saved yet); the others from their file.
+      const source = id === projectId ? project : upgradeProject((await loadProject(id)).project);
+      const copy = applyEdit(source, { type: "renameProject", name: `${projectName(source)} copy` });
+      const entry = projectEntry(crypto.randomUUID(), copy);
+      await saveProject({ ...entry, version: 1, project: copy });
+      setProjects((list) => [entry, ...list]);
+    } catch (err) {
+      setError(`Couldn't duplicate the project: ${errorText(err)}`);
+    }
   };
 
   const removeProject = async (id: string) => {
@@ -2732,6 +2767,8 @@ export default function App() {
             onOpenProject={(id) => (id === projectId ? setView("editor") : void openProject(id))}
             onNewProject={() => newProject()}
             onDeleteProject={(id) => void removeProject(id)}
+            onRenameProject={(id, name) => void renameProject(id, name)}
+            onDuplicateProject={(id) => void duplicateProject(id)}
             recent={shownExports}
             outputDir={outputDir}
             updates={updates}
@@ -2747,6 +2784,8 @@ export default function App() {
             onNewProject={() => newProject()}
             onNewImage={() => setNewImageOpen(true)}
             onDeleteProject={(id) => void removeProject(id)}
+            onRenameProject={(id, name) => void renameProject(id, name)}
+            onDuplicateProject={(id) => void duplicateProject(id)}
           />
         )}
         {view === "media" && (

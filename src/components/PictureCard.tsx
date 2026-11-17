@@ -1,10 +1,10 @@
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { Icon, type IconName } from "./Icon";
 import "./PictureCard.css";
 
 /**
- * The pages' shared pieces (Projects, Exports, Media library): a picture card in a grid, the tabs over it and the
- * search box beside them. Home's own cards look the same (Home.css).
+ * The pages' shared pieces (Home, Projects, Exports, Media library): a picture card in a grid, the tabs over it and
+ * the search box beside them.
  */
 export function PictureCard({
   thumb,
@@ -17,6 +17,9 @@ export function PictureCard({
   actions,
   picked,
   onPick,
+  onMenu,
+  renaming,
+  onRename,
 }: {
   /** Usually a `<Thumb>`: it fills the picture. */
   thumb: ReactNode;
@@ -34,6 +37,11 @@ export function PictureCard({
   /** Picking several: whether this one is ticked (the card ticks instead of opening). Leave out otherwise. */
   picked?: boolean;
   onPick?: () => void;
+  /** Right-click (or the keyboard's menu key): the card's menu. */
+  onMenu?: (e: MouseEvent) => void;
+  /** The name is a box to type a new one in: Enter or leaving it keeps it (`onRename(name)`), Escape doesn't (null). */
+  renaming?: boolean;
+  onRename?: (name: string | null) => void;
 }) {
   const body = (
     <>
@@ -48,14 +56,36 @@ export function PictureCard({
         )}
       </span>
       <span className="pcard__text">
-        <span className="pcard__name truncate">{name}</span>
+        {renaming ? (
+          <input
+            className="pcard__rename"
+            defaultValue={name}
+            aria-label="Name"
+            autoFocus
+            onFocus={(e) => e.currentTarget.select()}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+              if (e.key === "Escape") {
+                e.currentTarget.dataset.cancel = "1";
+                e.currentTarget.blur();
+              }
+            }}
+            onBlur={(e) => onRename?.(e.currentTarget.dataset.cancel ? null : e.currentTarget.value)}
+          />
+        ) : (
+          <span className="pcard__name truncate">{name}</span>
+        )}
         {meta && <span className="pcard__meta truncate">{meta}</span>}
       </span>
     </>
   );
   return (
-    <li className={picked === undefined ? "pcard" : picked ? "pcard is-picking is-picked" : "pcard is-picking"}>
-      {picked === undefined ? (
+    <li className={picked === undefined ? "pcard" : picked ? "pcard is-picking is-picked" : "pcard is-picking"} onContextMenu={onMenu}>
+      {renaming ? (
+        // Not a button while its name is being typed (a box inside a button can't be typed in properly).
+        <div className="pcard__main">{body}</div>
+      ) : picked === undefined ? (
         <button type="button" className="pcard__main" onClick={onOpen}>
           {body}
         </button>

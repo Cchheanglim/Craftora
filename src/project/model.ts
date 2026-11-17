@@ -366,6 +366,8 @@ export interface Project {
   cover?: string;
   /** An image (the Image editor): its size in pixels and background colour (#rrggbb); a video when absent. */
   image?: { width: number; height: number; background: string };
+  /** The name the user gave it (right-click a project → Rename); its first file's name when absent. */
+  name?: string;
 }
 
 /** `x`/`y` as for text clips; `size`: letter height as a fraction of the frame. The look is as for text clips. */
@@ -628,7 +630,7 @@ export const isShape = (c: Clip) => Boolean(c.shape);
 export const isText = (c: Clip) => !c.mediaId && !c.shape && !isBlock(c);
 
 /** A name for the project list: the first thing imported. */
-export const projectName = (p: Project) => p.media[0]?.name.replace(/\.[a-z0-9]{2,4}$/i, "") ?? "Untitled project";
+export const projectName = (p: Project) => p.name ?? p.media[0]?.name.replace(/\.[a-z0-9]{2,4}$/i, "") ?? "Untitled project";
 
 /** A media item for something just fetched or opened. */
 export function mediaFromSource(source: MediaSource): MediaItem {
