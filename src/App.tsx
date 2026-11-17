@@ -2737,12 +2737,14 @@ export default function App() {
             currentId={project.clips.length || project.media.length ? projectId : null}
             onOpenProject={(id) => (id === projectId ? setView("editor") : void openProject(id))}
             onNewProject={() => newProject()}
+            onNewImage={() => setNewImageOpen(true)}
             onDeleteProject={(id) => void removeProject(id)}
           />
         )}
         {view === "media" && (
           <MediaLibrary
             entries={library}
+            onImport={inDesktopApp ? () => void importFiles() : undefined}
             onAdd={(path) => void importFiles([path])}
             onSave={(path, saved) => changeLibrary((entries) => entries.map((e) => (e.path === path ? { ...e, saved } : e)))}
             onThumbnail={(path, thumbnail) => changeLibrary((entries) => entries.map((e) => (e.path === path ? { ...e, thumbnail } : e)))}
