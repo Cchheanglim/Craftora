@@ -11,6 +11,8 @@ import { Thumb } from "./Thumb";
 import { useEffect, useState, type FormEvent } from "react";
 import { useConfirm } from "./ConfirmDialog";
 import { HideButton, useHidden, type Hidden } from "./Hidden";
+import { PictureCard } from "./PictureCard";
+import { useProjectMenu } from "./ProjectMenu";
 import "./Home.css";
 
 interface HomeProps {
@@ -34,6 +36,8 @@ interface HomeProps {
   onOpenProject: (id: string) => void;
   onNewProject: () => void;
   onDeleteProject: (id: string) => void;
+  onRenameProject: (id: string, name: string) => void;
+  onDuplicateProject: (id: string) => void;
   /** Finished exports, newest first. */
   recent: Job[];
   outputDir: string;
@@ -238,8 +242,12 @@ export function Home({
   onSeeProjects,
   canCheckSite,
   onSetUpSiteCheck,
+  onDeleteProject,
+  onRenameProject,
+  onDuplicateProject,
 }: HomeProps) {
   const hiddenProjects = useHidden("projects");
+  const { menu, cardProps } = useProjectMenu({ onOpenProject, onRenameProject, onDuplicateProject, onDeleteProject }, hiddenProjects);
   const shownProjects = projects.filter((p) => !hiddenProjects.isHidden(p.id));
   const [tab, setTab] = useState<ProjectTab>("recent");
   // Some people don't want their exports' pictures on the start screen; remembered.
@@ -300,6 +308,7 @@ export function Home({
 
   return (
     <section className="home" aria-labelledby="home-title">
+      {menu}
       <div className="home__wrap">
         <h1 id="home-title" className="home__title">
           Home
@@ -436,28 +445,24 @@ export function Home({
           {visibleProjects.length === 0 ? (
             <p className="home__muted">{emptyProjectsText}</p>
           ) : (
-            <div className="home__cards">
+            <ul className="pc-grid">
               {visibleProjects.map((p) => {
                 const isOpen = p.id === currentId;
                 return (
-                  <button key={p.id} type="button" className="home__card" onClick={() => onOpenProject(p.id)}>
-                    <span className="home__card-thumb">
-                      <Thumb src={p.thumbnail} icon={p.image ? "image" : "scissors"} play={() => projectVideo(p.id)} />
-                      <span className={isOpen ? "home__card-tag is-open" : "home__card-tag"}>
-                        {isOpen ? "Open now" : p.image ? "Picture" : "Video"}
-                      </span>
-                      <span className="home__card-badge mono">
-                        {p.image ? `${p.clips} layer${p.clips === 1 ? "" : "s"}` : formatClock(p.duration)}
-                      </span>
-                    </span>
-                    <span className="home__card-meta">
-                      <span className="home__card-name truncate">{p.name}</span>
-                      <span className="home__card-when">Edited {ago(p.savedAt)}</span>
-                    </span>
-                  </button>
+                  <PictureCard
+                    key={p.id}
+                    thumb={<Thumb src={p.thumbnail} icon={p.image ? "image" : "scissors"} play={() => projectVideo(p.id)} />}
+                    tag={isOpen ? "Open now" : p.image ? "Picture" : "Video"}
+                    tagOpen={isOpen}
+                    badge={p.image ? `${p.clips} layer${p.clips === 1 ? "" : "s"}` : formatClock(p.duration)}
+                    name={p.name}
+                    meta={`Edited ${ago(p.savedAt)}`}
+                    onOpen={() => onOpenProject(p.id)}
+                    {...cardProps(p)}
+                  />
                 );
               })}
-            </div>
+            </ul>
           )}
         </section>
 

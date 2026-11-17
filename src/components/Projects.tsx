@@ -7,6 +7,7 @@ import { ago, projectVideo } from "./Home";
 import { PageSearch, PageTabs, PictureAction, PictureCard } from "./PictureCard";
 import { useConfirm } from "./ConfirmDialog";
 import { HiddenFold, useHidden } from "./Hidden";
+import { useProjectMenu } from "./ProjectMenu";
 import "./Library.css";
 import "./Projects.css";
 
@@ -19,6 +20,8 @@ interface ProjectsProps {
   onNewProject: () => void;
   onNewImage: () => void;
   onDeleteProject: (id: string) => void;
+  onRenameProject: (id: string, name: string) => void;
+  onDuplicateProject: (id: string) => void;
 }
 
 type ProjectTab = "all" | "videos" | "pictures";
@@ -29,13 +32,14 @@ const TABS: { id: ProjectTab; label: string }[] = [
   { id: "pictures", label: "Pictures" },
 ];
 
-export function Projects({ projects, currentId, onOpenProject, onNewProject, onNewImage, onDeleteProject }: ProjectsProps) {
+export function Projects({ projects, currentId, onOpenProject, onNewProject, onNewImage, onDeleteProject, onRenameProject, onDuplicateProject }: ProjectsProps) {
   // Ticked projects while picking several; null when not picking.
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [tab, setTab] = useState<ProjectTab>("all");
   const [query, setQuery] = useState("");
   const { ask, dialog } = useConfirm();
   const hidden = useHidden("projects");
+  const { menu, cardProps, remove: deleteProject } = useProjectMenu({ onOpenProject, onRenameProject, onDuplicateProject, onDeleteProject }, hidden);
 
   const shown = projects.filter((p) => !hidden.isHidden(p.id));
   const hiddenProjects = projects.filter((p) => hidden.isHidden(p.id));
@@ -54,15 +58,6 @@ export function Projects({ projects, currentId, onOpenProject, onNewProject, onN
       return next;
     });
 
-  const deleteProject = async (p: ProjectEntry) => {
-    const ok = await ask({
-      title: `Delete “${p.name}”?`,
-      message: "The project and its edits are deleted for good. Your video files and finished exports aren't touched.",
-      confirmLabel: "Delete project",
-      danger: true,
-    });
-    if (ok) onDeleteProject(p.id);
-  };
 
   const deleteTicked = async () => {
     const n = ticked.length;
@@ -92,6 +87,7 @@ export function Projects({ projects, currentId, onOpenProject, onNewProject, onN
         picked={picking && selected ? selected.has(p.id) : undefined}
         onPick={picking ? () => toggle(p.id) : undefined}
         actions={actions}
+        {...(picking ? {} : cardProps(p))}
       />
     );
   };
@@ -106,6 +102,7 @@ export function Projects({ projects, currentId, onOpenProject, onNewProject, onN
   return (
     <section className="pc-page" aria-labelledby="projects-title">
       {dialog}
+      {menu}
       <header className="pc-head">
         <div>
           <h1 id="projects-title">Projects</h1>

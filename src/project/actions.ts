@@ -97,6 +97,8 @@ export type EditAction =
   | { type: "addText"; clipId: string; at: number; text?: string }
   /** The project's cover picture (a JPEG data URL), or none. */
   | { type: "setCover"; cover: string | null }
+  /** The project's own name; empty goes back to its first file's name. */
+  | { type: "renameProject"; name: string }
   /** A copied clip, pasted at `at` on its own track (or a free one there). */
   | { type: "pasteClip"; clip: Clip; newClipId: string; at: number }
   /** Another file in a clip's place, from that file's start, as long as the clip was (or the file is). */
@@ -433,6 +435,9 @@ function edit(p: Project, action: EditAction): Project {
 
     case "setCover":
       return { ...p, cover: action.cover ?? undefined };
+
+    case "renameProject":
+      return { ...p, name: action.name.trim() || undefined };
 
     case "pasteClip": {
       // Its media must still be in this project.
