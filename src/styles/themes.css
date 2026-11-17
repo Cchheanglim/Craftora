@@ -145,7 +145,7 @@
   padding: 0;
 }
 
-:root[data-theme] :is(.toolbar, .side, .app__panel, .media-panel, .preview, .tl, .home, .library) {
+:root[data-theme] :is(.toolbar, .side, .app__panel, .media-panel, .preview, .tl, .home, .library, .pc-page) {
   border: 1px solid var(--glass-edge);
   border-radius: 18px;
   background: var(--bg-panel);

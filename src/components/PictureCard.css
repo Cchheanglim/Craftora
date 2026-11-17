@@ -2,10 +2,13 @@
 
 /* A page in the new look (Projects, Exports, Media library): one centred column like Home. */
 .pc-page {
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 36px 48px 48px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  /* Full width (one glass panel with Glass on, like Home), the content in a 1120px column. */
+  padding: 36px max(48px, calc((100% - 1120px) / 2)) 48px;
   display: flex;
   flex-direction: column;
   gap: 36px;
@@ -323,7 +326,7 @@
 
 /* Only the "on" one (a filled star) stays when not hovered. */
 .pcard:not(:hover):not(:focus-within) .pcard__action:not(.is-on) {
-  visibility: hidden;
+  display: none;
 }
 
 .pcard__action {
