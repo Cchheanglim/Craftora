@@ -23,6 +23,9 @@ interface HomeProps {
   onUrlChange: (url: string) => void;
   onFetch: (url: string) => void;
   fetching: boolean;
+  /** Why the last fetch failed, and the button that helps (open the video's page). */
+  error: string | null;
+  errorAction?: { label: string; onClick: () => void };
   busy: boolean;
   /** Saved projects, most recent first. */
   projects: ProjectEntry[];
@@ -135,7 +138,7 @@ function updateText(status: Updates["status"]): string {
   }
 }
 
-function ago(ms: number): string {
+export function ago(ms: number): string {
   const minutes = Math.round((Date.now() - ms) / 60_000);
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes} min ago`;
@@ -220,6 +223,8 @@ export function Home({
   onUrlChange,
   onFetch,
   fetching,
+  error,
+  errorAction,
   busy,
   projects,
   currentId,
@@ -304,6 +309,16 @@ export function Home({
               {fetching ? "Fetching…" : "Fetch"}
             </button>
           </form>
+          {error && (
+            <div className="home__error" role="alert">
+              <p>{error}</p>
+              {errorAction && (
+                <button type="button" className="btn btn--secondary" onClick={errorAction.onClick}>
+                  {errorAction.label}
+                </button>
+              )}
+            </div>
+          )}
           <div className="home__starts">
             <button type="button" className="home__start-btn" onClick={onNewProject}>
               <span className="home__start-icon is-video">

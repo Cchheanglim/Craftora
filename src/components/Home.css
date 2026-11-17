@@ -712,3 +712,19 @@ label.home__project {
 .home__report-link:hover {
   color: var(--text);
 }
+
+/* A fetch that failed: why, and the button that helps. */
+.home__error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: -8px;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.home__error p {
+  margin: 0;
+  flex: 1 1 320px;
+}

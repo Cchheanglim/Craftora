@@ -13,6 +13,8 @@ interface ToolbarProps {
   url: string;
   onUrlChange: (url: string) => void;
   onFetch: (url: string) => void;
+  /** Home has its own big link box: the top bar leaves its own out there. */
+  hideLink?: boolean;
   fetching: boolean;
   error: string | null;
   /** A button next to the error, such as "Sign in to youtube.com". */
@@ -39,6 +41,7 @@ export function Toolbar({
   url,
   onUrlChange,
   onFetch,
+  hideLink,
   fetching,
   error,
   errorAction,
@@ -199,6 +202,8 @@ export function Toolbar({
             </p>
           )}
         </div>
+      ) : hideLink ? (
+        <div className="toolbar__form" />
       ) : (
       <form className="toolbar__form" onSubmit={submit} role="search" aria-label="Fetch media">
         <div className="toolbar__url">
