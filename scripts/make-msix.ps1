@@ -72,12 +72,12 @@ Write-Host "Laying out the package..."
 if (Test-Path $layout) { Remove-Item -Recurse -Force $layout }
 New-Item -ItemType Directory -Force $layout, (Join-Path $layout "Assets"), (Join-Path $layout "licenses") | Out-Null
 
-foreach ($item in "craftora.exe", "ffmpeg", "yt-dlp", "deno", "whisper") {
+foreach ($item in "craftora.exe", "ffmpeg", "yt-dlp", "deno", "whisper", "craftora-observer") {
   # The engines come from src-tauri/bin itself: target/release keeps files an older version had.
   $source = if ($item -eq "craftora.exe") { Join-Path $release $item } else { Join-Path $tauri "bin\$item" }
   if (-not (Test-Path $source)) { throw "Missing $source. Run without -SkipBuild (and scripts/fetch-sidecars.ps1 first)." }
-  # FFmpeg, yt-dlp, Deno (which yt-dlp needs for YouTube) and whisper (captions from the sound) are folders
-  # the app runs from next to itself.
+  # FFmpeg, yt-dlp, Deno (which yt-dlp needs for YouTube), whisper (captions from the sound) and the fetch
+  # engine (pages yt-dlp can't read) are folders the app runs from next to itself.
   Copy-Item $source $layout -Recurse
 }
 Copy-Item (Join-Path $release "licenses\*") (Join-Path $layout "licenses")

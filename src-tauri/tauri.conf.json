@@ -48,6 +48,7 @@
       "bin/ffmpeg/": "ffmpeg/",
       "bin/whisper/": "whisper/",
       "bin/deno/": "deno/",
+      "bin/craftora-observer/": "craftora-observer/",
       "bin/FFMPEG-LICENSE.txt": "licenses/FFMPEG-LICENSE.txt",
       "../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md",
       "../LICENSE": "licenses/CRAFTORA-LICENSE.txt"

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-use crate::engine::{last_error, run_to_end, YT_DLP};
+use crate::engine::{last_error, run_to_end, OBSERVER, YT_DLP};
 
 /// The subset of `yt-dlp --dump-single-json` that Craftora uses.
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
@@ -302,6 +302,9 @@ async fn first_served<'a>(choices: &[&'a Format], page: Option<&str>) -> Option<
         let mut request = crate::media_cache::client().get(url).header("Range", "bytes=0-0").timeout(std::time::Duration::from_secs(5));
         if let Some(page) = page {
             request = request.header("Referer", page);
+            if let Some(origin) = crate::signin::origin_of(page) {
+                request = request.header("Origin", origin);
+            }
         }
         match request.send().await.map(|r| r.status().as_u16()) {
             Ok(code @ (401 | 403 | 404 | 410)) => crate::diag::note(format!("preview file {url} refused ({code}), trying the next")),
@@ -336,8 +339,21 @@ pub(crate) fn parse_mpd_duration(xml: &str) -> Option<f64> {
 
 /// A file's length in seconds, read by FFprobe from its header (or from a DASH manifest).
 async fn probe_length(app: &AppHandle, file: &str, page: Option<&str>) -> Option<f64> {
-    // No line breaks from a page address: they would let it add headers of its own.
-    let headers = page.map(|p| format!("Referer: {}\r\n", p.replace(['\r', '\n'], "")));
+    // A DASH manifest says its length: one small request, where FFprobe opening the stream took 9 s.
+    if file.to_ascii_lowercase().contains(".mpd") {
+        let mut req = crate::media_cache::client().get(file);
+        if let Some(page) = page {
+            req = req.header(reqwest::header::REFERER, page);
+            if let Some(origin) = crate::signin::origin_of(page) {
+                req = req.header(reqwest::header::ORIGIN, origin);
+            }
+        }
+        let read = async { parse_mpd_duration(&req.send().await.ok()?.text().await.ok()?) };
+        if let Some(d) = read.await {
+            return Some(d);
+        }
+    }
+    let headers = page.map(crate::signin::page_headers);
     let mut args = vec!["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1"];
     if let Some(headers) = &headers {
         args.extend(["-headers", headers]);
@@ -466,9 +482,44 @@ async fn fetch_picture(url: &str, referer: &str) -> Result<Vec<u8>, String> {
     Ok(bytes.to_vec())
 }
 
+/// What a link contains: yt-dlp first; when it can't read the link, or finds no video in it (a page
+/// it reads as a list), Craftora's own fetch engine. When the engine finds nothing either, yt-dlp's
+/// answer stands (the engine's message goes to "Copy report").
+async fn read_link(app: &AppHandle, url: &str) -> Result<Info, String> {
+    let yt_dlp = read_link_yt_dlp(app, url).await;
+    if yt_dlp.as_ref().is_ok_and(|info| !info.formats.is_empty()) {
+        return yt_dlp;
+    }
+    read_link_engine(app, url).await.map_or(yt_dlp, Ok)
+}
+
+async fn read_link_engine(app: &AppHandle, url: &str) -> Option<Info> {
+    let mut args: Vec<String> = ["--dump-single-json", "--no-playlist", "--no-warnings"].map(String::from).to_vec();
+    let (link, _cookie_file) = crate::signin::link_args(app, url).await;
+    args.extend(link);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let started = std::time::Instant::now();
+    let output = match run_to_end(app, OBSERVER, &args).await {
+        Ok(output) => output,
+        Err(e) => {
+            crate::diag::note(format!("fetch engine: {e}"));
+            return None;
+        }
+    };
+    if output.status.success()
+        && let Ok(info) = serde_json::from_slice::<Info>(&output.stdout)
+    {
+        crate::diag::note(format!("fetch engine read {url} in {:.1}s", started.elapsed().as_secs_f64()));
+        return Some(info);
+    }
+    let engine_error = last_error(&String::from_utf8_lossy(&output.stderr)).unwrap_or_else(|| "unexpected answer".into());
+    crate::diag::note(format!("fetch engine read {url}: {engine_error}"));
+    None
+}
+
 /// What yt-dlp says a link contains. A site whose bot check turns yt-dlp away is tried once more
 /// with yt-dlp posing as a browser (and remembered, so downloads from it do the same).
-async fn read_link(app: &AppHandle, url: &str) -> Result<Info, String> {
+async fn read_link_yt_dlp(app: &AppHandle, url: &str) -> Result<Info, String> {
     let mut retried = false;
     let mut hiccup = false;
     loop {
@@ -568,7 +619,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>) -> Re
         crate::signin::remember_page(page);
     }
     if let Some(page) = page.as_ref().filter(|_| bot_checked && app.get_webview_window(crate::signin::WINDOW).is_none())
-        && crate::signin::open_sign_in(app.clone(), page.clone()).await.is_ok()
+        && crate::signin::open_sign_in(app.clone(), page.clone(), None).await.is_ok()
         && let Some(window) = app.get_webview_window(crate::signin::WINDOW)
     {
         let _ = window.minimize();

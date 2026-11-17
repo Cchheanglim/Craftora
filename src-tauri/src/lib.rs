@@ -180,6 +180,7 @@ pub fn run() {
             virustotal::check_site,
             media::fetch_thumbnail,
             signin::open_sign_in,
+            signin::close_sign_in_preload,
             signin::sign_out_everywhere,
             signin::signed_in_sites,
             signin::sign_out_of,

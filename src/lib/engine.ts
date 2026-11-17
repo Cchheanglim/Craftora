@@ -55,7 +55,9 @@ export const updateYtDlp = () => invoke<string>("update_yt_dlp");
 
 
 /** Opens a website or a video's page in a Craftora window, to log in and pick a video there. */
-export const openSignIn = (site: string) => invoke<void>("open_sign_in", { site });
+export const openSignIn = (site: string, hidden = false) => invoke<void>("open_sign_in", { site, hidden });
+/** Closes the window `openSignIn(…, true)` loaded behind the scenes, if nobody opened it. */
+export const closeSignInPreload = () => invoke<void>("close_sign_in_preload");
 export const signOutEverywhere = () => invoke<void>("sign_out_everywhere");
 /** A website Craftora keeps a login for, such as "youtube.com", and when it was last used (ms), if known. */
 export interface SignedInSite {

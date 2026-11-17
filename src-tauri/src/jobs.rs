@@ -739,7 +739,12 @@ pub(crate) async fn download(app: &AppHandle, job_id: &str, request: &Download<'
         }
         // yt-dlp hands sections to FFmpeg and reports nothing until the end, so the queue
         // sat at 0%. FFmpeg's own progress (out_time_us=…) is read below instead.
-        args.extend(["--downloader-args".into(), "ffmpeg_i:-progress pipe:1 -nostats".into()]);
+        // Some sites name their stream pieces like pictures (init.png, seg-v0.png), which FFmpeg
+        // refuses ("Invalid data") unless told not to judge them by name. Playlist links only: the
+        // option is unknown to every other input ("Option not found").
+        let playlist = crate::signin::split_referer(request.url).0.split(['?', '#']).next().is_some_and(|path| path.ends_with(".m3u8"));
+        let pieces = if playlist { " -extension_picky 0" } else { "" };
+        args.extend(["--downloader-args".into(), format!("ffmpeg_i:-progress pipe:1 -nostats{pieces}")]);
     }
     let section_length = request.section.map(|(start, end)| (end - start).max(0.1));
     match request.target {

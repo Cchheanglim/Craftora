@@ -125,7 +125,7 @@ fn reopen(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
         return Ok(window);
     }
     let page = crate::signin::last_page().ok_or("Open the video's page in Craftora again and click Fetch this video.")?;
-    tauri::async_runtime::block_on(crate::signin::open_sign_in(app.clone(), page))?;
+    tauri::async_runtime::block_on(crate::signin::open_sign_in(app.clone(), page, None))?;
     let window = app.get_webview_window(crate::signin::WINDOW).ok_or("Couldn't open the video's page again.")?;
     let _ = window.minimize();
     // Cloudflare's check page is titled "Just a moment..." until it lets the browser through.

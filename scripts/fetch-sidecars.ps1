@@ -170,6 +170,25 @@ if ($Force -or -not (Test-Path $whisperTarget)) {
   Write-Host "whisper.cpp already present (use -Force to replace)"
 }
 
+# --- Craftora's fetch engine (craftora-observer) ----------------------------------
+# Reads pages yt-dlp can't (media.rs `read_link_engine`). It has no download yet: copied from a local build,
+# $env:CRAFTORA_ENGINE_EXE or the engine kept in Refer/. Without one the folder holds only a note, so the
+# bundle still builds and Craftora reads links with yt-dlp alone, as before the engine.
+$engineDir = Join-Path $binDir "craftora-observer"
+$engineTarget = Join-Path $engineDir "craftora-observer.exe"
+$engineBuild = @($env:CRAFTORA_ENGINE_EXE, (Join-Path $root "Refer\engine\engine_files\craftora-web-observer_mvp\engine-observer\target\release\craftora-observer.exe")) |
+  Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+New-Item -ItemType Directory -Force -Path $engineDir | Out-Null
+if ($engineBuild -and ($Force -or -not (Test-Path $engineTarget))) {
+  Write-Host "Fetch engine (from $engineBuild)"
+  Copy-Item $engineBuild $engineTarget -Force
+} elseif (Test-Path $engineTarget) {
+  Write-Host "Fetch engine already present (use -Force to replace)"
+} else {
+  Write-Host "Fetch engine not found: set CRAFTORA_ENGINE_EXE to its craftora-observer.exe. Building without it."
+  Set-Content -Path (Join-Path $engineDir "README.txt") -Value "Craftora's fetch engine (craftora-observer.exe) goes here; see scripts/fetch-sidecars.ps1."
+}
+
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 
 Write-Host ""
