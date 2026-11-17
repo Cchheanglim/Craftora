@@ -166,6 +166,17 @@
 - **Do-anything box (Image editor, Ctrl+K)**: type what you want ("remove", "story", "vivid") and pick it: the picked
   layer's actions first (Remove background starts straight away), then adding text, shapes and photos, picking a layer,
   resizing the picture, export and zoom; anything else goes to the assistant.
+- **Image editor: painting** (on this PC): Brush (B) and Eraser (E) with size, hardness, opacity and flow ([ and ]
+  change the size; a ring shows it on the picture), Paint bucket (G; tolerance, contiguous, opacity) and Gradient
+  (Shift+G; linear or radial, to the background colour or to see-through), Eyedropper (I; Alt+click for the background
+  colour). Foreground and background colour squares under the tools (click one for the colour wheel; X swaps them, D
+  resets to black and white). They paint the picked photo layer, wherever it's moved, turned, mirrored or cropped; with
+  no photo layer picked, the first stroke makes a new layer for itself. Layer → New layer (Ctrl+Shift+N) adds an empty
+  one. Each stroke is one undo step, and the saved picture matches the screen.
+- **Image editor: your pictures first**: going into the Image editor (menu, Home or the video editor) shows a window
+  with your recent pictures on the left (the open one marked "Open now": click to carry on) and the new sizes and Open a
+  photo on the right; closing it keeps the picture behind it (your last one). Fixed: right after starting Craftora it
+  could show a new blank picture instead of your last one.
 
 **Fixed**
 

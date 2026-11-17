@@ -16,6 +16,7 @@ import { hasStyle, styleFilter } from "../lib/layerStyle";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
 import { SyncedMedia } from "./SyncedMedia";
+import { LiveCanvas, PaintSurface, type LivePaint, type Painting } from "./PaintSurface";
 import "./Preview.css";
 
 const FRAME = 1 / 30;
@@ -60,6 +61,8 @@ interface PreviewProps {
   picking?: { clipId: string; onPicked: (color: string) => void; onCancel: (unreadable?: boolean) => void };
   /** The Image editor: the picture on its background colour, without play controls. */
   still?: { background: string };
+  /** The Image editor's painting tools: strokes go onto the picture instead of moving layers. */
+  painting?: Painting;
 }
 
 const WAVE_BARS = 140;
@@ -173,7 +176,7 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { ...edge, fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : edge;
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, silent, picking, still }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, silent, picking, still, painting }: PreviewProps) {
   const [mutedByHand, setMuted] = useState(false);
   const muted = mutedByHand || Boolean(silent);
   // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
@@ -206,6 +209,14 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const [failed, setFailed] = useState<Set<string>>(() => new Set());
   const fail = (src: string) => setFailed((all) => (all.has(src) ? all : new Set(all).add(src)));
   const stageRef = useRef<HTMLDivElement>(null);
+  // A layer being painted, shown from its canvas until its saved photo has loaded (1.5 s at most: a photo that came
+  // out the same as before never loads again).
+  const [live, setLive] = useState<LivePaint | null>(null);
+  useEffect(() => {
+    if (!live?.settled) return;
+    const done = window.setTimeout(() => setLive((l) => (l === live ? null : l)), 1500);
+    return () => window.clearTimeout(done);
+  }, [live]);
   const gestureRef = useRef<Gesture | null>(null);
   /** Set when a drag ends, so the click that follows doesn't count as a click on the screen. */
   const justDragged = useRef(false);
@@ -530,6 +541,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           }}
         >
           {picking && <ColourPicker stage={stageRef} picking={picking} />}
+          {painting && <PaintSurface painting={painting} project={project} width={frame.width} height={frame.height} onLive={setLive} />}
+          {live && live.clipId === null && <LiveCanvas canvas={live.canvas} className="preview__paint-live" />}
           {pictures.some((c) => {
             // A link with nothing playable, or whose preview failed, would otherwise just be black.
             const source = mediaOf(c)?.source;
@@ -582,20 +595,25 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               >
                 {(onShape, style, onReady) =>
                   media.source.image ? (
-                    <img
-                      src={(canPlay ? media.source.previewUrl : poster) || poster}
-                      alt=""
-                      className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
-                      style={style}
-                      draggable={false}
-                      onError={() => {
-                        if (canPlay) fail(media.source.previewUrl);
-                      }}
-                      onLoad={(e) => {
-                        onShape(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight);
-                        onReady();
-                      }}
-                    />
+                    <>
+                      {live?.clipId === clip.id && <LiveCanvas canvas={live.canvas} className={clip.mirror ? "preview__video is-mirrored" : "preview__video"} style={style} />}
+                      <img
+                        src={(canPlay ? media.source.previewUrl : poster) || poster}
+                        alt=""
+                        className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
+                        style={live?.clipId === clip.id ? { ...style, visibility: "hidden" } : style}
+                        draggable={false}
+                        onError={() => {
+                          if (canPlay) fail(media.source.previewUrl);
+                        }}
+                        onLoad={(e) => {
+                          onShape(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight);
+                          onReady();
+                          // The painted photo is in: its canvas can go.
+                          setLive((l) => (l?.clipId === clip.id && l.settled ? null : l));
+                        }}
+                      />
+                    </>
                   ) : (
                   <>
                     {canPlay && (

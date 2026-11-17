@@ -89,3 +89,21 @@ test("an image layer may go past the picture's edges, a video clip stays inside;
   if (plan.kind !== "render") throw new Error(plan.kind);
   expect([plan.spec.container, plan.spec.transparent, plan.spec.imageQuality]).toEqual(["webp", true, 70]);
 });
+
+test("painting a layer swaps its photo and keeps the cut-out's original; a shared photo gets its own copy", () => {
+  let p = imageProject();
+  const photoId = p.clips.find((c) => c.id === "photo")!.mediaId!;
+  p = applyEdit(p, { type: "cutOut", mediaId: photoId, source: { ...picture, url: "C:/cut.png" } });
+  p = applyEdit(p, { type: "pasteClip", clip: p.clips.find((c) => c.id === "photo")!, newClipId: "copy", at: 0 });
+  p = applyEdit(p, { type: "paint", clipId: "photo", source: { ...picture, url: "C:/painted.png" }, newMediaId: "mine" });
+  const mine = p.media.find((m) => m.id === "mine")!;
+  expect(mine.source.url).toBe("C:/painted.png");
+  expect(mine.original?.url).toBe(picture.url);
+  expect(p.clips.find((c) => c.id === "photo")!.mediaId).toBe("mine");
+  // The copy still shows the cut-out, unpainted.
+  expect(p.media.find((m) => m.id === photoId)!.source.url).toBe("C:/cut.png");
+  // A second stroke lands on the layer's own photo, without another copy.
+  p = applyEdit(p, { type: "paint", clipId: "photo", source: { ...picture, url: "C:/again.png" }, newMediaId: "unused" });
+  expect(p.media.find((m) => m.id === "mine")!.source.url).toBe("C:/again.png");
+  expect(p.media.some((m) => m.id === "unused")).toBe(false);
+});

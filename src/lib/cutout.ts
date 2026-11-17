@@ -75,5 +75,8 @@ export async function removeBackground(path: string, onStatus: (text: string) =>
   f.imageSmoothingQuality = "high";
   f.drawImage(small, 0, 0, w, h);
   const png = await new Promise<Blob>((done, fail) => full.toBlob((b) => (b ? done(b) : fail(new Error("Couldn't make the cut-out."))), "image/png"));
-  return invoke<string>("save_cutout", new Uint8Array(await png.arrayBuffer()));
+  return savePicture(png);
 }
+
+/** Keeps a PNG Craftora made (a cut-out, a painted or new layer) in its own folder; the file's path. */
+export const savePicture = async (png: Blob) => invoke<string>("save_cutout", new Uint8Array(await png.arrayBuffer()));

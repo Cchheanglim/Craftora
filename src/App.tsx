@@ -119,7 +119,11 @@ import { Sidebar, type View } from "./components/Sidebar";
 import { MediaPanel, type Tab as MediaTab } from "./components/MediaPanel";
 import { LayersPanel, layerName } from "./components/LayersPanel";
 import { CommandBox, type Command } from "./components/CommandBox";
-import { removeBackground } from "./lib/cutout";
+import { removeBackground, savePicture } from "./lib/cutout";
+import { BRUSH_MAX, BRUSH_MIN, COLOURS_START, PAINT_START, PAINT_TOOLS, type PaintTool } from "./lib/paint";
+import type { Painting } from "./components/PaintSurface";
+import { ColourSquares } from "./components/ColourSquares";
+import { PaintOptions } from "./components/PaintOptions";
 import { composeImage } from "./lib/compose";
 import { ImageSizePanel } from "./components/ImageSizePanel";
 import { NewImageDialog } from "./components/NewImageDialog";
@@ -186,6 +190,12 @@ const IMAGE_TOOLS: ImageTool[] = [
   { id: "text", label: "Text", icon: "text", group: "content", key: "T" },
   { id: "shapes", label: "Shapes", icon: "star", group: "content", key: "U" },
   { id: "media", label: "Photos", icon: "image", group: "content" },
+  // Painting saves its pixels as files on this PC (as Remove background does), so not in the browser preview.
+  { id: "brush", label: "Brush", icon: "brush", group: "paint", key: "B", disabled: !inDesktopApp },
+  { id: "eraser", label: "Eraser", icon: "eraser", group: "paint", key: "E", disabled: !inDesktopApp },
+  { id: "bucket", label: "Paint bucket", icon: "bucket", group: "paint", key: "G", disabled: !inDesktopApp },
+  { id: "gradient", label: "Gradient", icon: "gradient", group: "paint", key: "Shift+G", disabled: !inDesktopApp },
+  { id: "eyedropper", label: "Eyedropper", icon: "eyedropper", group: "paint", key: "I", disabled: !inDesktopApp },
   { id: "cutout", label: "Cut out", icon: "scissors", group: "edit" },
   { id: "crop", label: "Crop", icon: "crop", group: "edit", key: "C" },
   { id: "size", label: "Canvas size", icon: "fit", group: "edit" },
@@ -367,6 +377,9 @@ export default function App() {
   const [newImageOpen, setNewImageOpen] = useState(false);
   /** Image editor: the tool picked in its tool strip (a panel's tool opens that panel beside it). */
   const [imageTool, setImageTool] = useState("move");
+  // The painting tools' settings and the foreground/background colours (for this session).
+  const [paintSettings, setPaintSettings] = useState(PAINT_START);
+  const [paintColours, setPaintColours] = useState(COLOURS_START);
   /** The do-anything box asked to remove this layer's background: its Cut out tab starts it. */
   const [cutRequest, setCutRequest] = useState<string | null>(null);
   const [leftOpen, setLeftOpen] = useState(() => remembered("craftora.left", true));
@@ -419,6 +432,7 @@ export default function App() {
   // A typed file name belongs to the project it was typed in.
   useEffect(() => setSettings((s) => (s.name === undefined ? s : { ...s, name: undefined })), [projectId]);
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
+  const projectsLoad = useRef<Promise<ProjectEntry[]>>(null);
   const [history, setHistory] = useState<Job[] | null>(null);
   /** Links fetched before, newest first. */
   const [fetchHistory, setFetchHistory] = useState<FetchEntry[]>(loadFetchHistory);
@@ -467,6 +481,7 @@ export default function App() {
   const { project } = api;
   // The Image editor is the editor's layout for an image project (Layers instead of the timeline, nothing timed).
   const imageMode = inEditor && Boolean(project.image);
+  const paintTool = imageMode && PAINT_TOOLS.includes(imageTool) ? (imageTool as PaintTool) : null;
   const imageView = useImageView(project.image ?? NO_IMAGE);
   const duration = projectDuration(project);
   const playback = usePlayback(duration);
@@ -505,7 +520,8 @@ export default function App() {
       void exportEncoder().then(setFastEncoder).catch(() => setFastEncoder("the processor"));
       void siteCheckAvailable().then(setSiteChecks).catch(() => {});
     }
-    void listProjects().then(setProjects).catch(() => setProjects([]));
+    projectsLoad.current = listProjects().catch(() => []);
+    void projectsLoad.current.then(setProjects);
     void loadHistory().then(setHistory);
     void getOutputDir().then(setOutputDirState).catch(() => {});
     void getDownloadsDir().then(setDownloadsDirState).catch(() => {});
@@ -1342,15 +1358,19 @@ export default function App() {
     }
   };
 
-  /** Editor and Image editor each open the last project of their kind, or a new one. */
-  const go = (next: View) => {
+  /**
+   * Editor and Image editor each open the last project of their kind, or a new one. Entering the Image editor also
+   * offers the recent pictures and new sizes (closing that keeps the picture behind it).
+   */
+  const go = async (next: View) => {
     const image = next === "image";
+    if (image && view !== "image") setNewImageOpen(true);
     if ((next === "editor" || image) && Boolean(project.image) !== image) {
-      const last = projects.find((p) => Boolean(p.image) === image);
+      // Right after start the list may not be in yet.
+      const list = projects.length ? projects : await (projectsLoad.current ?? Promise.resolve(projects));
+      const last = list.find((p) => Boolean(p.image) === image);
       if (last) void openProject(last.id);
       else newProject(image);
-      // The first image: pick its size (or a photo) first.
-      if (image && !last) setNewImageOpen(true);
       return;
     }
     setView(next);
@@ -1578,6 +1598,46 @@ export default function App() {
     api.edit({ type: "deleteClip", clipId: selectedId });
     setSelectedId(null);
   };
+  /** Image editor: an empty (see-through) layer the picture's size, picked; its clip id. One undo step. */
+  const newPaintLayer = async () => {
+    const { width, height } = projectRef.current.image ?? NO_IMAGE;
+    // Not a page canvas's `toBlob`: it waits for an idle page (seconds, right after a stroke).
+    const blank = new OffscreenCanvas(width, height);
+    blank.getContext("2d");
+    const png = await blank.convertToBlob({ type: "image/png" });
+    const source = await openLocal(await savePicture(png));
+    const taken = new Set(projectRef.current.clips.map((c) => c.name));
+    let n = 1;
+    while (taken.has(`Layer ${n}`)) n++;
+    const item = { ...mediaFromSource(source), name: `Layer ${n}` };
+    const clipId = crypto.randomUUID();
+    api.checkpoint();
+    api.editLive({ type: "importMedia", item });
+    api.editLive({ type: "addClip", clipId, mediaId: item.id, at: 0 });
+    api.editLive({ type: "updateClip", clipId, patch: { name: item.name } });
+    setSelectedId(clipId);
+    return clipId;
+  };
+  const addPaintLayer = () => void newPaintLayer().catch((err) => setError(`Couldn't add a layer: ${errorText(err)}`));
+  /** A painted layer's pixels become its photo (one undo step); the new file's path. */
+  const paintLayer = async (clipId: string, png: Blob) => {
+    const path = await savePicture(png);
+    const source = await openLocal(path);
+    // Loaded before the swap, so the layer never shows its old pixels in between.
+    const img = new Image();
+    img.src = source.previewUrl;
+    await img.decode().catch(() => {});
+    api.edit({ type: "paint", clipId, source, newMediaId: crypto.randomUUID() });
+    return path;
+  };
+  const resizeBrush = (grow: boolean) => {
+    const tool = imageTool === "eraser" ? "eraser" : "brush";
+    setPaintSettings((s) => {
+      const size = Math.round(Math.min(BRUSH_MAX, Math.max(BRUSH_MIN, grow ? s[tool].size * 1.2 + 1 : s[tool].size / 1.2 - 1)));
+      return { ...s, [tool]: { ...s[tool], size } };
+    });
+  };
+
   const addText = (size?: number) => {
     const clipId = crypto.randomUUID();
     api.checkpoint();
@@ -1839,6 +1899,8 @@ export default function App() {
     if (ctrl && key === "c" && selected) return (e.preventDefault(), copyClip(selected));
     if (ctrl && key === "x" && selected) return (e.preventDefault(), clipCommand("cut", selected, playback.time));
     if (ctrl && key === "v" && clipboard.current) return (e.preventDefault(), pasteClip());
+    // Image editor: a new empty layer, as in photo editors.
+    if (ctrl && e.shiftKey && key === "n" && imageMode && inDesktopApp) return (e.preventDefault(), addPaintLayer());
     if (ctrl || e.altKey) return;
     // Already used where it was pressed: arrows in a menu, or on a panel edge being resized.
     if (e.defaultPrevented) return;
@@ -1855,6 +1917,14 @@ export default function App() {
       v: () => imageMode && setImageTool("move"),
       h: () => imageMode && setImageTool("hand"),
       u: () => imageMode && setImageTool("shapes"),
+      // The painting tools and their colours, with photo editors' keys.
+      b: () => imageMode && inDesktopApp && setImageTool("brush"),
+      e: () => imageMode && inDesktopApp && setImageTool("eraser"),
+      g: () => imageMode && inDesktopApp && setImageTool(e.shiftKey ? "gradient" : "bucket"),
+      x: () => imageMode && setPaintColours((c) => ({ fg: c.bg, bg: c.fg })),
+      d: () => imageMode && setPaintColours(COLOURS_START),
+      "[": () => imageMode && (imageTool === "brush" || imageTool === "eraser") && resizeBrush(false),
+      "]": () => imageMode && (imageTool === "brush" || imageTool === "eraser") && resizeBrush(true),
       c: () => imageMode && selected && showsPicture(project, selected) && openCrop(selected, 0),
       f: () => window.dispatchEvent(new Event("craftora:toggle-fullscreen")),
       // As in video players: 5 s; Shift steps one frame for exact edits.
@@ -1865,7 +1935,7 @@ export default function App() {
       arrowdown: () => !imageMode && window.dispatchEvent(new CustomEvent("craftora:volume", { detail: -0.1 })),
       home: () => playback.seek(0),
       end: () => playback.seek(duration),
-      i: () => selectedId && api.edit({ type: "trimClip", clipId: selectedId, edge: "start", time: t }),
+      i: () => (imageMode ? inDesktopApp && setImageTool("eyedropper") : selectedId && api.edit({ type: "trimClip", clipId: selectedId, edge: "start", time: t })),
       o: () => selectedId && api.edit({ type: "trimClip", clipId: selectedId, edge: "end", time: t }),
       escape: () => setSelectedId(null),
     };
@@ -2055,9 +2125,29 @@ export default function App() {
       only={only}
     />
   );
+  // A painting tool paints the picked photo layer (a picture on this PC, on a layer that isn't locked or hidden), or a
+  // new layer of its own.
+  const paintsOn = (clip: Clip | null) => {
+    const media = project.media.find((m) => m.id === clip?.mediaId);
+    const track = project.tracks.find((t) => t.id === clip?.trackId);
+    return clip && media?.source.image && media.source.local && !track?.locked && !track?.hidden ? clip.id : null;
+  };
+  const painting: Painting | undefined = paintTool
+    ? {
+        tool: paintTool,
+        settings: paintSettings,
+        colours: paintColours,
+        clipId: paintsOn(selected),
+        onNewLayer: newPaintLayer,
+        onPainted: paintLayer,
+        onColour: (color, background) => setPaintColours((c) => (background ? { ...c, bg: color } : { ...c, fg: color })),
+        onError: setError,
+      }
+    : undefined;
   const preview = (
     <Preview
       silent={voiceSilent}
+      painting={painting}
       picking={picking ? { clipId: picking.clipId, onPicked: (color) => endPick(color), onCancel: (unreadable) => endPick(undefined, unreadable) } : undefined}
       // Background tab → hold to see the original: that photo drawn as it was before its cut-out.
       project={peek ? { ...project, media: project.media.map((m) => (m.id === peek && m.original ? { ...m, source: m.original } : m)) } : project}
@@ -2140,6 +2230,7 @@ export default function App() {
         { id: "addtext", label: "Add text", keys: "T", icon: "text", group: "Add", run: () => (addText(), pickTab("text")) },
         { id: "addshape", label: "Add a shape", keys: "U", icon: "star", group: "Add", run: () => setImageTool("shapes") },
         { id: "addphoto", label: "Add a photo", icon: "image", group: "Add", run: () => setImageTool("media") },
+        { id: "newlayer", label: "New empty layer", detail: "to paint on", keys: "Ctrl Shift N", icon: "plus", group: "Add", disabled: !inDesktopApp, run: addPaintLayer },
         ...layersOf(project).map((l): Command => ({ id: `layer-${l.clip.id}`, label: `Pick “${layerName(l.clip, project)}”`, icon: "eye", group: "Layers", run: () => setSelectedId(l.clip.id) })),
         ...IMAGE_SIZES.map((size): Command => ({ id: `size-${size.id}`, label: `Resize to ${size.label}`, detail: `${size.width} × ${size.height}`, icon: "fit", group: "Picture", run: () => api.edit({ type: "setImage", patch: { width: size.width, height: size.height } }) })),
         { id: "bg", label: "Background colour", detail: "and the picture's size", icon: "fit", group: "Picture", run: () => (setSelectedId(null), pickTab("edit")) },
@@ -2187,7 +2278,7 @@ export default function App() {
         },
         {
           label: "Layer",
-          items: [menuItem("addtext", "New text layer"), menuItem("addshape", "New shape layer…"), menuItem("addphoto", "New photo layer…"), "sep", menuItem("dup", "Duplicate layer"), menuItem("layerstyle", "Layer style…"), menuItem("up", "Bring forward"), menuItem("down", "Send backward"), "sep", menuItem("delete", "Delete layer")],
+          items: [menuItem("newlayer", "New layer"), menuItem("addtext", "New text layer"), menuItem("addshape", "New shape layer…"), menuItem("addphoto", "New photo layer…"), "sep", menuItem("dup", "Duplicate layer"), menuItem("layerstyle", "Layer style…"), menuItem("up", "Bring forward"), menuItem("down", "Send backward"), "sep", menuItem("delete", "Delete layer")],
         },
         {
           label: "Select",
@@ -2253,9 +2344,15 @@ export default function App() {
         {toolNow.label}
       </span>
       <span className="image-ws__opt-sep" />
-      <span className="image-ws__opt-name">{selected ? picked : "No layer picked"}</span>
-      <span className="image-ws__opt-sep" />
-      {commands.filter((c) => (selected ? ["crop", "turn", "mirror", "cut", "dup", "delete"] : ["addtext", "addshape", "addphoto", "open"]).includes(c.id)).map(optionButton)}
+      {paintTool ? (
+        <PaintOptions tool={paintTool} settings={paintSettings} onChange={setPaintSettings} />
+      ) : (
+        <>
+          <span className="image-ws__opt-name">{selected ? picked : "No layer picked"}</span>
+          <span className="image-ws__opt-sep" />
+          {commands.filter((c) => (selected ? ["crop", "turn", "mirror", "cut", "dup", "delete"] : ["addtext", "addshape", "addphoto", "open"]).includes(c.id)).map(optionButton)}
+        </>
+      )}
       <span className="image-ws__opt-end">
         <button type="button" className="btn btn--icon" aria-label="Undo" disabled={!api.canUndo} onClick={api.undo}>
           <Icon name="undo" size={14} />
@@ -2487,7 +2584,9 @@ export default function App() {
       {fetchReview.dialog}
       <NewImageDialog
         open={newImageOpen}
-        recent={projects.filter((p) => p.image).slice(0, 6)}
+        // The open picture first.
+        recent={projects.filter((p) => p.image).sort((a, b) => Number(b.id === projectId) - Number(a.id === projectId))}
+        openId={project.image ? projectId : undefined}
         onCreate={(width, height, background) => {
           setNewImageOpen(false);
           startProject(newImageProject(width, height, background));
@@ -2498,7 +2597,8 @@ export default function App() {
         }}
         onOpenProject={(id) => {
           setNewImageOpen(false);
-          void openProject(id);
+          // The open one just stays (reopening it would drop its undo steps).
+          if (id !== projectId || !project.image) void openProject(id);
         }}
         onClose={() => setNewImageOpen(false)}
       />
@@ -2677,11 +2777,12 @@ export default function App() {
               if (id === "text") return (addText(), pickTab("text"), setImageTool("move"));
               if (id === "crop") return selected && openCrop(selected, 0);
               // A panel's tool picked again closes its panel.
-              setImageTool((now) => (now === id && id !== "move" ? "move" : id));
+              setImageTool((now) => (now === id && id !== "move" && !PAINT_TOOLS.includes(id) ? "move" : id));
             }}
             options={imageOptions}
             doc={{ name: project.media.length ? projectName(project) : "Untitled image", ...project.image }}
-            flyout={imageTool !== "move" && imageTool !== "hand" ? mediaPanel(imageTool as MediaTab) : null}
+            flyout={imageTool !== "move" && imageTool !== "hand" && !paintTool ? mediaPanel(imageTool as MediaTab) : null}
+            colours={<ColourSquares colours={paintColours} onChange={setPaintColours} />}
             canvas={preview}
             view={imageView}
             properties={panelBody}

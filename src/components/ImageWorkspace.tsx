@@ -8,7 +8,7 @@ export interface ImageTool {
   label: string;
   icon: IconName;
   /** Tools are drawn in groups with a thin line between groups. */
-  group: "select" | "content" | "edit";
+  group: "select" | "content" | "paint" | "edit";
   /** Its key (read out with its name). */
   key?: string;
   disabled?: boolean;
@@ -209,8 +209,10 @@ export function ImageWorkspace(props: {
   view: ImageView;
   properties: ReactNode;
   layers: ReactNode;
+  /** The foreground/background colour squares, under the tools. */
+  colours?: ReactNode;
 }) {
-  const { tools, activeTool, onTool, options, doc, flyout, canvas, view, properties, layers } = props;
+  const { tools, activeTool, onTool, options, doc, flyout, canvas, view, properties, layers, colours } = props;
 
   const [panelsVisible, setPanelsVisible] = useState(true);
   const [spaceDown, setSpaceDown] = useState(false);
@@ -343,6 +345,12 @@ export function ImageWorkspace(props: {
             </Fragment>
           );
         })}
+        {colours && (
+          <>
+            <div className="image-ws__tool-sep" role="separator" />
+            {colours}
+          </>
+        )}
       </nav>
 
       {flyout !== null && <aside className="image-ws__flyout">{flyout}</aside>}
