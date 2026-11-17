@@ -54,7 +54,7 @@ export function PictureCard({
     </>
   );
   return (
-    <li className={picked ? "pcard is-picked" : "pcard"}>
+    <li className={picked === undefined ? "pcard" : picked ? "pcard is-picking is-picked" : "pcard is-picking"}>
       {picked === undefined ? (
         <button type="button" className="pcard__main" onClick={onOpen}>
           {body}

@@ -5,7 +5,7 @@ import { formatSize } from "../project/exportPlan";
 import { errorText, openFile, playableFile, revealFile } from "../lib/engine";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
-import { formatClock, formatWhen } from "../lib/timecode";
+import { formatClock, formatWhen, parseTimecode } from "../lib/timecode";
 import { QueueRow } from "./QueueDock";
 import { useConfirm } from "./ConfirmDialog";
 import { HiddenFold } from "./Hidden";
@@ -52,10 +52,12 @@ function exportBadge(job: Job, kindId: Exclude<ExportTab, "all">): string | unde
     if (dims) return dims;
   } else {
     if (job.spec) return formatClock(job.spec.end - job.spec.start);
-    const clock = job.summary.match(/^(\d+:\d{2}(?::\d{2})?)(?:\s*·|$)/)?.[1];
-    if (clock) return clock;
+    // Summaries start with the part kept: "06:10 → 06:25 · MP4 · …".
+    const [from, to] = (job.summary.match(/^([\d:.]+)\s*→\s*([\d:.]+)/) ?? []).slice(1).map(parseTimecode);
+    if (from != null && to != null && to > from) return formatClock(to - from);
   }
-  return job.sizeMb > 0 ? formatSize(job.sizeMb) : undefined;
+  // The size is already in the line under the card.
+  return undefined;
 }
 
 export function Library({ jobs, queue, outputDir, onChooseOutputDir, onOpenWorkspace, onHide, onDelete }: LibraryProps) {
@@ -138,7 +140,8 @@ export function Library({ jobs, queue, outputDir, onChooseOutputDir, onOpenWorks
             <>
               {job.outputPath && (
                 <>
-                  <PictureAction icon="play" label={`Play ${name}`} onClick={() => play(job.id, job.outputPath!)} />
+                  {/* A picture opens with a click on the card; Play is for videos and sound. */}
+                  {kind.id !== "picture" && <PictureAction icon="play" label={`Play ${name}`} onClick={() => play(job.id, job.outputPath!)} />}
                   <PictureAction icon="folder" label={`Show ${name} in folder`} onClick={() => void revealFile(job.outputPath!)} />
                 </>
               )}
