@@ -344,7 +344,8 @@ function siteOf(link: string): string | null {
  */
 async function fetchFirst(link: string, found?: FoundPage): Promise<MediaSource> {
   try {
-    return await fetchMedia(link);
+    // With what the page played in hand, the engine reading the page again only adds seconds.
+    return await fetchMedia(link, undefined, !found?.media.length);
   } catch (err) {
     if (!found?.media.length || !/unsupported url/i.test(errorText(err))) throw err;
     let firstProblem: unknown;

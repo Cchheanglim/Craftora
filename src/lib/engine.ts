@@ -155,10 +155,13 @@ export const stopRecording = (id: string) => invoke<boolean>("stop_recording", {
 /** Lets the preview and exports read a file on this PC without probing it. */
 export const allowLocal = (path: string) => invoke("allow_local", { path });
 
-/** Reads a link. Its preview plays the best quality the video has, or the highest up to `height`. */
-export async function fetchMedia(url: string, height?: number): Promise<MediaSource> {
+/**
+ * Reads a link. Its preview plays the best quality the video has, or the highest up to `height`.
+ * `engine`: whether Craftora's own fetch engine tries when yt-dlp can't read the link.
+ */
+export async function fetchMedia(url: string, height?: number, engine = true): Promise<MediaSource> {
   try {
-    const source = await invoke<MediaSource>("fetch_media", { url, height: height ?? null });
+    const source = await invoke<MediaSource>("fetch_media", { url, height: height ?? null, engine });
     // The preview plays through the disk cache, so parts already fetched scrub instantly.
     const ids: string[] = [];
     const cached = async (remote?: string) => {
