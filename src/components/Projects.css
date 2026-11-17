@@ -1,0 +1,12 @@
+.projects__list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.projects__count {
+  font-size: 13px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  margin-right: 4px;
+}
