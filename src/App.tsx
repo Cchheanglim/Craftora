@@ -2717,7 +2717,15 @@ export default function App() {
             fetching={busy}
             error={error}
             errorAction={fetchErrorAction}
-            onOpenSettings={() => setView("settings")}
+            canCheckSite={inDesktopApp && siteChecks.available}
+            onSetUpSiteCheck={
+              inDesktopApp
+                ? () => {
+                    setView("settings");
+                    window.setTimeout(() => document.getElementById("vt-key")?.focus(), 100);
+                  }
+                : undefined
+            }
             busy={busy}
             projects={projects}
             currentId={project.clips.length || project.media.length ? projectId : null}

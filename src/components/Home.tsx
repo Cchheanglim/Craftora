@@ -41,8 +41,9 @@ interface HomeProps {
   onOpenWelcome: () => void;
   /** Opens the Projects page, where all of them are. */
   onSeeProjects: () => void;
-  /** Settings, where the link tools live (sign in, site check, yt-dlp update). */
-  onOpenSettings: () => void;
+  /** Scan: VirusTotal's verdict on the link's website (when a key is there); else opens Settings to add one. */
+  canCheckSite?: boolean;
+  onSetUpSiteCheck?: () => void;
 }
 
 type ProjectTab = "recent" | "videos" | "pictures" | "all";
@@ -235,7 +236,8 @@ export function Home({
   updates,
   onOpenWelcome,
   onSeeProjects,
-  onOpenSettings,
+  canCheckSite,
+  onSetUpSiteCheck,
 }: HomeProps) {
   const hiddenProjects = useHidden("projects");
   const shownProjects = projects.filter((p) => !hiddenProjects.isHidden(p.id));
@@ -257,20 +259,37 @@ export function Home({
     }
   };
 
+  // Scan's answer for the link in the box (the top bar's Check, here on Home).
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const [checking, setChecking] = useState(false);
+  const scan = async () => {
+    if (!url.trim() || checking) return;
+    setChecking(true);
+    setVerdict(null);
+    try {
+      setVerdict(siteVerdict(await checkSite(url.trim())));
+    } catch (err) {
+      setVerdict({ tone: "warn", text: errorText(err) });
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const submitLink = (e: FormEvent) => {
     e.preventDefault();
+    setVerdict(null);
     const trimmed = url.trim();
     if (trimmed && !fetching) onFetch(trimmed);
   };
 
   const visibleProjects =
     tab === "videos"
-      ? shownProjects.filter((p) => !p.image).slice(0, 4)
+      ? shownProjects.filter((p) => !p.image).slice(0, 5)
       : tab === "pictures"
-        ? shownProjects.filter((p) => p.image).slice(0, 4)
+        ? shownProjects.filter((p) => p.image).slice(0, 5)
         : tab === "all"
-          ? shownProjects.slice(0, 8)
-          : shownProjects.slice(0, 4);
+          ? shownProjects.slice(0, 10)
+          : shownProjects.slice(0, 5);
 
   const emptyProjectsText =
     tab === "videos"
@@ -300,15 +319,50 @@ export function Home({
                 id="home-link"
                 type="url"
                 value={url}
-                onChange={(e) => onUrlChange(e.target.value)}
+                onChange={(e) => {
+                  setVerdict(null);
+                  onUrlChange(e.target.value);
+                }}
+                onPaste={(e) => {
+                  // A whole link pasted in place of the box's text is fetched at once, as in the top bar.
+                  const box = e.currentTarget;
+                  const link = e.clipboardData.getData("text").trim();
+                  const replacesAll = box.selectionStart === 0 && box.selectionEnd === box.value.length;
+                  if (fetching || !replacesAll || !/^https?:\/\/\S+$/i.test(link)) return;
+                  e.preventDefault();
+                  setVerdict(null);
+                  onUrlChange(link);
+                  onFetch(link);
+                }}
                 placeholder="Paste a video link from any site"
                 spellCheck={false}
               />
             </div>
+            {(canCheckSite || onSetUpSiteCheck) && (
+              <button
+                type="button"
+                className="btn btn--secondary home__fetch"
+                disabled={checking || (canCheckSite && !url.trim())}
+                onClick={() => (canCheckSite ? void scan() : onSetUpSiteCheck?.())}
+              >
+                <Icon name="shield" size={14} />
+                {checking ? "Scanning…" : "Scan"}
+              </button>
+            )}
             <button type="submit" className="btn btn--primary home__fetch" disabled={fetching || !url.trim()}>
               {fetching ? "Fetching…" : "Fetch"}
             </button>
           </form>
+          {!error && verdict && (
+            <div className={`home__error is-${verdict.tone}`} role={verdict.tone === "warn" ? "alert" : "status"}>
+              <p>{verdict.text}</p>
+              {verdict.report && (
+                <button type="button" className="btn btn--secondary" onClick={() => void openUrl(verdict.report!.reportUrl)}>
+                  Full report
+                </button>
+              )}
+            </div>
+          )}
           {error && (
             <div className="home__error" role="alert">
               <p>{error}</p>
@@ -426,7 +480,7 @@ export function Home({
             </p>
           ) : (
             <ul className="home__export-grid">
-              {recent.slice(0, 4).map((job) => {
+              {recent.slice(0, 5).map((job) => {
                 const name = job.outputPath?.split(/[\\/]/).pop() ?? job.fileName;
                 const kind = exportKind(job, name);
                 return (
@@ -445,7 +499,7 @@ export function Home({
                     </span>
                     {job.outputPath && (
                       <span className="home__export-actions">
-                        <PlayFile path={job.outputPath} name={job.fileName} />
+                        {kind.tone !== "picture" && <PlayFile path={job.outputPath} name={job.fileName} />}
                         <button
                           type="button"
                           className="btn btn--icon"
@@ -464,18 +518,6 @@ export function Home({
           )}
         </section>
 
-        <div className="home__strip">
-          <span className="home__strip-label">Links</span>
-          <button type="button" className="home__strip-btn" onClick={onOpenSettings}>
-            Sign in to a site
-          </button>
-          <button type="button" className="home__strip-btn" onClick={onOpenSettings}>
-            Is this link safe?
-          </button>
-          <button type="button" className="home__strip-btn" onClick={onOpenSettings}>
-            Update yt-dlp
-          </button>
-        </div>
 
         <footer className="home__footer">
           <span>

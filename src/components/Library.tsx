@@ -140,7 +140,8 @@ export function Library({ jobs, queue, outputDir, onChooseOutputDir, onOpenWorks
             <>
               {job.outputPath && (
                 <>
-                  <PictureAction icon="play" label={`Play ${name}`} onClick={() => play(job.id, job.outputPath!)} />
+                  {/* A picture opens with a click on the card; Play is for videos and sound. */}
+                  {kind.id !== "picture" && <PictureAction icon="play" label={`Play ${name}`} onClick={() => play(job.id, job.outputPath!)} />}
                   <PictureAction icon="folder" label={`Show ${name} in folder`} onClick={() => void revealFile(job.outputPath!)} />
                 </>
               )}
