@@ -1,0 +1,353 @@
+/* PictureCard.tsx: the pages' picture cards, tabs and search, sized like Home's (Home.css). */
+
+/* A page in the new look (Projects, Exports, Media library): one centred column like Home. */
+.pc-page {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 36px 48px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  box-sizing: border-box;
+}
+
+.pc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.pc-head h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.pc-head p {
+  margin: 6px 0 0;
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.pc-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pc-head__actions .btn {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+/* A section heading row with a line under it: h2, tabs, then things on the right. */
+.pc-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+}
+
+.pc-bar__start {
+  display: flex;
+  align-items: flex-end;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.pc-bar h2 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.pc-bar__end {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.pc-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.pc-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 12px;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.pc-tab:hover {
+  color: var(--text);
+}
+
+.pc-tab[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.pc-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 280px;
+  max-width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-3);
+}
+
+.pc-search:focus-within {
+  border-color: var(--accent);
+}
+
+.pc-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.pc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pc-grid.is-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 899px) {
+  .pc-grid,
+  .pc-grid.is-5 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.pc-muted {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+/* The card */
+.pcard {
+  position: relative;
+  min-width: 0;
+}
+
+.pcard__main {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pcard__pic {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-raised);
+  transition: border-color var(--dur-fast) linear;
+}
+
+.pcard:hover .pcard__pic,
+.pcard__main:focus-visible .pcard__pic {
+  border-color: var(--line-hover);
+}
+
+.pcard.is-picked .pcard__pic {
+  border-color: var(--accent);
+}
+
+.pcard .thumb {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: transparent;
+}
+
+.pcard .thumb > svg {
+  width: 32px;
+  height: 32px;
+}
+
+.pcard__tag,
+.pcard__badge {
+  position: absolute;
+  z-index: 2;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 0.6);
+  color: #ffffff;
+  font-size: 12px;
+}
+
+.pcard__tag {
+  left: 8px;
+  top: 8px;
+  padding: 0 8px;
+  font-weight: 600;
+}
+
+.pcard__tag.is-open {
+  background: var(--accent-fill);
+  color: var(--text-on-accent);
+}
+
+.pcard__badge {
+  right: 8px;
+  bottom: 8px;
+  padding: 0 7px;
+}
+
+/* Picking several: a tick box in the top-left corner, over the tag. */
+.pcard__box {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 3;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border: 2px solid #ffffff;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 0.45);
+  color: var(--text-on-accent);
+}
+
+.pcard.is-picked .pcard__box {
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
+}
+
+.pcard__main:focus-visible .pcard__box,
+.pcard__main:has(input:focus-visible) .pcard__box {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pcard__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pcard__name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pcard__meta {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+/* Hover buttons over the picture's top-right corner. */
+.pcard__actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--dur-fast) linear;
+}
+
+.pcard:hover .pcard__actions,
+.pcard:focus-within .pcard__actions,
+.pcard__actions:has(.is-on) {
+  opacity: 1;
+}
+
+/* Only the "on" one (a filled star) stays when not hovered. */
+.pcard:not(:hover):not(:focus-within) .pcard__action:not(.is-on) {
+  visibility: hidden;
+}
+
+.pcard__action {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 0.6);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.pcard__action:hover {
+  background: rgb(0 0 0 / 0.8);
+}
+
+.pcard__action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.pcard__action.is-on {
+  color: var(--accent);
+}
+
+.pcard__action.is-on svg {
+  fill: currentColor;
+}

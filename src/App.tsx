@@ -130,7 +130,7 @@ import { ImageSizePanel } from "./components/ImageSizePanel";
 import { NewImageDialog } from "./components/NewImageDialog";
 import { MenuBar, type Menu, type MenuItem } from "./components/MenuBar";
 import { ImageWorkspace, ZoomSelect, useImageView, type ImageTool } from "./components/ImageWorkspace";
-import { Home, type LinkSettings } from "./components/Home";
+import { Home, ago, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
 import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/EdgeResizer";
 import { EFFECT_SETTINGS, LOOKS, PICTURE_EFFECTS, dropEdits, type FxItem } from "./project/effects";
@@ -2056,6 +2056,10 @@ export default function App() {
   const mainMenu = (rail: boolean) => (
     <Sidebar
       rail={rail}
+      current={(() => {
+        const open = project.clips.length || project.media.length ? projects.find((p) => p.id === projectId) : undefined;
+        return open && { name: open.name, image: Boolean(open.image), thumbnail: open.thumbnail, when: `edited ${ago(open.savedAt)}`, onOpen: () => setView("editor") };
+      })()}
       view={imageMode ? "image" : view === "image" ? "editor" : view}
       onViewChange={go}
       libraryCount={shownExports.length}
@@ -2586,9 +2590,14 @@ export default function App() {
     </>
   );
 
+  // Opens the video's own page: log in or play it there, then "Fetch this video" (top bar and Home).
+  const fetchErrorAction = pageAction
+    ? { label: pageAction.label, onClick: () => void openSignIn(pageAction.link).catch((err) => setError(errorText(err))) }
+    : undefined;
+
   return (
     <div className={imageMode ? "app app--image" : "app"} style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen && inEditor ? sideWidth : 0, PANEL_WIDTH)}px` } as CSSProperties}>
-      <Ambient active={theme !== "classic"} />
+      <Ambient active={theme.glass} />
       <Tooltip />
       {fetchReview.dialog}
       <NewImageDialog
@@ -2659,15 +2668,8 @@ export default function App() {
         onFetch={(link) => void fetchSource(link)}
         fetching={busy}
         error={error}
-        errorAction={
-          pageAction
-            ? {
-                label: pageAction.label,
-                // Opens the video's own page: log in or play it there, then "Fetch this video".
-                onClick: () => void openSignIn(pageAction.link).catch((err) => setError(errorText(err))),
-              }
-            : undefined
-        }
+        errorAction={fetchErrorAction}
+        hideLink={view === "home"}
         canCheckSite={inDesktopApp && siteChecks.available}
         onSetUpSiteCheck={
           inDesktopApp
@@ -2705,7 +2707,17 @@ export default function App() {
         {view === "home" && (
           <Home
             onImport={inDesktopApp ? () => void importFiles() : undefined}
-            onPasteLink={() => urlRef.current?.focus()}
+            onNewImage={() => setNewImageOpen(true)}
+            url={url}
+            onUrlChange={(next) => {
+              setUrl(next);
+              setError(null);
+            }}
+            onFetch={(link) => void fetchSource(link)}
+            fetching={busy}
+            error={error}
+            errorAction={fetchErrorAction}
+            onOpenSettings={() => setView("settings")}
             busy={busy}
             projects={projects}
             currentId={project.clips.length || project.media.length ? projectId : null}
@@ -2891,7 +2903,7 @@ export default function App() {
       {welcoming && (
         <WelcomeDialog
           onImport={inDesktopApp ? () => void importFiles() : undefined}
-          onPasteLink={() => urlRef.current?.focus()}
+          onPasteLink={() => (urlRef.current ?? document.getElementById("home-link"))?.focus()}
           busy={busy}
           onClose={() => setWelcoming(false)}
         />

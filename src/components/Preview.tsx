@@ -844,7 +844,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
               <Icon name="camera" />
             </button>
           )}
-          {/* Only the percent fits in this bar: the whole status shows in Working on and Transcript. */}
+          {/* Only the percent fits in this bar: the whole status shows in Running now and Transcript. */}
           {captionStatus && /\d+%$/.test(captionStatus) && (
             <span className="preview__cc-status" title={captionStatus}>
               {/\d+%$/.exec(captionStatus)?.[0]}

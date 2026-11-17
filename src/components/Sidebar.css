@@ -239,3 +239,67 @@
   color: var(--text-3);
   font-size: var(--text-xs);
 }
+
+/* The page column (Home, Projects…): roomier rows, the open page in red. */
+.side.is-rail .side__item {
+  height: 38px;
+  font-size: var(--text-md);
+}
+
+.side.is-rail .side__item[aria-current="page"] {
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* "Working on": the project open in the editor, one click back to it. */
+.side__current {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: var(--space-2);
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.side__current:hover {
+  border-color: var(--line-hover);
+  background: var(--bg-hover);
+}
+
+.side__current .thumb {
+  width: 48px;
+  height: 32px;
+}
+
+.side__current-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.side__current-meta {
+  color: var(--text-3);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+.side__current-meta .is-video {
+  color: var(--kind-video);
+  font-weight: 600;
+}
+
+.side__current-meta .is-picture {
+  color: var(--kind-picture);
+  font-weight: 600;
+}

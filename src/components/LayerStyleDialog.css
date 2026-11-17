@@ -1,5 +1,6 @@
 .layer-style-dialog,
 :root[data-theme] .layer-style-dialog {
+  color-scheme: dark;
   --bg-input: #1f1f1f;
   --bg-canvas: #262626;
   --bg-rail: #2b2b2b;
