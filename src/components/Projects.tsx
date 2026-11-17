@@ -1,10 +1,9 @@
 import { useState, type ReactNode } from "react";
-import { loadProject, type ProjectEntry } from "../lib/storage";
-import { hoverVideo, playableFile } from "../lib/engine";
+import type { ProjectEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
-import { ago } from "./Home";
+import { ago, projectVideo } from "./Home";
 import { PageSearch, PageTabs, PictureAction, PictureCard } from "./PictureCard";
 import { useConfirm } from "./ConfirmDialog";
 import { HiddenFold, useHidden } from "./Hidden";
@@ -29,19 +28,6 @@ const TABS: { id: ProjectTab; label: string }[] = [
   { id: "videos", label: "Videos" },
   { id: "pictures", label: "Pictures" },
 ];
-
-/** A saved project's first video (a file on this PC or a link), from where its clip starts, to play while its card is hovered. */
-async function projectVideo(id: string): Promise<string | undefined> {
-  const { project } = await loadProject(id);
-  for (const clip of [...project.clips].sort((a, b) => a.start - b.start)) {
-    const media = project.media.find((m) => m.id === clip.mediaId);
-    if (media && !media.source.image && media.hasVideo) {
-      const video = media.source.local ? await playableFile(media.source.url) : await hoverVideo(media.source.url);
-      return video && `${video}#t=${clip.in}`;
-    }
-  }
-  return undefined;
-}
 
 export function Projects({ projects, currentId, onOpenProject, onNewProject, onNewImage, onDeleteProject }: ProjectsProps) {
   // Ticked projects while picking several; null when not picking.
