@@ -168,7 +168,9 @@ async function drawPicture(out: CanvasRenderingContext2D, clip: Clip, path: stri
 
 /** Draws the picture: the background colour (unless see-through), then every layer from the bottom of the Layers list up. */
 export async function composeImage(project: Project, options: ComposeOptions): Promise<Blob> {
-  const canvas = await composeCanvas(project, options);
+  // A JPG can't be see-through: a see-through picture saves on white (a canvas left clear turns black).
+  const onWhite = options.type === "image/jpeg" && project.image && !project.image.background;
+  const canvas = await composeCanvas(onWhite ? { ...project, image: { ...project.image!, background: "#ffffff" } } : project, options);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, options.type, options.type === "image/png" ? undefined : (options.quality ?? 95) / 100));
   if (!blob) throw new Error("The picture couldn't be made. Try a smaller size.");
   return blob;

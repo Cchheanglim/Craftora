@@ -2146,7 +2146,11 @@ export default function App() {
     if (!photo?.source.image || !photo.source.local || !inDesktopApp || photo.original) return undefined;
     return async (onStatus: (text: string) => void) => {
       const path = await removeBackground(photo.source.url, onStatus);
-      api.edit({ type: "cutOut", mediaId: photo.id, source: await openLocal(path), own: clip ? { clipId: clip.id, mediaId: crypto.randomUUID() } : undefined });
+      const source = await openLocal(path);
+      api.checkpoint();
+      api.editLive({ type: "cutOut", mediaId: photo.id, source, own: clip ? { clipId: clip.id, mediaId: crypto.randomUUID() } : undefined });
+      // Owner: a cut-out on a white canvas looked like nothing happened, so the canvas turns see-through (checks).
+      if (project.image) api.editLive({ type: "setImage", patch: { background: "" } });
     };
   };
 

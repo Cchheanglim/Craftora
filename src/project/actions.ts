@@ -723,7 +723,8 @@ function edit(p: Project, action: EditAction): Project {
       if (!p.image) return p;
       const { width, height, background } = { ...p.image, ...action.patch };
       const side = (v: number) => clamp(Math.round(v) || 16, 16, MAX_IMAGE_SIDE);
-      return { ...p, image: { width: side(width), height: side(height), background: /^#[0-9a-f]{6}$/i.test(background) ? background : p.image.background } };
+      // "" = see-through (a checkerboard on screen, nothing under the layers in a PNG).
+      return { ...p, image: { width: side(width), height: side(height), background: background === "" || /^#[0-9a-f]{6}$/i.test(background) ? background : p.image.background } };
     }
 
     case "moveTrack": {
