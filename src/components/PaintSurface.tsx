@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { composeCanvas, photo } from "../lib/compose";
+import { clipMaskBox, greyHex, maskAffine } from "../lib/mask";
 import { apply, dabSpacing, dabsAlong, floodMask, hexOf, photoToImage, invert, rgbOf, scaleOf, tipStops, type Affine, type PaintColours, type PaintSettings, type PaintTool } from "../lib/paint";
-import type { Project } from "../project/model";
+import type { Clip, Project } from "../project/model";
 
 /** What the Image editor paints with and where (Preview's `painting`); App keeps the settings and saves the results. */
 export interface Painting {
@@ -10,10 +11,16 @@ export interface Painting {
   colours: PaintColours;
   /** The layer painted on: a photo layer on this PC. None: the first stroke makes a new layer for itself. */
   clipId: string | null;
+  /** True when painting into `clipId`'s layer mask instead of its pixels. */
+  mask?: boolean;
   /** Adds an empty layer the picture's size and picks it; its clip id. */
   onNewLayer: () => Promise<string>;
   /** Layer `clipId` now looks like `png`: saves it and swaps the layer's photo (one undo step); the file's path. */
   onPainted: (clipId: string, png: Blob) => Promise<string>;
+  /** Live mask PNG data URL during a stroke (null when finished), so the layer's CSS mask updates under the brush. */
+  onMaskLive?: (clipId: string, dataUrl: string | null) => void;
+  /** Layer `clipId`'s mask finished: sets `Clip.mask` to the new PNG data URL (one undo step, no file on disk). */
+  onMaskPainted?: (clipId: string, dataUrl: string) => void;
   /** Eyedropper: the picture's colour under the click (Alt: for the background colour). */
   onColour: (color: string, background: boolean) => void;
   onError: (message: string) => void;
@@ -34,6 +41,10 @@ type Pt = [number, number];
 /** One stroke, fill or gradient on one layer, in the layer's own pixels. */
 interface Session {
   clipId: string | null;
+  /** True when painting into `clipId`'s layer mask instead of its pixels. */
+  mask?: boolean;
+  maskSeq?: number;
+  done?: boolean;
   /** The new layer being made for it (no `clipId` yet). */
   made?: Promise<string>;
   /** Picture pixel → layer pixel. */
@@ -101,6 +112,32 @@ export function pngOf(canvas: HTMLCanvasElement) {
   const copy = new OffscreenCanvas(canvas.width, canvas.height);
   copy.getContext("2d")!.drawImage(canvas, 0, 0);
   return copy.convertToBlob({ type: "image/png" });
+}
+
+const LIVE_MASK_MS = 70;
+
+function loadMaskCanvas(dataUrl: string): Promise<HTMLCanvasElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const [canvas, ctx] = canvasOf(img.naturalWidth || img.width, img.naturalHeight || img.height);
+      ctx.drawImage(img, 0, 0);
+      resolve(canvas);
+    };
+    img.onerror = () => reject(new Error("Couldn't read the layer mask."));
+    img.src = dataUrl;
+  });
+}
+
+async function dataUrlOf(canvas: HTMLCanvasElement): Promise<string> {
+  if (typeof OffscreenCanvas === "undefined") return canvas.toDataURL("image/png");
+  const blob = await pngOf(canvas);
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("Couldn't encode the layer mask."));
+    reader.readAsDataURL(blob);
+  });
 }
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));

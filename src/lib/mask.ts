@@ -3,7 +3,11 @@
  * preview masks with CSS (`maskStyle`), the saved picture with a canvas (`applyMaskTo`), so the file is the screen.
  */
 import type { CSSProperties } from "react";
-import type { Clip } from "../project/model";
+import { layerBox } from "../project/layerBox";
+import { isShape, isText, textLines, type Clip } from "../project/model";
+import { shapeBox } from "../project/shapes";
+import { hexOf, rgbOf, type Affine, type PaintColours } from "./paint";
+import { textLayout } from "./textPicture";
 
 /** The largest side a mask is made at. */
 const MAX_MASK_SIDE = 4096;
@@ -86,4 +90,46 @@ export function lumaToAlpha(px: Uint8ClampedArray) {
     px[i + 3] = Math.round(((0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) * px[i + 3]) / 255);
     px[i] = px[i + 1] = px[i + 2] = 255;
   }
+}
+
+/** Rec. 709 luminance (0..255), matching `lumaToAlpha`. */
+export const lumaOf = (r: number, g: number, b: number) => Math.min(255, Math.max(0, Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b)));
+
+/** A `#rrggbb` colour as its Rec. 709 grey `#vvvvvv` (black stays black, white stays white). */
+export function greyHex(hex: string): string {
+  const [r, g, b] = rgbOf(hex);
+  const v = lumaOf(r, g, b);
+  return hexOf(v, v, v);
+}
+
+/** Both paint swatches converted to their Rec. 709 greys. */
+export const greysOf = (colours: PaintColours): PaintColours => ({ fg: greyHex(colours.fg), bg: greyHex(colours.bg) });
+
+/** The layer's mask box and turn (deg) on a `W` × `H` image: shapes, text, or photos (`photoAspect` = natural w/h). */
+export function clipMaskBox(clip: Clip, W: number, H: number, photoAspect = W / H): MaskBox {
+  if (isShape(clip)) return { ...shapeBox(clip, W, H), angle: clip.rotate ?? 0 };
+  if (isText(clip)) {
+    const look = { ...clip, text: textLines(clip.text ?? "", clip.size, { width: W, height: H }, clip.font, clip.spacing), color: clip.color ?? "#ffffff" };
+    const { left, top, width, height } = textLayout(look, W, H);
+    return { left, top, width, height, angle: clip.rotate ?? 0 };
+  }
+  return { ...layerBox(clip, photoAspect, W, H), angle: clip.angle ?? 0 };
+}
+
+/** Picture pixel → mask pixel: inverts placing the `mask` (`width` × `height`) over `box` and turning by `box.angle`. */
+export function maskAffine(box: MaskBox, mask: { width: number; height: number }): Affine {
+  const cx = box.left + box.width / 2;
+  const cy = box.top + box.height / 2;
+  const r = ((box.angle ?? 0) * Math.PI) / 180;
+  const [cos, sin] = [Math.cos(r), Math.sin(r)];
+  const sx = mask.width / Math.max(1e-6, box.width);
+  const sy = mask.height / Math.max(1e-6, box.height);
+  return [
+    cos * sx,
+    -sin * sy,
+    sin * sx,
+    cos * sy,
+    (-cx * cos - cy * sin + box.width / 2) * sx,
+    (cx * sin - cy * cos + box.height / 2) * sy,
+  ];
 }
