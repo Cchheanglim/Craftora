@@ -606,3 +606,9 @@ label.home__project {
   margin: 0;
   flex: 1 1 320px;
 }
+
+.home__error .btn--icon {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}

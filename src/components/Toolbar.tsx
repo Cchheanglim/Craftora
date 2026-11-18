@@ -19,6 +19,8 @@ interface ToolbarProps {
   error: string | null;
   /** A button next to the error, such as "Sign in to youtube.com". */
   errorAction?: { label: string; onClick: () => void };
+  /** Takes the error away (its X). */
+  onDismissError: () => void;
   /** This copy can ask VirusTotal whether a link's website is safe. */
   canCheckSite?: boolean;
   /** Without a VirusTotal key, Check opens Settings to add one. */
@@ -45,6 +47,7 @@ export function Toolbar({
   fetching,
   error,
   errorAction,
+  onDismissError,
   canCheckSite,
   onSetUpSiteCheck,
   onImport,
@@ -85,6 +88,14 @@ export function Toolbar({
       clearTimer();
     };
   }, []);
+
+  // One menu at a time: this one opens on hover, so it could open beside an open menu bar menu (MenuBar.tsx).
+  useEffect(() => {
+    if (open) window.dispatchEvent(new Event("craftora:nav-open"));
+    const close = () => setOpen(false);
+    window.addEventListener("craftora:menubar-open", close);
+    return () => window.removeEventListener("craftora:menubar-open", close);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -199,6 +210,9 @@ export function Toolbar({
             <p className="toolbar__error" role="alert">
               <Icon name="alert" size={13} />
               {error}
+              <button type="button" className="btn btn--icon" aria-label="Close" onClick={onDismissError}>
+                <Icon name="x" size={12} />
+              </button>
             </p>
           )}
         </div>
@@ -261,6 +275,9 @@ export function Toolbar({
                 {errorAction.label}
               </button>
             )}
+            <button type="button" className="btn btn--icon" aria-label="Close" onClick={onDismissError}>
+              <Icon name="x" size={12} />
+            </button>
           </p>
         ) : (
           verdict && (

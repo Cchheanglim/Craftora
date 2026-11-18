@@ -42,6 +42,14 @@ export function MenuBar({ menus }: { menus: Menu[] }): JSX.Element {
     }
   };
 
+  // One menu at a time: the main menu (Toolbar.tsx) closes when one of these opens, and the other way round.
+  useEffect(() => {
+    if (openIndex !== null) window.dispatchEvent(new Event("craftora:menubar-open"));
+    const close = () => setOpenIndex(null);
+    window.addEventListener("craftora:nav-open", close);
+    return () => window.removeEventListener("craftora:nav-open", close);
+  }, [openIndex]);
+
   useEffect(() => {
     if (openIndex !== null && focusFirstRef.current) {
       focusFirstRef.current = false;
