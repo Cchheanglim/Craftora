@@ -128,6 +128,7 @@ import { PaintOptions } from "./components/PaintOptions";
 import { composeImage } from "./lib/compose";
 import { ImageSizePanel } from "./components/ImageSizePanel";
 import { NewImageDialog } from "./components/NewImageDialog";
+import { ColourRangePanel } from "./components/ColourRangePanel";
 import { MenuBar, type Menu, type MenuItem } from "./components/MenuBar";
 import { ImageWorkspace, ZoomSelect, useImageView, type ImageTool } from "./components/ImageWorkspace";
 import { Home, ago, type LinkSettings } from "./components/Home";
@@ -397,6 +398,8 @@ export default function App() {
   const [paintColours, setPaintColours] = useState(COLOURS_START);
   /** The do-anything box asked to remove this layer's background: its Cut out tab starts it. */
   const [cutRequest, setCutRequest] = useState<string | null>(null);
+  // Image editor → Select → Colour range…: Remove a colour in its own panel, apart from Remove background (owner: like Photoshop).
+  const [colourRange, setColourRange] = useState(false);
   const [leftOpen, setLeftOpen] = useState(() => remembered("craftora.left", true));
   // Always open at start: it has no button any more (owner, 2026-11-12), only Ctrl+Alt+B hides it.
   const [rightOpen, setRightOpen] = useState(true);
@@ -2107,7 +2110,28 @@ export default function App() {
       rail={rail}
       current={(() => {
         const open = project.clips.length || project.media.length ? projects.find((p) => p.id === projectId) : undefined;
-        return open && { name: open.name, image: Boolean(open.image), thumbnail: open.thumbnail, when: `edited ${ago(open.savedAt)}`, onOpen: () => setView("editor") };
+        return (
+          open && {
+            name: open.name,
+            image: Boolean(open.image),
+            thumbnail: open.thumbnail,
+            when: `edited ${ago(open.savedAt)}`,
+            onOpen: () => setView("editor"),
+            onRename: (name: string) => void renameProject(open.id, name),
+            onDuplicate: () => void duplicateProject(open.id),
+            onExport: () => {
+              setView("editor");
+              setExportOpen(true);
+            },
+            onClose: () => {
+              pendingSave.current?.();
+              api.reset(emptyProject());
+              setProjectId(crypto.randomUUID());
+              setSelectedId(null);
+            },
+            onDelete: () => void removeProject(open.id),
+          }
+        );
       })()}
       view={imageMode ? "image" : view === "image" ? "editor" : view}
       onViewChange={go}
@@ -2267,7 +2291,7 @@ export default function App() {
   const picked = selected ? layerName(selected, project) : "";
   const pictureCommands = (clip: Clip): Command[] => [
     { id: "cut", label: "Remove background", detail: "keeps the subject, clears the rest", icon: "scissors", group: picked, disabled: !cutOutOf(clip), run: () => (setCutRequest(clip.id), pickTab("background")) },
-    { id: "colour", label: "Remove a colour", detail: "green or blue screen", icon: "eyedropper", group: picked, run: () => pickTab("background") },
+    { id: "colour", label: "Remove a colour", detail: "green or blue screen", icon: "eyedropper", group: picked, run: () => (imageMode ? setColourRange(true) : pickTab("background")) },
     { id: "crop", label: "Crop", keys: "C", icon: "crop", group: picked, run: () => openCrop(clip, 0) },
     { id: "turn", label: "Turn 90°", icon: "rotate", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { rotate: ((clip.rotate ?? 0) + 90) % 360 } }) },
     { id: "flipv", label: "Flip vertical", icon: "flip", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { rotate: ((clip.rotate ?? 0) + 180) % 360, mirror: !clip.mirror } }) },
@@ -2350,6 +2374,7 @@ export default function App() {
           label: "Select",
           items: [
             { id: "none", label: "Deselect", disabled: !selected, run: () => setSelectedId(null) },
+            { ...menuItem("colour", "Colour range…"), disabled: !picturePicked },
             "sep",
             ...layersOf(project).map((l): MenuItem => ({ id: `layer-${l.clip.id}`, label: layerName(l.clip, project), checked: l.clip.id === selectedId, run: () => setSelectedId(l.clip.id) })),
           ],
@@ -2361,7 +2386,6 @@ export default function App() {
             { ...menuItem("enhance", "Enhance"), checked: Boolean(selected?.adjust?.enhance) },
             menuItem("adjust", "Adjust colours…"),
             menuItem("cut", "Remove background"),
-            menuItem("colour", "Remove a colour…"),
             "sep",
             ...LOOKS.map((look) => ({ ...menuItem(`look-${look.id}`, look.label), checked: selected?.look === look.id })),
             menuItem("nolook", "Remove the filter"),
@@ -2653,6 +2677,15 @@ export default function App() {
     <div className={imageMode ? "app app--image" : "app"} style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen && inEditor ? sideWidth : 0, PANEL_WIDTH)}px` } as CSSProperties}>
       <Ambient active={theme.glass} />
       <Tooltip />
+      {imageMode && colourRange && selected && picturePicked && (
+        <ColourRangePanel
+          clip={selected}
+          onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
+          onCheckpoint={api.checkpoint}
+          onPick={() => startPick(selected)}
+          onClose={() => setColourRange(false)}
+        />
+      )}
       {fetchReview.dialog}
       <NewImageDialog
         open={newImageOpen}
