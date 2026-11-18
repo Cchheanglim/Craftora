@@ -42,6 +42,26 @@ speech model, `ggml-base.bin`, is OpenAI's [Whisper](https://github.com/openai/w
 (MIT licence, Copyright (c) 2022 OpenAI) converted for whisper.cpp; Craftora downloads it from
 [Hugging Face](https://huggingface.co/ggerganov/whisper.cpp) the first time it's needed.
 
+## ONNX Runtime (MIT)
+
+Craftora ships [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.24.4 (MIT licence,
+Copyright (c) Microsoft Corporation) as `onnxruntime/onnxruntime.dll` and
+`onnxruntime/onnxruntime_providers_shared.dll` for local background removal. Its licence ships as
+`onnxruntime/ONNXRUNTIME-LICENSE.txt` and its third-party notices ship as
+`onnxruntime/ONNXRUNTIME-ThirdPartyNotices.txt`.
+
+## DirectML (Microsoft DirectML licence)
+
+Craftora ships DirectML 1.15.4 (Microsoft DirectML licence, redistributable) as
+`onnxruntime/DirectML.dll` so background removal can run on the graphics card via DirectX 12. Its
+licence ships as `onnxruntime/DIRECTML-LICENSE.txt`.
+
+## ISNet "general use" model (Apache-2.0)
+
+The `isnet-general-use.onnx` background-removal model (Apache License 2.0) ships with Craftora in
+`models/isnet-general-use.onnx`. It is published by the [rembg](https://github.com/danielgatis/rembg)
+project from the DIS (Dichotomous Image Segmentation) paper by Xuebin Qin et al.
+
 ## Libraries built into Craftora
 
 The app is built with [Tauri](https://tauri.app) (MIT or Apache-2.0), [React](https://react.dev)

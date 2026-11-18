@@ -171,6 +171,7 @@ pub fn run() {
             cutout::cutout_model,
             cutout::save_cutout,
             cutout::cutout_source,
+            cutout::cutout_run,
             speech::cancel_captions,
             store::save_snapshot,
             store::save_image,
