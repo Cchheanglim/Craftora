@@ -161,3 +161,41 @@ export function ImageSizePanel({ project, api }: ImageSizePanelProps) {
     </div>
   );
 }
+
+/**
+ * Properties with nothing picked: one short Document block (size, background) instead of every size preset; the full
+ * controls are in the Canvas size panel (`onCanvasSize`, also Image > Canvas size).
+ */
+export function DocumentSummary({ project, api, onCanvasSize }: ImageSizePanelProps & { onCanvasSize: () => void }) {
+  if (!project.image) return null;
+  const { width, height, background } = project.image;
+  const preset = IMAGE_SIZES.find((s) => s.width === width && s.height === height);
+  return (
+    <section className="doc-summary" aria-label="Document">
+      <strong className="doc-summary__title">Document</strong>
+      <div className="doc-summary__row">
+        <span className="mono">
+          {width} × {height} px
+        </span>
+        {preset && <span className="doc-summary__muted">{preset.label}</span>}
+        <button type="button" className="btn btn--secondary doc-summary__end" onClick={onCanvasSize}>
+          Canvas size…
+        </button>
+      </div>
+      <div className="doc-summary__row">
+        <span className="doc-summary__muted">Background</span>
+        <span className={background ? "doc-summary__swatch" : "doc-summary__swatch is-clear"} style={{ background: background || undefined }} aria-hidden="true" />
+        <span>{background ? background.toUpperCase() : "See-through"}</span>
+        <button
+          type="button"
+          className="btn btn--ghost doc-summary__end"
+          aria-pressed={!background}
+          onClick={() => api.edit({ type: "setImage", patch: { background: background ? "" : "#ffffff" } })}
+        >
+          {background ? "Make see-through" : "Use white"}
+        </button>
+      </div>
+      <p className="doc-summary__muted">Nothing picked. Click a layer on the picture or in Layers to change it.</p>
+    </section>
+  );
+}

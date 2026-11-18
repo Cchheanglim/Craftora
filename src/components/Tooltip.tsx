@@ -45,6 +45,9 @@ export function Tooltip() {
       target = el;
       watch.observe(el, { attributes: true, attributeFilter: ["title"] });
       timer = window.setTimeout(() => {
+        // Never over an open menu (it covered "Resize to A4 print"), unless the thing is inside that menu.
+        const menu = document.querySelector('[role="menu"]');
+        if (menu && !menu.contains(el)) return;
         const text = el.getAttribute("data-tip");
         if (target === el && el.isConnected && text) setTip({ text, rect: el.getBoundingClientRect(), right: el.getAttribute("data-tip-side") === "right" });
       }, DELAY);
@@ -57,12 +60,14 @@ export function Tooltip() {
     // Like the Windows tooltip: gone on a press, a key, a scroll or leaving the window. The title stays taken until the
     // pointer leaves the thing, or Windows would show its own tip on the next move.
     for (const name of ["pointerdown", "keydown", "wheel", "scroll"]) window.addEventListener(name, hide, true);
+    window.addEventListener("craftora:menubar-open", hide);
     window.addEventListener("blur", hide);
     return () => {
       release();
       document.removeEventListener("pointerover", over, true);
       document.removeEventListener("pointerout", out, true);
       for (const name of ["pointerdown", "keydown", "wheel", "scroll"]) window.removeEventListener(name, hide, true);
+      window.removeEventListener("craftora:menubar-open", hide);
       window.removeEventListener("blur", hide);
     };
   }, []);

@@ -111,3 +111,46 @@
   border: 1px solid var(--line-strong);
   background: repeating-conic-gradient(#d6d6d6 0 25%, #ffffff 0 50%) 0 0 / 7px 7px;
 }
+
+/* Properties with nothing picked: the Document block (ImageSizePanel.tsx DocumentSummary). */
+.doc-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 2px;
+  font-size: 12px;
+}
+
+.doc-summary__title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.doc-summary__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.doc-summary__muted {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.doc-summary__end {
+  margin-left: auto;
+}
+
+.doc-summary__swatch {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+}
+
+.doc-summary__swatch.is-clear {
+  background: repeating-conic-gradient(#d6d6d6 0 25%, #ffffff 0 50%) 0 0 / 8px 8px;
+}

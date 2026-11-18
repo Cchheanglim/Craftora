@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { isShape, isText } from "../src/project/model";
-import { SHAPES, newShapeClip, shapeBox, shapeSvg, starPath } from "../src/project/shapes";
+import { SHAPES, colourName, newShapeClip, shapeBox, shapeSvg, starPath } from "../src/project/shapes";
 
 test("every shape has a unique id and a non-empty SVG path", () => {
   expect(SHAPES.length).toBeGreaterThan(0);
@@ -49,4 +49,18 @@ test("a star draws as many points as asked; 5 keeps the original star", () => {
   expect(corners(shapeSvg({ shape: "star", points: 3 }, 100, 100))).toBe(6);
   expect(shapeSvg({ shape: "star", points: 5 }, 100, 100)).toBe(shapeSvg({ shape: "star" }, 100, 100));
   expect(starPath(4).startsWith("M 50.00 0.00")).toBe(true);
+});
+
+test("colourName gives an everyday word for a shape's colour", () => {
+  expect(colourName("#ff0000")).toBe("red");
+  expect(colourName("#fa2d48")).toBe("red");
+  expect(colourName("#3d7cf0")).toBe("blue");
+  expect(colourName("#f39a1e")).toBe("orange");
+  expect(colourName("#ffd400")).toBe("yellow");
+  expect(colourName("#22c55e")).toBe("green");
+  expect(colourName("#ffffff")).toBe("white");
+  expect(colourName("#111111")).toBe("black");
+  expect(colourName("#808080")).toBe("grey");
+  expect(colourName("#ec4899")).toBe("pink");
+  expect(colourName(undefined)).toBe("");
 });

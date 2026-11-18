@@ -4,7 +4,7 @@ import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, soundFadeAt, m
 import { newShapeClip, shapeBox, shapeSvg } from "../project/shapes";
 import { motionAt, textMotion } from "../project/textMotion";
 import type { FxItem } from "../project/effects";
-import { fxDrag } from "./TimelineEditor";
+import { fxDrag, mediaDrag } from "./TimelineEditor";
 import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
@@ -44,6 +44,10 @@ interface PreviewProps {
   onSnapshot?: (bytes: Uint8Array) => Promise<void>;
   /** A shape tile let go over the preview, with where its box goes (x/y like a clip's). */
   onDropShape?: (item: FxItem, x: number, y: number) => void;
+  /** The Image editor's Text tool: a click on the picture adds text there (x, y: 0..1); a click on a text picks it. */
+  placeText?: (x: number, y: number) => void;
+  /** The Image editor: a photo card from the Photos panel let go on the picture (x, y: 0..1 across it). */
+  onDropMedia?: (mediaId: string, x: number, y: number) => void;
   /** How making captions from the sound is going ("making captions, 40%"), while it is. */
   captionStatus?: string;
   /** Captions on (CC): shown here and exported. */
@@ -176,7 +180,7 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { ...edge, fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : edge;
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, silent, picking, still, painting }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, onDropMedia, placeText, silent, picking, still, painting }: PreviewProps) {
   const [mutedByHand, setMuted] = useState(false);
   const muted = mutedByHand || Boolean(silent);
   // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
@@ -240,6 +244,28 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
+
+  // Full screen: the bars and the cursor fade after a moment without the mouse moving (owner), like a video player;
+  // a move or a key brings them back, and they stay while the pointer is on them.
+  const [idle, setIdle] = useState(false);
+  useEffect(() => {
+    if (!fullscreen) return setIdle(false);
+    let timer = 0;
+    const wake = (e: Event) => {
+      setIdle(false);
+      window.clearTimeout(timer);
+      if (e.target instanceof Element && e.target.closest(".preview__transport, .preview__wave")) return;
+      timer = window.setTimeout(() => setIdle(true), 2500);
+    };
+    wake(new Event("start"));
+    window.addEventListener("pointermove", wake);
+    window.addEventListener("keydown", wake);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("pointermove", wake);
+      window.removeEventListener("keydown", wake);
+    };
   }, [fullscreen]);
 
   // "F" from the global shortcuts.
@@ -514,7 +540,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     ));
 
   return (
-    <section className={fullscreen ? "preview is-fullscreen" : "preview"} aria-label="Preview">
+    <section className={fullscreen ? (idle ? "preview is-fullscreen is-idle" : "preview is-fullscreen") : "preview"} aria-label="Preview">
       <div
         className="preview__screen"
         onClick={() => {
@@ -529,6 +555,13 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           className={still && !still.background ? "preview__stage is-clear" : "preview__stage"}
           style={{ "--aspect": stageAspect, background: still?.background || undefined } as CSSProperties}
           onPointerUp={(e) => {
+            // A photo card dragged from the Photos panel: placed where it was let go (owner: drag to add).
+            const mediaId = mediaDrag.current;
+            if (still && mediaId && onDropMedia && stageRef.current) {
+              const r = stageRef.current.getBoundingClientRect();
+              onDropMedia(mediaId, clamp((e.clientX - r.left) / r.width, 0, 1), clamp((e.clientY - r.top) / r.height, 0, 1));
+              return;
+            }
             // A shape tile dragged from the right panel and let go here lands centred where the pointer is.
             const item = fxDrag.current;
             if (item?.kind !== "shape" || !onDropShape || !stageRef.current) return;
@@ -541,6 +574,19 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           }}
         >
           {picking && <ColourPicker stage={stageRef} picking={picking} />}
+          {placeText && (
+            <div
+              className="preview__placer"
+              aria-hidden="true"
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                const hit = document.elementsFromPoint(e.clientX, e.clientY).find((el) => el.matches(".preview__text[data-clip]"));
+                if (hit) return onSelect((hit as HTMLElement).dataset.clip ?? null);
+                const r = e.currentTarget.getBoundingClientRect();
+                placeText(clamp((e.clientX - r.left) / r.width, 0, 1), clamp((e.clientY - r.top) / r.height, 0, 1));
+              }}
+            />
+          )}
           {painting && <PaintSurface painting={painting} project={project} width={frame.width} height={frame.height} onLive={setLive} />}
           {live && live.clipId === null && <LiveCanvas canvas={live.canvas} className="preview__paint-live" />}
           {pictures.some((c) => {

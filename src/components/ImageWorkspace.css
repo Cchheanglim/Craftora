@@ -459,7 +459,7 @@
   display: none;
 }
 
-.image-ws__dock .icon-tabs__tab:hover:not(:disabled) {
+.image-ws__dock .icon-tabs__tab:hover:not(:disabled):not([aria-disabled="true"]) {
   background: transparent;
   color: var(--text);
 }
@@ -661,4 +661,36 @@
   height: 1px;
   overflow: hidden;
   clip-path: inset(50%);
+}
+
+/* The picked layer on its own GPU layer: dragged on fractional pixels, the canvas under it otherwise kept 1px strips of
+   its old edges (owner: "lines on the white background"). Only the picked one, so memory stays small. */
+.app--image .preview__picture.is-selected,
+.app--image .preview__text.is-selected {
+  will-change: transform;
+}
+
+/* The picked layer's frame (owner-approved mockup, like a photo editor): a thin white line with a dark edge so it shows
+   on any picture, and small square corner handles. The grab spots keep their 11px size; the square is drawn inside. */
+.app--image .preview__picture.is-selected,
+.app--image .preview__shape-box.is-selected,
+.app--image .preview__text.is-selected {
+  outline: 1px solid #ffffff;
+  outline-offset: -1px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.55);
+}
+
+.app--image .preview__handle::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  background: #ffffff;
+  border: 1px solid #1f1f1f;
+  box-sizing: border-box;
+}
+
+/* A photo card being dragged from the Photos panel: the picture says it takes the drop. */
+body.is-dragging-media .app--image .preview__stage {
+  outline: 2px dashed var(--text);
+  outline-offset: 3px;
 }

@@ -82,6 +82,31 @@ export const SHAPES: readonly { id: ShapeId; label: string; path: string; line?:
 
 export const shapeLabel = (id?: string) => SHAPES.find((s) => s.id === id)?.label ?? "Shape";
 
+/** A colour's everyday name ("red", "grey"…), so ten "Rectangle" layers can be told apart. "" for no colour. */
+export function colourName(hex?: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex ?? "");
+  if (!m) return "";
+  const n = parseInt(m[1], 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const s = max === min ? 0 : (max - min) / (1 - Math.abs(2 * l - 1));
+  if (l < 0.12) return "black";
+  if (l > 0.92) return "white";
+  if (s < 0.15) return "grey";
+  const d = max - min;
+  const h = (max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60;
+  if (h < 15 || h >= 345) return l < 0.35 ? "dark red" : "red";
+  if (h < 40) return l < 0.4 ? "brown" : "orange";
+  if (h < 65) return "yellow";
+  if (h < 165) return "green";
+  if (h < 195) return "teal";
+  if (h < 255) return "blue";
+  if (h < 290) return "purple";
+  return "pink";
+}
+
 /** A star with `n` points in the 0..100 box (the inner corners at 40% of the way out), its first point at the top. */
 export const starPath = (n: number) =>
   `${Array.from({ length: 2 * n }, (_, i) => {

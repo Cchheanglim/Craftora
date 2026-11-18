@@ -126,7 +126,7 @@ import type { Painting } from "./components/PaintSurface";
 import { ColourSquares } from "./components/ColourSquares";
 import { PaintOptions } from "./components/PaintOptions";
 import { composeImage } from "./lib/compose";
-import { ImageSizePanel } from "./components/ImageSizePanel";
+import { DocumentSummary, ImageSizePanel } from "./components/ImageSizePanel";
 import { NewImageDialog } from "./components/NewImageDialog";
 import { ColourRangePanel } from "./components/ColourRangePanel";
 import { MenuBar, type Menu, type MenuItem } from "./components/MenuBar";
@@ -1244,9 +1244,9 @@ export default function App() {
     setBusy(true);
     setError(null);
     const failed: string[] = [];
-    // Settings → Preferences: onto the timeline one after another, or waiting under In this project. Pictures dropped on
-    // the Image editor always become layers (owner: drag to add, like Photoshop).
-    const place = (Boolean(dropped) && imageMode) || preference("importToTimeline");
+    // Settings → Preferences: onto the timeline one after another, or waiting under In this project. In the Image editor
+    // imported or dropped pictures always become layers (owner: like Photoshop's Place).
+    const place = imageMode || preference("importToTimeline");
     const results = await Promise.allSettled(paths.map((path) => openLocal(path)));
     results.forEach((res, i) => {
       if (res.status === "fulfilled") {
@@ -1693,13 +1693,14 @@ export default function App() {
     });
   };
 
-  const addText = (size?: number) => {
+  /** `at`: the Image editor's Text tool, where the picture was clicked (0..1); else a picture's middle. */
+  const addText = (size?: number, at?: { x: number; y: number }) => {
     const clipId = crypto.randomUUID();
     api.checkpoint();
     api.editLive({ type: "addText", clipId, at: playback.time });
-    // A picture's new text goes in the middle; a video's at the bottom, like a subtitle.
+    // A picture's new text goes in the middle (or where it was clicked); a video's at the bottom, like a subtitle.
     if (imageMode && project.image)
-      api.editLive({ type: "updateClip", clipId, patch: { x: POSITIONS.center.x, y: POSITIONS.center.y, color: inkOn(project.image.background) } });
+      api.editLive({ type: "updateClip", clipId, patch: { x: at?.x ?? POSITIONS.center.x, y: at?.y ?? POSITIONS.center.y, color: inkOn(project.image.background) } });
     if (size) api.editLive({ type: "updateClip", clipId, patch: { size } });
     setSelectedId(clipId);
     setView("editor");
@@ -1975,7 +1976,8 @@ export default function App() {
       s: split,
       delete: remove,
       backspace: remove,
-      t: () => addText(),
+      // The Image editor picks the Text tool (click the picture to type, like a photo editor); the video editor adds text.
+      t: () => (imageMode ? setImageTool("text") : addText()),
       v: () => imageMode && setImageTool("move"),
       h: () => imageMode && setImageTool("hand"),
       u: () => imageMode && setImageTool("shapes"),
@@ -2256,6 +2258,30 @@ export default function App() {
         const id = applyFx(item, undefined, playback.time);
         if (id) api.editLive({ type: "updateClip", clipId: id, patch: { x, y } });
       }}
+      placeText={
+        imageMode && imageTool === "text"
+          ? (x, y) => {
+              // Where the picture was clicked; the Edit tab's text box gets the cursor, its words picked, to type over.
+              addText(undefined, { x, y });
+              pickTab("edit");
+              window.setTimeout(() => {
+                const box = document.getElementById("insp-text");
+                if (box instanceof HTMLTextAreaElement) {
+                  box.focus();
+                  box.select();
+                }
+              }, 60);
+            }
+          : undefined
+      }
+      onDropMedia={(mediaId, x, y) => {
+        // Placed where it was let go, picked, in one undo step: the drop point keeps the same spot within the photo.
+        const clipId = crypto.randomUUID();
+        api.checkpoint();
+        api.editLive({ type: "addClip", clipId, mediaId, at: playback.time });
+        api.editLive({ type: "updateClip", clipId, patch: { x, y } });
+        setSelectedId(clipId);
+      }}
       captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
       showCaptions={showCaptions}
       onToggleCaptions={toggleCaptions}
@@ -2280,6 +2306,8 @@ export default function App() {
   const imageTabs = IMAGE_PANEL_TABS.map((t) => ({
     ...t,
     disabled: t.id === "text" ? Boolean(selected && !isText(selected)) : ["adjust", "filters", "effects", "background"].includes(t.id) && !picturePicked,
+    // Said on hover (owner: greyed tabs gave no reason).
+    why: t.id === "text" ? "Pick a text layer to change its text" : `Pick a photo layer to use ${t.label}`,
   }));
   // The Image editor's do-anything box (Ctrl K): what the picked layer can do first, then adding, the picture and the view.
   // Each of these also has a button somewhere; the box is the quick way to them.
@@ -2576,7 +2604,7 @@ export default function App() {
           <div className="export__body is-edit">
           {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} still={imageMode} /> : <p className="export__hint">{imageMode ? "Click a layer to change it here." : "Click a clip on the timeline to change it here."}</p>)}
           {/* Nothing picked in the Image editor: the picture's own size and background. */}
-          {imageMode && !selected && rightTab !== "text" && <ImageSizePanel project={project} api={api} />}
+          {imageMode && !selected && rightTab !== "text" && <DocumentSummary project={project} api={api} onCanvasSize={() => setImageTool("size")} />}
           {rightTab === "edit" && (selectedId === SHOWN_CAPTIONS || selectedTrack?.name === "Captions") && (
             <CaptionStyle
               layout={project.captionLayout ?? CAPTIONS}
@@ -2898,15 +2926,14 @@ export default function App() {
             activeTool={imageTool}
             onTool={(id) => {
               if (id === "cutout") return pickTab("background");
-              // Text goes straight into the middle, its styles open beside it.
-              if (id === "text") return (addText(), pickTab("text"), setImageTool("move"));
               if (id === "crop") return selected && openCrop(selected, 0);
               // A panel's tool picked again closes its panel.
               setImageTool((now) => (now === id && id !== "move" && !PAINT_TOOLS.includes(id) ? "move" : id));
             }}
             options={imageOptions}
             doc={{ name: project.media.length ? projectName(project) : "Untitled image", ...project.image }}
-            flyout={imageTool !== "move" && imageTool !== "hand" && !paintTool ? mediaPanel(imageTool as MediaTab) : null}
+            // The Text tool has no panel: a click on the picture types (its styles are in the top bar and the Text tab).
+            flyout={imageTool !== "move" && imageTool !== "hand" && imageTool !== "text" && !paintTool ? mediaPanel(imageTool as MediaTab) : null}
             colours={<ColourSquares colours={paintColours} onChange={setPaintColours} />}
             canvas={preview}
             view={imageView}
