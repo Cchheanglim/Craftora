@@ -526,8 +526,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
       >
         <div
           ref={stageRef}
-          className="preview__stage"
-          style={{ "--aspect": stageAspect, background: still?.background } as CSSProperties}
+          className={still && !still.background ? "preview__stage is-clear" : "preview__stage"}
+          style={{ "--aspect": stageAspect, background: still?.background || undefined } as CSSProperties}
           onPointerUp={(e) => {
             // A shape tile dragged from the right panel and let go here lands centred where the pointer is.
             const item = fxDrag.current;

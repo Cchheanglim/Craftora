@@ -93,3 +93,21 @@
 .image-size-custom__swap {
   width: 100%;
 }
+
+/* Background → See-through: a toggle above the colours; on, the canvas shows checks and a PNG keeps it clear. */
+.image-size__clear {
+  align-self: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.image-size__clear[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
+.image-size__checks {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--line-strong);
+  background: repeating-conic-gradient(#d6d6d6 0 25%, #ffffff 0 50%) 0 0 / 7px 7px;
+}

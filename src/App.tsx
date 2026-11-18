@@ -213,6 +213,8 @@ const IMAGE_PANEL_TABS = [
 ] as const satisfies readonly { id: string; label: string; icon: IconName }[];
 /** A colour that shows on `background` (#rrggbb): near-black on a light one, white on a dark one. */
 const inkOn = (background: string) => {
+  // See-through: the checks are light.
+  if (!background) return "#111111";
   const n = parseInt(background.slice(1, 7), 16);
   const luma = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
   return luma > 150 ? "#111111" : "#ffffff";
@@ -2146,7 +2148,11 @@ export default function App() {
     if (!photo?.source.image || !photo.source.local || !inDesktopApp || photo.original) return undefined;
     return async (onStatus: (text: string) => void) => {
       const path = await removeBackground(photo.source.url, onStatus);
-      api.edit({ type: "cutOut", mediaId: photo.id, source: await openLocal(path), own: clip ? { clipId: clip.id, mediaId: crypto.randomUUID() } : undefined });
+      const source = await openLocal(path);
+      api.checkpoint();
+      api.editLive({ type: "cutOut", mediaId: photo.id, source, own: clip ? { clipId: clip.id, mediaId: crypto.randomUUID() } : undefined });
+      // Owner: a cut-out on a white canvas looked like nothing happened, so the canvas turns see-through (checks).
+      if (project.image) api.editLive({ type: "setImage", patch: { background: "" } });
     };
   };
 

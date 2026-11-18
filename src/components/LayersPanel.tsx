@@ -626,8 +626,8 @@ export function LayersPanel({
         <div className="layers-panel__row layers-panel__row--bg">
           <div className="layers-panel__eye-placeholder" aria-hidden="true" />
           <div
-            className="layers-panel__thumb layers-panel__thumb-bg"
-            style={{ backgroundColor: project.image?.background ?? "#000" }}
+            className={project.image?.background === "" ? "layers-panel__thumb layers-panel__thumb-bg layers-panel__thumb--checker" : "layers-panel__thumb layers-panel__thumb-bg"}
+            style={{ backgroundColor: project.image?.background || undefined }}
           />
           <span className="layers-panel__name layers-panel__name--bg">Background</span>
           <span className="layers-panel__lock-indicator" aria-label="Locked">

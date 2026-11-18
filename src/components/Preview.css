@@ -63,6 +63,11 @@
   background: #000;
 }
 
+/* A see-through picture (no background colour): the usual grey-and-white checks. */
+.preview__stage.is-clear {
+  background: repeating-conic-gradient(#d6d6d6 0 25%, #ffffff 0 50%) 0 0 / 16px 16px;
+}
+
 /* One picture: a box placed like the export, with the crop as a window onto the video. */
 .preview__picture,
 .preview__shape-box {
