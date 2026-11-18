@@ -206,6 +206,10 @@ export interface Clip {
   fillOpacity?: number;
   /** Image editor layer style (Layer → Layer style): its effects, each on while present. */
   style?: LayerStyle;
+  /** Image editor layer mask: a greyscale PNG data URL over the layer's own box (moves, scales, turns and flips with it); white shows, black hides. */
+  mask?: string;
+  /** The mask is kept but not used (Shift+click in a photo editor). */
+  maskOff?: boolean;
   /** Shapes, pictures and text (an Image editor layer's opacity): 0–1 (1 when absent). */
   opacity?: number;
   /** Shape clips: 0 or absent = filled; > 0 = outline only, its thickness as a share of the frame height. */

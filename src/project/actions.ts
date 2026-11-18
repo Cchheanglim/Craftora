@@ -89,6 +89,15 @@ export type EditAction =
    * When other layers share its photo, it gets a photo entry of its own, `newMediaId`.
    */
   | { type: "paint"; clipId: string; source: MediaItem["source"]; newMediaId: string }
+  /** Image editor: layer `clipId`'s mask added or replaced (a greyscale PNG data URL), or deleted (null, which also clears `maskOff`). */
+  | { type: "setMask"; clipId: string; mask: string | null }
+  /** Image editor: layer `clipId`'s mask kept but not used (`off`), or used again. */
+  | { type: "maskOff"; clipId: string; off: boolean }
+  /**
+   * Image editor: layer `clipId`'s mask applied: a photo gets the already-masked picture `source` (as `paint` does, a
+   * photo entry of its own `newMediaId` when shared) and loses the mask; without `source` (text, shapes) nothing changes.
+   */
+  | { type: "applyMask"; clipId: string; source?: MediaItem["source"]; newMediaId?: string }
   /**
    * Without a track: videos and pictures go to the main track, sound to a free track below it. On
    * a magnetic track `at` picks the slot; elsewhere it's the start time (playhead).
@@ -405,6 +414,27 @@ function edit(p: Project, action: EditAction): Project {
         };
       }
       return { ...p, media: p.media.map((m) => (m.id !== mediaId ? m : change(m))) };
+    }
+
+    case "setMask":
+    case "maskOff":
+      return {
+        ...p,
+        clips: p.clips.map((c) =>
+          c.id !== action.clipId
+            ? c
+            : action.type === "maskOff"
+              ? { ...c, maskOff: action.off || undefined }
+              : action.mask
+                ? { ...c, mask: action.mask }
+                : { ...c, mask: undefined, maskOff: undefined },
+        ),
+      };
+
+    case "applyMask": {
+      if (!action.source) return p;
+      const painted = edit(p, { type: "paint", clipId: action.clipId, source: action.source, newMediaId: action.newMediaId ?? crypto.randomUUID() });
+      return edit(painted, { type: "setMask", clipId: action.clipId, mask: null });
     }
 
     case "removeMedia":

@@ -13,6 +13,7 @@ import { RGB_SHARE, adjustSteps, blocksStyle, keyLine, posterLevels, sharpenWeig
 import { CRAFTORA_MEDIA, setWindowFullscreen } from "../lib/engine";
 import { textShadowFilter } from "../lib/textPicture";
 import { hasStyle, styleFilter } from "../lib/layerStyle";
+import { maskOn, maskStyle } from "../lib/mask";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
 import { SyncedMedia } from "./SyncedMedia";
@@ -461,6 +462,12 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     if (e.button !== 0 || !stageRef.current) return;
     e.stopPropagation();
     e.preventDefault();
+    // Image editor: Ctrl+click picks the next layer down under the pointer (a click picks the top one).
+    if (still && mode === "move" && (e.ctrlKey || e.metaKey)) {
+      const under = [...new Set(document.elementsFromPoint(e.clientX, e.clientY).map((el) => stageRef.current!.contains(el) && el.closest<HTMLElement>("[data-clip]")?.dataset.clip).filter(Boolean))] as string[];
+      onSelect(under[(under.indexOf(selectedId ?? "") + 1) % under.length] ?? clip.id);
+      return;
+    }
     const captions = isCaption(clip);
     // Captions not on the timeline aren't clips: they're picked as a whole.
     onSelect(clip.trackId.startsWith(SHOWN_CAPTIONS) ? SHOWN_CAPTIONS : clip.id);
@@ -638,6 +645,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 reveal={t === null ? "" : mix(clip).reveal}
                 selected={isSelected}
                 poster={poster}
+                mask={still ? maskStyle(clip) : undefined}
                 onPointerDown={beginGesture(clip, "move")}
                 handles={isSelected ? handles(clip) : null}
               >
@@ -748,6 +756,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   frame={{ ...frame, width: stageRef.current?.clientWidth ?? frame.width, height: stageRef.current?.clientHeight ?? frame.height }}
                   opacity={fadeAt(clip, time) * ownFill(clip)}
                   selected={isSelected}
+                  still={Boolean(still)}
                   onPointerDown={beginGesture(clip, "move")}
                   handles={isSelected ? handles(clip) : null}
                 />
@@ -782,8 +791,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 onPointerDown={beginGesture(clip, "move")}
                 onClick={(e) => e.stopPropagation()}
               >
-                {/* Softness and glow on the letters only: not the box edge or the selection outline. */}
-                {shadows ? <span style={{ display: "block", filter: shadows }}>{pose.text}</span> : pose.text}
+                {/* Softness and glow on the letters only: not the box edge or the selection outline; its mask likewise. */}
+                {shadows || (still && maskOn(clip)) ? <span style={{ display: "block", filter: shadows || undefined, ...(still && maskStyle(clip)) }}>{pose.text}</span> : pose.text}
                 {isSelected && handles(clip)}
               </div>
             );
@@ -1143,6 +1152,8 @@ interface PictureLayerProps {
   reveal: string;
   selected: boolean;
   poster?: string;
+  /** The Image editor: its layer mask over the box's pixels (lib/mask.ts `maskStyle`), not over the selection frame. */
+  mask?: CSSProperties;
   onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
   handles: ReactNode;
   /** The Image editor: its place in the stack (Layers order), photos and text and shapes together. */
@@ -1155,7 +1166,7 @@ interface PictureLayerProps {
  * One picture on the stage, placed like the export: fitted inside the frame, scaled by its
  * size, at its position. The crop is a window onto the video.
  */
-function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, selected, poster, onPointerDown, handles, z, children }: PictureLayerProps) {
+function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, selected, poster, mask, onPointerDown, handles, z, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
@@ -1212,6 +1223,8 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
       onPointerDown={onPointerDown}
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
     >
+      {/* The mask goes on the box's pixels, not on the box itself, which also holds the selection frame. */}
+      <div style={mask?.maskImage ? { position: "absolute", inset: 0, ...mask } : { display: "contents" }}>
       <div className="preview__crop" style={turned}>
         <div
           className="preview__clip-fx"
@@ -1258,6 +1271,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
           <span className="preview__bar is-bottom" style={{ height: `${fx.bars * 100}%` }} aria-hidden="true" />
         </>
       )}
+      </div>
       {visible && !ready && !poster && <span className="preview__loading">Loading video…</span>}
       {handles}
     </div>
@@ -1273,20 +1287,32 @@ interface ShapeLayerProps {
   handles: ReactNode;
   /** The Image editor: its place in the stack (Layers order), photos and text and shapes together. */
   z?: number;
+  /** The Image editor (its layer mask is drawn only there). */
+  still?: boolean;
 }
 
 /** One shape on the stage: a full-frame SVG picture with a hit box over its bounding box. */
-function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles, z }: ShapeLayerProps) {
+function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles, z, still }: ShapeLayerProps) {
   const src = useMemo(
     () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(shapeSvg(clip, frame.width, frame.height))}`,
     [clip.shape, clip.color, clip.size, clip.aspect, clip.x, clip.y, clip.opacity, clip.outline, clip.rotate, clip.points, frame.width, frame.height],
   );
   const box = shapeBox(clip, frame.width, frame.height);
+  // The picture covers the frame, so its mask is placed on the shape's box there, turned with it.
+  const mask = still ? maskStyle(clip, { width: frame.width, height: frame.height, box: { ...box, angle: clip.rotate ?? 0 } }) : undefined;
   return (
     <>
-      <img className="preview__shape" src={src} alt="" draggable={false} style={{ opacity, mixBlendMode: clip.blend, zIndex: z, filter: styled(clip) }} />
+      {mask?.maskImage ? (
+        // Masked inside, styled outside: the layer style follows the masked pixels, as the saved picture draws it.
+        <div className="preview__shape" style={{ opacity, mixBlendMode: clip.blend, zIndex: z, filter: styled(clip) }}>
+          <img src={src} alt="" draggable={false} style={{ display: "block", width: "100%", height: "100%", ...mask }} />
+        </div>
+      ) : (
+        <img className="preview__shape" src={src} alt="" draggable={false} style={{ opacity, mixBlendMode: clip.blend, zIndex: z, filter: styled(clip) }} />
+      )}
       <div
         className={selected ? "preview__shape-box is-selected" : "preview__shape-box"}
+        data-clip={clip.id}
         style={{
           left: `${(box.left / frame.width) * 100}%`,
           top: `${(box.top / frame.height) * 100}%`,

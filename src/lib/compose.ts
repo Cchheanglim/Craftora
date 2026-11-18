@@ -7,10 +7,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { adjustSteps, blocksStyle, effectStrength, keyLine, vignetteStops } from "../project/effects";
 import { layerBox } from "../project/layerBox";
 import { clipEnd, isShape, isText, showsPicture, textLines, trackOrder, type Clip, type Project } from "../project/model";
-import { shapeSvg } from "../project/shapes";
+import { shapeBox, shapeSvg } from "../project/shapes";
 import { allowLocal } from "./engine";
 import { hasStyle, styleFilter } from "./layerStyle";
-import { textCanvas } from "./textPicture";
+import { applyMaskTo, maskOn, type MaskBox } from "./mask";
+import { textCanvas, textLayout } from "./textPicture";
 
 /** How to save: the picture's size, see-through or on its background colour, and the file type. */
 export interface ComposeOptions {
@@ -74,6 +75,11 @@ function mixed(ctx: CanvasRenderingContext2D, clip: Clip, opacity: number, draw:
   ctx.filter = "none";
 }
 
+/** Keeps only what the layer's mask shows of its own pixels on `ctx` (lib/mask.ts), when it has a mask in use. */
+async function masked(ctx: CanvasRenderingContext2D, clip: Clip, box: MaskBox) {
+  if (maskOn(clip)) applyMaskTo(ctx, await load(clip.mask), box);
+}
+
 /** One photo layer as `PictureLayer` draws it: crop window, mirror, filter and effects, quarter turn, then its box. */
 async function drawPicture(out: CanvasRenderingContext2D, clip: Clip, path: string, W: number, H: number) {
   const img = await photo(path);
@@ -135,6 +141,8 @@ async function drawPicture(out: CanvasRenderingContext2D, clip: Clip, path: stri
     lctx.fillRect(0, 0, bw, own.bars * bh);
     lctx.fillRect(0, bh - own.bars * bh, bw, own.bars * bh);
   }
+  // Its mask over the box, before its turn and style (the preview masks the box's pixels inside `.preview__picture`).
+  await masked(lctx, clip, { left: 0, top: 0, width: bw, height: bh });
   const [x, y] = [Math.round(box.left), Math.round(box.top)];
   if (!clip.angle) return mixed(out, clip, clip.opacity ?? 1, () => out.drawImage(layer, x, y));
   // Turned about its middle after its style, as the preview's CSS `rotate` comes after its filter: the style drawn on the
@@ -221,10 +229,24 @@ async function drawLayers(project: Project, ctx: CanvasRenderingContext2D, W: nu
     }
     if (isShape(clip)) {
       const img = await load(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(shapeSvg(clip, W, H))}`);
-      mixed(ctx, clip, 1, () => ctx.drawImage(img, 0, 0, W, H));
+      if (!maskOn(clip)) {
+        mixed(ctx, clip, 1, () => ctx.drawImage(img, 0, 0, W, H));
+        continue;
+      }
+      // Masked on a sheet of its own first, so its style follows the masked pixels.
+      const [shape, sctx] = sheet(W, H);
+      sctx.drawImage(img, 0, 0, W, H);
+      await masked(sctx, clip, { ...shapeBox(clip, W, H), angle: clip.rotate ?? 0 });
+      mixed(ctx, clip, 1, () => ctx.drawImage(shape, 0, 0));
       continue;
     }
-    const text = textCanvas({ ...clip, text: textLines(clip.text ?? "", clip.size, { width: W, height: H }, clip.font, clip.spacing), color: clip.color ?? "#ffffff" }, W, H);
+    const look = { ...clip, text: textLines(clip.text ?? "", clip.size, { width: W, height: H }, clip.font, clip.spacing), color: clip.color ?? "#ffffff" };
+    const text = textCanvas(look, W, H);
+    if (maskOn(clip)) {
+      // The preview masks the letters' own box (with what their edge and shadows reach inside it), turned with them.
+      const { left, top, width, height } = textLayout(look, W, H);
+      await masked(text.canvas.getContext("2d")!, clip, { left: left - text.x, top: top - text.y, width, height, angle: clip.rotate ?? 0 });
+    }
     // The whole text fades as one, as CSS opacity does.
     mixed(ctx, clip, clip.opacity ?? 1, () => ctx.drawImage(text.canvas, text.x, text.y));
   }
