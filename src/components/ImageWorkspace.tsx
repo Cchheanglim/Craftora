@@ -11,6 +11,8 @@ export interface ImageTool {
   group: "select" | "content" | "paint" | "edit";
   /** Its key (read out with its name). */
   key?: string;
+  /** What it does, in its hover tip. */
+  hint?: string;
   disabled?: boolean;
 }
 
@@ -337,6 +339,8 @@ export function ImageWorkspace(props: {
                 className={`image-ws__tool${tool.id === activeTool ? " is-active" : ""}`}
                 aria-label={tool.key ? `${tool.label} (${tool.key})` : tool.label}
                 aria-pressed={tool.id === activeTool}
+                title={`${tool.label}${tool.key ? ` (${tool.key})` : ""}${tool.hint ? ` · ${tool.hint}` : ""}`}
+                data-tip-side="right"
                 disabled={tool.disabled}
                 onClick={() => onTool(tool.id)}
               >

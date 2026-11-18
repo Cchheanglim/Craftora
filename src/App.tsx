@@ -187,20 +187,20 @@ const PANEL_TABS: { id: "edit" | "transcript" | "assistant" | (typeof CLIP_TABS)
 ];
 /** The Image editor's tool strip: the panel tools' ids are MediaPanel tabs; Cut out and Crop act on the picked photo. */
 const IMAGE_TOOLS: ImageTool[] = [
-  { id: "move", label: "Move", icon: "pointer", group: "select", key: "V" },
-  { id: "hand", label: "Hand", icon: "hand", group: "select", key: "H" },
-  { id: "text", label: "Text", icon: "text", group: "content", key: "T" },
-  { id: "shapes", label: "Shapes", icon: "star", group: "content", key: "U" },
-  { id: "media", label: "Photos", icon: "image", group: "content" },
+  { id: "move", label: "Move", icon: "pointer", hint: "Move and resize layers", group: "select", key: "V" },
+  { id: "hand", label: "Hand", icon: "hand", hint: "Move around the picture", group: "select", key: "H" },
+  { id: "text", label: "Text", icon: "text", hint: "Add and edit text", group: "content", key: "T" },
+  { id: "shapes", label: "Shapes", icon: "star", hint: "Add stars, arrows and other shapes", group: "content", key: "U" },
+  { id: "media", label: "Photos", icon: "image", hint: "Add photos from this PC as layers", group: "content" },
   // Painting saves its pixels as files on this PC (as Remove background does), so not in the browser preview.
-  { id: "brush", label: "Brush", icon: "brush", group: "paint", key: "B", disabled: !inDesktopApp },
-  { id: "eraser", label: "Eraser", icon: "eraser", group: "paint", key: "E", disabled: !inDesktopApp },
-  { id: "bucket", label: "Paint bucket", icon: "bucket", group: "paint", key: "G", disabled: !inDesktopApp },
-  { id: "gradient", label: "Gradient", icon: "gradient", group: "paint", key: "Shift+G", disabled: !inDesktopApp },
-  { id: "eyedropper", label: "Eyedropper", icon: "eyedropper", group: "paint", key: "I", disabled: !inDesktopApp },
-  { id: "cutout", label: "Cut out", icon: "scissors", group: "edit" },
-  { id: "crop", label: "Crop", icon: "crop", group: "edit", key: "C" },
-  { id: "size", label: "Canvas size", icon: "fit", group: "edit" },
+  { id: "brush", label: "Brush", icon: "brush", hint: "Paint on the picked layer", group: "paint", key: "B", disabled: !inDesktopApp },
+  { id: "eraser", label: "Eraser", icon: "eraser", hint: "Rub out parts of the picked layer", group: "paint", key: "E", disabled: !inDesktopApp },
+  { id: "bucket", label: "Paint bucket", icon: "bucket", hint: "Fill an area with the colour", group: "paint", key: "G", disabled: !inDesktopApp },
+  { id: "gradient", label: "Gradient", icon: "gradient", hint: "Fill with two colours blending into each other", group: "paint", key: "Shift+G", disabled: !inDesktopApp },
+  { id: "eyedropper", label: "Eyedropper", icon: "eyedropper", hint: "Take a colour from the picture", group: "paint", key: "I", disabled: !inDesktopApp },
+  { id: "cutout", label: "Cut out", icon: "scissors", hint: "Remove a photo's background", group: "edit" },
+  { id: "crop", label: "Crop", icon: "crop", hint: "Trim the picked photo's edges", group: "edit", key: "C" },
+  { id: "size", label: "Canvas size", icon: "fit", hint: "The picture's size and background", group: "edit" },
 ];
 /** The Image editor's Properties tabs: always all six, the ones the picked layer can't use greyed (Enhance heads Adjust). */
 const IMAGE_PANEL_TABS = [
@@ -1244,8 +1244,9 @@ export default function App() {
     setBusy(true);
     setError(null);
     const failed: string[] = [];
-    // Settings → Preferences: onto the timeline one after another, or waiting under In this project.
-    const place = preference("importToTimeline");
+    // Settings → Preferences: onto the timeline one after another, or waiting under In this project. Pictures dropped on
+    // the Image editor always become layers (owner: drag to add, like Photoshop).
+    const place = (Boolean(dropped) && imageMode) || preference("importToTimeline");
     const results = await Promise.allSettled(paths.map((path) => openLocal(path)));
     results.forEach((res, i) => {
       if (res.status === "fulfilled") {
@@ -3013,7 +3014,7 @@ export default function App() {
       )}
       {dragging && (
         <div className="app__drop" role="status">
-          <span>Drop to import into Media</span>
+          <span>{imageMode ? "Drop to add as layers" : "Drop to import into Media"}</span>
         </div>
       )}
     </div>

@@ -13,7 +13,8 @@ const GAP = 6;
  * so it shows over open dialogs too.
  */
 export function Tooltip() {
-  const [tip, setTip] = useState<{ text: string; rect: DOMRect } | null>(null);
+  // `right`: beside the thing (`data-tip-side="right"`), for a column of tools where a tip below would cover the next one.
+  const [tip, setTip] = useState<{ text: string; rect: DOMRect; right?: boolean } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,7 +46,7 @@ export function Tooltip() {
       watch.observe(el, { attributes: true, attributeFilter: ["title"] });
       timer = window.setTimeout(() => {
         const text = el.getAttribute("data-tip");
-        if (target === el && el.isConnected && text) setTip({ text, rect: el.getBoundingClientRect() });
+        if (target === el && el.isConnected && text) setTip({ text, rect: el.getBoundingClientRect(), right: el.getAttribute("data-tip-side") === "right" });
       }, DELAY);
     };
     const out = (e: PointerEvent) => {
@@ -72,6 +73,11 @@ export function Tooltip() {
     if (!el || !tip) return;
     if (!el.matches(":popover-open")) el.showPopover();
     const { width, height } = el.getBoundingClientRect();
+    if (tip.right) {
+      el.style.left = `${tip.rect.right + GAP}px`;
+      el.style.top = `${Math.min(Math.max(GAP, tip.rect.top + tip.rect.height / 2 - height / 2), window.innerHeight - height - GAP)}px`;
+      return;
+    }
     const left = Math.min(Math.max(GAP, tip.rect.left + tip.rect.width / 2 - width / 2), window.innerWidth - width - GAP);
     const below = tip.rect.bottom + GAP;
     el.style.left = `${left}px`;
