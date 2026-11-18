@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { BLEND_MODES, layersOf, type BlendMode, type Clip, type Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
-import { shapeLabel } from "../project/shapes";
+import { SHAPES, colourName, shapeLabel } from "../project/shapes";
 import { Icon } from "./Icon";
 import type { MenuItem } from "./MenuBar";
 import { Select } from "./Select";
@@ -34,15 +34,26 @@ interface DragState {
   index: number;
   pointerId: number;
   startY: number;
+  startScrollTop: number;
   currentY: number;
   isDragging: boolean;
-  dropIndex: number;
+  gap: number;
+  rowBounds: { top: number; bottom: number }[];
 }
 
 interface DragInfo {
   index: number;
   deltaY: number;
-  dropIndex: number;
+  gap: number;
+  indicatorTop: number;
+}
+
+interface ScrubState {
+  key: PctKey;
+  pointerId: number;
+  startX: number;
+  startVal: number;
+  checkpointed: boolean;
 }
 
 export function layerName(clip: Clip, project: Project): string {
@@ -52,7 +63,9 @@ export function layerName(clip: Clip, project: Project): string {
     return media?.name || "Image";
   }
   if (clip.shape) {
-    return shapeLabel(clip.shape);
+    // "Rectangle · red": a poster often has many of one shape.
+    const colour = colourName(clip.color);
+    return colour ? `${shapeLabel(clip.shape)} · ${colour}` : shapeLabel(clip.shape);
   }
   return clip.text?.split("\n")[0]?.trim() || "Text";
 }
@@ -75,20 +88,61 @@ export function LayersPanel({
   const selectedClip = selectedId ? project.clips.find((c) => c.id === selectedId) ?? null : null;
   const selectedTrack = selectedClip ? project.tracks.find((t) => t.id === selectedClip.trackId) ?? null : null;
 
-  // Opacity / Fill typing state
+  // Opacity / Fill typing, scrub and popover slider state
   const [typed, setTyped] = useState<Partial<Record<PctKey, string>>>({});
   const pctCancelledRef = useRef(false);
+  const scrubRef = useRef<ScrubState | null>(null);
+  const [openPct, setOpenPct] = useState<PctKey | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const pctBtnRefs = useRef<Partial<Record<PctKey, HTMLButtonElement | null>>>({});
+  const sliderCheckpointedRef = useRef(false);
 
   useEffect(() => {
     setTyped({});
+    setOpenPct(null);
   }, [selectedId]);
 
-  const setPct = (key: PctKey, rawPct: number) => {
+  useEffect(() => {
+    if (!selectedClip) setOpenPct(null);
+  }, [selectedClip]);
+
+  useEffect(() => {
+    sliderCheckpointedRef.current = false;
+    if (!openPct) return;
+    popoverRef.current?.querySelector("input")?.focus();
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (!popoverRef.current?.contains(target) && !pctBtnRefs.current[openPct]?.contains(target)) {
+        setOpenPct(null);
+      }
+    };
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setOpenPct(null);
+      } else if (e.key === "Enter" && !(e.target instanceof HTMLInputElement && e.target.type === "text")) {
+        e.preventDefault();
+        e.stopPropagation();
+        setOpenPct(null);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [openPct]);
+
+  const setPct = (key: PctKey, rawPct: number, live = false) => {
     if (!selectedClip) return;
     const clamped = Math.min(100, Math.max(0, Math.round(rawPct)));
     const next = clamped === 100 ? undefined : clamped / 100;
     if ((selectedClip[key] ?? 1) === (next ?? 1)) return;
-    api.edit({ type: "updateClip", clipId: selectedClip.id, patch: { [key]: next } });
+    const action = { type: "updateClip" as const, clipId: selectedClip.id, patch: { [key]: next } };
+    if (live) api.editLive(action);
+    else api.edit(action);
   };
 
   const applyPct = (key: PctKey) => {
@@ -204,8 +258,108 @@ export function LayersPanel({
   const listRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
   const dragRef = useRef<DragState | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
   const justDraggedRef = useRef(false);
   const [dragInfo, setDragInfo] = useState<DragInfo | null>(null);
+
+  const stopAutoScroll = () => {
+    if (scrollRafRef.current !== null) {
+      cancelAnimationFrame(scrollRafRef.current);
+      scrollRafRef.current = null;
+    }
+  };
+
+  useEffect(() => () => stopAutoScroll(), []);
+
+  const updateDrag = (cur: DragState) => {
+    const list = listRef.current;
+    const listRect = list?.getBoundingClientRect();
+    let scrolling = false;
+
+    if (list && listRect && listRect.height > 0) {
+      const topDist = cur.currentY - listRect.top;
+      const bottomDist = listRect.bottom - cur.currentY;
+      const maxScroll = Math.max(0, list.scrollHeight - list.clientHeight);
+      if (topDist < 24 && list.scrollTop > 0) {
+        const speed = Math.max(2, Math.round(((24 - Math.max(0, topDist)) / 24) * 8));
+        list.scrollTop = Math.max(0, list.scrollTop - speed);
+        scrolling = list.scrollTop > 0;
+      } else if (bottomDist < 24 && list.scrollTop < maxScroll) {
+        const speed = Math.max(2, Math.round(((24 - Math.max(0, bottomDist)) / 24) * 8));
+        list.scrollTop = Math.min(maxScroll, list.scrollTop + speed);
+        scrolling = list.scrollTop < maxScroll;
+      }
+    }
+
+    const scrollTop = list?.scrollTop ?? 0;
+    const pointerY = cur.currentY - (listRect?.top ?? 0) + scrollTop;
+    const bounds = cur.rowBounds;
+    let gap = bounds.length;
+    for (let i = 0; i < bounds.length; i++) {
+      const b = bounds[i];
+      if (pointerY < (b.top + b.bottom) / 2) {
+        gap = i;
+        break;
+      }
+    }
+    cur.gap = gap;
+
+    const deltaY = cur.currentY - cur.startY + (scrollTop - cur.startScrollTop);
+    const indicatorTop =
+      bounds.length === 0
+        ? 0
+        : gap === 0
+          ? bounds[0].top
+          : bounds[Math.min(gap - 1, bounds.length - 1)].bottom - 1;
+
+    setDragInfo({
+      index: cur.index,
+      deltaY,
+      gap,
+      indicatorTop,
+    });
+
+    if (scrolling) {
+      if (scrollRafRef.current === null) {
+        scrollRafRef.current = requestAnimationFrame(() => {
+          scrollRafRef.current = null;
+          if (dragRef.current?.isDragging) updateDrag(dragRef.current);
+        });
+      }
+    } else {
+      stopAutoScroll();
+    }
+  };
+
+  const cancelDrag = () => {
+    stopAutoScroll();
+    const cur = dragRef.current;
+    if (!cur) return;
+    try {
+      rowRefs.current[cur.index]?.releasePointerCapture(cur.pointerId);
+    } catch {}
+    if (cur.isDragging) {
+      justDraggedRef.current = true;
+      setTimeout(() => {
+        justDraggedRef.current = false;
+      }, 80);
+    }
+    dragRef.current = null;
+    setDragInfo(null);
+  };
+
+  useEffect(() => {
+    if (!dragInfo) return;
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        cancelDrag();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [dragInfo]);
 
   const handlePointerDown = (index: number, e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
@@ -214,13 +368,26 @@ export function LayersPanel({
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {}
+    const list = listRef.current;
+    const listRect = list?.getBoundingClientRect();
+    const startScrollTop = list?.scrollTop ?? 0;
+    const rowBounds = layers.map((_, i) => {
+      const r = rowRefs.current[i]?.getBoundingClientRect();
+      if (!r || !listRect) return { top: 0, bottom: 0 };
+      return {
+        top: r.top - listRect.top + startScrollTop,
+        bottom: r.bottom - listRect.top + startScrollTop,
+      };
+    });
     dragRef.current = {
       index,
       pointerId: e.pointerId,
       startY: e.clientY,
+      startScrollTop,
       currentY: e.clientY,
       isDragging: false,
-      dropIndex: index,
+      gap: index,
+      rowBounds,
     };
   };
 
@@ -229,41 +396,23 @@ export function LayersPanel({
     if (!cur || cur.index !== index) return;
     const deltaY = e.clientY - cur.startY;
     if (!cur.isDragging) {
-      if (Math.abs(deltaY) < 4) return;
+      if (Math.abs(deltaY) < 3) return;
       cur.isDragging = true;
     }
     cur.currentY = e.clientY;
-
-    let closest = index;
-    let minDistance = Infinity;
-    rowRefs.current.forEach((el, i) => {
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      const center = (r.top + r.bottom) / 2;
-      const dist = Math.abs(e.clientY - center);
-      if (dist < minDistance) {
-        minDistance = dist;
-        closest = i;
-      }
-    });
-    cur.dropIndex = closest;
-
-    setDragInfo({
-      index: cur.index,
-      deltaY: cur.currentY - cur.startY,
-      dropIndex: cur.dropIndex,
-    });
+    updateDrag(cur);
   };
 
   const handlePointerUp = (index: number, e: React.PointerEvent<HTMLDivElement>) => {
     const cur = dragRef.current;
     if (!cur || cur.index !== index) return;
+    stopAutoScroll();
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {}
 
     const wasDragging = cur.isDragging;
-    const targetK = cur.dropIndex;
+    const gap = cur.gap;
     dragRef.current = null;
     setDragInfo(null);
 
@@ -273,15 +422,18 @@ export function LayersPanel({
         justDraggedRef.current = false;
       }, 80);
 
-      if (targetK !== index && layers[targetK]) {
-        const targetTrackId = layers[targetK].track.id;
-        const to = project.tracks.findIndex((t) => t.id === targetTrackId);
-        if (to !== -1) {
-          api.edit({
-            type: "moveTrack",
-            trackId: layers[index].track.id,
-            to,
-          });
+      // A drop on its own spot (gap === index or gap === index + 1) changes nothing.
+      if (gap !== index && gap !== index + 1) {
+        const targetK = gap < index ? gap : gap - 1;
+        if (layers[targetK]) {
+          const to = project.tracks.findIndex((t) => t.id === layers[targetK].track.id);
+          if (to !== -1) {
+            api.edit({
+              type: "moveTrack",
+              trackId: layers[index].track.id,
+              to,
+            });
+          }
         }
       }
     }
@@ -289,6 +441,7 @@ export function LayersPanel({
 
   const handlePointerCancel = (index: number, e: React.PointerEvent<HTMLDivElement>) => {
     if (dragRef.current?.index === index) {
+      stopAutoScroll();
       try {
         e.currentTarget.releasePointerCapture(e.pointerId);
       } catch {}
@@ -297,25 +450,7 @@ export function LayersPanel({
     }
   };
 
-  // Landing indicator calculation
-  let indicatorTop: number | null = null;
-  if (dragInfo && listRef.current) {
-    const list = listRef.current;
-    const listRect = list.getBoundingClientRect();
-    const k = dragInfo.dropIndex;
-    const dragIdx = dragInfo.index;
-    const targetEl = rowRefs.current[k];
-    if (targetEl) {
-      const r = targetEl.getBoundingClientRect();
-      if (k < dragIdx) {
-        indicatorTop = r.top - listRect.top + list.scrollTop;
-      } else if (k > dragIdx) {
-        indicatorTop = r.bottom - listRect.top + list.scrollTop - 2;
-      } else {
-        indicatorTop = r.top - dragInfo.deltaY - listRect.top + list.scrollTop;
-      }
-    }
-  }
+  const indicatorTop = dragInfo ? dragInfo.indicatorTop : null;
 
   return (
     <section className="layers-panel" aria-label="Layers">
@@ -442,49 +577,152 @@ export function LayersPanel({
             });
           }}
         />
-        {PCT_FIELDS.map(([key, label, id]) => (
-          <Fragment key={key}>
-            <label className="layers-panel__mix-label" htmlFor={id}>
-              {label}
-            </label>
-            <input
-              id={id}
-              type="text"
-              className="field mono layers-panel__pct"
-              inputMode="numeric"
-              disabled={!selectedClip}
-              value={typed[key] ?? `${pct(selectedClip?.[key])}%`}
-              onChange={(e) => setTyped({ [key]: e.target.value })}
-              onBlur={() => applyPct(key)}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        {PCT_FIELDS.map(([key, label, id]) => {
+          const endScrub = (e: React.PointerEvent<HTMLLabelElement>) => {
+            if (scrubRef.current?.key === key) {
+              try {
+                e.currentTarget.releasePointerCapture(e.pointerId);
+              } catch {}
+              scrubRef.current = null;
+            }
+          };
+          return (
+            <Fragment key={key}>
+              <label
+                className={`layers-panel__mix-label${!selectedClip ? " is-disabled" : ""}`}
+                htmlFor={id}
+                onPointerDown={(e) => {
+                  if (!selectedClip || e.button !== 0) return;
                   e.preventDefault();
-                  const raw = typed[key]?.replace(/%$/, "").trim();
-                  const cur = raw && Number.isFinite(Number(raw)) ? Number(raw) : pct(selectedClip?.[key]);
-                  const step = (e.shiftKey ? 10 : 1) * (e.key === "ArrowUp" ? 1 : -1);
+                  try {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  } catch {}
                   setTyped({});
-                  setPct(key, cur + step);
-                } else if (e.key === "Enter") {
-                  e.preventDefault();
-                  applyPct(key);
-                  pctCancelledRef.current = true;
-                  e.currentTarget.blur();
-                  pctCancelledRef.current = false;
-                } else if (e.key === "Escape") {
-                  e.preventDefault();
-                  setTyped({});
-                  pctCancelledRef.current = true;
-                  e.currentTarget.blur();
-                  pctCancelledRef.current = false;
-                }
-              }}
-            />
-          </Fragment>
-        ))}
+                  setOpenPct(null);
+                  scrubRef.current = {
+                    key,
+                    pointerId: e.pointerId,
+                    startX: e.clientX,
+                    startVal: pct(selectedClip[key]),
+                    checkpointed: false,
+                  };
+                }}
+                onPointerMove={(e) => {
+                  const cur = scrubRef.current;
+                  if (!cur || cur.key !== key) return;
+                  const steps = Math.trunc((e.clientX - cur.startX) / 2);
+                  const next = cur.startVal + steps * (e.shiftKey ? 10 : 1);
+                  if (!cur.checkpointed) {
+                    if (Math.min(100, Math.max(0, next)) === cur.startVal) return;
+                    cur.checkpointed = true;
+                    api.checkpoint();
+                  }
+                  setPct(key, next, true);
+                }}
+                onPointerUp={endScrub}
+                onPointerCancel={endScrub}
+              >
+                {label}
+              </label>
+              <div className="layers-panel__pct-box">
+                <input
+                  id={id}
+                  type="text"
+                  className="field mono layers-panel__pct"
+                  inputMode="numeric"
+                  disabled={!selectedClip}
+                  value={typed[key] ?? `${pct(selectedClip?.[key])}%`}
+                  onChange={(e) => setTyped({ [key]: e.target.value })}
+                  onBlur={() => applyPct(key)}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                      e.preventDefault();
+                      const raw = typed[key]?.replace(/%$/, "").trim();
+                      const cur = raw && Number.isFinite(Number(raw)) ? Number(raw) : pct(selectedClip?.[key]);
+                      const step = (e.shiftKey ? 10 : 1) * (e.key === "ArrowUp" ? 1 : -1);
+                      setTyped({});
+                      setPct(key, cur + step);
+                    } else if (e.key === "Enter") {
+                      e.preventDefault();
+                      applyPct(key);
+                      setOpenPct(null);
+                      pctCancelledRef.current = true;
+                      e.currentTarget.blur();
+                      pctCancelledRef.current = false;
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      setTyped({});
+                      setOpenPct(null);
+                      pctCancelledRef.current = true;
+                      e.currentTarget.blur();
+                      pctCancelledRef.current = false;
+                    }
+                  }}
+                />
+                <button
+                  ref={(el) => {
+                    pctBtnRefs.current[key] = el;
+                  }}
+                  type="button"
+                  className="layers-panel__pct-btn"
+                  aria-label={`${label} slider`}
+                  aria-expanded={openPct === key}
+                  disabled={!selectedClip}
+                  onClick={() => setOpenPct((cur) => (cur === key ? null : key))}
+                >
+                  <Icon name="chevronDown" size={10} />
+                </button>
+                {openPct === key && selectedClip && (
+                  <div ref={popoverRef} className="insp__slider layers-panel__popover">
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      aria-label={label}
+                      value={pct(selectedClip[key])}
+                      onPointerDown={() => {
+                        if (!sliderCheckpointedRef.current) {
+                          sliderCheckpointedRef.current = true;
+                          api.checkpoint();
+                        }
+                      }}
+                      onPointerUp={() => {
+                        sliderCheckpointedRef.current = false;
+                      }}
+                      onPointerCancel={() => {
+                        sliderCheckpointedRef.current = false;
+                      }}
+                      onBlur={() => {
+                        sliderCheckpointedRef.current = false;
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key.startsWith("Arrow") || e.key === "Home" || e.key === "End") {
+                          if (!sliderCheckpointedRef.current) {
+                            sliderCheckpointedRef.current = true;
+                            api.checkpoint();
+                          }
+                        }
+                      }}
+                      onChange={(e) => {
+                        if (!sliderCheckpointedRef.current) {
+                          sliderCheckpointedRef.current = true;
+                          api.checkpoint();
+                        }
+                        setTyped({});
+                        setPct(key, Number(e.target.value), true);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            </Fragment>
+          );
+        })}
       </div>
 
       {/* Layers list */}
-      <div className="layers-panel__list" ref={listRef}>
+      <div className={`layers-panel__list${dragInfo ? " is-dragging" : ""}`} ref={listRef}>
         {layers.length === 0 ? (
           <p className="layers-panel__empty">Add a picture, text or shape with the tools on the left.</p>
         ) : (
@@ -561,7 +799,17 @@ export function LayersPanel({
                   </div>
                 ) : clip.shape ? (
                   <div className="layers-panel__thumb">
-                    <Icon name="star" size={16} />
+                    {/* The shape itself in its colour, so a row shows what it is. */}
+                    {(() => {
+                      const def = SHAPES.find((s) => s.id === clip.shape) ?? SHAPES[0];
+                      const stroked = Boolean(clip.outline) || Boolean(def.line);
+                      const colour = clip.color ?? "#ffffff";
+                      return (
+                        <svg className="layers-panel__thumb-shape" viewBox="-6 -6 112 112" aria-hidden="true">
+                          <path d={def.path} fill={stroked ? "none" : colour} stroke={stroked ? colour : "none"} strokeWidth={stroked ? 10 : 0} />
+                        </svg>
+                      );
+                    })()}
                   </div>
                 ) : (
                   <div className="layers-panel__thumb">

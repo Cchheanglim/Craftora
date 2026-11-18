@@ -126,8 +126,10 @@ import type { Painting } from "./components/PaintSurface";
 import { ColourSquares } from "./components/ColourSquares";
 import { PaintOptions } from "./components/PaintOptions";
 import { composeImage } from "./lib/compose";
-import { ImageSizePanel } from "./components/ImageSizePanel";
+import { DocumentSummary, ImageSizePanel } from "./components/ImageSizePanel";
+import { ImageOptions } from "./components/ImageOptions";
 import { NewImageDialog } from "./components/NewImageDialog";
+import { ColourRangePanel } from "./components/ColourRangePanel";
 import { MenuBar, type Menu, type MenuItem } from "./components/MenuBar";
 import { ImageWorkspace, ZoomSelect, useImageView, type ImageTool } from "./components/ImageWorkspace";
 import { Home, ago, type LinkSettings } from "./components/Home";
@@ -186,20 +188,20 @@ const PANEL_TABS: { id: "edit" | "transcript" | "assistant" | (typeof CLIP_TABS)
 ];
 /** The Image editor's tool strip: the panel tools' ids are MediaPanel tabs; Cut out and Crop act on the picked photo. */
 const IMAGE_TOOLS: ImageTool[] = [
-  { id: "move", label: "Move", icon: "pointer", group: "select", key: "V" },
-  { id: "hand", label: "Hand", icon: "hand", group: "select", key: "H" },
-  { id: "text", label: "Text", icon: "text", group: "content", key: "T" },
-  { id: "shapes", label: "Shapes", icon: "star", group: "content", key: "U" },
-  { id: "media", label: "Photos", icon: "image", group: "content" },
+  { id: "move", label: "Move", icon: "pointer", hint: "Move and resize layers", group: "select", key: "V" },
+  { id: "hand", label: "Hand", icon: "hand", hint: "Move around the picture", group: "select", key: "H" },
+  { id: "text", label: "Text", icon: "text", hint: "Add and edit text", group: "content", key: "T" },
+  { id: "shapes", label: "Shapes", icon: "star", hint: "Add stars, arrows and other shapes", group: "content", key: "U" },
+  { id: "media", label: "Photos", icon: "image", hint: "Add photos from this PC as layers", group: "content" },
   // Painting saves its pixels as files on this PC (as Remove background does), so not in the browser preview.
-  { id: "brush", label: "Brush", icon: "brush", group: "paint", key: "B", disabled: !inDesktopApp },
-  { id: "eraser", label: "Eraser", icon: "eraser", group: "paint", key: "E", disabled: !inDesktopApp },
-  { id: "bucket", label: "Paint bucket", icon: "bucket", group: "paint", key: "G", disabled: !inDesktopApp },
-  { id: "gradient", label: "Gradient", icon: "gradient", group: "paint", key: "Shift+G", disabled: !inDesktopApp },
-  { id: "eyedropper", label: "Eyedropper", icon: "eyedropper", group: "paint", key: "I", disabled: !inDesktopApp },
-  { id: "cutout", label: "Cut out", icon: "scissors", group: "edit" },
-  { id: "crop", label: "Crop", icon: "crop", group: "edit", key: "C" },
-  { id: "size", label: "Canvas size", icon: "fit", group: "edit" },
+  { id: "brush", label: "Brush", icon: "brush", hint: "Paint on the picked layer", group: "paint", key: "B", disabled: !inDesktopApp },
+  { id: "eraser", label: "Eraser", icon: "eraser", hint: "Rub out parts of the picked layer", group: "paint", key: "E", disabled: !inDesktopApp },
+  { id: "bucket", label: "Paint bucket", icon: "bucket", hint: "Fill an area with the colour", group: "paint", key: "G", disabled: !inDesktopApp },
+  { id: "gradient", label: "Gradient", icon: "gradient", hint: "Fill with two colours blending into each other", group: "paint", key: "Shift+G", disabled: !inDesktopApp },
+  { id: "eyedropper", label: "Eyedropper", icon: "eyedropper", hint: "Take a colour from the picture", group: "paint", key: "I", disabled: !inDesktopApp },
+  { id: "cutout", label: "Cut out", icon: "scissors", hint: "Remove a photo's background", group: "edit" },
+  { id: "crop", label: "Crop", icon: "crop", hint: "Trim the picked photo's edges", group: "edit", key: "C" },
+  { id: "size", label: "Canvas size", icon: "fit", hint: "The picture's size and background", group: "edit" },
 ];
 /** The Image editor's Properties tabs: always all six, the ones the picked layer can't use greyed (Enhance heads Adjust). */
 const IMAGE_PANEL_TABS = [
@@ -397,6 +399,8 @@ export default function App() {
   const [paintColours, setPaintColours] = useState(COLOURS_START);
   /** The do-anything box asked to remove this layer's background: its Cut out tab starts it. */
   const [cutRequest, setCutRequest] = useState<string | null>(null);
+  // Image editor → Select → Colour range…: Remove a colour in its own panel, apart from Remove background (owner: like Photoshop).
+  const [colourRange, setColourRange] = useState(false);
   const [leftOpen, setLeftOpen] = useState(() => remembered("craftora.left", true));
   // Always open at start: it has no button any more (owner, 2026-11-12), only Ctrl+Alt+B hides it.
   const [rightOpen, setRightOpen] = useState(true);
@@ -720,7 +724,12 @@ export default function App() {
       if (format && item.hasVideo) item.videoFormat = format;
       else if (format) item.audioFormat = format;
       api.edit({ type: "importMedia", item });
-      if (place) api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId: item.id });
+      if (place) {
+        const clipId = crypto.randomUUID();
+        api.edit({ type: "addClip", clipId, mediaId: item.id });
+        // The Image editor: a placed picture comes picked, ready to move (like a photo editor's Place).
+        if (projectRef.current.image) setSelectedId(clipId);
+      }
       prepare(item.id, source);
       setView("editor");
       return item;
@@ -1241,8 +1250,9 @@ export default function App() {
     setBusy(true);
     setError(null);
     const failed: string[] = [];
-    // Settings → Preferences: onto the timeline one after another, or waiting under In this project.
-    const place = preference("importToTimeline");
+    // Settings → Preferences: onto the timeline one after another, or waiting under In this project. In the Image editor
+    // imported or dropped pictures always become layers (owner: like Photoshop's Place).
+    const place = imageMode || preference("importToTimeline");
     const results = await Promise.allSettled(paths.map((path) => openLocal(path)));
     results.forEach((res, i) => {
       if (res.status === "fulfilled") {
@@ -1689,13 +1699,14 @@ export default function App() {
     });
   };
 
-  const addText = (size?: number) => {
+  /** `at`: the Image editor's Text tool, where the picture was clicked (0..1); else a picture's middle. */
+  const addText = (size?: number, at?: { x: number; y: number }) => {
     const clipId = crypto.randomUUID();
     api.checkpoint();
     api.editLive({ type: "addText", clipId, at: playback.time });
-    // A picture's new text goes in the middle; a video's at the bottom, like a subtitle.
+    // A picture's new text goes in the middle (or where it was clicked); a video's at the bottom, like a subtitle.
     if (imageMode && project.image)
-      api.editLive({ type: "updateClip", clipId, patch: { x: POSITIONS.center.x, y: POSITIONS.center.y, color: inkOn(project.image.background) } });
+      api.editLive({ type: "updateClip", clipId, patch: { x: at?.x ?? POSITIONS.center.x, y: at?.y ?? POSITIONS.center.y, color: inkOn(project.image.background) } });
     if (size) api.editLive({ type: "updateClip", clipId, patch: { size } });
     setSelectedId(clipId);
     setView("editor");
@@ -1971,7 +1982,8 @@ export default function App() {
       s: split,
       delete: remove,
       backspace: remove,
-      t: () => addText(),
+      // The Image editor picks the Text tool (click the picture to type, like a photo editor); the video editor adds text.
+      t: () => (imageMode ? setImageTool("text") : addText()),
       v: () => imageMode && setImageTool("move"),
       h: () => imageMode && setImageTool("hand"),
       u: () => imageMode && setImageTool("shapes"),
@@ -2107,7 +2119,28 @@ export default function App() {
       rail={rail}
       current={(() => {
         const open = project.clips.length || project.media.length ? projects.find((p) => p.id === projectId) : undefined;
-        return open && { name: open.name, image: Boolean(open.image), thumbnail: open.thumbnail, when: `edited ${ago(open.savedAt)}`, onOpen: () => setView("editor") };
+        return (
+          open && {
+            name: open.name,
+            image: Boolean(open.image),
+            thumbnail: open.thumbnail,
+            when: `edited ${ago(open.savedAt)}`,
+            onOpen: () => setView("editor"),
+            onRename: (name: string) => void renameProject(open.id, name),
+            onDuplicate: () => void duplicateProject(open.id),
+            onExport: () => {
+              setView("editor");
+              setExportOpen(true);
+            },
+            onClose: () => {
+              pendingSave.current?.();
+              api.reset(emptyProject());
+              setProjectId(crypto.randomUUID());
+              setSelectedId(null);
+            },
+            onDelete: () => void removeProject(open.id),
+          }
+        );
       })()}
       view={imageMode ? "image" : view === "image" ? "editor" : view}
       onViewChange={go}
@@ -2231,6 +2264,30 @@ export default function App() {
         const id = applyFx(item, undefined, playback.time);
         if (id) api.editLive({ type: "updateClip", clipId: id, patch: { x, y } });
       }}
+      placeText={
+        imageMode && imageTool === "text"
+          ? (x, y) => {
+              // Where the picture was clicked; the Edit tab's text box gets the cursor, its words picked, to type over.
+              addText(undefined, { x, y });
+              pickTab("edit");
+              window.setTimeout(() => {
+                const box = document.getElementById("insp-text");
+                if (box instanceof HTMLTextAreaElement) {
+                  box.focus();
+                  box.select();
+                }
+              }, 60);
+            }
+          : undefined
+      }
+      onDropMedia={(mediaId, x, y) => {
+        // Placed where it was let go, picked, in one undo step: the drop point keeps the same spot within the photo.
+        const clipId = crypto.randomUUID();
+        api.checkpoint();
+        api.editLive({ type: "addClip", clipId, mediaId, at: playback.time });
+        api.editLive({ type: "updateClip", clipId, patch: { x, y } });
+        setSelectedId(clipId);
+      }}
       captionStatus={project.media.map((m) => captioning[m.id]).find(Boolean)}
       showCaptions={showCaptions}
       onToggleCaptions={toggleCaptions}
@@ -2255,6 +2312,8 @@ export default function App() {
   const imageTabs = IMAGE_PANEL_TABS.map((t) => ({
     ...t,
     disabled: t.id === "text" ? Boolean(selected && !isText(selected)) : ["adjust", "filters", "effects", "background"].includes(t.id) && !picturePicked,
+    // Said on hover (owner: greyed tabs gave no reason).
+    why: t.id === "text" ? "Pick a text layer to change its text" : `Pick a photo layer to use ${t.label}`,
   }));
   // The Image editor's do-anything box (Ctrl K): what the picked layer can do first, then adding, the picture and the view.
   // Each of these also has a button somewhere; the box is the quick way to them.
@@ -2267,7 +2326,7 @@ export default function App() {
   const picked = selected ? layerName(selected, project) : "";
   const pictureCommands = (clip: Clip): Command[] => [
     { id: "cut", label: "Remove background", detail: "keeps the subject, clears the rest", icon: "scissors", group: picked, disabled: !cutOutOf(clip), run: () => (setCutRequest(clip.id), pickTab("background")) },
-    { id: "colour", label: "Remove a colour", detail: "green or blue screen", icon: "eyedropper", group: picked, run: () => pickTab("background") },
+    { id: "colour", label: "Remove a colour", detail: "green or blue screen", icon: "eyedropper", group: picked, run: () => (imageMode ? setColourRange(true) : pickTab("background")) },
     { id: "crop", label: "Crop", keys: "C", icon: "crop", group: picked, run: () => openCrop(clip, 0) },
     { id: "turn", label: "Turn 90°", icon: "rotate", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { rotate: ((clip.rotate ?? 0) + 90) % 360 } }) },
     { id: "flipv", label: "Flip vertical", icon: "flip", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { rotate: ((clip.rotate ?? 0) + 180) % 360, mirror: !clip.mirror } }) },
@@ -2334,7 +2393,16 @@ export default function App() {
           label: "Image",
           items: [
             { id: "canvas", label: "Canvas size and background…", run: () => setImageTool("size") },
-            ...IMAGE_SIZES.map((size) => menuItem(`size-${size.id}`, `Resize to ${size.label}`)),
+            // One sub-menu instead of a row per size (critique: 7 near-identical rows); the current size ticked.
+            {
+              id: "resize",
+              label: "Resize to",
+              run: () => {},
+              items: IMAGE_SIZES.map((size) => ({
+                ...menuItem(`size-${size.id}`, size.label, `${size.width} × ${size.height}`),
+                checked: project.image?.width === size.width && project.image?.height === size.height,
+              })),
+            },
             "sep",
             menuItem("crop", "Crop…"),
             menuItem("turn", "Turn 90°"),
@@ -2350,6 +2418,7 @@ export default function App() {
           label: "Select",
           items: [
             { id: "none", label: "Deselect", disabled: !selected, run: () => setSelectedId(null) },
+            { ...menuItem("colour", "Colour range…"), disabled: !picturePicked },
             "sep",
             ...layersOf(project).map((l): MenuItem => ({ id: `layer-${l.clip.id}`, label: layerName(l.clip, project), checked: l.clip.id === selectedId, run: () => setSelectedId(l.clip.id) })),
           ],
@@ -2361,7 +2430,6 @@ export default function App() {
             { ...menuItem("enhance", "Enhance"), checked: Boolean(selected?.adjust?.enhance) },
             menuItem("adjust", "Adjust colours…"),
             menuItem("cut", "Remove background"),
-            menuItem("colour", "Remove a colour…"),
             "sep",
             ...LOOKS.map((look) => ({ ...menuItem(`look-${look.id}`, look.label), checked: selected?.look === look.id })),
             menuItem("nolook", "Remove the filter"),
@@ -2398,12 +2466,6 @@ export default function App() {
       ];
   // Its options bar: the tool, then what the picked layer can do right now.
   const toolNow = IMAGE_TOOLS.find((t) => t.id === imageTool) ?? IMAGE_TOOLS[0];
-  const optionButton = (c: Command) => (
-    <button key={c.id} type="button" className="btn btn--ghost" disabled={c.disabled} onClick={c.run}>
-      <Icon name={c.icon} size={13} />
-      {c.label}
-    </button>
-  );
   const imageOptions = imageMode && (
     <>
       <span className="image-ws__opt-tool">
@@ -2414,11 +2476,20 @@ export default function App() {
       {paintTool ? (
         <PaintOptions tool={paintTool} settings={paintSettings} onChange={setPaintSettings} />
       ) : (
-        <>
-          <span className="image-ws__opt-name">{selected ? picked : "No layer picked"}</span>
-          <span className="image-ws__opt-sep" />
-          {commands.filter((c) => (selected ? ["crop", "turn", "mirror", "cut", "dup", "delete"] : ["addtext", "addshape", "addphoto", "open"]).includes(c.id)).map(optionButton)}
-        </>
+        // The current tool's options (owner: like Photoshop); adding text, shapes and photos is the tools' job.
+        <ImageOptions
+          tool={imageTool}
+          clip={selected}
+          kind={!selected ? null : isText(selected) ? "text" : selected.shape ? "shape" : "photo"}
+          name={picked}
+          onChange={(patch, live) => selected && (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
+          onCheckpoint={api.checkpoint}
+          onCommand={(id) => commands.find((c) => c.id === id && !c.disabled)?.run()}
+          isOff={(id) => {
+            const c = commands.find((x) => x.id === id);
+            return !c || Boolean(c.disabled);
+          }}
+        />
       )}
       <span className="image-ws__opt-end">
         <button type="button" className="btn btn--icon" aria-label="Undo" disabled={!api.canUndo} onClick={api.undo}>
@@ -2549,9 +2620,10 @@ export default function App() {
         // Edit: the selected clip's settings (and the captions' style).
         <aside className="export" aria-label="Clip settings">
           <div className="export__body is-edit">
-          {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} still={imageMode} /> : <p className="export__hint">{imageMode ? "Click a layer to change it here." : "Click a clip on the timeline to change it here."}</p>)}
+          {/* The Image editor's Document block says it with nothing picked. */}
+          {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} still={imageMode} /> : !imageMode && <p className="export__hint">Click a clip on the timeline to change it here.</p>)}
           {/* Nothing picked in the Image editor: the picture's own size and background. */}
-          {imageMode && !selected && rightTab !== "text" && <ImageSizePanel project={project} api={api} />}
+          {imageMode && !selected && rightTab !== "text" && <DocumentSummary project={project} api={api} onCanvasSize={() => setImageTool("size")} />}
           {rightTab === "edit" && (selectedId === SHOWN_CAPTIONS || selectedTrack?.name === "Captions") && (
             <CaptionStyle
               layout={project.captionLayout ?? CAPTIONS}
@@ -2653,6 +2725,15 @@ export default function App() {
     <div className={imageMode ? "app app--image" : "app"} style={{ "--side-w": `${sideWidth}px`, "--panel-w": `${roomFor(panelWidth, leftOpen && inEditor ? sideWidth : 0, PANEL_WIDTH)}px` } as CSSProperties}>
       <Ambient active={theme.glass} />
       <Tooltip />
+      {imageMode && colourRange && selected && picturePicked && (
+        <ColourRangePanel
+          clip={selected}
+          onChange={(patch, live) => (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
+          onCheckpoint={api.checkpoint}
+          onPick={() => startPick(selected)}
+          onClose={() => setColourRange(false)}
+        />
+      )}
       {fetchReview.dialog}
       <NewImageDialog
         open={newImageOpen}
@@ -2864,15 +2945,14 @@ export default function App() {
             activeTool={imageTool}
             onTool={(id) => {
               if (id === "cutout") return pickTab("background");
-              // Text goes straight into the middle, its styles open beside it.
-              if (id === "text") return (addText(), pickTab("text"), setImageTool("move"));
               if (id === "crop") return selected && openCrop(selected, 0);
               // A panel's tool picked again closes its panel.
               setImageTool((now) => (now === id && id !== "move" && !PAINT_TOOLS.includes(id) ? "move" : id));
             }}
             options={imageOptions}
             doc={{ name: project.media.length ? projectName(project) : "Untitled image", ...project.image }}
-            flyout={imageTool !== "move" && imageTool !== "hand" && !paintTool ? mediaPanel(imageTool as MediaTab) : null}
+            // The Text tool has no panel: a click on the picture types (its styles are in the top bar and the Text tab).
+            flyout={imageTool !== "move" && imageTool !== "hand" && imageTool !== "text" && !paintTool ? mediaPanel(imageTool as MediaTab) : null}
             colours={<ColourSquares colours={paintColours} onChange={setPaintColours} />}
             canvas={preview}
             view={imageView}
@@ -2980,7 +3060,7 @@ export default function App() {
       )}
       {dragging && (
         <div className="app__drop" role="status">
-          <span>Drop to import into Media</span>
+          <span>{imageMode ? "Drop to add as layers" : "Drop to import into Media"}</span>
         </div>
       )}
     </div>

@@ -385,6 +385,45 @@
   border-top: 1px solid var(--line);
 }
 
+/* Full screen: the picture fills the screen and the wave and controls sit over its bottom, like a video player; with
+   the mouse still for a moment they fade and the cursor hides (Preview.tsx `idle`). */
+.preview.is-fullscreen {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.preview.is-fullscreen > .preview__screen {
+  grid-area: 1 / 1 / -1 / -1;
+}
+
+.preview.is-fullscreen > .preview__wave {
+  grid-area: 2 / 1;
+  z-index: 1;
+  margin: 0 var(--space-4);
+}
+
+.preview.is-fullscreen > .preview__transport {
+  grid-area: 3 / 1;
+  z-index: 1;
+  background: rgb(0 0 0 / 0.72);
+  border-top: 0;
+}
+
+.preview.is-fullscreen :is(.preview__wave, .preview__transport) {
+  transition: opacity 0.3s linear;
+}
+
+.preview.is-fullscreen.is-idle :is(.preview__wave, .preview__transport) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.preview.is-fullscreen.is-idle,
+.preview.is-fullscreen.is-idle * {
+  cursor: none;
+}
+
 /* Remove a colour → Pick: a crosshair over the picture until a colour is clicked. */
 .preview__picker {
   /* Over every Image editor layer (each has its place in the stack as its z-index). */
@@ -392,6 +431,14 @@
   inset: 0;
   z-index: 100000;
   cursor: crosshair;
+}
+
+/* The Image editor's Text tool: a click on the picture adds text there (Preview.tsx placeText). */
+.preview__placer {
+  position: absolute;
+  inset: 0;
+  z-index: 100000;
+  cursor: text;
 }
 
 /* The Image editor's painting tools take every click on the picture. */

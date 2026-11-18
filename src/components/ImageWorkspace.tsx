@@ -11,6 +11,8 @@ export interface ImageTool {
   group: "select" | "content" | "paint" | "edit";
   /** Its key (read out with its name). */
   key?: string;
+  /** What it does, in its hover tip. */
+  hint?: string;
   disabled?: boolean;
 }
 
@@ -180,12 +182,13 @@ const LAYERS_H = 232;
 const PROPS_MIN = 200;
 const LAYERS_KEY = "craftora.imageLayersHeight";
 
-function savedLayersHeight(): number {
+/** The height the user dragged the line to; null when they never did (then Layers take half the column). */
+function savedLayersHeight(): number | null {
   try {
     const n = Number(localStorage.getItem(LAYERS_KEY));
-    return n >= 96 ? n : LAYERS_H;
+    return n >= 96 ? n : null;
   } catch {
-    return LAYERS_H;
+    return null;
   }
 }
 
@@ -217,7 +220,7 @@ export function ImageWorkspace(props: {
   const [panelsVisible, setPanelsVisible] = useState(true);
   const [spaceDown, setSpaceDown] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [layersH, setLayersH] = useState(savedLayersHeight);
+  const [layersH, setLayersH] = useState(() => savedLayersHeight() ?? LAYERS_H);
 
   const workAreaRef = useRef<HTMLElement | null>(null);
   const dockRef = useRef<HTMLElement | null>(null);
@@ -297,6 +300,12 @@ export function ImageWorkspace(props: {
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  // Owner: Layers get half the column unless the line was dragged (they work in Layers all the time).
+  useEffect(() => {
+    const dock = dockRef.current;
+    if (savedLayersHeight() === null && dock) setLayersH(Math.round(Math.max(LAYERS_H, Math.min(dock.clientHeight - PROPS_MIN, dock.clientHeight / 2))));
+  }, []);
+
   /** The line between Layers and Properties: dragged or moved with the arrow keys, remembered for next time. */
   const setLayersHeight = (h: number) => {
     const room = (dockRef.current?.clientHeight ?? 800) - PROPS_MIN;
@@ -337,6 +346,8 @@ export function ImageWorkspace(props: {
                 className={`image-ws__tool${tool.id === activeTool ? " is-active" : ""}`}
                 aria-label={tool.key ? `${tool.label} (${tool.key})` : tool.label}
                 aria-pressed={tool.id === activeTool}
+                title={`${tool.label}${tool.key ? ` (${tool.key})` : ""}${tool.hint ? ` · ${tool.hint}` : ""}`}
+                data-tip-side="right"
                 disabled={tool.disabled}
                 onClick={() => onTool(tool.id)}
               >
@@ -358,7 +369,7 @@ export function ImageWorkspace(props: {
       <div className="image-ws__stage">
       <div className="image-ws__doctabs">
         <span className="image-ws__doctab">
-          {doc.name} @ {view.pct}%
+          {doc.name}
         </span>
       </div>
       <main
@@ -391,7 +402,6 @@ export function ImageWorkspace(props: {
         </div>
       </main>
       <footer className="image-ws__status mono">
-        <span>{view.pct}%</span>
         <span>
           {doc.width} px × {doc.height} px
         </span>

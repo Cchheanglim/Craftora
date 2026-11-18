@@ -116,15 +116,68 @@ export function Sidebar({
       {rail && current && (
         <div className="side__group">
           <h2 className="section-label side__group-label">Working on</h2>
-          <button type="button" className="side__current" aria-label={`Open ${current.name}`} onClick={current.onOpen}>
-            <Thumb src={current.thumbnail} icon={current.image ? "image" : "scissors"} />
-            <span className="side__current-text">
-              <span className="truncate">{current.name}</span>
-              <span className="side__current-meta">
-                <span className={current.image ? "is-picture" : "is-video"}>{current.image ? "Picture" : "Video"}</span> · {current.when}
+          {renaming ? (
+            // Not a button while its name is typed (a box inside a button can't be typed in properly).
+            <div className="side__current">
+              <Thumb src={current.thumbnail} icon={current.image ? "image" : "scissors"} />
+              <input
+                className="side__rename"
+                defaultValue={current.name}
+                aria-label="Name"
+                autoFocus
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                  if (e.key === "Escape") {
+                    e.currentTarget.dataset.cancel = "1";
+                    e.currentTarget.blur();
+                  }
+                }}
+                onBlur={(e) => {
+                  setRenaming(false);
+                  const name = e.currentTarget.value;
+                  if (!e.currentTarget.dataset.cancel && name.trim() !== current.name) current.onRename(name);
+                }}
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="side__current"
+              aria-label={`Open ${current.name}`}
+              onClick={current.onOpen}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setMenuAt({ x: e.clientX, y: e.clientY });
+              }}
+            >
+              <Thumb src={current.thumbnail} icon={current.image ? "image" : "scissors"} />
+              <span className="side__current-text">
+                <span className="truncate">{current.name}</span>
+                <span className="side__current-meta">
+                  <span className={current.image ? "is-picture" : "is-video"}>{current.image ? "Picture" : "Video"}</span> · {current.when}
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+          )}
+          {menuAt && (
+            <ContextMenu
+              x={menuAt.x}
+              y={menuAt.y}
+              label={current.name}
+              onClose={() => setMenuAt(null)}
+              items={[
+                { label: "Open", icon: current.image ? "image" : "scissors", onClick: current.onOpen },
+                { label: "Rename", icon: "pencil", onClick: () => setRenaming(true) },
+                { label: "Duplicate", icon: "copy", onClick: current.onDuplicate },
+                { label: current.image ? "Export picture…" : "Export…", icon: "upload", onClick: current.onExport },
+                "sep",
+                { label: "Close project", icon: "x", onClick: current.onClose },
+                { label: "Delete…", icon: "trash", danger: true, onClick: () => void remove() },
+              ]}
+            />
+          )}
+          {dialog}
         </div>
       )}
       {groups.map((group) => (

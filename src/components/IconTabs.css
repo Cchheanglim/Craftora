@@ -48,7 +48,7 @@
   white-space: nowrap;
 }
 
-.icon-tabs__tab:hover:not(:disabled) {
+.icon-tabs__tab:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--bg-hover);
 }
 
@@ -57,7 +57,8 @@
   color: var(--text);
 }
 
-.icon-tabs__tab:disabled {
+.icon-tabs__tab:disabled,
+.icon-tabs__tab[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
 }

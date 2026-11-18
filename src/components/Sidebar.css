@@ -303,3 +303,19 @@
   color: var(--kind-picture);
   font-weight: 600;
 }
+
+/* Working on → right-click → Rename: the name as a box, in the card. */
+.side__rename {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: 600;
+  outline: none;
+}

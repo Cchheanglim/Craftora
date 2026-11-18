@@ -26,7 +26,7 @@ type Action =
   /** Fresh preview links or a found/missing file: not an edit, so it applies to every undo step. */
   | { type: "refreshMedia"; mediaId: string; patch: Partial<MediaItem> };
 
-function reducer(state: State, action: Action): State {
+export function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "edit": {
       const project = applyEdit(state.project, action.edit);
@@ -53,9 +53,13 @@ function reducer(state: State, action: Action): State {
     case "reset":
       return { project: action.project, past: [], future: [] };
     case "refreshMedia": {
+      // A new source only reaches the steps showing the same file: an older step may hold another (the photo before
+      // Remove background), and a list picture made after a cut-out wrote the cut-out into it, so Undo kept it.
+      const { source, ...rest } = action.patch;
+      const url = state.project.media.find((m) => m.id === action.mediaId)?.source.url;
       const fix = (p: Project): Project => ({
         ...p,
-        media: p.media.map((m) => (m.id === action.mediaId ? { ...m, ...action.patch } : m)),
+        media: p.media.map((m) => (m.id === action.mediaId ? { ...m, ...rest, ...(source && m.source.url === url && { source }) } : m)),
       });
       return { project: fix(state.project), past: state.past.map(fix), future: state.future.map(fix) };
     }

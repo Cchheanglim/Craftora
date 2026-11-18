@@ -13,7 +13,8 @@ const GAP = 6;
  * so it shows over open dialogs too.
  */
 export function Tooltip() {
-  const [tip, setTip] = useState<{ text: string; rect: DOMRect } | null>(null);
+  // `right`: beside the thing (`data-tip-side="right"`), for a column of tools where a tip below would cover the next one.
+  const [tip, setTip] = useState<{ text: string; rect: DOMRect; right?: boolean } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,8 +45,11 @@ export function Tooltip() {
       target = el;
       watch.observe(el, { attributes: true, attributeFilter: ["title"] });
       timer = window.setTimeout(() => {
+        // Never over an open menu (it covered "Resize to A4 print"), unless the thing is inside that menu.
+        const menu = document.querySelector('[role="menu"]');
+        if (menu && !menu.contains(el)) return;
         const text = el.getAttribute("data-tip");
-        if (target === el && el.isConnected && text) setTip({ text, rect: el.getBoundingClientRect() });
+        if (target === el && el.isConnected && text) setTip({ text, rect: el.getBoundingClientRect(), right: el.getAttribute("data-tip-side") === "right" });
       }, DELAY);
     };
     const out = (e: PointerEvent) => {
@@ -56,12 +60,14 @@ export function Tooltip() {
     // Like the Windows tooltip: gone on a press, a key, a scroll or leaving the window. The title stays taken until the
     // pointer leaves the thing, or Windows would show its own tip on the next move.
     for (const name of ["pointerdown", "keydown", "wheel", "scroll"]) window.addEventListener(name, hide, true);
+    window.addEventListener("craftora:menubar-open", hide);
     window.addEventListener("blur", hide);
     return () => {
       release();
       document.removeEventListener("pointerover", over, true);
       document.removeEventListener("pointerout", out, true);
       for (const name of ["pointerdown", "keydown", "wheel", "scroll"]) window.removeEventListener(name, hide, true);
+      window.removeEventListener("craftora:menubar-open", hide);
       window.removeEventListener("blur", hide);
     };
   }, []);
@@ -72,6 +78,11 @@ export function Tooltip() {
     if (!el || !tip) return;
     if (!el.matches(":popover-open")) el.showPopover();
     const { width, height } = el.getBoundingClientRect();
+    if (tip.right) {
+      el.style.left = `${tip.rect.right + GAP}px`;
+      el.style.top = `${Math.min(Math.max(GAP, tip.rect.top + tip.rect.height / 2 - height / 2), window.innerHeight - height - GAP)}px`;
+      return;
+    }
     const left = Math.min(Math.max(GAP, tip.rect.left + tip.rect.width / 2 - width / 2), window.innerWidth - width - GAP);
     const below = tip.rect.bottom + GAP;
     el.style.left = `${left}px`;

@@ -84,6 +84,64 @@
   font-size: 11px;
   color: var(--text-3);
   white-space: nowrap;
+  /* Drag the word left or right to change the value (Photoshop's scrubby label). */
+  cursor: ew-resize;
+  user-select: none;
+  touch-action: none;
+}
+
+.layers-panel__mix-label.is-disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* The % box with its ▾, and the slider that drops from it. */
+.layers-panel__pct-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.layers-panel__pct-box .layers-panel__pct {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.layers-panel__pct-btn {
+  width: 16px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-left: 0;
+  border-radius: 0 2px 2px 0;
+  background: var(--bg-input);
+  color: var(--text-3);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.layers-panel__pct-btn:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.layers-panel__pct-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.layers-panel__popover.insp__slider {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  width: 160px;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--bg-raised);
+  box-shadow: 0 6px 16px rgb(0 0 0 / 0.45);
 }
 
 .layers-panel__pct {
@@ -165,6 +223,17 @@
 
 .layers-panel__row.is-dragging {
   opacity: 0.92;
+  cursor: grabbing;
+  background: var(--bg-selected);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.45);
+}
+
+/* While a row is dragged the others don't light up under it. */
+.layers-panel__list.is-dragging .layers-panel__row:hover:not(.is-selected):not(.is-dragging) {
+  background: transparent;
+}
+
+.layers-panel__list.is-dragging {
   cursor: grabbing;
 }
 
@@ -343,7 +412,7 @@
   left: 0;
   right: 0;
   height: 2px;
-  background: var(--text);
+  background: var(--accent);
   z-index: 20;
   pointer-events: none;
 }
@@ -410,4 +479,10 @@
   height: 1px;
   margin: 3px 0;
   background: #3d3d3d;
+}
+
+/* A shape row's thumbnail: the shape itself in its colour. */
+.layers-panel__thumb-shape {
+  width: 20px;
+  height: 20px;
 }

@@ -72,6 +72,14 @@
   flex: none;
 }
 
+.menubar__item > svg.menubar__chevron {
+  position: static;
+  margin-left: auto;
+  padding-left: 24px;
+  box-sizing: content-box;
+  color: var(--text-2);
+}
+
 .menubar__keys {
   margin-left: auto;
   padding-left: 24px;
@@ -80,13 +88,33 @@
 }
 
 .menubar__item:hover:not(:disabled),
-.menubar__item:focus:not(:disabled) {
+.menubar__item:focus:not(:disabled),
+.menubar__item[aria-expanded="true"]:not(:disabled) {
   background: var(--bg-selected);
 }
 
 .menubar__item:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.menubar__parent {
+  position: relative;
+}
+
+.menubar__sub {
+  position: absolute;
+  top: -4px;
+  left: 100%;
+  z-index: 81;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 4px 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 0 3px 3px 3px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.45);
 }
 
 .menubar__sep {

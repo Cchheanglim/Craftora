@@ -35,7 +35,7 @@ import { TEXT_IN, TEXT_OUT, TEXT_LOOP } from "../project/textMotion";
 import { LayerPlace } from "./LayerPlace";
 import "./Inspector.css";
 
-const TEXT_COLORS = [
+export const TEXT_COLORS = [
   { label: "White", value: "#ffffff" },
   { label: "Yellow", value: "#ffd60a" },
   { label: "Black", value: "#111111" },
