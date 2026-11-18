@@ -5,8 +5,9 @@ import { Thumb } from "./Thumb";
 import { hoverVideo, inDesktopApp } from "../lib/engine";
 import { formatWhen } from "../lib/timecode";
 import { useConfirm } from "./ConfirmDialog";
-import { HiddenFold, HideButton, useHidden } from "./Hidden";
-import "./Library.css";
+import { HiddenFold, useHidden } from "./Hidden";
+import { PageSearch, PictureAction, PictureCard } from "./PictureCard";
+import "./Projects.css";
 
 interface HistoryProps {
   /** Links fetched, newest first. */
@@ -17,8 +18,16 @@ interface HistoryProps {
   onRemove: (urls: string[]) => void;
 }
 
+/** "youtube.com" from a link; the link itself when it isn't one. */
+function site(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
 
-/** Every link fetched: the video's title, the link itself, to fetch again, copy or remove. */
+/** Every link fetched: the video's title and its site; a click fetches it again; copy, hide or remove. */
 export function History({ history, onFetchAgain, onRemove }: HistoryProps) {
   const [search, setSearch] = useState("");
   // Links ticked while picking several; null when not picking.
@@ -61,144 +70,103 @@ export function History({ history, onFetchAgain, onRemove }: HistoryProps) {
     );
   const ticked = shown.filter((e) => picked?.has(e.url)).map((e) => e.url);
 
-  const table = (list: FetchEntry[]) => (
-    <div className="library__table-wrap">
-      <table className="library__table">
-        <thead>
-          <tr>
-            <th scope="col">Video</th>
-            <th scope="col">Fetched</th>
-            <th scope="col">
-              <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {list.map((entry) => (
-            <tr key={entry.url}>
-              <td>
-                <span className="library__name">
-                  {picked && (
-                    <input type="checkbox" checked={picked.has(entry.url)} onChange={() => toggle(entry.url)} aria-label={`Select ${entry.title}`} />
-                  )}
-                  <Thumb src={entry.thumbnail} icon="link" play={inDesktopApp ? () => hoverVideo(entry.url) : undefined} />
-                  <span className="library__entry">
-                    <span className="truncate" title={entry.title}>
-                      {entry.title}
-                    </span>
-                    <span className="library__link mono" title={entry.url}>
-                      {entry.url}
-                    </span>
-                  </span>
-                </span>
-              </td>
-              <td className="library__detail">{formatWhen(entry.fetchedAt)}</td>
-              <td className="is-num">
-                <span className="library__actions">
-                  <HideButton hidden={hidden} id={entry.url} name={entry.title} />
-                  <button type="button" className="btn btn--ghost" onClick={() => onFetchAgain(entry.url)}>
-                    <Icon name="rotate" size={14} />
-                    Fetch again
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn--icon"
-                    aria-label={copied === entry.url ? "Link copied" : `Copy the link of ${entry.title}`}
-                    title={copied === entry.url ? "Copied" : "Copy link"}
-                    onClick={() => copy(entry.url)}
-                  >
-                    <Icon name={copied === entry.url ? "check" : "copy"} size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn--icon"
-                    aria-label={`Remove ${entry.title} from history`}
-                    title="Remove from history"
-                    onClick={() => void remove([entry.url])}
-                  >
-                    <Icon name="x" size={14} />
-                  </button>
-                </span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+  const renderCard = (entry: FetchEntry, isHidden: boolean) => (
+    <PictureCard
+      key={entry.url}
+      thumb={<Thumb src={entry.thumbnail} icon="link" play={inDesktopApp ? () => hoverVideo(entry.url) : undefined} />}
+      tag={site(entry.url)}
+      name={entry.title}
+      meta={copied === entry.url ? "Link copied" : `Fetched ${formatWhen(entry.fetchedAt)}`}
+      onOpen={() => onFetchAgain(entry.url)}
+      picked={!isHidden && picked ? picked.has(entry.url) : undefined}
+      onPick={!isHidden && picked ? () => toggle(entry.url) : undefined}
+      actions={
+        <>
+          <PictureAction icon={copied === entry.url ? "check" : "copy"} label={`Copy the link of ${entry.title}`} onClick={() => copy(entry.url)} />
+          <PictureAction
+            icon={isHidden ? "eye" : "eyeOff"}
+            label={`${isHidden ? "Unhide" : "Hide"} ${entry.title}`}
+            onClick={() => hidden.setHidden([entry.url], !isHidden)}
+          />
+          <PictureAction icon="trash" label={`Remove ${entry.title} from history`} onClick={() => void remove([entry.url])} />
+        </>
+      }
+    />
   );
 
   return (
-    <section className="library" aria-labelledby="history-page-title">
+    <section className="pc-page" aria-labelledby="history-page-title">
       {dialog}
-      <header className="library__head">
-        <h1 id="history-page-title">History</h1>
-        <p>Every link you've fetched, newest first: fetch one again, copy its link, or clear them.</p>
+      <header className="pc-head">
+        <div>
+          <h1 id="history-page-title">History</h1>
+          <p>Every link you've fetched, newest first. Click one to fetch it again.</p>
+        </div>
+        {history.length > 0 && (
+          <div className="pc-head__actions">
+            {picked ? (
+              <>
+                <span className="projects__count">{ticked.length} selected</span>
+                <button type="button" className="btn btn--ghost" onClick={() => setPicked(new Set(shown.map((e) => e.url)))}>
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  disabled={ticked.length === 0}
+                  onClick={() => {
+                    hidden.setHidden(ticked, true);
+                    setPicked(null);
+                  }}
+                >
+                  <Icon name="eyeOff" size={14} />
+                  Hide
+                </button>
+                <button type="button" className="btn btn--secondary" disabled={ticked.length === 0} onClick={() => void remove(ticked)}>
+                  <Icon name="trash" size={14} />
+                  Remove
+                </button>
+                <button type="button" className="btn btn--ghost" onClick={() => setPicked(null)}>
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="btn btn--secondary" onClick={() => setPicked(new Set())}>
+                  <Icon name="check" size={14} />
+                  Select
+                </button>
+                <button type="button" className="btn btn--secondary" onClick={() => void remove(history.map((e) => e.url), true)}>
+                  <Icon name="trash" size={14} />
+                  Clear all
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </header>
 
-      {history.length > 0 && (
-        <div className="library__tools">
-          <label htmlFor="history-search" className="sr-only">
-            Search by title or link
-          </label>
-          <input
-            id="history-search"
-            className="field"
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by title or link"
-            spellCheck={false}
-          />
-          {picked ? (
-            <div className="library__bar">
-              <span className="library__count">{ticked.length} selected</span>
-              <button type="button" className="btn btn--ghost" onClick={() => setPicked(new Set(shown.map((e) => e.url)))}>
-                Select all
-              </button>
-              <button
-                type="button"
-                className="btn btn--ghost"
-                disabled={ticked.length === 0}
-                onClick={() => {
-                  hidden.setHidden(ticked, true);
-                  setPicked(null);
-                }}
-              >
-                <Icon name="eyeOff" size={14} />
-                Hide
-              </button>
-              <button type="button" className="btn btn--secondary" disabled={ticked.length === 0} onClick={() => void remove(ticked)}>
-                <Icon name="trash" size={14} />
-                Remove
-              </button>
-              <button type="button" className="btn btn--ghost" onClick={() => setPicked(null)}>
-                Done
-              </button>
-            </div>
-          ) : (
-            <div className="library__bar">
-              <button type="button" className="btn btn--ghost" onClick={() => setPicked(new Set())}>
-                <Icon name="check" size={14} />
-                Select
-              </button>
-              <button type="button" className="btn btn--ghost" onClick={() => void remove(history.map((e) => e.url), true)}>
-                <Icon name="trash" size={14} />
-                Clear all
-              </button>
-            </div>
-          )}
+      <div className="projects__list">
+        <div className="pc-bar">
+          <div className="pc-bar__start">
+            <h2>Links</h2>
+          </div>
+          <div className="pc-bar__end">
+            <PageSearch id="history-search" value={search} onChange={setSearch} placeholder="Search by title or link" />
+          </div>
         </div>
-      )}
 
-      {history.length === 0 ? (
-        <p className="library__muted">Links you fetch show up here, so you can find them again.</p>
-      ) : shown.length === 0 ? (
-        <p className="library__muted">{hiddenShown.length ? "Everything here is hidden." : "Nothing matches."}</p>
-      ) : (
-        table(shown)
-      )}
+        {history.length === 0 ? (
+          <p className="pc-muted">Links you fetch show up here, so you can find them again.</p>
+        ) : shown.length === 0 ? (
+          <p className="pc-muted">{hiddenShown.length ? "Everything here is hidden." : "Nothing matches."}</p>
+        ) : (
+          <ul className="pc-grid">{shown.map((e) => renderCard(e, false))}</ul>
+        )}
+      </div>
+
       <HiddenFold count={hiddenShown.length} note="Hidden from this list only. They're still in your history.">
-        {table(hiddenShown)}
+        <ul className="pc-grid">{hiddenShown.map((e) => renderCard(e, true))}</ul>
       </HiddenFold>
     </section>
   );

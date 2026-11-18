@@ -703,7 +703,11 @@ export function Links({ links }: { links: LinkSettings }) {
   return (
     <>
       {dialog}
-      <h2 className="section-label home__gap">Links</h2>
+      <div className="pc-bar">
+        <div className="pc-bar__start">
+          <h2>Links</h2>
+        </div>
+      </div>
       <div className="home__about">
         <div className="home__sites-head">
           <p className="home__muted">

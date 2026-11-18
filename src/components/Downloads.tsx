@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import type { Job } from "../types";
 import { folded, type Queue } from "../state/useQueue";
-import { deleteFile, errorText, listDownloads, revealFile, type DownloadedFile } from "../lib/engine";
-import { PlayFile } from "./PlayFile";
+import { deleteFile, errorText, listDownloads, openFile, revealFile, type DownloadedFile } from "../lib/engine";
 import { formatSize } from "../project/exportPlan";
 import { Icon } from "./Icon";
 import { QueueRow } from "./QueueDock";
 import { FileThumb } from "./Thumb";
 import { formatWhen } from "../lib/timecode";
-import { HiddenFold, HideButton, useHidden } from "./Hidden";
+import { HiddenFold, useHidden } from "./Hidden";
 import { useConfirm } from "./ConfirmDialog";
+import { PictureAction, PictureCard } from "./PictureCard";
 import "./Library.css";
 
 interface DownloadsProps {
@@ -34,6 +34,8 @@ export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: Download
   const [folder, setFolder] = useState<{ folder: string; files: DownloadedFile[] } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Per file: why Play didn't work (most often the file was moved or deleted).
+  const [playProblems, setPlayProblems] = useState<Record<string, string>>({});
   const { ask, dialog } = useConfirm();
   const remove = async (file: DownloadedFile) => {
     const ok = await ask({
@@ -52,6 +54,11 @@ export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: Download
       setDeleteError(errorText(err));
     }
   };
+  const play = (path: string) =>
+    void openFile(path).catch((err) => {
+      const msg = errorText(err);
+      setPlayProblems((prev) => ({ ...prev, [path]: /isn't there/i.test(msg) ? "Moved or deleted" : "Couldn't play" }));
+    });
   const hidden = useHidden("downloads");
   const files = folder?.files.filter((f) => !hidden.isHidden(f.path)) ?? [];
   const hiddenFiles = folder?.files.filter((f) => hidden.isHidden(f.path)) ?? [];
@@ -64,81 +71,59 @@ export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: Download
     return () => window.removeEventListener("focus", read);
   }, [finished, folderPath]);
 
-  const table = (list: DownloadedFile[]) => (
-    <div className="library__table-wrap">
-      <table className="library__table">
-        <thead>
-          <tr>
-            <th scope="col">File</th>
-            <th scope="col" className="is-num">
-              Size
-            </th>
-            <th scope="col">Downloaded</th>
-            <th scope="col">
-              <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {list.map((file) => (
-            <tr key={file.path}>
-              <td>
-                <span className="library__name">
-                  <FileThumb path={file.path} icon={SOUND.test(file.name) ? "music" : "film"} play={!SOUND.test(file.name)} />
-                  <span className="mono truncate" title={file.name}>
-                    {file.name}
-                  </span>
-                </span>
-              </td>
-              <td className="mono is-num">{formatSize(file.sizeBytes / 1_000_000)}</td>
-              <td className="library__detail">{formatWhen(file.modifiedMs)}</td>
-              <td className="is-num">
-                <span className="library__actions">
-                  <HideButton hidden={hidden} id={file.path} name={file.name} />
-                  <button type="button" className="btn btn--ghost" onClick={() => onAdd(file.path)}>
-                    <Icon name="plus" size={14} />
-                    Add to project
-                  </button>
-                  <PlayFile path={file.path} name={file.name} />
-                  <button type="button" className="btn btn--icon" aria-label={`Show ${file.name} in its folder`} title="Show in folder" onClick={() => void revealFile(file.path)}>
-                    <Icon name="folder" size={14} />
-                  </button>
-                  <button type="button" className="btn btn--icon" aria-label={`Delete ${file.name}`} title="Delete: move the file to the Recycle Bin" onClick={() => void remove(file)}>
-                    <Icon name="trash" size={14} />
-                  </button>
-                </span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  const renderCard = (file: DownloadedFile, isHidden: boolean) => {
+    const sound = SOUND.test(file.name);
+    return (
+      <PictureCard
+        key={file.path}
+        thumb={<FileThumb path={file.path} icon={sound ? "music" : "film"} play={!sound} />}
+        tag={sound ? "Sound" : "Video"}
+        badge={formatSize(file.sizeBytes / 1_000_000)}
+        name={file.name}
+        meta={playProblems[file.path] ?? `Downloaded ${formatWhen(file.modifiedMs)}`}
+        onOpen={() => onAdd(file.path)}
+        actions={
+          <>
+            <PictureAction icon="play" label={`Play ${file.name}`} onClick={() => play(file.path)} />
+            <PictureAction icon="folder" label={`Show ${file.name} in folder`} onClick={() => void revealFile(file.path)} />
+            <PictureAction
+              icon={isHidden ? "eye" : "eyeOff"}
+              label={`${isHidden ? "Unhide" : "Hide"} ${file.name}`}
+              onClick={() => hidden.setHidden([file.path], !isHidden)}
+            />
+            <PictureAction icon="trash" label={`Delete ${file.name}`} onClick={() => void remove(file)} />
+          </>
+        }
+      />
+    );
+  };
 
   return (
-    <section className="library" aria-labelledby="downloads-title">
+    <section className="pc-page" aria-labelledby="downloads-title">
       {dialog}
-      <header className="library__head">
-        <h1 id="downloads-title">Downloads</h1>
-        <p>Links downloaded to edit like files on this PC, and live recordings.</p>
+      <header className="pc-head">
+        <div>
+          <h1 id="downloads-title">Downloads</h1>
+          <p>Links downloaded to edit like files on this PC, and live recordings. Click one to add it to your project.</p>
+        </div>
         {folder && (
-          <div className="library__save">
-            <span>Saved in</span>
-            <span className="mono truncate">{folder.folder}</span>
-            {onChooseFolder && (
-              <button type="button" className="btn btn--secondary" onClick={onChooseFolder}>
-                <Icon name="folder" size={14} />
-                Change
-              </button>
-            )}
+          <div className="pc-head__actions">
+            <button type="button" className="btn btn--secondary" onClick={() => void revealFile(folder.folder)}>
+              <Icon name="folder" size={14} />
+              Open folder
+            </button>
           </div>
         )}
       </header>
 
-      <div className="library__group">
-        <h2 className="section-label">In progress</h2>
+      <section className="library__group" aria-labelledby="downloads-progress">
+        <div className="pc-bar">
+          <div className="pc-bar__start">
+            <h2 id="downloads-progress">In progress</h2>
+          </div>
+        </div>
         {active.length === 0 ? (
-          <p className="library__muted">Nothing downloading. Fetch a link, then press ⬇ next to it under In this project.</p>
+          <p className="pc-muted">Nothing downloading. Fetch a link, then press ⬇ next to it under In this project.</p>
         ) : (
           <div className="queue__list">
             <ul>
@@ -148,29 +133,43 @@ export function Downloads({ queue, folderPath, onChooseFolder, onAdd }: Download
             </ul>
           </div>
         )}
-      </div>
+      </section>
 
-      <div className="library__group">
-        <h2 className="section-label">Finished</h2>
+      <section className="library__group" aria-labelledby="downloads-finished">
+        <div className="pc-bar">
+          <div className="pc-bar__start">
+            <h2 id="downloads-finished">Finished</h2>
+          </div>
+          {folder && (
+            <div className="pc-bar__end">
+              <span className="truncate">
+                Saving to <span className="mono">{folder.folder}</span>
+              </span>
+              {onChooseFolder && (
+                <button type="button" className="btn btn--ghost" onClick={onChooseFolder}>
+                  Change
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         {deleteError && (
-          <p className="library__muted" role="alert">
+          <p className="pc-muted" role="alert">
             {deleteError}
           </p>
         )}
         {problem ? (
-          <p className="library__muted">{problem}</p>
+          <p className="pc-muted">{problem}</p>
         ) : folder && folder.files.length === 0 ? (
-          <p className="library__muted">No finished downloads yet.</p>
+          <p className="pc-muted">No finished downloads yet.</p>
         ) : folder && files.length === 0 ? (
-          <p className="library__muted">Every download is hidden.</p>
+          <p className="pc-muted">Every download is hidden.</p>
         ) : (
-          folder && (
-            table(files)
-          )
+          folder && <ul className="pc-grid">{files.map((f) => renderCard(f, false))}</ul>
         )}
-      </div>
+      </section>
       <HiddenFold count={hiddenFiles.length} note="Hidden from this list only. The files are still in your Downloads folder.">
-        {table(hiddenFiles)}
+        <ul className="pc-grid">{hiddenFiles.map((f) => renderCard(f, true))}</ul>
       </HiddenFold>
     </section>
   );
