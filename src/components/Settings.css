@@ -1,0 +1,76 @@
+/* Settings in the new look (pc-page): a heading row per section, then one row per setting. */
+
+.set-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.set-group > .pc-bar {
+  margin-bottom: 4px;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.set-row--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.set-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.set-row__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.set-row__hint,
+.set-row__hint p {
+  margin: 0;
+  max-width: 75ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+.set-row__control {
+  flex-shrink: 0;
+}
+
+.set-choice {
+  min-width: 180px;
+}
+
+.set-choice button {
+  height: 28px;
+  padding: 0 12px;
+}
+
+.set-proxy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.set-proxy .field {
+  width: min(320px, 100%);
+}
+
+/* The parts that keep their own layout (Assistant, Updates, Links) sit under the heading with the same spacing. */
+.set-group > .set-row__hint {
+  padding: 8px 0 12px;
+}

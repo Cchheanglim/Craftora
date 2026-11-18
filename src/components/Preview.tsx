@@ -10,7 +10,7 @@ import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
 import { RGB_SHARE, adjustSteps, blocksStyle, keyLine, posterLevels, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
-import { setWindowFullscreen } from "../lib/engine";
+import { CRAFTORA_MEDIA, setWindowFullscreen } from "../lib/engine";
 import { textShadowFilter } from "../lib/textPicture";
 import { hasStyle, styleFilter } from "../lib/layerStyle";
 import { Icon } from "./Icon";
@@ -599,6 +599,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                       {live?.clipId === clip.id && <LiveCanvas canvas={live.canvas} className={clip.mirror ? "preview__video is-mirrored" : "preview__video"} style={style} />}
                       <img
                         src={(canPlay ? media.source.previewUrl : poster) || poster}
+                        // Craftora's own addresses answer with CORS: asking for it lets Remove a colour → Pick read the photo.
+                        crossOrigin={((canPlay ? media.source.previewUrl : poster) || poster)?.startsWith(CRAFTORA_MEDIA) ? "anonymous" : undefined}
                         alt=""
                         className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
                         style={live?.clipId === clip.id ? { ...style, visibility: "hidden" } : style}

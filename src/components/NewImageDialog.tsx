@@ -6,10 +6,10 @@ import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
 import "./NewImageDialog.css";
 
-/** Draws a rectangle in the item's proportions fitting the 44×36 box. */
+/** Draws a rectangle in the item's proportions fitting the 52×40 box. */
 function rectDims(width: number, height: number): { width: number; height: number } {
-  const MAX_W = 44;
-  const MAX_H = 36;
+  const MAX_W = 52;
+  const MAX_H = 40;
   const w = Math.max(1, width);
   const h = Math.max(1, height);
   if (w / h >= MAX_W / MAX_H) {
@@ -24,10 +24,10 @@ function rectDims(width: number, height: number): { width: number; height: numbe
   };
 }
 
-/** Draws a preview rectangle in the chosen proportions fitting at most 140×77. */
+/** Draws a preview rectangle in the chosen proportions fitting at most 180×100. */
 function previewDims(width: number, height: number): { width: number; height: number } {
-  const MAX_W = 140;
-  const MAX_H = 77;
+  const MAX_W = 180;
+  const MAX_H = 100;
   const w = Math.max(1, width);
   const h = Math.max(1, height);
   if (w / h >= MAX_W / MAX_H) {
@@ -145,7 +145,6 @@ export function NewImageDialog({ open, recent, openId, onCreate, onOpenPhoto, on
           className="btn btn--icon"
           aria-label="Close"
           onClick={onClose}
-          style={{ width: 22, height: 22 }}
         >
           <Icon name="x" size={14} />
         </button>
@@ -272,7 +271,6 @@ export function NewImageDialog({ open, recent, openId, onCreate, onOpenPhoto, on
             <button
               type="button"
               className="btn btn--icon"
-              style={{ width: 22, height: 22 }}
               onClick={handleSwap}
               aria-label="Swap"
             >
@@ -322,7 +320,6 @@ export function NewImageDialog({ open, recent, openId, onCreate, onOpenPhoto, on
         <button
           type="button"
           className="btn btn--secondary"
-          style={{ width: 80 }}
           onClick={onClose}
         >
           Cancel
@@ -330,7 +327,6 @@ export function NewImageDialog({ open, recent, openId, onCreate, onOpenPhoto, on
         <button
           type="button"
           className="btn btn--primary"
-          style={{ minWidth: 80 }}
           onClick={handleCreate}
         >
           {recentCards.length ? "Create new" : "Create"}

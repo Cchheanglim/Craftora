@@ -401,6 +401,8 @@ export default function App() {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A message belongs to the page it came from: leaving the page clears it (an editor error stayed on Home forever).
+  useEffect(() => setError(null), [view]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** A block just added from the right panel, for the timeline to zoom in to (`at` makes each one new). */
   const [revealed, setRevealed] = useState<{ clipId: string; at: number } | null>(null);
@@ -1371,13 +1373,16 @@ export default function App() {
   };
 
   /**
-   * Editor and Image editor each open the last project of their kind, or a new one. Entering the Image editor also
-   * offers the recent pictures and new sizes (closing that keeps the picture behind it).
+   * Editor opens the last video project, or a new one. Image editor starts on a blank picture (owner: not where it was
+   * left), with the recent pictures and new sizes offered over it; a blank picture isn't saved, so nothing piles up.
    */
   const go = async (next: View) => {
     const image = next === "image";
-    if (image && view !== "image") setNewImageOpen(true);
-    if ((next === "editor" || image) && Boolean(project.image) !== image) {
+    if (image && view !== "image") {
+      setNewImageOpen(true);
+      if (!project.image || project.clips.length > 0) return newProject(true);
+    }
+    if (next === "editor" && project.image) {
       // Right after start the list may not be in yet.
       const list = projects.length ? projects : await (projectsLoad.current ?? Promise.resolve(projects));
       const last = list.find((p) => Boolean(p.image) === image);
@@ -1872,7 +1877,14 @@ export default function App() {
     setPicking(null);
     if (color) api.editLive({ type: "updateClip", clipId, patch: { chroma: { ...KEY_START, ...before, color } } });
     else if (before) api.editLive({ type: "updateClip", clipId, patch: { chroma: before } });
-    if (unreadable) setError("Couldn't read the colour there. Download this video first (⬇ in Media), then pick again.");
+    if (unreadable) {
+      const media = project.media.find((m) => m.id === project.clips.find((c) => c.id === clipId)?.mediaId);
+      setError(
+        media?.source.image
+          ? "Couldn't read the colour in this picture. Try picking again, or use one of the colours under Remove a colour."
+          : "Couldn't read the colour there. Download this video first (⬇ in Media), then pick again.",
+      );
+    }
   };
   const clipCommand = (command: ClipCommand, clip: Clip, time: number) => {
     const media = project.media.find((m) => m.id === clip.mediaId);
@@ -2339,15 +2351,16 @@ export default function App() {
         {
           label: "Filter",
           items: [
-            menuItem("enhance", "Enhance"),
+            // Ticks show what the picked layer has on.
+            { ...menuItem("enhance", "Enhance"), checked: Boolean(selected?.adjust?.enhance) },
             menuItem("adjust", "Adjust colours…"),
             menuItem("cut", "Remove background"),
             menuItem("colour", "Remove a colour…"),
             "sep",
-            ...LOOKS.map((look) => menuItem(`look-${look.id}`, look.label)),
+            ...LOOKS.map((look) => ({ ...menuItem(`look-${look.id}`, look.label), checked: selected?.look === look.id })),
             menuItem("nolook", "Remove the filter"),
             "sep",
-            ...PICTURE_EFFECTS.filter((e) => STILL_EFFECTS.includes(e.id)).map((effect) => menuItem(`effect-${effect.id}`, effect.label)),
+            ...PICTURE_EFFECTS.filter((e) => STILL_EFFECTS.includes(e.id)).map((effect) => ({ ...menuItem(`effect-${effect.id}`, effect.label), checked: selected?.effect === effect.id })),
             menuItem("noeffect", "Remove the effect"),
           ],
         },
@@ -2704,6 +2717,7 @@ export default function App() {
         fetching={busy}
         error={error}
         errorAction={fetchErrorAction}
+        onDismissError={() => setError(null)}
         hideLink={view === "home"}
         canCheckSite={inDesktopApp && siteChecks.available}
         onSetUpSiteCheck={
@@ -2752,6 +2766,7 @@ export default function App() {
             fetching={busy}
             error={error}
             errorAction={fetchErrorAction}
+            onDismissError={() => setError(null)}
             canCheckSite={inDesktopApp && siteChecks.available}
             onSetUpSiteCheck={
               inDesktopApp

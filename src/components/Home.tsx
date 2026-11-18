@@ -28,6 +28,8 @@ interface HomeProps {
   /** Why the last fetch failed, and the button that helps (open the video's page). */
   error: string | null;
   errorAction?: { label: string; onClick: () => void };
+  /** Takes the error away (its X). */
+  onDismissError: () => void;
   busy: boolean;
   /** Saved projects, most recent first. */
   projects: ProjectEntry[];
@@ -230,6 +232,7 @@ export function Home({
   fetching,
   error,
   errorAction,
+  onDismissError,
   busy,
   projects,
   currentId,
@@ -380,6 +383,9 @@ export function Home({
                   {errorAction.label}
                 </button>
               )}
+              <button type="button" className="btn btn--icon" aria-label="Close" onClick={onDismissError}>
+                <Icon name="x" size={12} />
+              </button>
             </div>
           )}
           <div className="home__starts">
@@ -703,7 +709,11 @@ export function Links({ links }: { links: LinkSettings }) {
   return (
     <>
       {dialog}
-      <h2 className="section-label home__gap">Links</h2>
+      <div className="pc-bar">
+        <div className="pc-bar__start">
+          <h2>Links</h2>
+        </div>
+      </div>
       <div className="home__about">
         <div className="home__sites-head">
           <p className="home__muted">
