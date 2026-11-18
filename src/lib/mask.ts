@@ -6,17 +6,23 @@ import type { CSSProperties } from "react";
 import { layerBox } from "../project/layerBox";
 import { isShape, isText, textLines, type Clip } from "../project/model";
 import { shapeBox } from "../project/shapes";
-import { hexOf, multiply, photoToImage, rgbOf, type Affine, type PaintColours } from "./paint";
+import { hexOf, invert, multiply, photoToImage, rgbOf, type Affine, type PaintColours } from "./paint";
 import { textLayout } from "./textPicture";
 
 /** The largest side a mask is made at. */
 const MAX_MASK_SIDE = 4096;
 
+/** A mask's pixel size for a `width` × `height` box, capped at `MAX_MASK_SIDE`. */
+export function maskSize(width: number, height: number): { width: number; height: number } {
+  const k = Math.min(1, MAX_MASK_SIDE / Math.max(1e-6, width, height));
+  return { width: Math.max(1, Math.round(width * k)), height: Math.max(1, Math.round(height * k)) };
+}
+
 function maskCanvas(width: number, height: number) {
-  const k = Math.min(1, MAX_MASK_SIDE / Math.max(width, height));
+  const size = maskSize(width, height);
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(width * k));
-  canvas.height = Math.max(1, Math.round(height * k));
+  canvas.width = size.width;
+  canvas.height = size.height;
   return [canvas, canvas.getContext("2d")!] as const;
 }
 
@@ -108,9 +114,9 @@ export function alphaToGrey(px: Uint8ClampedArray) {
 export function cutoutMask(clip: Clip, cutout: HTMLImageElement, W: number, H: number): string {
   const nw = Math.max(1, cutout.naturalWidth || cutout.width);
   const nh = Math.max(1, cutout.naturalHeight || cutout.height);
-  const box = clipMaskBox(clip, W, H, nw / nh);
+  const box = layerBox(clip, nw / nh, W, H);
   const [canvas, ctx] = maskCanvas(box.width, box.height);
-  const toMask = multiply(maskAffine({ ...box, angle: 0 }, canvas), photoToImage({ ...clip, angle: 0 }, { width: nw, height: nh }, W, H, false));
+  const toMask = photoToMask(clip, { width: nw, height: nh }, W, H, canvas);
   ctx.setTransform(toMask[0], toMask[1], toMask[2], toMask[3], toMask[4], toMask[5]);
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(cutout, 0, 0);
@@ -118,6 +124,77 @@ export function cutoutMask(clip: Clip, cutout: HTMLImageElement, W: number, H: n
   const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
   alphaToGrey(data.data);
   ctx.putImageData(data, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+type PlacedPhoto = Parameters<typeof photoToImage>[0];
+
+/** Photo pixel → mask pixel for a photo layer (`clip`) whose mask image is `mask` (`width` × `height`). */
+export function photoToMask(
+  clip: PlacedPhoto,
+  natural: { width: number; height: number },
+  W: number,
+  H: number,
+  mask: { width: number; height: number },
+): Affine {
+  const box = layerBox(clip, natural.width / natural.height, W, H);
+  return multiply(maskAffine({ ...box, angle: 0 }, mask), photoToImage({ ...clip, angle: 0 }, natural, W, H, false));
+}
+
+/**
+ * Pure affine remapping between `before`'s mask and `after`'s mask so every mask pixel stays on the same photo pixel
+ * after changing `mirror`, `rotate` or `crop`. `oldMask` defaults to `before`'s box size (with the 4096 cap).
+ */
+export function remapMaskAffine(
+  before: PlacedPhoto,
+  after: PlacedPhoto,
+  natural: { width: number; height: number },
+  W: number,
+  H: number,
+  oldMask?: { width: number; height: number },
+): { size: { width: number; height: number }; newToOld: Affine; oldToNew: Affine } {
+  const aspect = natural.width / natural.height;
+  const oldBox = layerBox(before, aspect, W, H);
+  const newBox = layerBox(after, aspect, W, H);
+  const oldSize = oldMask ?? maskSize(oldBox.width, oldBox.height);
+  const size = maskSize(newBox.width, newBox.height);
+  const toOld = photoToMask(before, natural, W, H, oldSize);
+  const toNew = photoToMask(after, natural, W, H, size);
+  return {
+    size,
+    newToOld: multiply(toOld, invert(toNew)),
+    oldToNew: multiply(toNew, invert(toOld)),
+  };
+}
+
+/**
+ * Redraws `mask` (`before`'s layer mask) so it stays on the same photo pixels after `mirror` / `rotate` / `crop`
+ * changes to `after`. Photo areas that the old mask didn't cover (e.g. revealed by a wider crop) become white (shown).
+ */
+export async function remapMask(
+  before: PlacedPhoto,
+  after: PlacedPhoto,
+  mask: string,
+  natural: { width: number; height: number },
+  W: number,
+  H: number,
+): Promise<string> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const m = new Image();
+    m.onload = () => resolve(m);
+    m.onerror = () => reject(new Error("Couldn't read the layer mask."));
+    m.src = mask;
+  });
+  const nw = Math.max(1, natural.width);
+  const nh = Math.max(1, natural.height);
+  const oldSize = { width: Math.max(1, img.naturalWidth || img.width), height: Math.max(1, img.naturalHeight || img.height) };
+  const { size, oldToNew } = remapMaskAffine(before, after, { width: nw, height: nh }, W, H, oldSize);
+  const [canvas, ctx] = maskCanvas(size.width, size.height);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(oldToNew[0], oldToNew[1], oldToNew[2], oldToNew[3], oldToNew[4], oldToNew[5]);
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, 0, 0);
   return canvas.toDataURL("image/png");
 }
 

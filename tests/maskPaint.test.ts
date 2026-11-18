@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
-import { alphaToGrey, clipMaskBox, greyHex, greysOf, lumaOf, lumaToAlpha, maskAffine } from "../src/lib/mask";
-import { apply, scaleOf } from "../src/lib/paint";
+import { alphaToGrey, clipMaskBox, greyHex, greysOf, lumaOf, lumaToAlpha, maskAffine, maskSize, photoToMask, remapMaskAffine } from "../src/lib/mask";
+import { apply, invert, multiply, scaleOf } from "../src/lib/paint";
+import { layerBox } from "../src/project/layerBox";
 import { NO_CROP, newImageProject, type Clip, type Project } from "../src/project/model";
 import { reducer } from "../src/project/useProject";
 
@@ -164,4 +165,80 @@ test("alphaToGrey turns the alpha channel into opaque greys (255 = white, 0 = bl
   // Round-trips back to the same alpha under lumaToAlpha.
   lumaToAlpha(px);
   expect([px[3], px[7], px[11]]).toEqual([0, 128, 255]);
+});
+
+test("remapMaskAffine keeps a mask point on the same photo pixel across mirror, 90° turn, flip vertical, and crop", () => {
+  const natural = { width: 800, height: 600 };
+  const [W, H] = [400, 400];
+  const base: Clip = {
+    id: "p1",
+    trackId: "t1",
+    mediaId: "m1",
+    start: 0,
+    in: 0,
+    out: 5,
+    speed: 1,
+    volume: 1,
+    mirror: false,
+    reverse: false,
+    angle: 25,
+    fadeIn: 0,
+    fadeOut: 0,
+    crop: NO_CROP,
+    size: 1,
+    x: 0.5,
+    y: 0.5,
+  };
+  const oldBox = layerBox(base, natural.width / natural.height, W, H);
+  const oldSize = maskSize(oldBox.width, oldBox.height);
+  expect(oldSize).toEqual({ width: 400, height: 300 });
+  const oldPt: [number, number] = [80, 90];
+  const toOld = photoToMask(base, natural, W, H, oldSize);
+  const photoPt = apply(invert(toOld), oldPt);
+
+  // Mirror: point flips horizontally in mask space and stays on the same photo pixel.
+  const mirrored: Clip = { ...base, mirror: true };
+  const mMirror = remapMaskAffine(base, mirrored, natural, W, H);
+  const mirroredPt = apply(mMirror.oldToNew, oldPt);
+  near(mirroredPt, [320, 90]);
+  near(apply(mMirror.newToOld, mirroredPt), oldPt);
+  near(apply(invert(photoToMask(mirrored, natural, W, H, mMirror.size)), mirroredPt), photoPt);
+
+  // Mirror twice gives back the original mapping (identity).
+  const mUnmirror = remapMaskAffine(mirrored, base, natural, W, H);
+  const roundTrip = multiply(mUnmirror.oldToNew, mMirror.oldToNew);
+  const roundTripInv = multiply(mMirror.newToOld, mUnmirror.newToOld);
+  for (const [actual, expected] of [roundTrip, roundTripInv].flatMap((m) => m.map((v, i) => [v, [1, 0, 0, 1, 0, 0][i]]))) {
+    expect(actual).toBeCloseTo(expected, 6);
+  }
+
+  // Flip vertical (180° + mirror): point flips vertically in mask space and stays on the same photo pixel.
+  const flippedV: Clip = { ...base, rotate: 180, mirror: true };
+  const mFlipV = remapMaskAffine(base, flippedV, natural, W, H);
+  const flippedPt = apply(mFlipV.oldToNew, oldPt);
+  near(flippedPt, [80, 210]);
+  near(apply(invert(photoToMask(flippedV, natural, W, H, mFlipV.size)), flippedPt), photoPt);
+
+  // Turn 90° clockwise: box swaps 400x300 -> 300x400 and the point follows the photo pixel.
+  const turned: Clip = { ...base, rotate: 90 };
+  const mTurn = remapMaskAffine(base, turned, natural, W, H);
+  expect(mTurn.size).toEqual({ width: 300, height: 400 });
+  const turnedPt = apply(mTurn.oldToNew, oldPt);
+  near(turnedPt, [210, 80]);
+  near(apply(mTurn.newToOld, turnedPt), oldPt);
+  near(apply(invert(photoToMask(turned, natural, W, H, mTurn.size)), turnedPt), photoPt);
+
+  // Crop: point stays on the same photo pixel; widening the crop leaves newly revealed pixels outside the old mask.
+  const cropped: Clip = { ...base, crop: { left: 0.1, top: 0.1, right: 0.3, bottom: 0.1 } };
+  const mCrop = remapMaskAffine(base, cropped, natural, W, H);
+  const croppedPt = apply(mCrop.oldToNew, oldPt);
+  near(apply(mCrop.newToOld, croppedPt), oldPt);
+  near(apply(invert(photoToMask(cropped, natural, W, H, mCrop.size)), croppedPt), photoPt);
+
+  const widened = remapMaskAffine(cropped, base, natural, W, H);
+  const revealedInOld = apply(widened.newToOld, [10, 150]);
+  expect(revealedInOld[0]).toBeLessThan(0);
+
+  // 4096 cap matches blankMask.
+  expect(maskSize(6000, 3000)).toEqual({ width: 4096, height: 2048 });
 });
