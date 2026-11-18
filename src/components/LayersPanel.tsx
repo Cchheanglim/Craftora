@@ -75,12 +75,20 @@ export function LayersPanel({
   api,
   selectedId,
   onSelect,
+  maskEdit,
+  onMaskEdit,
+  maskView,
+  onMaskView,
   menu,
 }: {
   project: Project;
   api: ProjectApi;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  maskEdit?: string | null;
+  onMaskEdit?: (id: string | null) => void;
+  maskView?: string | null;
+  onMaskView?: (id: string | null) => void;
   /** The picked layer's commands (App's Layer menu); shown under the panel's own items. */
   menu?: (MenuItem | "sep")[];
 }) {
@@ -788,34 +796,72 @@ export function LayersPanel({
                   <Icon name={track.hidden ? "eyeOff" : "eye"} size={14} />
                 </button>
 
-                {/* 40x26 Thumbnail */}
-                {clip.mediaId ? (
-                  <div className="layers-panel__thumb layers-panel__thumb--checker">
-                    {src ? (
-                      <img src={src} alt="" className="layers-panel__thumb-img" draggable={false} />
+                {/* 40x26 Thumbnail (+ optional Layer mask thumbnail) */}
+                <div className="layers-panel__thumbs">
+                  <button
+                    type="button"
+                    className={`layers-panel__thumb${clip.mediaId ? " layers-panel__thumb--checker" : ""}${isSelected && clip.mask && maskEdit !== clip.id ? " is-editing" : ""}`}
+                    aria-label="Layer thumbnail"
+                    aria-pressed={isSelected && (!clip.mask || maskEdit !== clip.id)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect(clip.id);
+                      onMaskEdit?.(null);
+                    }}
+                  >
+                    {clip.mediaId ? (
+                      src ? (
+                        <img src={src} alt="" className="layers-panel__thumb-img" draggable={false} />
+                      ) : (
+                        <Icon name="image" size={16} />
+                      )
+                    ) : clip.shape ? (
+                      (() => {
+                        const def = SHAPES.find((s) => s.id === clip.shape) ?? SHAPES[0];
+                        const stroked = Boolean(clip.outline) || Boolean(def.line);
+                        const colour = clip.color ?? "#ffffff";
+                        return (
+                          <svg className="layers-panel__thumb-shape" viewBox="-6 -6 112 112" aria-hidden="true">
+                            <path d={def.path} fill={stroked ? "none" : colour} stroke={stroked ? colour : "none"} strokeWidth={stroked ? 10 : 0} />
+                          </svg>
+                        );
+                      })()
                     ) : (
-                      <Icon name="image" size={16} />
+                      <span className="layers-panel__thumb-text">T</span>
                     )}
-                  </div>
-                ) : clip.shape ? (
-                  <div className="layers-panel__thumb">
-                    {/* The shape itself in its colour, so a row shows what it is. */}
-                    {(() => {
-                      const def = SHAPES.find((s) => s.id === clip.shape) ?? SHAPES[0];
-                      const stroked = Boolean(clip.outline) || Boolean(def.line);
-                      const colour = clip.color ?? "#ffffff";
-                      return (
-                        <svg className="layers-panel__thumb-shape" viewBox="-6 -6 112 112" aria-hidden="true">
-                          <path d={def.path} fill={stroked ? "none" : colour} stroke={stroked ? colour : "none"} strokeWidth={stroked ? 10 : 0} />
+                  </button>
+                  {clip.mask && (
+                    <button
+                      type="button"
+                      className={`layers-panel__thumb layers-panel__thumb--mask${isSelected && maskEdit === clip.id ? " is-editing" : ""}`}
+                      aria-label="Layer mask"
+                      aria-pressed={isSelected && maskEdit === clip.id}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (e.shiftKey) {
+                          api.edit({ type: "maskOff", clipId: clip.id, off: !clip.maskOff });
+                          return;
+                        }
+                        if (e.altKey) {
+                          onMaskView?.(maskView === clip.id ? null : clip.id);
+                          return;
+                        }
+                        onSelect(clip.id);
+                        onMaskEdit?.(clip.id);
+                      }}
+                    >
+                      <img src={clip.mask} alt="" className="layers-panel__thumb-img" draggable={false} />
+                      {clip.maskOff && (
+                        <svg className="layers-panel__mask-x" viewBox="0 0 40 26" aria-hidden="true">
+                          <line x1="2" y1="2" x2="38" y2="24" />
+                          <line x1="38" y1="2" x2="2" y2="24" />
                         </svg>
-                      );
-                    })()}
-                  </div>
-                ) : (
-                  <div className="layers-panel__thumb">
-                    <span className="layers-panel__thumb-text">T</span>
-                  </div>
-                )}
+                      )}
+                    </button>
+                  )}
+                </div>
 
                 {/* Layer Name / Inline Rename Input */}
                 {editingId === clip.id ? (

@@ -115,17 +115,19 @@ import {
   type Project,
   withImported,
 } from "./project/model";
+import { layerBox } from "./project/layerBox";
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { MediaPanel, type Tab as MediaTab } from "./components/MediaPanel";
 import { LayersPanel, layerName } from "./components/LayersPanel";
 import { CommandBox, type Command } from "./components/CommandBox";
 import { removeBackground, savePicture } from "./lib/cutout";
-import { BRUSH_MAX, BRUSH_MIN, COLOURS_START, PAINT_START, PAINT_TOOLS, type PaintTool } from "./lib/paint";
-import type { Painting } from "./components/PaintSurface";
+import { BRUSH_MAX, BRUSH_MIN, COLOURS_START, PAINT_START, PAINT_TOOLS, invert, photoToImage, type PaintColours, type PaintTool } from "./lib/paint";
+import { pngOf, type Painting } from "./components/PaintSurface";
 import { ColourSquares } from "./components/ColourSquares";
 import { PaintOptions } from "./components/PaintOptions";
-import { composeImage } from "./lib/compose";
+import { composeImage, photo } from "./lib/compose";
+import { blankMask, clipMaskBox, cutoutMask, greysOf, lumaToAlpha } from "./lib/mask";
 import { DocumentSummary, ImageSizePanel } from "./components/ImageSizePanel";
 import { ImageOptions } from "./components/ImageOptions";
 import { NewImageDialog } from "./components/NewImageDialog";
@@ -410,6 +412,12 @@ export default function App() {
   // A message belongs to the page it came from: leaving the page clears it (an editor error stayed on Home forever).
   useEffect(() => setError(null), [view]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** Image editor: the layer id whose mask is being edited (null = editing the layer's pixels). */
+  const [maskEdit, setMaskEdit] = useState<string | null>(null);
+  /** Image editor: the layer id whose mask is shown alone on the stage. */
+  const [maskView, setMaskView] = useState<string | null>(null);
+  /** Image editor: throttled live mask data URL during a mask stroke, before `setMask` commits. */
+  const [liveMask, setLiveMask] = useState<{ clipId: string; url: string } | null>(null);
   /** A block just added from the right panel, for the timeline to zoom in to (`at` makes each one new). */
   const [revealed, setRevealed] = useState<{ clipId: string; at: number } | null>(null);
   /** The clip whose transition is selected on the timeline. */
@@ -509,6 +517,19 @@ export default function App() {
   const { project } = api;
   // The Image editor is the editor's layout for an image project (Layers instead of the timeline, nothing timed).
   const imageMode = inEditor && Boolean(project.image);
+  useEffect(() => {
+    if (maskEdit && (maskEdit !== selectedId || !project.clips.find((c) => c.id === maskEdit)?.mask)) setMaskEdit(null);
+  }, [selectedId, maskEdit, project.clips]);
+  useEffect(() => {
+    if (maskView && !project.clips.find((c) => c.id === maskView)?.mask) setMaskView(null);
+  }, [maskView, project.clips]);
+  useEffect(() => {
+    if (!imageMode) {
+      setMaskEdit(null);
+      setMaskView(null);
+      setLiveMask(null);
+    }
+  }, [imageMode]);
   const paintTool = imageMode && PAINT_TOOLS.includes(imageTool) ? (imageTool as PaintTool) : null;
   const imageView = useImageView(project.image ?? NO_IMAGE);
   const duration = projectDuration(project);
@@ -668,6 +689,26 @@ export default function App() {
   const toExport = useMemo(() => (showCaptions ? withShownCaptions(project) : project), [project, showCaptions]);
   const plan = useMemo(() => planExport(toExport, effective), [toExport, effective]);
   const selected = project.clips.find((c) => c.id === selectedId) ?? null;
+  const editingMask = Boolean(imageMode && selected && maskEdit === selected.id && selected.mask);
+  const savedColours = useRef<PaintColours | null>(null);
+  const paintColoursRef = useRef(paintColours);
+  paintColoursRef.current = paintColours;
+  useEffect(() => {
+    if (editingMask) {
+      if (!savedColours.current) {
+        savedColours.current = paintColoursRef.current;
+        setPaintColours((c) => greysOf(c));
+      }
+    } else if (savedColours.current) {
+      setPaintColours(savedColours.current);
+      savedColours.current = null;
+    }
+  }, [editingMask]);
+  const changeColours = (next: PaintColours | ((cur: PaintColours) => PaintColours)) =>
+    setPaintColours((cur) => {
+      const resolved = typeof next === "function" ? next(cur) : next;
+      return editingMask ? greysOf(resolved) : resolved;
+    });
   // The Sound panel belongs to a clip: with none selected, it goes back to where it was opened from, and comes back when
   // a clip with sound is selected again, until it's closed or another tab is picked (`soundOpen`).
   const [soundOpen, setSoundOpen] = useState(false);
@@ -1680,16 +1721,84 @@ export default function App() {
     return clipId;
   };
   const addPaintLayer = () => void newPaintLayer().catch((err) => setError(`Couldn't add a layer: ${errorText(err)}`));
-  /** A painted layer's pixels become its photo (one undo step); the new file's path. */
-  const paintLayer = async (clipId: string, png: Blob) => {
+  /** Saves a layer PNG to disk, opens it as a local source, and pre-decodes it before swapping. */
+  const saveLayerSource = async (png: Blob) => {
     const path = await savePicture(png);
     const source = await openLocal(path);
     // Loaded before the swap, so the layer never shows its old pixels in between.
     const img = new Image();
     img.src = source.previewUrl;
     await img.decode().catch(() => {});
+    return { path, source };
+  };
+  /** A painted layer's pixels become its photo (one undo step); the new file's path. */
+  const paintLayer = async (clipId: string, png: Blob) => {
+    const { path, source } = await saveLayerSource(png);
     api.edit({ type: "paint", clipId, source, newMediaId: crypto.randomUUID() });
     return path;
+  };
+  /** Adds a reveal-all or hide-all mask sized to `clip`'s box in image pixels, and targets it for editing. */
+  const addLayerMask = async (clip: Clip, fill: "white" | "black") => {
+    const { width: W, height: H } = projectRef.current.image ?? NO_IMAGE;
+    if (!W || !H) return;
+    let aspect = W / H;
+    if (clip.mediaId) {
+      const shown = document.querySelector<HTMLImageElement>(`[data-clip="${CSS.escape(clip.id)}"] img`);
+      if (shown?.naturalWidth && shown.naturalHeight) {
+        aspect = shown.naturalWidth / shown.naturalHeight;
+      } else {
+        const media = projectRef.current.media.find((m) => m.id === clip.mediaId);
+        if (media?.source.previewUrl) {
+          const img = new Image();
+          img.src = media.source.previewUrl;
+          await img.decode().catch(() => {});
+          if (img.naturalWidth && img.naturalHeight) aspect = img.naturalWidth / img.naturalHeight;
+        }
+      }
+    }
+    const { width, height } = clipMaskBox(clip, W, H, aspect);
+    api.edit({ type: "setMask", clipId: clip.id, mask: blankMask(width, height, fill) });
+    setMaskEdit(clip.id);
+  };
+  /** Bakes a photo layer's mask into its pixels at the photo's own size and removes the mask. */
+  const applyLayerMask = async (clip: Clip) => {
+    const media = projectRef.current.media.find((m) => m.id === clip.mediaId);
+    if (!clip.mask || !media?.source.image || !media.source.local || !inDesktopApp) return;
+    const [img, maskImg] = await Promise.all([
+      photo(media.source.url),
+      new Promise<HTMLImageElement>((resolve, reject) => {
+        const m = new Image();
+        m.onload = () => resolve(m);
+        m.onerror = () => reject(new Error("Couldn't read the layer mask."));
+        m.src = clip.mask!;
+      }),
+    ]);
+    const [nw, nh] = [img.naturalWidth, img.naturalHeight];
+    const canvas = document.createElement("canvas");
+    canvas.width = nw;
+    canvas.height = nh;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(img, 0, 0);
+    const alpha = document.createElement("canvas");
+    alpha.width = maskImg.width;
+    alpha.height = maskImg.height;
+    const actx = alpha.getContext("2d")!;
+    actx.drawImage(maskImg, 0, 0);
+    const data = actx.getImageData(0, 0, alpha.width, alpha.height);
+    lumaToAlpha(data.data);
+    actx.putImageData(data, 0, 0);
+    const { width: W, height: H } = projectRef.current.image ?? { width: nw, height: nh };
+    const box = layerBox(clip, nw / nh, W, H);
+    // Map the mask from the upright layer box back into the photo's own pixel coordinates.
+    const inv = invert(photoToImage({ ...clip, angle: 0 }, { width: nw, height: nh }, W, H, false));
+    ctx.save();
+    ctx.setTransform(inv[0], inv[1], inv[2], inv[3], inv[4], inv[5]);
+    ctx.globalCompositeOperation = "destination-in";
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(alpha, box.left, box.top, box.width, box.height);
+    ctx.restore();
+    const { source } = await saveLayerSource(await pngOf(canvas));
+    api.edit({ type: "applyMask", clipId: clip.id, source, newMediaId: crypto.randomUUID() });
   };
   const resizeBrush = (grow: boolean) => {
     const tool = imageTool === "eraser" ? "eraser" : "brush";
@@ -1991,8 +2100,8 @@ export default function App() {
       b: () => imageMode && inDesktopApp && setImageTool("brush"),
       e: () => imageMode && inDesktopApp && setImageTool("eraser"),
       g: () => imageMode && inDesktopApp && setImageTool(e.shiftKey ? "gradient" : "bucket"),
-      x: () => imageMode && setPaintColours((c) => ({ fg: c.bg, bg: c.fg })),
-      d: () => imageMode && setPaintColours(COLOURS_START),
+      x: () => imageMode && changeColours((c) => ({ fg: c.bg, bg: c.fg })),
+      d: () => imageMode && changeColours(COLOURS_START),
       "[": () => imageMode && (imageTool === "brush" || imageTool === "eraser") && resizeBrush(false),
       "]": () => imageMode && (imageTool === "brush" || imageTool === "eraser") && resizeBrush(true),
       c: () => imageMode && selected && showsPicture(project, selected) && openCrop(selected, 0),
@@ -2007,7 +2116,10 @@ export default function App() {
       end: () => playback.seek(duration),
       i: () => (imageMode ? inDesktopApp && setImageTool("eyedropper") : selectedId && api.edit({ type: "trimClip", clipId: selectedId, edge: "start", time: t })),
       o: () => selectedId && api.edit({ type: "trimClip", clipId: selectedId, edge: "end", time: t }),
-      escape: () => setSelectedId(null),
+      escape: () => {
+        if (imageMode && maskView) setMaskView(null);
+        else setSelectedId(null);
+      },
     };
     const action = actions[key];
     if (!action || (key === " " && onButton)) return;
@@ -2177,14 +2289,26 @@ export default function App() {
 
   /** Remove background for a clip's photo (a picture on this PC), or nothing for anything else. */
   const cutOutOf = (clip: Clip | null) => {
-    const photo = project.media.find((m) => m.id === clip?.mediaId);
-    if (!photo?.source.image || !photo.source.local || !inDesktopApp || photo.original) return undefined;
+    const media = project.media.find((m) => m.id === clip?.mediaId);
+    if (!clip || !media?.source.image || !media.source.local || !inDesktopApp || (imageMode ? Boolean(clip.mask) : Boolean(media.original))) return undefined;
     return async (onStatus: (text: string) => void) => {
-      const path = await removeBackground(photo.source.url, onStatus);
+      const path = await removeBackground(media.source.url, onStatus);
+      if (imageMode) {
+        const img = await photo(path);
+        const current = projectRef.current.clips.find((c) => c.id === clip.id) ?? clip;
+        const { width: W, height: H } = projectRef.current.image ?? { width: img.naturalWidth, height: img.naturalHeight };
+        const mask = cutoutMask(current, img, W, H);
+        api.checkpoint();
+        api.editLive({ type: "setMask", clipId: current.id, mask });
+        if (current.maskOff) api.editLive({ type: "maskOff", clipId: current.id, off: false });
+        // Owner: a cut-out on a white canvas looked like nothing happened, so the canvas turns see-through (checks).
+        if (projectRef.current.image) api.editLive({ type: "setImage", patch: { background: "" } });
+        setMaskEdit(current.id);
+        return;
+      }
       const source = await openLocal(path);
       api.checkpoint();
-      api.editLive({ type: "cutOut", mediaId: photo.id, source, own: clip ? { clipId: clip.id, mediaId: crypto.randomUUID() } : undefined });
-      // Owner: a cut-out on a white canvas looked like nothing happened, so the canvas turns see-through (checks).
+      api.editLive({ type: "cutOut", mediaId: media.id, source, own: { clipId: clip.id, mediaId: crypto.randomUUID() } });
       if (project.image) api.editLive({ type: "setImage", patch: { background: "" } });
     };
   };
@@ -2236,10 +2360,13 @@ export default function App() {
         tool: paintTool,
         settings: paintSettings,
         colours: paintColours,
-        clipId: paintsOn(selected),
+        clipId: editingMask ? selected!.id : paintsOn(selected),
+        mask: editingMask,
         onNewLayer: newPaintLayer,
         onPainted: paintLayer,
-        onColour: (color, background) => setPaintColours((c) => (background ? { ...c, bg: color } : { ...c, fg: color })),
+        onMaskLive: (clipId, url) => setLiveMask(url ? { clipId, url } : (cur) => (cur?.clipId === clipId ? null : cur)),
+        onMaskPainted: (clipId, mask) => api.edit({ type: "setMask", clipId, mask }),
+        onColour: (color, background) => changeColours((c) => (background ? { ...c, bg: color } : { ...c, fg: color })),
         onError: setError,
       }
     : undefined;
@@ -2248,13 +2375,30 @@ export default function App() {
       silent={voiceSilent}
       painting={painting}
       picking={picking ? { clipId: picking.clipId, onPicked: (color) => endPick(color), onCancel: (unreadable) => endPick(undefined, unreadable) } : undefined}
-      // Background tab → hold to see the original: that photo drawn as it was before its cut-out.
-      project={peek ? { ...project, media: project.media.map((m) => (m.id === peek && m.original ? { ...m, source: m.original } : m)) } : project}
+      // Background tab → hold to see the original: that photo drawn as it was before its cut-out; live mask during a mask stroke.
+      project={
+        peek || liveMask
+          ? {
+              ...project,
+              ...(peek && !imageMode ? { media: project.media.map((m) => (m.id === peek && m.original ? { ...m, source: m.original } : m)) } : {}),
+              ...(liveMask || (peek && imageMode)
+                ? {
+                    clips: project.clips.map((c) => ({
+                      ...c,
+                      ...(liveMask && c.id === liveMask.clipId ? { mask: liveMask.url } : {}),
+                      ...(peek && imageMode && c.id === peek ? { maskOff: true } : {}),
+                    })),
+                  }
+                : {}),
+            }
+          : project
+      }
       api={api}
       // An image is its first moment: arrow keys or an old playhead can't hide its layers.
       playback={imageMode ? { ...playback, time: 0, playing: false } : playback}
       frame={project.image ? { id: "image", label: "", ...project.image } : frameOf(effective)}
       still={imageMode && project.image ? { background: project.image.background } : undefined}
+      maskView={imageMode ? maskView : null}
       duration={duration}
       selectedId={selectedId}
       onSelect={setSelectedId}
@@ -2347,6 +2491,27 @@ export default function App() {
               ...(isText(selected) ? [{ id: "style", label: "Text style and font", icon: "text", group: picked, run: () => pickTab("text") } satisfies Command] : []),
               { id: "dup", label: "Duplicate layer", keys: "Ctrl J", icon: "copy", group: picked, run: () => duplicate() },
               { id: "layerstyle", label: "Layer style…", detail: "drop shadow, outer glow, stroke", icon: "sparkle", group: picked, run: () => setStyleOpen(true) },
+              ...(!selected.mask
+                ? [
+                    { id: "maskreveal", label: "Add mask: reveal all", icon: "image", group: picked, run: () => void addLayerMask(selected, "white") } satisfies Command,
+                    { id: "maskhide", label: "Add mask: hide all", icon: "image", group: picked, run: () => void addLayerMask(selected, "black") } satisfies Command,
+                  ]
+                : [
+                    { id: "maskoff", label: selected.maskOff ? "Enable layer mask" : "Disable layer mask", icon: "eyeOff", group: picked, run: () => api.edit({ type: "maskOff", clipId: selected.id, off: !selected.maskOff }) } satisfies Command,
+                    ...(picturePicked
+                      ? [
+                          {
+                            id: "maskapply",
+                            label: "Apply layer mask",
+                            icon: "check",
+                            group: picked,
+                            disabled: !inDesktopApp || !project.media.find((m) => m.id === selected.mediaId)?.source.local,
+                            run: () => void applyLayerMask(selected).catch((err) => setError(`Couldn't apply the mask: ${errorText(err)}`)),
+                          } satisfies Command,
+                        ]
+                      : []),
+                    { id: "maskdelete", label: "Delete layer mask", icon: "trash", group: picked, run: () => api.edit({ type: "setMask", clipId: selected.id, mask: null }) } satisfies Command,
+                  ]),
               { id: "up", label: "Move layer up", keys: "Ctrl ]", icon: "chevronUp", group: picked, run: () => moveLayer(-1) },
               { id: "down", label: "Move layer down", keys: "Ctrl [", icon: "chevronDown", group: picked, run: () => moveLayer(1) },
               { id: "delete", label: "Delete layer", keys: "Delete", icon: "trash", group: picked, run: remove },
@@ -2412,7 +2577,32 @@ export default function App() {
         },
         {
           label: "Layer",
-          items: [menuItem("newlayer", "New layer"), menuItem("addtext", "New text layer"), menuItem("addshape", "New shape layer…"), menuItem("addphoto", "New photo layer…"), "sep", menuItem("dup", "Duplicate layer"), menuItem("layerstyle", "Layer style…"), menuItem("up", "Bring forward"), menuItem("down", "Send backward"), "sep", menuItem("delete", "Delete layer")],
+          items: [
+            menuItem("newlayer", "New layer"),
+            menuItem("addtext", "New text layer"),
+            menuItem("addshape", "New shape layer…"),
+            menuItem("addphoto", "New photo layer…"),
+            "sep",
+            menuItem("dup", "Duplicate layer"),
+            menuItem("layerstyle", "Layer style…"),
+            {
+              id: "layermask",
+              label: "Layer mask",
+              disabled: !selected,
+              run: () => {},
+              items: [
+                menuItem("maskreveal", "Add mask: reveal all"),
+                menuItem("maskhide", "Add mask: hide all"),
+                menuItem("maskoff", selected?.maskOff ? "Enable layer mask" : "Disable layer mask"),
+                menuItem("maskapply", "Apply layer mask"),
+                menuItem("maskdelete", "Delete layer mask"),
+              ],
+            },
+            menuItem("up", "Bring forward"),
+            menuItem("down", "Send backward"),
+            "sep",
+            menuItem("delete", "Delete layer"),
+          ],
         },
         {
           label: "Select",
@@ -2656,8 +2846,12 @@ export default function App() {
               onCutOut={cutOutOf(selected)}
               startCut={cutRequest === selected.id}
               onCutStarted={() => setCutRequest(null)}
-              onRestore={() => selected.mediaId && api.edit({ type: "cutOut", mediaId: selected.mediaId, own: { clipId: selected.id, mediaId: crypto.randomUUID() } })}
-              onPeek={(on) => setPeek(on ? (selected.mediaId ?? null) : null)}
+              onRestore={() =>
+                imageMode
+                  ? api.edit({ type: "setMask", clipId: selected.id, mask: null })
+                  : selected.mediaId && api.edit({ type: "cutOut", mediaId: selected.mediaId, own: { clipId: selected.id, mediaId: crypto.randomUUID() } })
+              }
+              onPeek={(on) => setPeek(on ? (imageMode ? selected.id : (selected.mediaId ?? null)) : null)}
               onPreview={(from, seconds) => {
                 const back = playback.time;
                 playback.seek(from);
@@ -2953,11 +3147,40 @@ export default function App() {
             doc={{ name: project.media.length ? projectName(project) : "Untitled image", ...project.image }}
             // The Text tool has no panel: a click on the picture types (its styles are in the top bar and the Text tab).
             flyout={imageTool !== "move" && imageTool !== "hand" && imageTool !== "text" && !paintTool ? mediaPanel(imageTool as MediaTab) : null}
-            colours={<ColourSquares colours={paintColours} onChange={setPaintColours} />}
+            colours={<ColourSquares colours={paintColours} onChange={changeColours} />}
             canvas={preview}
             view={imageView}
             properties={panelBody}
-            layers={<LayersPanel project={project} api={api} selectedId={selectedId} onSelect={setSelectedId} menu={[menuItem("dup", "Duplicate layer"), menuItem("layerstyle", "Layer style…"), menuItem("up", "Bring forward"), menuItem("down", "Send backward"), "sep", menuItem("crop", "Crop…"), menuItem("turn", "Turn 90°"), menuItem("mirror", "Mirror"), "sep", menuItem("delete", "Delete layer")]} />}
+            layers={
+              <LayersPanel
+                project={project}
+                api={api}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                maskEdit={maskEdit}
+                onMaskEdit={setMaskEdit}
+                maskView={maskView}
+                onMaskView={setMaskView}
+                menu={[
+                  menuItem("dup", "Duplicate layer"),
+                  menuItem("layerstyle", "Layer style…"),
+                  menuItem("up", "Bring forward"),
+                  menuItem("down", "Send backward"),
+                  "sep",
+                  menuItem("crop", "Crop…"),
+                  menuItem("turn", "Turn 90°"),
+                  menuItem("mirror", "Mirror"),
+                  "sep",
+                  menuItem("maskreveal", "Add mask: reveal all"),
+                  menuItem("maskhide", "Add mask: hide all"),
+                  menuItem("maskoff", selected?.maskOff ? "Enable layer mask" : "Disable layer mask"),
+                  menuItem("maskapply", "Apply layer mask"),
+                  menuItem("maskdelete", "Delete layer mask"),
+                  "sep",
+                  menuItem("delete", "Delete layer"),
+                ]}
+              />
+            }
           />
         ) : inEditor && (
           <div

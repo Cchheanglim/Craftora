@@ -233,7 +233,9 @@ export function Inspector({
     enhance,
     background: isPicture && (
       <>
-        {media && (media.original || onCutOut) && <RemoveBackground cutOut={Boolean(media.original)} onCutOut={onCutOut} onRestore={onRestore} onPeek={onPeek} start={startCut} onStarted={onCutStarted} />}
+        {media && ((still ? clip.mask : media.original) || onCutOut) && (
+          <RemoveBackground cutOut={Boolean(still ? clip.mask : media.original)} onCutOut={onCutOut} onRestore={onRestore} onPeek={onPeek} start={startCut} onStarted={onCutStarted} />
+        )}
         {!still && <RemoveColour clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} onPick={onPickColour} />}
       </>
     ),

@@ -5,7 +5,8 @@
 .DESCRIPTION
   Fetches official release builds, verifies their SHA-256 checksums, and places them in
   src-tauri/bin/ as folders bundled as resources: FFmpeg and FFprobe with the libraries they
-  share as bin/ffmpeg, yt-dlp's unpacked build as bin/yt-dlp, Deno and whisper.cpp. The
+  share as bin/ffmpeg, yt-dlp's unpacked build as bin/yt-dlp, Deno, whisper.cpp, the ISNet
+  background-removal model in bin/models, and ONNX Runtime + DirectML in bin/onnxruntime. The
   binaries are gitignored; run this once per machine:
 
     powershell -ExecutionPolicy Bypass -File scripts/fetch-sidecars.ps1
@@ -38,13 +39,17 @@ function Get-File([string]$Url, [string]$OutFile) {
   if ($LASTEXITCODE -ne 0) { throw "Download failed: $Url" }
 }
 
+function Assert-Sha256([string]$File, [string]$Expected, [string]$Name) {
+  $actual = (Get-FileHash -Algorithm SHA256 $File).Hash.ToLower()
+  if ($Expected.ToLower() -ne $actual) { throw "Checksum mismatch for $Name (expected $Expected, got $actual)" }
+  Write-Host "  checksum OK: $Name"
+}
+
 function Assert-Checksum([string]$File, [string]$SumsFile, [string]$Name) {
   $line = Get-Content $SumsFile | Where-Object { $_ -match "\s\*?$([regex]::Escape($Name))$" } | Select-Object -First 1
   if (-not $line) { throw "No checksum listed for $Name" }
-  $expected = ($line -split "\s+")[0].ToLower()
-  $actual = (Get-FileHash -Algorithm SHA256 $File).Hash.ToLower()
-  if ($expected -ne $actual) { throw "Checksum mismatch for $Name (expected $expected, got $actual)" }
-  Write-Host "  checksum OK: $Name"
+  $expected = ($line -split "\s+")[0]
+  Assert-Sha256 $File $expected $Name
 }
 
 # --- yt-dlp -------------------------------------------------------------------
@@ -187,6 +192,92 @@ if ($engineBuild -and ($Force -or -not (Test-Path $engineTarget))) {
 } else {
   Write-Host "Fetch engine not found: set CRAFTORA_ENGINE_EXE to its craftora-observer.exe. Building without it."
   Set-Content -Path (Join-Path $engineDir "README.txt") -Value "Craftora's fetch engine (craftora-observer.exe) goes here; see scripts/fetch-sidecars.ps1."
+}
+
+# --- Remove background (ISNet model + ONNX Runtime + DirectML) ------------------
+$modelsDir = Join-Path $binDir "models"
+$modelTarget = Join-Path $modelsDir "isnet-general-use.onnx"
+$modelSizeExpected = 178648008
+$modelSha256 = "60920e99c45464f2ba57bee2ad08c919a52bbf852739e96947fbb4358c0d964a"
+if ($Force -or -not (Test-Path $modelTarget)) {
+  Write-Host "ISNet background-removal model"
+  $modelTmpDir = Join-Path $tmp "models"
+  if (Test-Path $modelTmpDir) { Remove-Item -Recurse -Force $modelTmpDir }
+  New-Item -ItemType Directory -Force -Path $modelTmpDir | Out-Null
+  $modelTmp = Join-Path $modelTmpDir "isnet-general-use.onnx"
+  Get-File "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx" $modelTmp
+  $modelSizeActual = (Get-Item $modelTmp).Length
+  if ($modelSizeActual -ne $modelSizeExpected) {
+    throw "Size mismatch for isnet-general-use.onnx (expected $modelSizeExpected bytes, got $modelSizeActual)"
+  }
+  Assert-Sha256 $modelTmp $modelSha256 "isnet-general-use.onnx"
+  New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
+  Move-Item $modelTmp $modelTarget -Force
+  Remove-Item -Recurse -Force $modelTmpDir -ErrorAction SilentlyContinue
+} else {
+  Write-Host "ISNet model already present (use -Force to replace)"
+}
+
+$ortVersion = "1.24.4"
+$ortNupkgSha256 = "57e9f11b73437bef7a309496135d4c1f96b1a8e9ddba60013fa27bfc1d788681"
+$ortDllSha256 = "e7eedec6a6f26dc39dc948276a75ef6d2bee3fff944d874ceed0bbd3b97bff40"
+$ortProvidersDllSha256 = "265c8daf29637cb259cac8be9f08f2cd45f3883f0f0e4949cbfddd5b4cbec3b6"
+$dmlVersion = "1.15.4"
+$dmlNupkgSha256 = "4e7cb7ddce8cf837a7a75dc029209b520ca0101470fcdf275c1f49736a3615b9"
+$dmlDllSha256 = "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1"
+$ortDir = Join-Path $binDir "onnxruntime"
+$ortTargets = @(
+  (Join-Path $ortDir "onnxruntime.dll"),
+  (Join-Path $ortDir "onnxruntime_providers_shared.dll"),
+  (Join-Path $ortDir "DirectML.dll"),
+  (Join-Path $ortDir "ONNXRUNTIME-LICENSE.txt"),
+  (Join-Path $ortDir "ONNXRUNTIME-ThirdPartyNotices.txt"),
+  (Join-Path $ortDir "DIRECTML-LICENSE.txt")
+)
+if ($Force -or ($ortTargets | Where-Object { -not (Test-Path $_) })) {
+  Write-Host "ONNX Runtime ($ortVersion) + DirectML ($dmlVersion)"
+  $ortTmp = Join-Path $tmp "onnxruntime"
+  if (Test-Path $ortTmp) { Remove-Item -Recurse -Force $ortTmp }
+  New-Item -ItemType Directory -Force -Path $ortTmp | Out-Null
+
+  # Expand-Archive in Windows PowerShell 5.1 requires a .zip extension.
+  $ortZip = Join-Path $ortTmp "microsoft.ml.onnxruntime.directml.$ortVersion.zip"
+  Get-File "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/$ortVersion/microsoft.ml.onnxruntime.directml.$ortVersion.nupkg" $ortZip
+  Assert-Sha256 $ortZip $ortNupkgSha256 "microsoft.ml.onnxruntime.directml.$ortVersion.nupkg"
+  $ortUnzipped = Join-Path $ortTmp "ort-pkg"
+  Expand-Archive -Path $ortZip -DestinationPath $ortUnzipped
+
+  $dmlZip = Join-Path $ortTmp "microsoft.ai.directml.$dmlVersion.zip"
+  Get-File "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/$dmlVersion/microsoft.ai.directml.$dmlVersion.nupkg" $dmlZip
+  Assert-Sha256 $dmlZip $dmlNupkgSha256 "microsoft.ai.directml.$dmlVersion.nupkg"
+  $dmlUnzipped = Join-Path $ortTmp "dml-pkg"
+  Expand-Archive -Path $dmlZip -DestinationPath $dmlUnzipped
+
+  $ortStage = Join-Path $ortTmp "stage"
+  New-Item -ItemType Directory -Force -Path $ortStage | Out-Null
+  $ortExtracts = @(
+    @((Join-Path $ortUnzipped "runtimes\win-x64\native\onnxruntime.dll"), "onnxruntime.dll"),
+    @((Join-Path $ortUnzipped "runtimes\win-x64\native\onnxruntime_providers_shared.dll"), "onnxruntime_providers_shared.dll"),
+    @((Join-Path $ortUnzipped "LICENSE"), "ONNXRUNTIME-LICENSE.txt"),
+    @((Join-Path $ortUnzipped "ThirdPartyNotices.txt"), "ONNXRUNTIME-ThirdPartyNotices.txt"),
+    @((Join-Path $dmlUnzipped "bin\x64-win\DirectML.dll"), "DirectML.dll"),
+    @((Join-Path $dmlUnzipped "LICENSE.txt"), "DIRECTML-LICENSE.txt")
+  )
+  foreach ($item in $ortExtracts) {
+    if (-not (Test-Path $item[0])) { throw "Missing expected file in package: $($item[0])" }
+    Copy-Item $item[0] (Join-Path $ortStage $item[1])
+  }
+
+  Assert-Sha256 (Join-Path $ortStage "onnxruntime.dll") $ortDllSha256 "onnxruntime.dll"
+  Assert-Sha256 (Join-Path $ortStage "onnxruntime_providers_shared.dll") $ortProvidersDllSha256 "onnxruntime_providers_shared.dll"
+  Assert-Sha256 (Join-Path $ortStage "DirectML.dll") $dmlDllSha256 "DirectML.dll"
+
+  if (Test-Path $ortDir) { Remove-Item -Recurse -Force $ortDir }
+  New-Item -ItemType Directory -Force -Path $ortDir | Out-Null
+  Copy-Item (Join-Path $ortStage "*") $ortDir
+  Remove-Item -Recurse -Force $ortTmp -ErrorAction SilentlyContinue
+} else {
+  Write-Host "ONNX Runtime + DirectML already present (use -Force to replace)"
 }
 
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

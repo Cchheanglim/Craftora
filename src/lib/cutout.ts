@@ -29,6 +29,16 @@ function picture(src: string): Promise<HTMLImageElement> {
 /** Cuts the subject out of the picture at `path` (a file opened in Craftora); `onStatus` says what's happening. Returns
  * the PNG's path on this PC. */
 export async function removeBackground(path: string, onStatus: (text: string) => void): Promise<string> {
+  onStatus("Finding the subject…");
+  // A project reopened after a restart hasn't let this file be read yet.
+  await allowLocal(path);
+  try {
+    return await invoke<string>("cutout_run", { path });
+  } catch (err) {
+    const msg = typeof err === "string" ? err : err instanceof Error ? err.message : "";
+    if (!/couldn't load the ai (?:model|runtime)/i.test(msg)) throw err;
+  }
+
   const ort = await import("onnxruntime-web/webgpu");
   ort.env.wasm.wasmPaths = { wasm, mjs };
   session ??= (async () => {

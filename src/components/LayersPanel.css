@@ -273,20 +273,59 @@
   flex-shrink: 0;
 }
 
-/* 40x26 Thumbnails */
+/* 40x26 Thumbnails (layer + optional mask, 1px gap) */
+.layers-panel__thumbs {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
 .layers-panel__thumb {
+  position: relative;
   width: 40px;
   height: 26px;
+  padding: 0;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 3px;
+  border-radius: 2px;
   border: 1px solid var(--line-strong);
   background: var(--bg-input);
   color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
   overflow: hidden;
   box-sizing: border-box;
+}
+
+.layers-panel__thumb:focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: -1px;
+}
+
+.layers-panel__thumb.is-editing {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.layers-panel__thumb--mask {
+  background: #000;
+}
+
+.layers-panel__mask-x {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.layers-panel__mask-x line {
+  stroke: var(--danger);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
 }
 
 /* Checkerboard for transparent parts */
