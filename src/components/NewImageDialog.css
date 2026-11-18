@@ -10,7 +10,7 @@
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
   color: var(--text);
   font-size: 13px;
-  width: 680px;
+  width: 820px;
   max-width: calc(100vw - 32px);
   box-sizing: border-box;
 }
@@ -173,7 +173,7 @@
 }
 
 .new-image:has(.new-image__recent) {
-  width: 920px;
+  width: 1060px;
 }
 
 /* Recent pictures: a column at the left, the open one first (click to continue). */

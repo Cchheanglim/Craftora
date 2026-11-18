@@ -17,7 +17,7 @@
 }
 
 /* Light, flat: the light glass's colours on solid surfaces. */
-:root[data-colour="light"]:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"]:not(:is(.app--image, .layer-style-dialog) *) {
   color-scheme: light;
   --bg-input: #ffffff;
   --bg-canvas: #f4f4f5;
@@ -192,11 +192,11 @@
 /* The Image editor and its windows stay dark in every colour (ImageWorkspace.css): these light fixes skip them. */
 
 /* On Light the clips' teal is pale: their names in the usual dark text, not white. */
-:root[data-colour="light"] .tl__clip.is-media .tl__label:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .tl__clip.is-media .tl__label:not(:is(.app--image, .layer-style-dialog) *) {
   color: var(--text);
 }
 
-:root[data-theme] :is(.confirm, .welcome, .crop-dialog, .export-dialog, .text-menu, .export__more, .tl__menu, .ctx-menu, .tl__ai-box, .select__list, .cmd-box__list, .queue__panel, .tooltip) {
+:root[data-theme] :is(.confirm, .welcome, .new-image, .crop-dialog, .export-dialog, .text-menu, .export__more, .tl__menu, .ctx-menu, .tl__ai-box, .select__list, .cmd-box__list, .queue__panel, .tooltip) {
   border-color: var(--glass-edge);
   -webkit-backdrop-filter: blur(30px) saturate(170%);
   backdrop-filter: blur(30px) saturate(170%);
@@ -212,7 +212,7 @@
   background: rgb(34 34 40 / 0.97);
 }
 
-:root[data-colour="light"] :is(.export__more, .select__list, .cmd-box__list):not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] :is(.export__more, .select__list, .cmd-box__list):not(:is(.app--image, .layer-style-dialog) *) {
   background: rgb(250 251 253 / 0.97);
 }
 
@@ -237,71 +237,71 @@
 }
 
 /* Light (flat or glass): what the dark colours draw in white on dark turns dark on light. */
-:root[data-colour="light"] .btn--secondary:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .btn--secondary:not(:is(.app--image, .layer-style-dialog) *) {
   background: rgb(255 255 255 / 0.8);
 }
 
-:root[data-colour="light"] .btn--secondary:hover:not(:disabled):not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .btn--secondary:hover:not(:disabled):not(:is(.app--image, .layer-style-dialog) *) {
   background: #ffffff;
 }
 
-:root[data-colour="light"] .btn--icon:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .btn--icon:not(:is(.app--image, .layer-style-dialog) *) {
   border-color: rgb(15 23 42 / 0.08);
   background: rgb(255 255 255 / 0.65);
   box-shadow: inset 0 1px 0 #ffffff, 0 1px 2px rgb(15 23 42 / 0.06);
 }
 
-:root[data-colour="light"] .btn--icon:hover:not(:disabled):not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .btn--icon:hover:not(:disabled):not(:is(.app--image, .layer-style-dialog) *) {
   border-color: rgb(15 23 42 / 0.14);
   background: #ffffff;
 }
 
-:root[data-colour="light"] .preview__play:hover:not(:disabled):not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .preview__play:hover:not(:disabled):not(:is(.app--image, .layer-style-dialog) *) {
   background: #000000;
 }
 
-:root[data-colour="light"] .preview__wave > span:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .preview__wave > span:not(:is(.app--image, .layer-style-dialog) *) {
   background: rgb(15 23 42 / 0.22);
 }
 
-:root[data-colour="light"] :is(.tl__lane, .tl__head):not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] :is(.tl__lane, .tl__head):not(:is(.app--image, .layer-style-dialog) *) {
   background-color: rgb(15 23 42 / 0.04);
 }
 
-:root[data-colour="light"] .tl__lane:hover:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .tl__lane:hover:not(:is(.app--image, .layer-style-dialog) *) {
   background-color: rgb(15 23 42 / 0.06);
 }
 
-:root[data-colour="light"] .tl__wave > span:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .tl__wave > span:not(:is(.app--image, .layer-style-dialog) *) {
   background: rgb(15 23 42 / 0.3);
 }
 
-:root[data-colour="light"] .tl__chapter:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .tl__chapter:not(:is(.app--image, .layer-style-dialog) *) {
   background: rgb(15 23 42 / 0.55);
 }
 
-:root[data-colour="light"] .tl__trans:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .tl__trans:not(:is(.app--image, .layer-style-dialog) *) {
   background: rgb(15 23 42 / 0.08);
   border-right-color: rgb(15 23 42 / 0.4);
 }
 
-:root[data-colour="light"] .tl__clip:hover .tl__trim:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .tl__clip:hover .tl__trim:not(:is(.app--image, .layer-style-dialog) *) {
   background: rgb(15 23 42 / 0.3);
 }
 
-:root[data-colour="light"] .tl__clip.is-selected .tl__trim:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .tl__clip.is-selected .tl__trim:not(:is(.app--image, .layer-style-dialog) *) {
   background: rgb(15 23 42 / 0.7);
 }
 
-:root[data-colour="light"] .export__code pre:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .export__code pre:not(:is(.app--image, .layer-style-dialog) *) {
   color: var(--text-2);
 }
 
-:root[data-colour="light"] .export__more:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .export__more:not(:is(.app--image, .layer-style-dialog) *) {
   box-shadow: inset 0 1px 0 var(--glass-hi), 0 -8px 16px -8px rgb(40 50 80 / 0.18);
 }
 
-:root[data-colour="light"] .transcript__text .is-picked:not(:is(.app--image, .new-image, .layer-style-dialog) *) {
+:root[data-colour="light"] .transcript__text .is-picked:not(:is(.app--image, .layer-style-dialog) *) {
   background: rgb(229 25 61 / 0.12);
   color: #b5122f;
 }
