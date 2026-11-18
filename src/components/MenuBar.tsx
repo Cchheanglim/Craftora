@@ -27,7 +27,7 @@ export function MenuBar({ menus }: { menus: Menu[] }): JSX.Element {
   const safeActive = menus.length > 0 ? Math.min(activeIndex, menus.length - 1) : 0;
 
   const focusFirstInMenu = (menuIdx: number) => {
-    const first = menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
+    const first = menuRef.current?.querySelector<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)');
     if (first) first.focus();
     else titleRefs.current[menuIdx]?.focus();
   };
@@ -106,7 +106,7 @@ export function MenuBar({ menus }: { menus: Menu[] }): JSX.Element {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       e.stopPropagation();
-      const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []);
+      const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? []);
       if (items.length === 0) return;
       const at = items.indexOf(document.activeElement as HTMLButtonElement);
       const next = e.key === "ArrowDown" ? (at === -1 ? 0 : (at + 1) % items.length) : at <= 0 ? items.length - 1 : at - 1;
@@ -181,7 +181,8 @@ export function MenuBar({ menus }: { menus: Menu[] }): JSX.Element {
                       key={item.id}
                       type="button"
                       className="menubar__item"
-                      role="menuitem"
+                      role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+                      aria-checked={item.checked}
                       tabIndex={-1}
                       disabled={item.disabled}
                       onClick={() => runItem(item)}

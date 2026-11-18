@@ -1373,13 +1373,16 @@ export default function App() {
   };
 
   /**
-   * Editor and Image editor each open the last project of their kind, or a new one. Entering the Image editor also
-   * offers the recent pictures and new sizes (closing that keeps the picture behind it).
+   * Editor opens the last video project, or a new one. Image editor starts on a blank picture (owner: not where it was
+   * left), with the recent pictures and new sizes offered over it; a blank picture isn't saved, so nothing piles up.
    */
   const go = async (next: View) => {
     const image = next === "image";
-    if (image && view !== "image") setNewImageOpen(true);
-    if ((next === "editor" || image) && Boolean(project.image) !== image) {
+    if (image && view !== "image") {
+      setNewImageOpen(true);
+      if (!project.image || project.clips.length > 0) return newProject(true);
+    }
+    if (next === "editor" && project.image) {
       // Right after start the list may not be in yet.
       const list = projects.length ? projects : await (projectsLoad.current ?? Promise.resolve(projects));
       const last = list.find((p) => Boolean(p.image) === image);
