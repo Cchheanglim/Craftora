@@ -158,8 +158,15 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
   // there are many.
   // Each layer's latest pixels while saved and after (`url` = its file once saved), so the next stroke builds on them.
   const latest = useRef(new Map<string, { canvas: HTMLCanvasElement; url: string | null }>());
+  // Each layer's latest mask canvas (`url` = its data URL once set), so consecutive strokes build on it without re-decoding.
+  const latestMask = useRef(new Map<string, { canvas: HTMLCanvasElement; url: string | null }>());
   // The picked photo's pixels, read ahead so the first stroke starts at once.
   const read = useRef<{ url: string; pixels: Promise<HTMLCanvasElement> } | null>(null);
+  const readMask = useRef<{ url: string; pixels: Promise<HTMLCanvasElement> } | null>(null);
+  const maskSeq = useRef(0);
+  const liveMaskTimer = useRef(0);
+  const lastLivePush = useRef(0);
+  const encodingLive = useRef(false);
   // Saves land in the order they were painted.
   const saving = useRef(Promise.resolve());
   // The new layer the last stroke made, until it's the picked layer (strokes before that go onto it too).
@@ -182,10 +189,66 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
     return read.current.pixels;
   };
   useEffect(() => {
-    if (targetUrl && painting.tool !== "eyedropper") pixelsOf(targetUrl).catch(() => read.current?.url === targetUrl && (read.current = null));
+    if (!painting.mask && targetUrl && painting.tool !== "eyedropper") pixelsOf(targetUrl).catch(() => read.current?.url === targetUrl && (read.current = null));
     // pixelsOf only reads refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetUrl, painting.tool]);
+  }, [targetUrl, painting.tool, painting.mask]);
+
+  const maskPixelsOf = (url: string) => {
+    if (readMask.current?.url !== url) readMask.current = { url, pixels: loadMaskCanvas(url) };
+    return readMask.current.pixels;
+  };
+  const targetMask = painting.mask ? target?.mask : undefined;
+  useEffect(() => {
+    if (targetMask && !op.current && painting.tool !== "eyedropper") maskPixelsOf(targetMask).catch(() => readMask.current?.url === targetMask && (readMask.current = null));
+    // maskPixelsOf only reads refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetMask, painting.tool]);
+
+  const maskBoxFor = async (clip: Clip, proj: Project) => {
+    let photoAspect = W / H;
+    if (clip.mediaId) {
+      const shown = document.querySelector<HTMLImageElement>(`[data-clip="${CSS.escape(clip.id)}"] img`);
+      if (shown?.naturalWidth && shown.naturalHeight) {
+        photoAspect = shown.naturalWidth / shown.naturalHeight;
+      } else {
+        const media = proj.media.find((m) => m.id === clip.mediaId);
+        if (media?.source.image && media.source.local) {
+          const img = await pixelsOf(media.source.url);
+          photoAspect = img.width / img.height;
+        } else if (media?.source.previewUrl) {
+          const img = await loadMaskCanvas(media.source.previewUrl).catch(() => null);
+          if (img) photoAspect = img.width / img.height;
+        }
+      }
+    }
+    return clipMaskBox(clip, W, H, photoAspect);
+  };
+
+  const pushLiveMask = (s: Session) => {
+    if (!s.mask || s.done || !s.clipId) return;
+    const emit = () => {
+      liveMaskTimer.current = 0;
+      if (s.done || !s.clipId || s.maskSeq !== maskSeq.current || encodingLive.current) return;
+      encodingLive.current = true;
+      lastLivePush.current = performance.now();
+      void dataUrlOf(s.live)
+        .then((url) => {
+          if (!s.done && s.clipId && s.maskSeq === maskSeq.current) now.current.painting.onMaskLive?.(s.clipId, url);
+        })
+        .catch(() => {})
+        .finally(() => {
+          encodingLive.current = false;
+        });
+    };
+    const elapsed = performance.now() - lastLivePush.current;
+    if (elapsed >= LIVE_MASK_MS && !encodingLive.current) {
+      window.clearTimeout(liveMaskTimer.current);
+      emit();
+    } else if (!liveMaskTimer.current) {
+      liveMaskTimer.current = window.setTimeout(emit, Math.max(10, LIVE_MASK_MS - elapsed));
+    }
+  };
 
   const brushWidth = painting.tool === "brush" || painting.tool === "eraser" ? painting.settings[painting.tool].size : 0;
 
@@ -195,9 +258,18 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
     return [((e.clientX - r.left) / r.width) * W, ((e.clientY - r.top) / r.height) * H];
   };
 
-  /** The layer to paint on, its pixels ready: the picked photo layer, or a new one. */
+  /** The layer (or its mask) to paint on, its pixels ready: the picked layer, or a new one. */
   const open = async (): Promise<Session> => {
     const { painting: p, project: proj } = now.current;
+    if (p.mask) {
+      const clip = p.clipId ? proj.clips.find((c) => c.id === p.clipId) : undefined;
+      if (!clip?.mask) throw new Error("No layer mask to paint on.");
+      if (proj.tracks.find((t) => t.id === clip.trackId)?.locked) throw new Error("Unlock this layer to paint on its mask.");
+      const known = latestMask.current.get(clip.id);
+      const base = known && (known.url === null || known.url === clip.mask) ? known.canvas : await maskPixelsOf(clip.mask);
+      const toLayer = maskAffine(await maskBoxFor(clip, proj), base);
+      return { clipId: clip.id, mask: true, maskSeq: ++maskSeq.current, toLayer, base, live: copyOf(base), width: 0, carry: 0 };
+    }
     const clip = p.clipId ? proj.clips.find((c) => c.id === p.clipId) : undefined;
     const media = proj.media.find((m) => m.id === clip?.mediaId);
     if (!clip || !media) {
@@ -213,8 +285,32 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
 
   const show = (s: Session, settled = false) => onLive({ clipId: s.clipId, canvas: s.live, settled });
 
-  /** The session's result becomes the layer's photo (after the saves before it). */
+  /** The session's result becomes the layer's photo or mask (after the saves before it). */
   const save = (s: Session) => {
+    if (s.mask && s.clipId) {
+      const clipId = s.clipId;
+      const seq = s.maskSeq;
+      const urlPromise = dataUrlOf(s.live);
+      urlPromise.catch(() => {});
+      saving.current = saving.current.then(async () => {
+        const entry = { canvas: s.live, url: null as string | null };
+        const known = latestMask.current;
+        known.delete(clipId);
+        known.set(clipId, entry);
+        for (const old of known.keys()) if (known.size > 4) known.delete(old);
+        try {
+          const url = await urlPromise;
+          entry.url = url;
+          now.current.painting.onMaskPainted?.(clipId, url);
+          if (seq === maskSeq.current) now.current.painting.onMaskLive?.(clipId, null);
+        } catch (err) {
+          if (latestMask.current.get(clipId) === entry) latestMask.current.delete(clipId);
+          if (seq === maskSeq.current) now.current.painting.onMaskLive?.(clipId, null);
+          now.current.painting.onError(`Couldn't paint mask: ${message(err)}`);
+        }
+      });
+      return;
+    }
     if (s.clipId === null) {
       // The layer is made once something is painted on it.
       if (!fresh.current) {
@@ -282,10 +378,11 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
     ctx.clearRect(x0, y0, w, h);
     ctx.drawImage(s.base, x0, y0, w, h, x0, y0, w, h);
     ctx.globalAlpha = opacity;
-    ctx.globalCompositeOperation = tool === "eraser" ? "destination-out" : "source-over";
+    ctx.globalCompositeOperation = !s.mask && tool === "eraser" ? "destination-out" : "source-over";
     ctx.drawImage(s.dabs!, x0, y0, w, h, x0, y0, w, h);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
+    if (s.mask) pushLiveMask(s);
   };
   const frame = useRef(0);
   const later = (s: Session, tool: "brush" | "eraser") => {
@@ -305,7 +402,7 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
     const mask = floodMask(s.base.getContext("2d")!.getImageData(0, 0, w, h).data, w, h, x, y, settings.bucket.tolerance, settings.bucket.contiguous);
     const [paint, pctx] = canvasOf(w, h);
     const pixels = pctx.createImageData(w, h);
-    const [r, g, b] = rgbOf(colours.fg);
+    const [r, g, b] = rgbOf(s.mask ? greyHex(colours.fg) : colours.fg);
     // ImageData's bytes as one number per pixel (little-endian: alpha highest).
     const colour = ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
     const out = new Uint32Array(pixels.data.buffer);
@@ -324,9 +421,11 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
     const [p, q] = [apply(s.toLayer, a), apply(s.toLayer, b)];
     const ctx = s.live.getContext("2d")!;
     const g = settings.gradient.kind === "radial" ? ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], Math.hypot(q[0] - p[0], q[1] - p[1])) : ctx.createLinearGradient(p[0], p[1], q[0], q[1]);
-    const [r, gr, bl] = rgbOf(colours.fg);
-    g.addColorStop(0, colours.fg);
-    g.addColorStop(1, settings.gradient.to === "clear" ? `rgba(${r},${gr},${bl},0)` : colours.bg);
+    const fg = s.mask ? greyHex(colours.fg) : colours.fg;
+    const bg = s.mask ? greyHex(colours.bg) : colours.bg;
+    const [r, gr, bl] = rgbOf(fg);
+    g.addColorStop(0, fg);
+    g.addColorStop(1, settings.gradient.to === "clear" ? `rgba(${r},${gr},${bl},0)` : bg);
     ctx.globalAlpha = settings.gradient.opacity;
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, s.live.width, s.live.height);
@@ -339,12 +438,17 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
     if (o.tool === "brush" || o.tool === "eraser") {
       const { size, hardness, flow } = now.current.painting.settings[o.tool];
       s.width = Math.max(1, size * scaleOf(s.toLayer));
-      s.tip = tipOf(s.width, hardness, o.tool === "eraser" ? "#000000" : now.current.painting.colours.fg);
+      const colour = s.mask
+        ? greyHex(o.tool === "eraser" ? now.current.painting.colours.bg : now.current.painting.colours.fg)
+        : o.tool === "eraser"
+          ? "#000000"
+          : now.current.painting.colours.fg;
+      s.tip = tipOf(s.width, hardness, colour);
       // Each dab adds `flow`; the stroke as a whole stops at its opacity (redraw).
       const [dabs, dctx] = canvasOf(s.base.width, s.base.height);
       dctx.globalAlpha = flow;
       s.dabs = dabs;
-      show(s);
+      if (!s.mask) show(s);
       stroke(s, o.waiting.splice(0));
       redraw(s, o.tool);
     }
@@ -359,23 +463,42 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
     if (o.tool === "brush" || o.tool === "eraser") {
       cancelAnimationFrame(frame.current);
       frame.current = 0;
+      window.clearTimeout(liveMaskTimer.current);
+      liveMaskTimer.current = 0;
+      s.done = true;
       redraw(s, o.tool);
       return save(s);
     }
     if (o.tool === "bucket") {
-      if (!fill(s, o.start)) return onLive(null);
+      if (!fill(s, o.start)) return s.mask ? undefined : onLive(null);
     } else {
       // A click without a drag draws no gradient.
       const r = ref.current!.getBoundingClientRect();
       if (Math.hypot(o.end[0] - o.start[0], o.end[1] - o.start[1]) * (r.width / W) < 3) return;
       gradient(s, o.start, o.end);
     }
-    show(s);
+    s.done = true;
+    if (!s.mask) show(s);
     save(s);
   };
 
   const pick = async (p: Pt, background: boolean) => {
     const { project: proj, painting: paint } = now.current;
+    if (paint.mask && paint.clipId) {
+      const clip = proj.clips.find((c) => c.id === paint.clipId);
+      if (!clip?.mask) return;
+      try {
+        const known = latestMask.current.get(clip.id);
+        const canvas = known && (known.url === null || known.url === clip.mask) ? known.canvas : await maskPixelsOf(clip.mask);
+        const [mx, my] = apply(maskAffine(await maskBoxFor(clip, proj), canvas), p).map(Math.floor);
+        const [r, g, b] =
+          mx >= 0 && my >= 0 && mx < canvas.width && my < canvas.height ? canvas.getContext("2d")!.getImageData(mx, my, 1, 1).data : [0, 0, 0];
+        paint.onColour(greyHex(hexOf(r, g, b)), background);
+      } catch (err) {
+        paint.onError(`Couldn't read the colour: ${message(err)}`);
+      }
+      return;
+    }
     // A small copy is enough to read one pixel, and quick on a big picture.
     const k = Math.min(1, 1200 / Math.max(W, H));
     try {
@@ -429,7 +552,13 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
     if (o.session) finish(o);
   };
 
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(frame.current);
+      window.clearTimeout(liveMaskTimer.current);
+    },
+    [],
+  );
 
   const brushy = painting.tool === "brush" || painting.tool === "eraser";
   return (

@@ -99,12 +99,10 @@ import {
   previousOnTrack,
   clipLength,
   isBlock,
-  isShape,
   isText,
   POSITIONS,
   meets,
   trackOrder,
-  textLines,
   projectDuration,
   projectName,
   newImageProject,
@@ -118,20 +116,18 @@ import {
   withImported,
 } from "./project/model";
 import { layerBox } from "./project/layerBox";
-import { shapeBox } from "./project/shapes";
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { MediaPanel, type Tab as MediaTab } from "./components/MediaPanel";
 import { LayersPanel, layerName } from "./components/LayersPanel";
 import { CommandBox, type Command } from "./components/CommandBox";
 import { removeBackground, savePicture } from "./lib/cutout";
-import { BRUSH_MAX, BRUSH_MIN, COLOURS_START, PAINT_START, PAINT_TOOLS, invert, photoToImage, type PaintTool } from "./lib/paint";
+import { BRUSH_MAX, BRUSH_MIN, COLOURS_START, PAINT_START, PAINT_TOOLS, invert, photoToImage, type PaintColours, type PaintTool } from "./lib/paint";
 import { pngOf, type Painting } from "./components/PaintSurface";
 import { ColourSquares } from "./components/ColourSquares";
 import { PaintOptions } from "./components/PaintOptions";
 import { composeImage, photo } from "./lib/compose";
-import { blankMask, lumaToAlpha } from "./lib/mask";
-import { textLayout } from "./lib/textPicture";
+import { blankMask, clipMaskBox, greysOf, lumaToAlpha } from "./lib/mask";
 import { DocumentSummary, ImageSizePanel } from "./components/ImageSizePanel";
 import { ImageOptions } from "./components/ImageOptions";
 import { NewImageDialog } from "./components/NewImageDialog";
@@ -420,6 +416,8 @@ export default function App() {
   const [maskEdit, setMaskEdit] = useState<string | null>(null);
   /** Image editor: the layer id whose mask is shown alone on the stage. */
   const [maskView, setMaskView] = useState<string | null>(null);
+  /** Image editor: throttled live mask data URL during a mask stroke, before `setMask` commits. */
+  const [liveMask, setLiveMask] = useState<{ clipId: string; url: string } | null>(null);
   /** A block just added from the right panel, for the timeline to zoom in to (`at` makes each one new). */
   const [revealed, setRevealed] = useState<{ clipId: string; at: number } | null>(null);
   /** The clip whose transition is selected on the timeline. */
@@ -529,6 +527,7 @@ export default function App() {
     if (!imageMode) {
       setMaskEdit(null);
       setMaskView(null);
+      setLiveMask(null);
     }
   }, [imageMode]);
   const paintTool = imageMode && PAINT_TOOLS.includes(imageTool) ? (imageTool as PaintTool) : null;
@@ -690,6 +689,26 @@ export default function App() {
   const toExport = useMemo(() => (showCaptions ? withShownCaptions(project) : project), [project, showCaptions]);
   const plan = useMemo(() => planExport(toExport, effective), [toExport, effective]);
   const selected = project.clips.find((c) => c.id === selectedId) ?? null;
+  const editingMask = Boolean(imageMode && selected && maskEdit === selected.id && selected.mask);
+  const savedColours = useRef<PaintColours | null>(null);
+  const paintColoursRef = useRef(paintColours);
+  paintColoursRef.current = paintColours;
+  useEffect(() => {
+    if (editingMask) {
+      if (!savedColours.current) {
+        savedColours.current = paintColoursRef.current;
+        setPaintColours((c) => greysOf(c));
+      }
+    } else if (savedColours.current) {
+      setPaintColours(savedColours.current);
+      savedColours.current = null;
+    }
+  }, [editingMask]);
+  const changeColours = (next: PaintColours | ((cur: PaintColours) => PaintColours)) =>
+    setPaintColours((cur) => {
+      const resolved = typeof next === "function" ? next(cur) : next;
+      return editingMask ? greysOf(resolved) : resolved;
+    });
   // The Sound panel belongs to a clip: with none selected, it goes back to where it was opened from, and comes back when
   // a clip with sound is selected again, until it's closed or another tab is picked (`soundOpen`).
   const [soundOpen, setSoundOpen] = useState(false);
@@ -1722,17 +1741,8 @@ export default function App() {
   const addLayerMask = async (clip: Clip, fill: "white" | "black") => {
     const { width: W, height: H } = projectRef.current.image ?? NO_IMAGE;
     if (!W || !H) return;
-    let width = W;
-    let height = H;
-    if (isShape(clip)) {
-      const box = shapeBox(clip, W, H);
-      [width, height] = [box.width, box.height];
-    } else if (isText(clip)) {
-      const look = { ...clip, text: textLines(clip.text ?? "", clip.size, { width: W, height: H }, clip.font, clip.spacing), color: clip.color ?? "#ffffff" };
-      const box = textLayout(look, W, H);
-      [width, height] = [box.width, box.height];
-    } else if (clip.mediaId) {
-      let aspect = W / H;
+    let aspect = W / H;
+    if (clip.mediaId) {
       const shown = document.querySelector<HTMLImageElement>(`[data-clip="${CSS.escape(clip.id)}"] img`);
       if (shown?.naturalWidth && shown.naturalHeight) {
         aspect = shown.naturalWidth / shown.naturalHeight;
@@ -1745,9 +1755,8 @@ export default function App() {
           if (img.naturalWidth && img.naturalHeight) aspect = img.naturalWidth / img.naturalHeight;
         }
       }
-      const box = layerBox(clip, aspect, W, H);
-      [width, height] = [box.width, box.height];
     }
+    const { width, height } = clipMaskBox(clip, W, H, aspect);
     api.edit({ type: "setMask", clipId: clip.id, mask: blankMask(width, height, fill) });
     setMaskEdit(clip.id);
   };
@@ -2091,8 +2100,8 @@ export default function App() {
       b: () => imageMode && inDesktopApp && setImageTool("brush"),
       e: () => imageMode && inDesktopApp && setImageTool("eraser"),
       g: () => imageMode && inDesktopApp && setImageTool(e.shiftKey ? "gradient" : "bucket"),
-      x: () => imageMode && setPaintColours((c) => ({ fg: c.bg, bg: c.fg })),
-      d: () => imageMode && setPaintColours(COLOURS_START),
+      x: () => imageMode && changeColours((c) => ({ fg: c.bg, bg: c.fg })),
+      d: () => imageMode && changeColours(COLOURS_START),
       "[": () => imageMode && (imageTool === "brush" || imageTool === "eraser") && resizeBrush(false),
       "]": () => imageMode && (imageTool === "brush" || imageTool === "eraser") && resizeBrush(true),
       c: () => imageMode && selected && showsPicture(project, selected) && openCrop(selected, 0),
@@ -2339,10 +2348,13 @@ export default function App() {
         tool: paintTool,
         settings: paintSettings,
         colours: paintColours,
-        clipId: paintsOn(selected),
+        clipId: editingMask ? selected!.id : paintsOn(selected),
+        mask: editingMask,
         onNewLayer: newPaintLayer,
         onPainted: paintLayer,
-        onColour: (color, background) => setPaintColours((c) => (background ? { ...c, bg: color } : { ...c, fg: color })),
+        onMaskLive: (clipId, url) => setLiveMask(url ? { clipId, url } : (cur) => (cur?.clipId === clipId ? null : cur)),
+        onMaskPainted: (clipId, mask) => api.edit({ type: "setMask", clipId, mask }),
+        onColour: (color, background) => changeColours((c) => (background ? { ...c, bg: color } : { ...c, fg: color })),
         onError: setError,
       }
     : undefined;
@@ -2351,8 +2363,16 @@ export default function App() {
       silent={voiceSilent}
       painting={painting}
       picking={picking ? { clipId: picking.clipId, onPicked: (color) => endPick(color), onCancel: (unreadable) => endPick(undefined, unreadable) } : undefined}
-      // Background tab → hold to see the original: that photo drawn as it was before its cut-out.
-      project={peek ? { ...project, media: project.media.map((m) => (m.id === peek && m.original ? { ...m, source: m.original } : m)) } : project}
+      // Background tab → hold to see the original: that photo drawn as it was before its cut-out; live mask during a mask stroke.
+      project={
+        peek || liveMask
+          ? {
+              ...project,
+              ...(peek ? { media: project.media.map((m) => (m.id === peek && m.original ? { ...m, source: m.original } : m)) } : {}),
+              ...(liveMask ? { clips: project.clips.map((c) => (c.id === liveMask.clipId ? { ...c, mask: liveMask.url } : c)) } : {}),
+            }
+          : project
+      }
       api={api}
       // An image is its first moment: arrow keys or an old playhead can't hide its layers.
       playback={imageMode ? { ...playback, time: 0, playing: false } : playback}
@@ -3103,7 +3123,7 @@ export default function App() {
             doc={{ name: project.media.length ? projectName(project) : "Untitled image", ...project.image }}
             // The Text tool has no panel: a click on the picture types (its styles are in the top bar and the Text tab).
             flyout={imageTool !== "move" && imageTool !== "hand" && imageTool !== "text" && !paintTool ? mediaPanel(imageTool as MediaTab) : null}
-            colours={<ColourSquares colours={paintColours} onChange={setPaintColours} />}
+            colours={<ColourSquares colours={paintColours} onChange={changeColours} />}
             canvas={preview}
             view={imageView}
             properties={panelBody}
