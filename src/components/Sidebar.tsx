@@ -1,4 +1,7 @@
+import { useState } from "react";
 import type { EngineStatus } from "../lib/engine";
+import { ContextMenu } from "./ContextMenu";
+import { useConfirm } from "./ConfirmDialog";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
 import "./Sidebar.css";
@@ -31,7 +34,20 @@ export interface SidebarProps {
   /** A column at the left of the pages (Home, Projects…) instead of the editor's pop-up menu. */
   rail?: boolean;
   /** The project open in the editor (rail only): a card under "Working on" that goes back to it. */
-  current?: { name: string; image: boolean; thumbnail?: string; when: string; onOpen: () => void };
+  current?: {
+    name: string;
+    image: boolean;
+    thumbnail?: string;
+    when: string;
+    onOpen: () => void;
+    /** Its right-click menu. An empty name goes back to the first file's name. */
+    onRename: (name: string) => void;
+    onDuplicate: () => void;
+    onExport: () => void;
+    /** Leaves it (saved as it is) for an empty editor. */
+    onClose: () => void;
+    onDelete: () => void;
+  };
 }
 
 export function Sidebar({
@@ -44,6 +60,19 @@ export function Sidebar({
   rail,
   current,
 }: SidebarProps) {
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const { ask, dialog } = useConfirm();
+  const remove = async () => {
+    if (!current) return;
+    const ok = await ask({
+      title: `Delete “${current.name}”?`,
+      message: "The project and its edits are deleted for good. Your video files and finished exports aren't touched.",
+      confirmLabel: "Delete project",
+      danger: true,
+    });
+    if (ok) current.onDelete();
+  };
   const groups = [
     {
       label: "Make",

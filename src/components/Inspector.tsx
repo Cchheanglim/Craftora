@@ -234,7 +234,7 @@ export function Inspector({
     background: isPicture && (
       <>
         {media && (media.original || onCutOut) && <RemoveBackground cutOut={Boolean(media.original)} onCutOut={onCutOut} onRestore={onRestore} onPeek={onPeek} start={startCut} onStarted={onCutStarted} />}
-        <RemoveColour clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} onPick={onPickColour} />
+        {!still && <RemoveColour clip={clip} onChange={onChange} onCheckpoint={onCheckpoint} onPick={onPickColour} />}
       </>
     ),
     speed: moving && (
@@ -893,7 +893,7 @@ function RemoveBackground({
   );
 }
 
-function RemoveColour({ clip, onChange, onCheckpoint, onPick }: { clip: Clip; onChange: (patch: ClipPatch, live?: boolean) => void; onCheckpoint: () => void; onPick?: () => void }) {
+export function RemoveColour({ clip, onChange, onCheckpoint, onPick }: { clip: Clip; onChange: (patch: ClipPatch, live?: boolean) => void; onCheckpoint: () => void; onPick?: () => void }) {
   const key = clip.chroma;
   return (
     <fieldset className="insp__group">

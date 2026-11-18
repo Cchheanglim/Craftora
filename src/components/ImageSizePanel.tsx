@@ -143,8 +143,17 @@ export function ImageSizePanel({ project, api }: ImageSizePanelProps) {
 
       <fieldset className="insp__group">
         <legend>Background</legend>
+        <button
+          type="button"
+          className="btn btn--secondary image-size__clear"
+          aria-pressed={!project.image.background}
+          onClick={() => api.edit({ type: "setImage", patch: { background: project.image!.background ? "" : "#ffffff" } })}
+        >
+          <span className="image-size__checks" aria-hidden="true" />
+          See-through
+        </button>
         <ColorField
-          color={project.image.background}
+          color={project.image.background || undefined}
           onCheckpoint={api.checkpoint}
           onChange={(background, live) => (live ? api.editLive : api.edit)({ type: "setImage", patch: { background } })}
         />

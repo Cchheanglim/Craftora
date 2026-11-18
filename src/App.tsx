@@ -213,6 +213,8 @@ const IMAGE_PANEL_TABS = [
 ] as const satisfies readonly { id: string; label: string; icon: IconName }[];
 /** A colour that shows on `background` (#rrggbb): near-black on a light one, white on a dark one. */
 const inkOn = (background: string) => {
+  // See-through: the checks are light.
+  if (!background) return "#111111";
   const n = parseInt(background.slice(1, 7), 16);
   const luma = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
   return luma > 150 ? "#111111" : "#ffffff";
