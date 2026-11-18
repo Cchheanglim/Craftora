@@ -127,7 +127,7 @@ import { pngOf, type Painting } from "./components/PaintSurface";
 import { ColourSquares } from "./components/ColourSquares";
 import { PaintOptions } from "./components/PaintOptions";
 import { composeImage, photo } from "./lib/compose";
-import { blankMask, clipMaskBox, cutoutMask, greysOf, lumaToAlpha } from "./lib/mask";
+import { blankMask, clipMaskBox, cutoutMask, greysOf, lumaToAlpha, remapMask } from "./lib/mask";
 import { DocumentSummary, ImageSizePanel } from "./components/ImageSizePanel";
 import { ImageOptions } from "./components/ImageOptions";
 import { NewImageDialog } from "./components/NewImageDialog";
@@ -1800,6 +1800,44 @@ export default function App() {
     const { source } = await saveLayerSource(await pngOf(canvas));
     api.edit({ type: "applyMask", clipId: clip.id, source, newMediaId: crypto.randomUUID() });
   };
+  const maskQueue = useRef(Promise.resolve());
+  /** Updates a photo layer's `mirror` / `rotate` / `crop` and redraws its mask in the same undo step when it has one. */
+  const updatePhotoClip = (clip: Clip, patchFor: (c: Clip) => ClipPatch) => {
+    const imgSize = projectRef.current.image;
+    if (!clip.mask || !clip.mediaId || !imgSize) {
+      api.edit({ type: "updateClip", clipId: clip.id, patch: patchFor(clip) });
+      return;
+    }
+    maskQueue.current = maskQueue.current
+      .then(async () => {
+        const current = projectRef.current.clips.find((c) => c.id === clip.id);
+        const nowSize = projectRef.current.image;
+        if (!current || !nowSize) return;
+        const patch = patchFor(current);
+        if (!current.mask || !current.mediaId) {
+          api.edit({ type: "updateClip", clipId: current.id, patch });
+          return;
+        }
+        let natural = { width: nowSize.width, height: nowSize.height };
+        const shown = document.querySelector<HTMLImageElement>(`[data-clip="${CSS.escape(current.id)}"] img`);
+        if (shown?.naturalWidth && shown.naturalHeight) {
+          natural = { width: shown.naturalWidth, height: shown.naturalHeight };
+        } else {
+          const media = projectRef.current.media.find((m) => m.id === current.mediaId);
+          if (media?.source.previewUrl) {
+            const img = new Image();
+            img.src = media.source.previewUrl;
+            await img.decode().catch(() => {});
+            if (img.naturalWidth && img.naturalHeight) natural = { width: img.naturalWidth, height: img.naturalHeight };
+          }
+        }
+        const mask = await remapMask(current, { ...current, ...patch }, current.mask, natural, nowSize.width, nowSize.height);
+        api.checkpoint();
+        api.editLive({ type: "updateClip", clipId: current.id, patch });
+        api.editLive({ type: "setMask", clipId: current.id, mask });
+      })
+      .catch((err) => setError(`Couldn't update the layer mask: ${errorText(err)}`));
+  };
   const resizeBrush = (grow: boolean) => {
     const tool = imageTool === "eraser" ? "eraser" : "brush";
     setPaintSettings((s) => {
@@ -2472,9 +2510,9 @@ export default function App() {
     { id: "cut", label: "Remove background", detail: "keeps the subject, clears the rest", icon: "scissors", group: picked, disabled: !cutOutOf(clip), run: () => (setCutRequest(clip.id), pickTab("background")) },
     { id: "colour", label: "Remove a colour", detail: "green or blue screen", icon: "eyedropper", group: picked, run: () => (imageMode ? setColourRange(true) : pickTab("background")) },
     { id: "crop", label: "Crop", keys: "C", icon: "crop", group: picked, run: () => openCrop(clip, 0) },
-    { id: "turn", label: "Turn 90°", icon: "rotate", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { rotate: ((clip.rotate ?? 0) + 90) % 360 } }) },
-    { id: "flipv", label: "Flip vertical", icon: "flip", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { rotate: ((clip.rotate ?? 0) + 180) % 360, mirror: !clip.mirror } }) },
-    { id: "mirror", label: "Mirror", icon: "flip", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { mirror: !clip.mirror } }) },
+    { id: "turn", label: "Turn 90°", icon: "rotate", group: picked, run: () => updatePhotoClip(clip, (c) => ({ rotate: ((c.rotate ?? 0) + 90) % 360 })) },
+    { id: "flipv", label: "Flip vertical", icon: "flip", group: picked, run: () => updatePhotoClip(clip, (c) => ({ rotate: ((c.rotate ?? 0) + 180) % 360, mirror: !c.mirror })) },
+    { id: "mirror", label: "Mirror", icon: "flip", group: picked, run: () => updatePhotoClip(clip, (c) => ({ mirror: !c.mirror })) },
     { id: "adjust", label: "Adjust colours", detail: "brightness, contrast, warmth…", icon: "sliders", group: picked, run: () => pickTab("adjust") },
     { id: "enhance", label: clip.adjust?.enhance ? "Turn Enhance off" : "Enhance", detail: "clearer and brighter in one click", icon: "wand", group: picked, run: () => api.edit({ type: "updateClip", clipId: clip.id, patch: { adjust: { ...clip.adjust, enhance: clip.adjust?.enhance ? 0 : 1 } } }) },
     ...LOOKS.map((look): Command => ({ id: `look-${look.id}`, label: `${look.label} filter`, icon: "blend", group: picked, run: () => (applyFx({ kind: "filter", id: look.id }, clip.trackId, clip.start), pickTab("filters")) })),
@@ -2493,11 +2531,11 @@ export default function App() {
               { id: "layerstyle", label: "Layer style…", detail: "drop shadow, outer glow, stroke", icon: "sparkle", group: picked, run: () => setStyleOpen(true) },
               ...(!selected.mask
                 ? [
-                    { id: "maskreveal", label: "Add mask: reveal all", icon: "image", group: picked, run: () => void addLayerMask(selected, "white") } satisfies Command,
-                    { id: "maskhide", label: "Add mask: hide all", icon: "image", group: picked, run: () => void addLayerMask(selected, "black") } satisfies Command,
+                    { id: "maskreveal", label: "Add layer mask: reveal all", icon: "eye", group: picked, run: () => void addLayerMask(selected, "white") } satisfies Command,
+                    { id: "maskhide", label: "Add layer mask: hide all", icon: "eyeOff", group: picked, run: () => void addLayerMask(selected, "black") } satisfies Command,
                   ]
                 : [
-                    { id: "maskoff", label: selected.maskOff ? "Enable layer mask" : "Disable layer mask", icon: "eyeOff", group: picked, run: () => api.edit({ type: "maskOff", clipId: selected.id, off: !selected.maskOff }) } satisfies Command,
+                    { id: "maskoff", label: selected.maskOff ? "Enable layer mask" : "Disable layer mask", icon: "blend", group: picked, run: () => api.edit({ type: "maskOff", clipId: selected.id, off: !selected.maskOff }) } satisfies Command,
                     ...(picturePicked
                       ? [
                           {
@@ -2591,11 +2629,11 @@ export default function App() {
               disabled: !selected,
               run: () => {},
               items: [
-                menuItem("maskreveal", "Add mask: reveal all"),
-                menuItem("maskhide", "Add mask: hide all"),
-                menuItem("maskoff", selected?.maskOff ? "Enable layer mask" : "Disable layer mask"),
-                menuItem("maskapply", "Apply layer mask"),
-                menuItem("maskdelete", "Delete layer mask"),
+                menuItem("maskreveal", "Reveal all"),
+                menuItem("maskhide", "Hide all"),
+                menuItem("maskoff", selected?.maskOff ? "Enable" : "Disable"),
+                menuItem("maskapply", "Apply"),
+                menuItem("maskdelete", "Delete"),
               ],
             },
             menuItem("up", "Bring forward"),
@@ -3171,8 +3209,8 @@ export default function App() {
                   menuItem("turn", "Turn 90°"),
                   menuItem("mirror", "Mirror"),
                   "sep",
-                  menuItem("maskreveal", "Add mask: reveal all"),
-                  menuItem("maskhide", "Add mask: hide all"),
+                  menuItem("maskreveal", "Add layer mask: reveal all"),
+                  menuItem("maskhide", "Add layer mask: hide all"),
                   menuItem("maskoff", selected?.maskOff ? "Enable layer mask" : "Disable layer mask"),
                   menuItem("maskapply", "Apply layer mask"),
                   menuItem("maskdelete", "Delete layer mask"),
@@ -3267,7 +3305,7 @@ export default function App() {
           aspect={cropping.aspect}
           crop={croppingClip.crop}
           onDone={(crop) => {
-            api.edit({ type: "updateClip", clipId: croppingClip.id, patch: { crop } });
+            updatePhotoClip(croppingClip, () => ({ crop }));
             setCropping(null);
           }}
           onCancel={() => setCropping(null)}

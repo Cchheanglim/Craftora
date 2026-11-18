@@ -890,7 +890,7 @@ function RemoveBackground({
       )}
       {status && <p className="insp__hint">{status}</p>}
       {failed && <p className="insp__hint">Couldn't remove the background: {failed}</p>}
-      {!cutOut && !status && <p className="insp__hint">Finds the subject and makes the rest see-through, on this PC. The cut-out tool (170 MB) downloads the first time.</p>}
+      {!cutOut && !status && <p className="insp__hint">Finds the subject and hides the rest. It runs on this PC, without the internet.</p>}
     </fieldset>
   );
 }
