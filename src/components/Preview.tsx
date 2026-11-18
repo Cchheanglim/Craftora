@@ -578,6 +578,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             <div
               className="preview__placer"
               aria-hidden="true"
+              // The click mustn't reach the screen, whose click beside a layer lets go of it (the new text).
+              onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => {
                 e.stopPropagation();
                 const hit = document.elementsFromPoint(e.clientX, e.clientY).find((el) => el.matches(".preview__text[data-clip]"));

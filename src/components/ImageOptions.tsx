@@ -3,17 +3,9 @@ import type { ClipPatch } from "../project/actions";
 import { TEXT_FONTS, type Clip, type TextFont } from "../project/model";
 import { loadFont } from "../lib/fonts";
 import { Icon } from "./Icon";
+import { TEXT_COLORS } from "./Inspector";
 import { Select } from "./Select";
 import "./ImageOptions.css";
-
-const TEXT_COLORS = [
-  { label: "White", value: "#ffffff" },
-  { label: "Yellow", value: "#ffd60a" },
-  { label: "Black", value: "#111111" },
-  { label: "Blue", value: "#4da3ff" },
-  { label: "Green", value: "#30d158" },
-  { label: "Pink", value: "#ff6fb1" },
-] as const;
 
 const FONT_OPTIONS = [
   { value: "", label: "Segoe UI" },
@@ -61,8 +53,10 @@ export function ImageOptions(props: {
   onChange: (patch: ClipPatch, live?: boolean) => void;
   onCheckpoint: () => void;
   onCommand: (id: string) => void;
+  /** A command that can't run now (Remove background on a photo already cut out): its button is greyed. */
+  isOff?: (id: string) => boolean;
 }): JSX.Element {
-  const { tool, clip, kind, name, onChange, onCommand } = props;
+  const { tool, clip, kind, name, onChange, onCommand, isOff } = props;
   const [typedSize, setTypedSize] = useState<string | null>(null);
   const skipBlurRef = useRef(false);
 
@@ -221,36 +215,36 @@ export function ImageOptions(props: {
         ))}
       </div>
       <span className="image-ws__opt-sep" />
-      <button type="button" className="btn btn--ghost" onClick={() => onCommand("turn")}>
+      <button type="button" className="btn btn--ghost" disabled={isOff?.("turn")} onClick={() => onCommand("turn")}>
         <Icon name="rotate" size={13} />
         Turn 90°
       </button>
-      <button type="button" className="btn btn--ghost" onClick={() => onCommand("mirror")}>
+      <button type="button" className="btn btn--ghost" disabled={isOff?.("mirror")} onClick={() => onCommand("mirror")}>
         <Icon name="flip" size={13} />
-        Flip ↔
+        Flip horizontal
       </button>
-      <button type="button" className="btn btn--ghost" onClick={() => onCommand("flipv")}>
+      <button type="button" className="btn btn--ghost" disabled={isOff?.("flipv")} onClick={() => onCommand("flipv")}>
         <Icon name="flip" size={13} />
-        Flip ↕
+        Flip vertical
       </button>
       {kind === "photo" && (
         <>
-          <button type="button" className="btn btn--ghost" onClick={() => onCommand("crop")}>
+          <button type="button" className="btn btn--ghost" disabled={isOff?.("crop")} onClick={() => onCommand("crop")}>
             <Icon name="crop" size={13} />
             Crop…
           </button>
-          <button type="button" className="btn btn--ghost" onClick={() => onCommand("cut")}>
+          <button type="button" className="btn btn--ghost" disabled={isOff?.("cut")} onClick={() => onCommand("cut")}>
             <Icon name="scissors" size={13} />
             Remove background
           </button>
         </>
       )}
       <span className="image-ws__opt-sep" />
-      <button type="button" className="btn btn--ghost" onClick={() => onCommand("dup")}>
+      <button type="button" className="btn btn--ghost" disabled={isOff?.("dup")} onClick={() => onCommand("dup")}>
         <Icon name="copy" size={13} />
         Duplicate
       </button>
-      <button type="button" className="btn btn--ghost" onClick={() => onCommand("delete")}>
+      <button type="button" className="btn btn--ghost" disabled={isOff?.("delete")} onClick={() => onCommand("delete")}>
         <Icon name="trash" size={13} />
         Delete
       </button>

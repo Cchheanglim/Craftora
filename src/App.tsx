@@ -127,6 +127,7 @@ import { ColourSquares } from "./components/ColourSquares";
 import { PaintOptions } from "./components/PaintOptions";
 import { composeImage } from "./lib/compose";
 import { DocumentSummary, ImageSizePanel } from "./components/ImageSizePanel";
+import { ImageOptions } from "./components/ImageOptions";
 import { NewImageDialog } from "./components/NewImageDialog";
 import { ColourRangePanel } from "./components/ColourRangePanel";
 import { MenuBar, type Menu, type MenuItem } from "./components/MenuBar";
@@ -723,7 +724,12 @@ export default function App() {
       if (format && item.hasVideo) item.videoFormat = format;
       else if (format) item.audioFormat = format;
       api.edit({ type: "importMedia", item });
-      if (place) api.edit({ type: "addClip", clipId: crypto.randomUUID(), mediaId: item.id });
+      if (place) {
+        const clipId = crypto.randomUUID();
+        api.edit({ type: "addClip", clipId, mediaId: item.id });
+        // The Image editor: a placed picture comes picked, ready to move (like a photo editor's Place).
+        if (projectRef.current.image) setSelectedId(clipId);
+      }
       prepare(item.id, source);
       setView("editor");
       return item;
@@ -2387,7 +2393,16 @@ export default function App() {
           label: "Image",
           items: [
             { id: "canvas", label: "Canvas size and background…", run: () => setImageTool("size") },
-            ...IMAGE_SIZES.map((size) => menuItem(`size-${size.id}`, `Resize to ${size.label}`)),
+            // One sub-menu instead of a row per size (critique: 7 near-identical rows); the current size ticked.
+            {
+              id: "resize",
+              label: "Resize to",
+              run: () => {},
+              items: IMAGE_SIZES.map((size) => ({
+                ...menuItem(`size-${size.id}`, size.label, `${size.width} × ${size.height}`),
+                checked: project.image?.width === size.width && project.image?.height === size.height,
+              })),
+            },
             "sep",
             menuItem("crop", "Crop…"),
             menuItem("turn", "Turn 90°"),
@@ -2451,12 +2466,6 @@ export default function App() {
       ];
   // Its options bar: the tool, then what the picked layer can do right now.
   const toolNow = IMAGE_TOOLS.find((t) => t.id === imageTool) ?? IMAGE_TOOLS[0];
-  const optionButton = (c: Command) => (
-    <button key={c.id} type="button" className="btn btn--ghost" disabled={c.disabled} onClick={c.run}>
-      <Icon name={c.icon} size={13} />
-      {c.label}
-    </button>
-  );
   const imageOptions = imageMode && (
     <>
       <span className="image-ws__opt-tool">
@@ -2467,11 +2476,20 @@ export default function App() {
       {paintTool ? (
         <PaintOptions tool={paintTool} settings={paintSettings} onChange={setPaintSettings} />
       ) : (
-        <>
-          <span className="image-ws__opt-name">{selected ? picked : "No layer picked"}</span>
-          <span className="image-ws__opt-sep" />
-          {commands.filter((c) => (selected ? ["crop", "turn", "mirror", "cut", "dup", "delete"] : ["addtext", "addshape", "addphoto", "open"]).includes(c.id)).map(optionButton)}
-        </>
+        // The current tool's options (owner: like Photoshop); adding text, shapes and photos is the tools' job.
+        <ImageOptions
+          tool={imageTool}
+          clip={selected}
+          kind={!selected ? null : isText(selected) ? "text" : selected.shape ? "shape" : "photo"}
+          name={picked}
+          onChange={(patch, live) => selected && (live ? api.editLive : api.edit)({ type: "updateClip", clipId: selected.id, patch })}
+          onCheckpoint={api.checkpoint}
+          onCommand={(id) => commands.find((c) => c.id === id && !c.disabled)?.run()}
+          isOff={(id) => {
+            const c = commands.find((x) => x.id === id);
+            return !c || Boolean(c.disabled);
+          }}
+        />
       )}
       <span className="image-ws__opt-end">
         <button type="button" className="btn btn--icon" aria-label="Undo" disabled={!api.canUndo} onClick={api.undo}>
@@ -2602,7 +2620,8 @@ export default function App() {
         // Edit: the selected clip's settings (and the captions' style).
         <aside className="export" aria-label="Clip settings">
           <div className="export__body is-edit">
-          {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} still={imageMode} /> : <p className="export__hint">{imageMode ? "Click a layer to change it here." : "Click a clip on the timeline to change it here."}</p>)}
+          {/* The Image editor's Document block says it with nothing picked. */}
+          {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} still={imageMode} /> : !imageMode && <p className="export__hint">Click a clip on the timeline to change it here.</p>)}
           {/* Nothing picked in the Image editor: the picture's own size and background. */}
           {imageMode && !selected && rightTab !== "text" && <DocumentSummary project={project} api={api} onCanvasSize={() => setImageTool("size")} />}
           {rightTab === "edit" && (selectedId === SHOWN_CAPTIONS || selectedTrack?.name === "Captions") && (
