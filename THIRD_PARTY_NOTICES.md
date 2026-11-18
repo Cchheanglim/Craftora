@@ -56,11 +56,13 @@ Craftora ships DirectML 1.15.4 (Microsoft DirectML licence, redistributable) as
 `onnxruntime/DirectML.dll` so background removal can run on the graphics card via DirectX 12. Its
 licence ships as `onnxruntime/DIRECTML-LICENSE.txt`.
 
-## ISNet "general use" model (Apache-2.0)
+## BiRefNet "lite" model (MIT)
 
-The `isnet-general-use.onnx` background-removal model (Apache License 2.0) ships with Craftora in
-`models/isnet-general-use.onnx`. It is published by the [rembg](https://github.com/danielgatis/rembg)
-project from the DIS (Dichotomous Image Segmentation) paper by Xuebin Qin et al.
+The `birefnet-lite-fp16.onnx` background-removal model (MIT licence) ships with Craftora in
+`models/birefnet-lite-fp16.onnx`. BiRefNet is by Peng Zheng et al. ("Bilateral Reference for
+High-Resolution Dichotomous Image Segmentation", [ZhengPeng7/BiRefNet](https://github.com/ZhengPeng7/BiRefNet));
+the ONNX conversion is published by [onnx-community](https://huggingface.co/onnx-community/BiRefNet_lite-ONNX)
+on Hugging Face.
 
 ## Libraries built into Craftora
 
