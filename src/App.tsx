@@ -127,7 +127,7 @@ import { pngOf, type Painting } from "./components/PaintSurface";
 import { ColourSquares } from "./components/ColourSquares";
 import { PaintOptions } from "./components/PaintOptions";
 import { composeImage, photo } from "./lib/compose";
-import { blankMask, clipMaskBox, greysOf, lumaToAlpha } from "./lib/mask";
+import { blankMask, clipMaskBox, cutoutMask, greysOf, lumaToAlpha } from "./lib/mask";
 import { DocumentSummary, ImageSizePanel } from "./components/ImageSizePanel";
 import { ImageOptions } from "./components/ImageOptions";
 import { NewImageDialog } from "./components/NewImageDialog";
@@ -2289,14 +2289,26 @@ export default function App() {
 
   /** Remove background for a clip's photo (a picture on this PC), or nothing for anything else. */
   const cutOutOf = (clip: Clip | null) => {
-    const photo = project.media.find((m) => m.id === clip?.mediaId);
-    if (!photo?.source.image || !photo.source.local || !inDesktopApp || photo.original) return undefined;
+    const media = project.media.find((m) => m.id === clip?.mediaId);
+    if (!clip || !media?.source.image || !media.source.local || !inDesktopApp || (imageMode ? Boolean(clip.mask) : Boolean(media.original))) return undefined;
     return async (onStatus: (text: string) => void) => {
-      const path = await removeBackground(photo.source.url, onStatus);
+      const path = await removeBackground(media.source.url, onStatus);
+      if (imageMode) {
+        const img = await photo(path);
+        const current = projectRef.current.clips.find((c) => c.id === clip.id) ?? clip;
+        const { width: W, height: H } = projectRef.current.image ?? { width: img.naturalWidth, height: img.naturalHeight };
+        const mask = cutoutMask(current, img, W, H);
+        api.checkpoint();
+        api.editLive({ type: "setMask", clipId: current.id, mask });
+        if (current.maskOff) api.editLive({ type: "maskOff", clipId: current.id, off: false });
+        // Owner: a cut-out on a white canvas looked like nothing happened, so the canvas turns see-through (checks).
+        if (projectRef.current.image) api.editLive({ type: "setImage", patch: { background: "" } });
+        setMaskEdit(current.id);
+        return;
+      }
       const source = await openLocal(path);
       api.checkpoint();
-      api.editLive({ type: "cutOut", mediaId: photo.id, source, own: clip ? { clipId: clip.id, mediaId: crypto.randomUUID() } : undefined });
-      // Owner: a cut-out on a white canvas looked like nothing happened, so the canvas turns see-through (checks).
+      api.editLive({ type: "cutOut", mediaId: media.id, source, own: { clipId: clip.id, mediaId: crypto.randomUUID() } });
       if (project.image) api.editLive({ type: "setImage", patch: { background: "" } });
     };
   };
@@ -2368,8 +2380,16 @@ export default function App() {
         peek || liveMask
           ? {
               ...project,
-              ...(peek ? { media: project.media.map((m) => (m.id === peek && m.original ? { ...m, source: m.original } : m)) } : {}),
-              ...(liveMask ? { clips: project.clips.map((c) => (c.id === liveMask.clipId ? { ...c, mask: liveMask.url } : c)) } : {}),
+              ...(peek && !imageMode ? { media: project.media.map((m) => (m.id === peek && m.original ? { ...m, source: m.original } : m)) } : {}),
+              ...(liveMask || (peek && imageMode)
+                ? {
+                    clips: project.clips.map((c) => ({
+                      ...c,
+                      ...(liveMask && c.id === liveMask.clipId ? { mask: liveMask.url } : {}),
+                      ...(peek && imageMode && c.id === peek ? { maskOff: true } : {}),
+                    })),
+                  }
+                : {}),
             }
           : project
       }
@@ -2826,8 +2846,12 @@ export default function App() {
               onCutOut={cutOutOf(selected)}
               startCut={cutRequest === selected.id}
               onCutStarted={() => setCutRequest(null)}
-              onRestore={() => selected.mediaId && api.edit({ type: "cutOut", mediaId: selected.mediaId, own: { clipId: selected.id, mediaId: crypto.randomUUID() } })}
-              onPeek={(on) => setPeek(on ? (selected.mediaId ?? null) : null)}
+              onRestore={() =>
+                imageMode
+                  ? api.edit({ type: "setMask", clipId: selected.id, mask: null })
+                  : selected.mediaId && api.edit({ type: "cutOut", mediaId: selected.mediaId, own: { clipId: selected.id, mediaId: crypto.randomUUID() } })
+              }
+              onPeek={(on) => setPeek(on ? (imageMode ? selected.id : (selected.mediaId ?? null)) : null)}
               onPreview={(from, seconds) => {
                 const back = playback.time;
                 playback.seek(from);

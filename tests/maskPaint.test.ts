@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { clipMaskBox, greyHex, greysOf, lumaOf, lumaToAlpha, maskAffine } from "../src/lib/mask";
+import { alphaToGrey, clipMaskBox, greyHex, greysOf, lumaOf, lumaToAlpha, maskAffine } from "../src/lib/mask";
 import { apply, scaleOf } from "../src/lib/paint";
 import { NO_CROP, newImageProject, type Clip, type Project } from "../src/project/model";
 import { reducer } from "../src/project/useProject";
@@ -147,4 +147,21 @@ test("painting a mask commits one undo step via setMask even while maskOff is tr
 
   const redone = reducer(undone, { type: "redo" });
   expect(redone.project.clips[0].mask).toBe("data:image/png;base64,PAINTED");
+});
+
+test("alphaToGrey turns the alpha channel into opaque greys (255 = white, 0 = black)", () => {
+  const px = new Uint8ClampedArray([
+    10, 20, 30, 0,
+    40, 50, 60, 128,
+    70, 80, 90, 255,
+  ]);
+  alphaToGrey(px);
+  expect(Array.from(px)).toEqual([
+    0, 0, 0, 255,
+    128, 128, 128, 255,
+    255, 255, 255, 255,
+  ]);
+  // Round-trips back to the same alpha under lumaToAlpha.
+  lumaToAlpha(px);
+  expect([px[3], px[7], px[11]]).toEqual([0, 128, 255]);
 });

@@ -6,19 +6,23 @@ import type { CSSProperties } from "react";
 import { layerBox } from "../project/layerBox";
 import { isShape, isText, textLines, type Clip } from "../project/model";
 import { shapeBox } from "../project/shapes";
-import { hexOf, rgbOf, type Affine, type PaintColours } from "./paint";
+import { hexOf, multiply, photoToImage, rgbOf, type Affine, type PaintColours } from "./paint";
 import { textLayout } from "./textPicture";
 
 /** The largest side a mask is made at. */
 const MAX_MASK_SIDE = 4096;
 
-/** A new mask for a layer `width` × `height` image pixels big, all shown (white) or all hidden (black). */
-export function blankMask(width: number, height: number, fill: "white" | "black"): string {
+function maskCanvas(width: number, height: number) {
   const k = Math.min(1, MAX_MASK_SIDE / Math.max(width, height));
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(width * k));
   canvas.height = Math.max(1, Math.round(height * k));
-  const ctx = canvas.getContext("2d")!;
+  return [canvas, canvas.getContext("2d")!] as const;
+}
+
+/** A new mask for a layer `width` × `height` image pixels big, all shown (white) or all hidden (black). */
+export function blankMask(width: number, height: number, fill: "white" | "black"): string {
+  const [canvas, ctx] = maskCanvas(width, height);
   ctx.fillStyle = fill === "white" ? "#ffffff" : "#000000";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   return canvas.toDataURL("image/png");
@@ -90,6 +94,31 @@ export function lumaToAlpha(px: Uint8ClampedArray) {
     px[i + 3] = Math.round(((0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]) * px[i + 3]) / 255);
     px[i] = px[i + 1] = px[i + 2] = 255;
   }
+}
+
+/** RGBA pixels in place: opaque greyscale from the alpha channel (alpha 255 = white, 0 = black). */
+export function alphaToGrey(px: Uint8ClampedArray) {
+  for (let i = 0; i < px.length; i += 4) {
+    px[i] = px[i + 1] = px[i + 2] = px[i + 3];
+    px[i + 3] = 255;
+  }
+}
+
+/** A cut-out photo's alpha channel turned into a greyscale layer mask sized to `clip`'s mask box on `W` × `H`. */
+export function cutoutMask(clip: Clip, cutout: HTMLImageElement, W: number, H: number): string {
+  const nw = Math.max(1, cutout.naturalWidth || cutout.width);
+  const nh = Math.max(1, cutout.naturalHeight || cutout.height);
+  const box = clipMaskBox(clip, W, H, nw / nh);
+  const [canvas, ctx] = maskCanvas(box.width, box.height);
+  const toMask = multiply(maskAffine({ ...box, angle: 0 }, canvas), photoToImage({ ...clip, angle: 0 }, { width: nw, height: nh }, W, H, false));
+  ctx.setTransform(toMask[0], toMask[1], toMask[2], toMask[3], toMask[4], toMask[5]);
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(cutout, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  alphaToGrey(data.data);
+  ctx.putImageData(data, 0, 0);
+  return canvas.toDataURL("image/png");
 }
 
 /** Rec. 709 luminance (0..255), matching `lumaToAlpha`. */
