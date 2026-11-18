@@ -233,10 +233,18 @@ export function ImageOptions(props: {
             <Icon name="crop" size={13} />
             Crop…
           </button>
-          <button type="button" className="btn btn--ghost" disabled={isOff?.("cut")} onClick={() => onCommand("cut")}>
-            <Icon name="scissors" size={13} />
-            Remove background
-          </button>
+          {/* Remove background makes a mask here, so with one the same spot brings the whole photo back. */}
+          {clip?.mask ? (
+            <button type="button" className="btn btn--ghost" onClick={() => onCommand("maskdelete")}>
+              <Icon name="undo" size={13} />
+              Restore background
+            </button>
+          ) : (
+            <button type="button" className="btn btn--ghost" disabled={isOff?.("cut")} onClick={() => onCommand("cut")}>
+              <Icon name="scissors" size={13} />
+              Remove background
+            </button>
+          )}
         </>
       )}
       <span className="image-ws__opt-sep" />

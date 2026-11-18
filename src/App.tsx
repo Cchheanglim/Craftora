@@ -2493,11 +2493,11 @@ export default function App() {
               { id: "layerstyle", label: "Layer style…", detail: "drop shadow, outer glow, stroke", icon: "sparkle", group: picked, run: () => setStyleOpen(true) },
               ...(!selected.mask
                 ? [
-                    { id: "maskreveal", label: "Add mask: reveal all", icon: "image", group: picked, run: () => void addLayerMask(selected, "white") } satisfies Command,
-                    { id: "maskhide", label: "Add mask: hide all", icon: "image", group: picked, run: () => void addLayerMask(selected, "black") } satisfies Command,
+                    { id: "maskreveal", label: "Add layer mask: reveal all", icon: "eye", group: picked, run: () => void addLayerMask(selected, "white") } satisfies Command,
+                    { id: "maskhide", label: "Add layer mask: hide all", icon: "eyeOff", group: picked, run: () => void addLayerMask(selected, "black") } satisfies Command,
                   ]
                 : [
-                    { id: "maskoff", label: selected.maskOff ? "Enable layer mask" : "Disable layer mask", icon: "eyeOff", group: picked, run: () => api.edit({ type: "maskOff", clipId: selected.id, off: !selected.maskOff }) } satisfies Command,
+                    { id: "maskoff", label: selected.maskOff ? "Enable layer mask" : "Disable layer mask", icon: "blend", group: picked, run: () => api.edit({ type: "maskOff", clipId: selected.id, off: !selected.maskOff }) } satisfies Command,
                     ...(picturePicked
                       ? [
                           {
@@ -2591,11 +2591,11 @@ export default function App() {
               disabled: !selected,
               run: () => {},
               items: [
-                menuItem("maskreveal", "Add mask: reveal all"),
-                menuItem("maskhide", "Add mask: hide all"),
-                menuItem("maskoff", selected?.maskOff ? "Enable layer mask" : "Disable layer mask"),
-                menuItem("maskapply", "Apply layer mask"),
-                menuItem("maskdelete", "Delete layer mask"),
+                menuItem("maskreveal", "Reveal all"),
+                menuItem("maskhide", "Hide all"),
+                menuItem("maskoff", selected?.maskOff ? "Enable" : "Disable"),
+                menuItem("maskapply", "Apply"),
+                menuItem("maskdelete", "Delete"),
               ],
             },
             menuItem("up", "Bring forward"),
@@ -3171,8 +3171,8 @@ export default function App() {
                   menuItem("turn", "Turn 90°"),
                   menuItem("mirror", "Mirror"),
                   "sep",
-                  menuItem("maskreveal", "Add mask: reveal all"),
-                  menuItem("maskhide", "Add mask: hide all"),
+                  menuItem("maskreveal", "Add layer mask: reveal all"),
+                  menuItem("maskhide", "Add layer mask: hide all"),
                   menuItem("maskoff", selected?.maskOff ? "Enable layer mask" : "Disable layer mask"),
                   menuItem("maskapply", "Apply layer mask"),
                   menuItem("maskdelete", "Delete layer mask"),
