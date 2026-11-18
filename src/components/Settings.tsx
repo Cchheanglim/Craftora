@@ -54,7 +54,7 @@ function Row({ label, hint, children }: { label: ReactNode; hint?: ReactNode; ch
     <div className="set-row">
       <div className="set-row__text">
         <span className="set-row__label">{label}</span>
-        {hint && <p className="set-row__hint">{hint}</p>}
+        {hint && <div className="set-row__hint">{hint}</div>}
       </div>
       {children && <div className="set-row__control">{children}</div>}
     </div>
@@ -151,10 +151,14 @@ export function Settings({ theme, onTheme, outputDir, onChooseOutputDir, downloa
       )}
 
       <Group title="Updates">
-        <Row label={`Craftora${updates.version ? ` ${updates.version}` : ""}${import.meta.env.DEV ? " (development build)" : ""}`} />
-        <div className="home__about">
-          <UpdateControls updates={updates} />
-        </div>
+        <Row
+          label={`Craftora${updates.version ? ` ${updates.version}` : ""}${import.meta.env.DEV ? " (development build)" : ""}`}
+          hint={
+            <span className="home__about">
+              <UpdateControls updates={updates} />
+            </span>
+          }
+        />
       </Group>
 
       {inDesktopApp && <Privacy />}
