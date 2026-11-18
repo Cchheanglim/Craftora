@@ -68,6 +68,8 @@ interface PreviewProps {
   still?: { background: string };
   /** The Image editor's painting tools: strokes go onto the picture instead of moving layers. */
   painting?: Painting;
+  /** The Image editor: clip id whose mask is shown alone over a black stage. */
+  maskView?: string | null;
 }
 
 const WAVE_BARS = 140;
@@ -181,7 +183,7 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { ...edge, fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : edge;
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, onDropMedia, placeText, silent, picking, still, painting }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, onDropMedia, placeText, silent, picking, still, painting, maskView }: PreviewProps) {
   const [mutedByHand, setMuted] = useState(false);
   const muted = mutedByHand || Boolean(silent);
   // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
@@ -300,10 +302,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     const t = order ? transitionMix(order, c, time) : { picture: 1, sound: 1, white: 0, shift: 0, lift: 0, zoom: 1, turn: 0, reveal: "" };
     return { ...t, picture: fade * t.picture, sound: fade * soundFadeAt(c, time) * t.sound };
   };
+  const viewingMaskClip = still && maskView ? project.clips.find((c) => c.id === maskView && Boolean(c.mask)) : undefined;
   // Sound files (pictures play their own sound).
   const sounds = project.clips.filter((c) => c.mediaId && !showsPicture(project, c));
-  const texts = project.clips.filter((c) => isText(c) && !trackHidden(c)).sort(byLayer);
-  const shapes = project.clips.filter((c) => isShape(c) && !trackHidden(c)).sort(byLayer);
+  const texts = project.clips.filter((c) => isText(c) && (!trackHidden(c) || viewingMaskClip?.id === c.id)).sort(byLayer);
+  const shapes = project.clips.filter((c) => isShape(c) && (!trackHidden(c) || viewingMaskClip?.id === c.id)).sort(byLayer);
   const overlays = [...texts, ...shapes].sort(byLayer);
   // The Image editor stacks every layer by the Layers order (photos over text too), 1 at the bottom (lib/compose.ts
   // draws the same order); the video editor keeps pictures under text, as its export does.
@@ -614,9 +617,10 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           <AdjustFilters clips={project.clips} />
           {still && <StyleFilters clips={project.clips} height={stageRef.current?.clientHeight ?? frame.height} />}
           <KeyFilters clips={project.clips} />
+          {viewingMaskClip && <div style={{ position: "absolute", inset: 0, background: "#000", zIndex: 99990, pointerEvents: "none" }} aria-hidden="true" />}
           <div
             className="preview__pictures"
-            style={{ filter: blocks.filter, transform: [blocks.transform, blocks.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined }}
+            style={viewingMaskClip ? undefined : { filter: blocks.filter, transform: [blocks.transform, blocks.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined }}
           >
           {pictures.map((clip) => {
             const media = mediaOf(clip);
@@ -646,6 +650,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 selected={isSelected}
                 poster={poster}
                 mask={still ? maskStyle(clip) : undefined}
+                viewingMask={viewingMaskClip?.id === clip.id}
                 onPointerDown={beginGesture(clip, "move")}
                 handles={isSelected ? handles(clip) : null}
               >
@@ -746,6 +751,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           })}
           {overlays.filter(active).map((clip) => {
             const isSelected = clip.id === selectedId;
+            const viewingMask = viewingMaskClip?.id === clip.id;
             if (isShape(clip)) {
               return (
                 <ShapeLayer
@@ -757,6 +763,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   opacity={fadeAt(clip, time) * ownFill(clip)}
                   selected={isSelected}
                   still={Boolean(still)}
+                  viewingMask={viewingMask}
                   onPointerDown={beginGesture(clip, "move")}
                   handles={isSelected ? handles(clip) : null}
                 />
@@ -779,20 +786,33 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   scale: pose.scale,
                   fontSize: `${clip.size * 100}cqh`,
                   color: clip.color,
-                  opacity: fadeAt(clip, time) * pose.alpha * (clip.opacity ?? 1) * ownFill(clip),
+                  opacity: viewingMask ? 1 : fadeAt(clip, time) * pose.alpha * (clip.opacity ?? 1) * ownFill(clip),
                   // The Image editor's layer blend mode (lib/compose.ts draws the same with globalCompositeOperation).
-                  mixBlendMode: clip.blend,
-                  zIndex: stack?.get(clip.id),
-                  filter: styled(clip),
+                  mixBlendMode: viewingMask ? undefined : clip.blend,
+                  zIndex: viewingMask ? 99991 : stack?.get(clip.id),
+                  filter: viewingMask ? undefined : styled(clip),
                   ...textFont(clip),
                   // The Image editor's own (textPicture.ts draws them into the saved picture).
-                  ...(still && { textShadow: shadows ? "none" : undefined, letterSpacing: clip.spacing ? `${clip.spacing}em` : undefined, rotate: clip.rotate ? `${clip.rotate}deg` : undefined }),
+                  ...(still && { textShadow: shadows || viewingMask ? "none" : undefined, letterSpacing: clip.spacing ? `${clip.spacing}em` : undefined, rotate: clip.rotate ? `${clip.rotate}deg` : undefined }),
+                  ...(viewingMask && { background: "transparent", boxShadow: "none" }),
                 }}
                 onPointerDown={beginGesture(clip, "move")}
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Softness and glow on the letters only: not the box edge or the selection outline; its mask likewise. */}
-                {shadows || (still && maskOn(clip)) ? <span style={{ display: "block", filter: shadows || undefined, ...(still && maskStyle(clip)) }}>{pose.text}</span> : pose.text}
+                {shadows || viewingMask || (still && maskOn(clip)) ? (
+                  <span style={{ display: "block", visibility: viewingMask ? "hidden" : undefined, filter: shadows || undefined, ...(still && maskStyle(clip)) }}>{pose.text}</span>
+                ) : (
+                  pose.text
+                )}
+                {viewingMask && clip.mask && (
+                  <img
+                    src={clip.mask}
+                    alt=""
+                    draggable={false}
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", background: "#000", pointerEvents: "none" }}
+                  />
+                )}
                 {isSelected && handles(clip)}
               </div>
             );
@@ -1154,6 +1174,8 @@ interface PictureLayerProps {
   poster?: string;
   /** The Image editor: its layer mask over the box's pixels (lib/mask.ts `maskStyle`), not over the selection frame. */
   mask?: CSSProperties;
+  /** The Image editor: show the mask greyscale alone in place of the layer's pixels. */
+  viewingMask?: boolean;
   onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
   handles: ReactNode;
   /** The Image editor: its place in the stack (Layers order), photos and text and shapes together. */
@@ -1166,7 +1188,7 @@ interface PictureLayerProps {
  * One picture on the stage, placed like the export: fitted inside the frame, scaled by its
  * size, at its position. The crop is a window onto the video.
  */
-function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, selected, poster, mask, onPointerDown, handles, z, children }: PictureLayerProps) {
+function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, selected, poster, mask, viewingMask, onPointerDown, handles, z, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
@@ -1219,12 +1241,20 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
     <div
       className={selected ? "preview__picture is-selected" : "preview__picture"}
       data-clip={clip.id}
-      style={{ ...box, visibility: visible ? "visible" : "hidden", opacity, mixBlendMode: clip.blend, zIndex: z, filter: styled(clip), rotate: clip.angle ? `${clip.angle}deg` : undefined }}
+      style={{
+        ...box,
+        visibility: visible || viewingMask ? "visible" : "hidden",
+        opacity: viewingMask ? 1 : opacity,
+        mixBlendMode: viewingMask ? undefined : clip.blend,
+        zIndex: viewingMask ? 99991 : z,
+        filter: viewingMask ? undefined : styled(clip),
+        rotate: clip.angle ? `${clip.angle}deg` : undefined,
+      }}
       onPointerDown={onPointerDown}
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
     >
       {/* The mask goes on the box's pixels, not on the box itself, which also holds the selection frame. */}
-      <div style={mask?.maskImage ? { position: "absolute", inset: 0, ...mask } : { display: "contents" }}>
+      <div style={mask?.maskImage && !viewingMask ? { position: "absolute", inset: 0, ...mask } : { display: "contents" }}>
       <div className="preview__crop" style={turned}>
         <div
           className="preview__clip-fx"
@@ -1272,6 +1302,14 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
         </>
       )}
       </div>
+      {viewingMask && clip.mask && (
+        <img
+          src={clip.mask}
+          alt=""
+          draggable={false}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", background: "#000", zIndex: 1, pointerEvents: "none" }}
+        />
+      )}
       {visible && !ready && !poster && <span className="preview__loading">Loading video…</span>}
       {handles}
     </div>
@@ -1289,10 +1327,12 @@ interface ShapeLayerProps {
   z?: number;
   /** The Image editor (its layer mask is drawn only there). */
   still?: boolean;
+  /** The Image editor: show the mask greyscale alone over the shape's box. */
+  viewingMask?: boolean;
 }
 
 /** One shape on the stage: a full-frame SVG picture with a hit box over its bounding box. */
-function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles, z, still }: ShapeLayerProps) {
+function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles, z, still, viewingMask }: ShapeLayerProps) {
   const src = useMemo(
     () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(shapeSvg(clip, frame.width, frame.height))}`,
     [clip.shape, clip.color, clip.size, clip.aspect, clip.x, clip.y, clip.opacity, clip.outline, clip.rotate, clip.points, frame.width, frame.height],
@@ -1319,11 +1359,19 @@ function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles, z,
           width: `${(box.width / frame.width) * 100}%`,
           height: `${(box.height / frame.height) * 100}%`,
           transform: clip.rotate ? `rotate(${clip.rotate}deg)` : undefined,
-          zIndex: z,
+          zIndex: viewingMask ? 99991 : z,
         }}
         onPointerDown={onPointerDown}
         onClick={(e) => e.stopPropagation()}
       >
+        {viewingMask && clip.mask && (
+          <img
+            src={clip.mask}
+            alt=""
+            draggable={false}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", background: "#000", pointerEvents: "none" }}
+          />
+        )}
         {handles}
       </div>
     </>
