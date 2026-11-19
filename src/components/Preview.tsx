@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type SyntheticEvent } from "react";
 import type { Frame } from "../types";
 import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, soundFadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
 import { stretchSide } from "../project/layerBox";
@@ -225,7 +225,25 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const [snapping, setSnapping] = useState(false);
   /** Preview files that failed to load (refused by their server, or unplayable). */
   const [failed, setFailed] = useState<Set<string>>(() => new Set());
-  const fail = (src: string) => setFailed((all) => (all.has(src) ? all : new Set(all).add(src)));
+  const fail = useCallback((src: string) => setFailed((all) => (all.has(src) ? all : new Set(all).add(src))), []);
+  const loadingCbs = useRef(new Map<string, (on: boolean) => void>());
+  const onMediaLoading = (key: string) => {
+    let fn = loadingCbs.current.get(key);
+    if (!fn) {
+      fn = (on: boolean) => playback.setLoading(key, on);
+      loadingCbs.current.set(key, fn);
+    }
+    return fn;
+  };
+  const failCbs = useRef(new Map<string, () => void>());
+  const onMediaFailed = (src: string) => {
+    let fn = failCbs.current.get(src);
+    if (!fn) {
+      fn = () => fail(src);
+      failCbs.current.set(src, fn);
+    }
+    return fn;
+  };
   const stageRef = useRef<HTMLDivElement>(null);
   // A layer being painted, shown from its canvas until its saved photo has loaded (1.5 s at most: a photo that came
   // out the same as before never loads again).
@@ -355,6 +373,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const editable = (c?: Clip) => Boolean(c && (!c.mediaId || showsPicture(project, c)));
 
   // The combined radio wave across the timeline, shown right under the video.
+  const waveKey = project.clips
+    .map((c) => `${c.id}:${c.trackId}:${c.mediaId ?? ""}:${c.start}:${c.in}:${c.out}:${c.speed}:${c.reverse ? 1 : 0}:${c.volume}:${c.fadeIn}:${c.fadeOut}:${c.soundFadeIn ?? 0}:${c.soundFadeOut ?? 0}`)
+    .join("|");
   const timelineWave = useMemo(() => {
     if (duration <= 0) return [];
     const audible = project.clips.filter((c) => {
@@ -379,7 +400,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
       }
       return Math.max(6, Math.min(100, Math.round(sum)));
     });
-  }, [project.clips, project.media, project.tracks, duration]);
+  }, [waveKey, project.media, project.tracks, duration]);
 
   const scrubWave = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 || duration <= 0) return;
@@ -523,9 +544,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     };
     const move = (ev: PointerEvent) => onPointerMove.current(ev);
     const up = () => {
-      if (gestureRef.current?.moved) {
+      if (gestureRef.current) {
         justDragged.current = true;
-        window.setTimeout(() => (justDragged.current = false), 0);
+        window.setTimeout(() => (justDragged.current = false), 100);
       }
       gestureRef.current = null;
       window.removeEventListener("pointermove", move);
@@ -579,9 +600,12 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
       <div
         className="preview__screen"
         onClick={() => {
-          if (justDragged.current) return;
+          if (justDragged.current) {
+            justDragged.current = false;
+            return;
+          }
           // With a picture or text selected, a click beside it lets go of it; otherwise it plays.
-          if (editable(selected) || still) onSelect(null);
+          if (editable(selected) || selectedId === SHOWN_CAPTIONS || still) onSelect(null);
           else playback.toggle();
         }}
       >
@@ -687,7 +711,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 onContextMenu={openItemMenu(clip)}
                 handles={isSelected ? handles(clip) : null}
               >
-                {(onShape, style, onReady) =>
+                {(onShape, style, onReady, onLoadedMetadata) =>
                   media.source.image ? (
                     <>
                       {live?.clipId === clip.id && <LiveCanvas canvas={live.canvas} className={clip.mirror ? "preview__video is-mirrored" : "preview__video"} style={style} />}
@@ -697,7 +721,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                           time={still ? 0 : time - clip.start}
                           className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
                           style={live?.clipId === clip.id ? { ...style, visibility: "hidden" } : style}
-                          onError={() => fail(media.source.previewUrl)}
+                          onError={onMediaFailed(media.source.previewUrl)}
                           onShape={onShape}
                           onReady={() => {
                             onReady();
@@ -738,11 +762,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         muted={muted || trackMuted(clip) || separateSound}
                         rate={rate}
                         reverse={clip.reverse}
-                        onLoading={(on) => playback.setLoading(`${clip.id}:video`, on)}
-                        onFailed={() => fail(media.source.previewUrl)}
+                        onLoading={onMediaLoading(`${clip.id}:video`)}
+                        onFailed={onMediaFailed(media.source.previewUrl)}
                         className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
                         style={style}
-                        onLoadedMetadata={(e) => onShape(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
+                        onLoadedMetadata={onLoadedMetadata}
                         onReady={onReady}
                       />
                     )}
@@ -757,7 +781,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         muted={muted || trackMuted(clip)}
                         rate={rate}
                         reverse={clip.reverse}
-                        onLoading={(on) => playback.setLoading(`${clip.id}:audio`, on)}
+                        onLoading={onMediaLoading(`${clip.id}:audio`)}
                       />
                     )}
                   </>
@@ -792,8 +816,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 muted={muted || trackMuted(clip)}
                 rate={playback.speed * clip.speed}
                 reverse={clip.reverse}
-                onLoading={(on) => playback.setLoading(`${clip.id}:audio`, on)}
-                onFailed={() => fail(src)}
+                onLoading={onMediaLoading(`${clip.id}:audio`)}
+                onFailed={onMediaFailed(src)}
               />
             );
           })}
@@ -1144,6 +1168,7 @@ const styled = (clip: Clip) => (hasStyle(clip.style) ? `url(#style-${clip.id})` 
 const ownFill = (clip: Clip) => (hasStyle(clip.style) ? 1 : (clip.fillOpacity ?? 1));
 
 function AdjustFilters({ clips }: { clips: Clip[] }) {
+  const adjustKey = clips.map((c) => (c.adjust ? JSON.stringify(c.adjust) : "")).join("|");
   const used = useMemo(() => {
     const steps = new Map<string, LookStep>();
     for (const c of clips) {
@@ -1152,7 +1177,7 @@ function AdjustFilters({ clips }: { clips: Clip[] }) {
       }
     }
     return [...steps];
-  }, [clips]);
+  }, [adjustKey]);
   if (!used.length) return null;
   return (
     <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
@@ -1331,7 +1356,7 @@ interface PictureLayerProps {
   /** The Image editor: its place in the stack (Layers order), photos and text and shapes together. */
   z?: number;
   /** Renders the picture: a video or an image. It reports its pixel size and when it's ready. */
-  children: (onShape: (width: number, height: number) => void, style: CSSProperties, onReady: () => void) => ReactNode;
+  children: (onShape: (width: number, height: number) => void, style: CSSProperties, onReady: () => void, onLoadedMetadata: (e: SyntheticEvent<HTMLVideoElement>) => void) => ReactNode;
 }
 
 /**
@@ -1342,6 +1367,14 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
+  const onShape = useCallback((width: number, height: number) => {
+    if (width && height) setVideoAspect(width / height);
+  }, []);
+  const onLoadedMetadata = useCallback((e: SyntheticEvent<HTMLVideoElement>) => {
+    const { videoWidth, videoHeight } = e.currentTarget;
+    if (videoWidth && videoHeight) setVideoAspect(videoWidth / videoHeight);
+  }, []);
+  const onReady = useCallback(() => setReady(true), []);
   const { left, top, right, bottom } = clip.crop;
   const keptW = 1 - left - right;
   const keptH = 1 - top - bottom;
@@ -1380,12 +1413,15 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
     transform: shift !== 0 || lift !== 0 ? `translate(${shift * stageWidth}px, ${(lift * stageWidth) / stageAspect}px)` : undefined,
     ...revealStyle(reveal),
   };
-  const video: CSSProperties = {
-    width: `${100 / keptW}%`,
-    height: `${100 / keptH}%`,
-    left: `${(-left / keptW) * 100}%`,
-    top: `${(-top / keptH) * 100}%`,
-  };
+  const video = useMemo<CSSProperties>(
+    () => ({
+      width: `${100 / keptW}%`,
+      height: `${100 / keptH}%`,
+      left: `${(-left / keptW) * 100}%`,
+      top: `${(-top / keptH) * 100}%`,
+    }),
+    [keptW, keptH, left, top],
+  );
 
   return (
     <div
@@ -1441,13 +1477,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
               }}
             />
           )}
-          {children(
-            (width, height) => {
-              if (width && height) setVideoAspect(width / height);
-            },
-            video,
-            () => setReady(true),
-          )}
+          {children(onShape, video, onReady, onLoadedMetadata)}
         </div>
       </div>
       {/* A flash transition whitens the clip itself (the export fades its picture to white). */}
