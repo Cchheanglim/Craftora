@@ -1470,14 +1470,18 @@ const MAX_LOOK_STEPS: usize = 24;
 
 /// Blur's strength: its standard deviation as a share of the frame width (effects.ts `BLUR_SHARE`).
 /// RGB split at strength 1: red and blue moved this share of the width (effects.ts `RGB_SHARE`).
+/// Pixelate at strength 1: block radius as a share of the frame width (effects.ts `PIXEL_SHARE`).
 const RGB_SHARE: f64 = 0.008;
 const BLUR_SHARE: f64 = 0.006;
+const PIXEL_SHARE: f64 = 0.005;
 
 /// An effect block from `start` for `length` seconds, as the preview draws it (effects.ts
 /// `blocksStyle`); without its time range (the caller adds it). None for an effect the catalog
 /// doesn't have. `size`: the export's width, height and frame rate.
 fn effect_filter(effect: &str, start: f64, length: f64, (w, h, fps): (u32, u32, u32), (s, v): (f64, f64)) -> Option<String> {
     let (st, d) = (secs(start), secs(length));
+    // The caller times only the last filter; earlier steps in a multi-filter effect take this window too.
+    let on = format!("between(t,{st},{})", secs(start + length));
     let ease = |x: &str| format!("(0.5-0.5*cos(PI*{x}))");
     // Seconds into the block, from the frame count: perspective has no clock, and the picture runs at `fps` from 0.
     let u = format!("(in/{fps}-{st})");
@@ -1504,6 +1508,55 @@ fn effect_filter(effect: &str, start: f64, length: f64, (w, h, fps): (u32, u32, 
             let dy = format!("(0.02*H*{s:.4}*(sin(2*PI*{:.4}*{u}+1)+0.5*sin(2*PI*{:.4}*{u}+2))/1.5)", 9.1 * v, 5.7 * v);
             warp(&format!("(1+{:.4})", 0.06 * s), &dx, &dy)
         }
+        "zoom-blur" => format!(
+            "gblur=sigma={:.2}:enable='{on}',{}",
+            (0.6 * BLUR_SHARE * f64::from(w) * s).max(0.01),
+            warp(&format!("(1+{:.4}*{through})", 0.3 * s), "0", "0")
+        ),
+        "heartbeat" => {
+            // Two quick beats ("lub-dub") and a rest every 1/speed seconds (effects.ts `blocksStyle`).
+            let p = format!("mod({u}*{v:.4},1)");
+            let beat = format!("if(lt({p},0.2),sin(PI*{p}/0.2),if(gte({p},0.25)*lt({p},0.45),0.7*sin(PI*({p}-0.25)/0.2),0))");
+            warp(&format!("(1+{:.4}*{beat})", 0.18 * s), "0", "0")
+        }
+        "swing" => format!(
+            "rotate=a='{:.4}*PI/180*sin(2*PI*{:.4}*(t-{st}))':c=black@0:enable='{on}',{}",
+            4.0 * s,
+            0.6 * v,
+            warp(&format!("(1+{:.4})", 0.12 * s), "0", "0")
+        ),
+        "spin-in" => {
+            let span = length.min(0.6 / v).max(0.001);
+            let left_t = format!("(1-{})", ease(&format!("clip((t-{st})/{span:.4},0,1)")));
+            let left_u = format!("(1-{})", ease(&format!("clip({u}/{span:.4},0,1)")));
+            format!(
+                "rotate=a='-{:.4}*PI/2*{left_t}':c=black@0:enable='{on}',{}",
+                s,
+                warp(&format!("(1+{:.4}*{left_u})", 0.35 * s), "0", "0")
+            )
+        }
+        "slide-in" => {
+            let span = length.min(0.6 / v).max(0.001);
+            let left = format!("(1-{})", ease(&format!("clip({u}/{span:.4},0,1)")));
+            let dx = format!("(-{:.4}*W*{left})", 0.12 * s);
+            warp(&format!("(1+{:.4}*{left})", 0.24 * s), &dx, "0")
+        }
+        "bounce" => {
+            let dy = format!("(-{:.4}*H*(0.5-0.5*cos(2*PI*{:.4}*{u})))", 0.06 * s, 1.5 * v);
+            warp(&format!("(1+{:.4})", 0.12 * s), "0", &dy)
+        }
+        "lens-distort" => {
+            let n = (0.6 * RGB_SHARE * f64::from(w) * s).round() as i64;
+            let angle = (std::f64::consts::PI / 5.0 * 0.55 * s).min(std::f64::consts::FRAC_PI_2);
+            format!(
+                "lenscorrection=k1={:.4}:k2={:.4}:enable='{on}',rgbashift=rh={}:rv={}:bh={n}:bv={n}:edge=smear:enable='{on}',{}:enable='{on}',vignette=angle={angle:.5}",
+                0.15 * s,
+                0.05 * s,
+                -n,
+                -n,
+                warp(&format!("(1+{:.4})", 0.14 * s), "0", "0")
+            )
+        }
         // FFmpeg's lens falloff, which the preview draws as a gradient (effects.ts `vignetteGradient`).
         "vignette" => format!("vignette=angle={:.5}", (std::f64::consts::PI / 5.0 * s).min(std::f64::consts::FRAC_PI_2)),
         "strobe" => {
@@ -1519,13 +1572,126 @@ fn effect_filter(effect: &str, start: f64, length: f64, (w, h, fps): (u32, u32, 
         }
         // Grain on the brightness only, new every frame; the preview tiles a noise texture (a look-alike, not the same dots).
         "grain" => format!("noise=c0s={}:c0f=t+u", (14.0 * s).round() as i64),
+        "pixelate" => {
+            let r = (PIXEL_SHARE * f64::from(w) * s).round().clamp(1.0, 24.0) as i64;
+            let b = 2 * r + 1;
+            format!("pixelize=w={b}:h={b}")
+        }
+        "kaleidoscope" => {
+            let n = (0.035 * f64::from(w) * s).round() as i64;
+            format!(
+                "rgbashift=rh={}:rv={}:bh={n}:bv={}:gv={n}:edge=smear:enable='{on}',rotate=a='{:.4}*PI/180*sin(2*PI*{:.4}*(t-{st}))':c=black@0:enable='{on}',{}:enable='{on}',hue=h='{:.4}*(t-{st})':s={:.4}",
+                -n,
+                -n,
+                -n,
+                12.0 * s,
+                0.4 * v,
+                warp(&format!("(1+{:.4})", 0.2 * s), "0", "0"),
+                180.0 * v,
+                1.0 + 0.35 * s
+            )
+        }
+        "glitch" => {
+            let wave = format!("(sin(2*PI*{:.4}*{u})*sin(2*PI*{:.4}*{u}))", 3.7 * v, 8.3 * v);
+            let burst = format!("if(gt({wave},0.45),1,if(lt({wave},-0.45),-1,0))");
+            let dx = format!("({:.4}*W*({burst}))", 0.035 * s);
+            let dy = format!("({:.4}*H*sin(2*PI*{:.4}*{u})*gt(abs({wave}),0.45))", 0.008 * s, 13.1 * v);
+            let n = (0.7 * RGB_SHARE * f64::from(w) * s).round() as i64;
+            format!(
+                "rgbashift=rh={}:bh={n}:edge=smear:enable='{on}',{}",
+                -n,
+                warp(&format!("(1+{:.4})", 0.08 * s), &dx, &dy)
+            )
+        }
+        "vhs" => {
+            let n = (0.75 * RGB_SHARE * f64::from(w) * s).round() as i64;
+            format!(
+                "rgbashift=rh={}:bh={n}:edge=smear:enable='{on}',eq=contrast={:.4}:saturation={:.4}:enable='{on}',noise=c0s={}:c0f=t+u",
+                -n,
+                1.0 - 0.1 * s,
+                1.0 - 0.15 * s,
+                (9.0 * s).round() as i64
+            )
+        }
+        "light-leak" => {
+            let w_amt = (0.8 * s).clamp(0.0, 1.0);
+            let warmth = look_filter("warmth", w_amt).unwrap_or_default();
+            let p = format!("({:.4}*(0.4+0.6*(0.5-0.5*cos(2*PI*{:.4}*(t-{st})))))", (0.35 * s).min(1.0), 0.4 * v);
+            format!(
+                "{}:enable='{on}',eq=contrast='1-0.2*{p}':brightness='0.32*{p}':saturation='1+0.2*{p}':eval=frame",
+                warmth.trim_start_matches(',')
+            )
+        }
+        "rainbow" => format!("hue=h='{:.4}*(t-{st})'", 360.0 * v),
+        "old-film" => {
+            let sepia = look_filter("sepia", (0.65 * s).min(1.0)).unwrap_or_default();
+            let flicker = format!("-{:.4}*(0.5+0.5*sin(2*PI*{:.4}*(t-{st}))*cos(2*PI*{:.4}*(t-{st})))", 0.12 * s, 6.0 * v, 9.5 * v);
+            let angle = (std::f64::consts::PI / 5.0 * 0.8 * s).min(std::f64::consts::FRAC_PI_2);
+            format!(
+                "{}:enable='{on}',eq=contrast={:.4}:brightness='{flicker}':eval=frame:enable='{on}',vignette=angle={angle:.5}:enable='{on}',noise=c0s={}:c0f=t+u",
+                sepia.trim_start_matches(','),
+                1.0 + 0.15 * s,
+                (10.0 * s).round() as i64
+            )
+        }
+        "bokeh" => {
+            let warmth = look_filter("warmth", (0.5 * s).clamp(0.0, 1.0)).unwrap_or_default();
+            let p = format!("({:.4}*(0.5+0.5*(0.5-0.5*cos(2*PI*{:.4}*(t-{st})))))", 0.25 * s, 0.5 * v);
+            format!(
+                "{}:enable='{on}',eq=brightness='{p}':saturation={:.4}:eval=frame:enable='{on}',gblur=sigma={:.2}",
+                warmth.trim_start_matches(','),
+                1.0 + 0.2 * s,
+                (0.35 * BLUR_SHARE * f64::from(w) * s).max(0.01)
+            )
+        }
+        "neon" => {
+            let a = -(1000.0 * s).round() as i64;
+            let c = (1000.0 * (8.0 * s + (1.0 - s).max(0.0))).round() as i64;
+            let m = format!("'{a} {a} {a} {a} {c} {a} {a} {a} {a}'");
+            let sat = look_filter("saturate", (1.0 + 0.8 * s).min(2.0)).unwrap_or_default();
+            format!(
+                "convolution=0m={m}:1m={m}:2m={m}:0rdiv=0.001:1rdiv=0.001:2rdiv=0.001:enable='{on}',{}",
+                sat.trim_start_matches(',')
+            )
+        }
+        "bw-flash" => {
+            let p = format!("({:.4}*(0.5+0.5*cos(2*PI*{v:.4}*(t-{st}))))", s.min(1.0));
+            format!("eq=saturation='1-{p}':contrast='1+0.35*{p}':eval=frame")
+        }
+        "blink" => {
+            // A black blink every 0.5/speed seconds, gone halfway to the next (effects.ts `blocksStyle`).
+            let period = 0.5 / v;
+            let p = format!("({:.4}*pow(max(0,1-mod(t-{st},{period:.4})/{:.4}),2))", (0.85 * s).min(1.0), 0.5 * period);
+            format!("eq=contrast='1-{p}':brightness='-0.438*{p}':saturation='1-{p}':eval=frame")
+        }
+        "soft-glow" => format!(
+            "eq=brightness={:.4}:contrast={:.4}:saturation={:.4}:enable='{on}',gblur=sigma={:.2}",
+            0.12 * s,
+            1.0 - 0.08 * s,
+            1.0 + 0.15 * s,
+            (0.25 * BLUR_SHARE * f64::from(w) * s).max(0.01)
+        ),
+        "duotone" => {
+            // Same magenta-and-teal matrix as effects.ts `duotoneMatrix`.
+            let k = (0.75 * s).clamp(0.0, 1.0);
+            format!(
+                "colorchannelmixer=rr={:.4}:rg={:.4}:rb={:.4}:gr={:.4}:gg={:.4}:gb={:.4}:br={:.4}:bg={:.4}:bb={:.4}",
+                1.0 - 0.65 * k,
+                0.85 * k,
+                0.15 * k,
+                0.1 * k,
+                1.0 - 0.55 * k,
+                0.35 * k,
+                0.45 * k,
+                0.25 * k,
+                1.0 - 0.3 * k
+            )
+        }
         "bars" => {
             // 2.39:1 on a landscape frame; a tenth of the height each on a tall one. On for the whole block: drawbox has
             // no clock (its `t` is the line thickness), so they can't slide.
             let share = if w > h { (1.0 - f64::from(w) / f64::from(h) / 2.39).max(0.0) / 2.0 } else { 0.1 };
             let bar = format!("max(1,ih*{share:.4})");
-            // The caller times only the last filter; the first gets the same window here.
-            let on = format!("between(t,{st},{})", secs(start + length));
             format!("drawbox=x=0:y=0:w=iw:h='{bar}':color=black:t=fill:enable='{on}',drawbox=x=0:y='ih-{bar}':w=iw:h='{bar}':color=black:t=fill")
         }
         _ => return None,
@@ -2018,6 +2184,49 @@ mod tests {
         let on = "enable='between(t,1.000,2.000)'";
         assert_eq!(timed("hflip", on), "hflip=enable='between(t,1.000,2.000)'");
         assert_eq!(timed("gblur=sigma=6.00", on), "gblur=sigma=6.00:enable='between(t,1.000,2.000)'");
+    }
+
+    #[test]
+    fn every_new_picture_effect_yields_a_non_empty_filter() {
+        let new_ids = [
+            "zoom-blur",
+            "heartbeat",
+            "swing",
+            "spin-in",
+            "slide-in",
+            "bounce",
+            "lens-distort",
+            "pixelate",
+            "kaleidoscope",
+            "glitch",
+            "vhs",
+            "light-leak",
+            "rainbow",
+            "old-film",
+            "bokeh",
+            "neon",
+            "bw-flash",
+            "blink",
+            "soft-glow",
+            "duotone",
+        ];
+        assert_eq!(new_ids.len(), 20);
+        for id in new_ids {
+            let filter = effect_filter(id, 1.0, 2.0, (1920, 1080, 30), (1.0, 1.0));
+            assert!(filter.as_ref().is_some_and(|f| !f.is_empty()), "{id} returned {filter:?}");
+        }
+        assert!(effect_filter("zoom-blur", 0.0, 2.0, (1000, 562, 30), (1.0, 1.0)).unwrap().starts_with("gblur=sigma=3.60:enable='between(t,0.000,2.000)',perspective="));
+        assert!(effect_filter("heartbeat", 0.0, 2.0, (1920, 1080, 30), (1.0, 2.0)).unwrap().contains("mod((in/30-0.000)*2.0000,1)"));
+        assert!(effect_filter("swing", 0.0, 2.0, (1920, 1080, 30), (1.0, 1.0)).unwrap().starts_with("rotate=a='4.0000*PI/180*sin(2*PI*0.6000*(t-0.000))':c=black@0:"));
+        assert!(effect_filter("spin-in", 0.0, 2.0, (1920, 1080, 30), (1.0, 1.0)).unwrap().starts_with("rotate=a='-1.0000*PI/2*(1-(0.5-0.5*cos(PI*clip((t-0.000)/0.6000,0,1))))':c=black@0:"));
+        assert!(effect_filter("slide-in", 0.0, 2.0, (1920, 1080, 30), (1.0, 1.0)).unwrap().contains("(-0.1200*W*(1-(0.5-0.5*cos(PI*clip((in/30-0.000)/0.6000,0,1)))))"));
+        assert!(effect_filter("bounce", 0.0, 2.0, (1920, 1080, 30), (1.0, 1.0)).unwrap().contains("(-0.0600*H*(0.5-0.5*cos(2*PI*1.5000*(in/30-0.000))))"));
+        assert_eq!(effect_filter("pixelate", 0.0, 2.0, (1920, 1080, 30), (1.0, 1.0)).unwrap(), "pixelize=w=21:h=21");
+        assert_eq!(effect_filter("rainbow", 1.0, 2.0, (1920, 1080, 30), (1.0, 1.5)).unwrap(), "hue=h='540.0000*(t-1.000)'");
+        assert_eq!(
+            effect_filter("duotone", 0.0, 2.0, (1920, 1080, 30), (1.0, 1.0)).unwrap(),
+            "colorchannelmixer=rr=0.5125:rg=0.6375:rb=0.1125:gr=0.0750:gg=0.5875:gb=0.2625:br=0.3375:bg=0.1875:bb=0.7750"
+        );
     }
 
     #[test]
