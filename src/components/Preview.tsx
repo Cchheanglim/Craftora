@@ -15,6 +15,7 @@ import { CRAFTORA_MEDIA, setWindowFullscreen } from "../lib/engine";
 import { textShadowFilter } from "../lib/textPicture";
 import { hasStyle, styleFilter } from "../lib/layerStyle";
 import { maskOn, maskStyle } from "../lib/mask";
+import { gifFrameAt, loadGif, type DecodedGif } from "../lib/gif";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
 import { SyncedMedia } from "./SyncedMedia";
@@ -679,24 +680,39 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   media.source.image ? (
                     <>
                       {live?.clipId === clip.id && <LiveCanvas canvas={live.canvas} className={clip.mirror ? "preview__video is-mirrored" : "preview__video"} style={style} />}
-                      <img
-                        src={(canPlay ? media.source.previewUrl : poster) || poster}
-                        // Craftora's own addresses answer with CORS: asking for it lets Remove a colour → Pick read the photo.
-                        crossOrigin={((canPlay ? media.source.previewUrl : poster) || poster)?.startsWith(CRAFTORA_MEDIA) ? "anonymous" : undefined}
-                        alt=""
-                        className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
-                        style={live?.clipId === clip.id ? { ...style, visibility: "hidden" } : style}
-                        draggable={false}
-                        onError={() => {
-                          if (canPlay) fail(media.source.previewUrl);
-                        }}
-                        onLoad={(e) => {
-                          onShape(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight);
-                          onReady();
-                          // The painted photo is in: its canvas can go.
-                          setLive((l) => (l?.clipId === clip.id && l.settled ? null : l));
-                        }}
-                      />
+                      {media.source.animated && canPlay ? (
+                        <GifLayer
+                          src={media.source.previewUrl}
+                          time={still ? 0 : time - clip.start}
+                          className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
+                          style={live?.clipId === clip.id ? { ...style, visibility: "hidden" } : style}
+                          onError={() => fail(media.source.previewUrl)}
+                          onShape={onShape}
+                          onReady={() => {
+                            onReady();
+                            setLive((l) => (l?.clipId === clip.id && l.settled ? null : l));
+                          }}
+                        />
+                      ) : (
+                        <img
+                          src={(canPlay ? media.source.previewUrl : poster) || poster}
+                          // Craftora's own addresses answer with CORS: asking for it lets Remove a colour → Pick read the photo.
+                          crossOrigin={((canPlay ? media.source.previewUrl : poster) || poster)?.startsWith(CRAFTORA_MEDIA) ? "anonymous" : undefined}
+                          alt=""
+                          className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
+                          style={live?.clipId === clip.id ? { ...style, visibility: "hidden" } : style}
+                          draggable={false}
+                          onError={() => {
+                            if (canPlay) fail(media.source.previewUrl);
+                          }}
+                          onLoad={(e) => {
+                            onShape(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight);
+                            onReady();
+                            // The painted photo is in: its canvas can go.
+                            setLive((l) => (l?.clipId === clip.id && l.settled ? null : l));
+                          }}
+                        />
+                      )}
                     </>
                   ) : (
                   <>
@@ -1443,6 +1459,61 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
       {handles}
     </div>
   );
+}
+
+function GifLayer({
+  src,
+  time,
+  className,
+  style,
+  onShape,
+  onReady,
+  onError,
+}: {
+  src: string;
+  time: number;
+  className: string;
+  style: CSSProperties;
+  onShape: (width: number, height: number) => void;
+  onReady: () => void;
+  onError: () => void;
+}) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const [gif, setGif] = useState<DecodedGif | null>(null);
+  const callbacks = useRef({ onShape, onReady, onError });
+  callbacks.current = { onShape, onReady, onError };
+
+  useEffect(() => {
+    let cancelled = false;
+    setGif(null);
+    loadGif(src).then(
+      (decoded) => {
+        if (cancelled) return;
+        const first = decoded.frames[0];
+        if (first) callbacks.current.onShape(first.width, first.height);
+        setGif(decoded);
+        callbacks.current.onReady();
+      },
+      () => {
+        if (!cancelled) callbacks.current.onError();
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    const ctx = canvas?.getContext("2d");
+    const frame = gif?.frames[gifFrameAt(gif.times, gif.length, time)] ?? gif?.frames[0];
+    if (!canvas || !ctx || !frame) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(frame, 0, 0);
+  }, [gif, time]);
+
+  if (!gif) return null;
+  return <canvas ref={ref} width={gif.frames[0]?.width} height={gif.frames[0]?.height} className={className} style={style} />;
 }
 
 interface ShapeLayerProps {

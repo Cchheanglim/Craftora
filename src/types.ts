@@ -2,7 +2,7 @@ import type { LookStep } from "./project/effects";
 import type { Clip } from "./project/model";
 import type { TextMotion } from "./project/textMotion";
 export type OutputKind = "video" | "audio";
-export type VideoContainer = "mp4" | "mkv";
+export type VideoContainer = "mp4" | "mkv" | "gif";
 export type AudioContainer = "mp3" | "wav" | "flac";
 export type ImageContainer = "png" | "jpg" | "webp";
 export type CutMode = "fast" | "precise";
@@ -135,6 +135,8 @@ export interface RenderSpec {
   background?: string;
   transparent?: boolean;
   imageQuality?: number;
+  gifWidth?: number;
+  gifFps?: number;
 }
 
 export type TransitionKind =
