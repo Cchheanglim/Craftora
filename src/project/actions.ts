@@ -726,6 +726,7 @@ function edit(p: Project, action: EditAction): Project {
       if (patch.opacity !== undefined) patch.opacity = clamp(patch.opacity, 0, 1);
       if (patch.fillOpacity !== undefined) patch.fillOpacity = clamp(patch.fillOpacity, 0, 1);
       if (patch.outline !== undefined) patch.outline = Math.max(0, patch.outline);
+      if (patch.aspect !== undefined) patch.aspect = clamp(patch.aspect, 0.05, 5);
       return { ...p, clips: p.clips.map((c) => (c.id === action.clipId ? fitFades({ ...c, ...patch }) : c)) };
     }
 

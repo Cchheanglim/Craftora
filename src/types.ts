@@ -139,16 +139,31 @@ export type TransitionKind =
   | "crossfade"
   | "dip"
   | "flash"
+  | "fade-white"
+  | "dissolve"
+  | "blur"
+  | "squeeze"
   | "slide"
   | "slide-right"
   | "slide-up"
   | "slide-down"
+  | "cover-left"
+  | "cover-right"
+  | "reveal-left"
+  | "reveal-right"
   | "zoom"
+  | "zoom-in-blur"
   | "wipe"
   | "wipe-left"
   | "wipe-up"
   | "wipe-down"
+  | "wipe-diag"
+  | "smooth-left"
+  | "smooth-right"
   | "circle"
+  | "circle-close"
+  | "radial"
+  | "wind"
   | "spin";
 
 export interface RenderClip {
@@ -179,6 +194,8 @@ export interface RenderClip {
   effectSpeed: number;
   /** Cover the frame instead of fitting inside it. */
   fill: boolean;
+  /** Video/picture: stretched box height / width in frame pixels; the picture's own shape when absent. */
+  aspect?: number;
   fadeIn: number;
   fadeOut: number;
   soundFadeIn: number;

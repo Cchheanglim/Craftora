@@ -1,6 +1,8 @@
 /* Foreground over background colour squares at the bottom of the Image editor's tool column, plus their colour wheel popover. */
 .colour-squares {
   position: relative;
+  /* The two squares' order stays inside: they mustn't draw over the ☰ menu or other pop-ups. */
+  isolation: isolate;
   width: 32px;
   height: 32px;
   flex: none;

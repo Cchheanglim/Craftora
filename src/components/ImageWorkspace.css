@@ -20,6 +20,12 @@
   --text: #e6e6e6;
   --text-2: #bdbdbd;
   --text-3: #a0a0a0;
+  /* The dark glass's panes: the light glass's white ones would sit under this view's light text. */
+  --glass-edge: rgb(255 255 255 / 0.1);
+  --glass-hi: rgb(255 255 255 / 0.14);
+  --glass-shadow: 0 20px 50px rgb(0 0 0 / 0.4);
+  --glass-thumb: rgb(255 255 255 / 0.13);
+  --glass-thumb-shadow: rgb(0 0 0 / 0.3);
   --toolbar-h: 30px;
   gap: 0;
   padding: 0;
@@ -671,7 +677,7 @@
 }
 
 /* The picked layer's frame (owner-approved mockup, like a photo editor): a thin white line with a dark edge so it shows
-   on any picture, and small square corner handles. The grab spots keep their 11px size; the square is drawn inside. */
+   on any picture, and small square handles at the corners and side centres. The side grab strips keep the square centred. */
 .app--image .preview__picture.is-selected,
 .app--image .preview__shape-box.is-selected,
 .app--image .preview__text.is-selected {
@@ -680,10 +686,15 @@
   box-shadow: 0 0 0 1px rgb(0 0 0 / 0.55);
 }
 
-.app--image .preview__handle::after {
+/* Both editors: you can see where to grab (the Video editor's handles used to be invisible). */
+.preview__handle::after {
   content: "";
   position: absolute;
-  inset: 2px;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  translate: -50% -50%;
   background: #ffffff;
   border: 1px solid #1f1f1f;
   box-sizing: border-box;

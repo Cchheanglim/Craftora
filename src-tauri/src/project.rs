@@ -83,7 +83,7 @@ enum Role {
     Shape,
 }
 
-#[derive(Deserialize, Clone, Copy, PartialEq, Default)]
+#[derive(Deserialize, Clone, Copy, PartialEq, Default, Debug)]
 #[serde(rename_all = "kebab-case")]
 enum TransitionKind {
     #[default]
@@ -92,22 +92,37 @@ enum TransitionKind {
     Dip,
     /// The same through white (a flash).
     Flash,
+    FadeWhite,
+    Dissolve,
+    Blur,
+    Squeeze,
     /// The outgoing clip moves out to the left as the incoming one pushes in from the right.
     Slide,
     /// The same to the right, up and down.
     SlideRight,
     SlideUp,
     SlideDown,
+    CoverLeft,
+    CoverRight,
+    RevealLeft,
+    RevealRight,
     /// The outgoing clip zooms in; the incoming one fades in over it, settling from 1.5× to its own size.
     Zoom,
+    ZoomInBlur,
     /// The incoming clip is uncovered from its left edge, the edge moving right.
     Wipe,
     /// From its right edge moving left, from the bottom moving up, from the top moving down.
     WipeLeft,
     WipeUp,
     WipeDown,
+    WipeDiag,
+    SmoothLeft,
+    SmoothRight,
     /// The incoming clip is uncovered through a circle growing from its centre.
     Circle,
+    CircleClose,
+    Radial,
+    Wind,
     /// Like Zoom, with the outgoing clip turning a quarter clockwise and the incoming one turning in from a quarter back.
     Spin,
 }
@@ -116,17 +131,29 @@ impl TransitionKind {
     /// Where a slide brings the incoming clip from, in frame widths and heights (the outgoing one leaves the other way).
     fn slide_from(self) -> (i8, i8) {
         match self {
-            TransitionKind::Slide => (1, 0),
-            TransitionKind::SlideRight => (-1, 0),
+            TransitionKind::Slide | TransitionKind::CoverLeft => (1, 0),
+            TransitionKind::SlideRight | TransitionKind::CoverRight => (-1, 0),
             TransitionKind::SlideUp => (0, 1),
             TransitionKind::SlideDown => (0, -1),
             _ => (0, 0),
         }
     }
 
+    /// Whether the outgoing clip slides out as the next one comes in (Cover leaves the outgoing clip in place).
+    fn slides_out(self) -> bool {
+        matches!(self, TransitionKind::Slide | TransitionKind::SlideRight | TransitionKind::SlideUp | TransitionKind::SlideDown)
+    }
+
     /// Whether the incoming picture fades in over the outgoing one (the others move it in or uncover it).
     fn fades_in(self) -> bool {
-        matches!(self, TransitionKind::Crossfade | TransitionKind::Zoom | TransitionKind::Spin)
+        matches!(
+            self,
+            TransitionKind::Crossfade
+                | TransitionKind::Blur
+                | TransitionKind::Zoom
+                | TransitionKind::ZoomInBlur
+                | TransitionKind::Spin
+        )
     }
 }
 
@@ -185,6 +212,9 @@ struct ClipSpec {
     /// Cover size × the frame (what spills over is cut off by the frame) instead of fitting inside.
     #[serde(default)]
     fill: bool,
+    /// Stretched box height / width in frame pixels (pictures and videos); the picture's own ratio when absent.
+    #[serde(default)]
+    aspect: Option<f64>,
     /// Seconds of fade in and out (picture from/to transparent, sound from/to silence).
     #[serde(default)]
     fade_in: f64,
@@ -344,9 +374,10 @@ impl ClipSpec {
             ramps.push(Ramp { white: false, fade_in: false, start: length - d, length: d });
         }
         if self.transition_in > 0.0 && !sound {
+            let white = matches!(self.transition_in_kind, TransitionKind::Flash | TransitionKind::FadeWhite);
             match self.transition_in_kind {
-                TransitionKind::Dip | TransitionKind::Flash => ramps.push(Ramp {
-                    white: self.transition_in_kind == TransitionKind::Flash,
+                TransitionKind::Dip | TransitionKind::Flash | TransitionKind::FadeWhite => ramps.push(Ramp {
+                    white,
                     fade_in: true,
                     start: self.transition_in / 2.0,
                     length: self.transition_in / 2.0,
@@ -356,14 +387,17 @@ impl ClipSpec {
                 _ => {}
             }
             // A flash's incoming clip stays hidden until the outgoing one is all white, or its own white covers that.
-            if self.transition_in_kind == TransitionKind::Flash {
+            if white {
                 ramps.push(Ramp { white: false, fade_in: true, start: self.transition_in / 2.0, length: 0.001 });
             }
         }
         // Otherwise the picture stays under the incoming one (moved or zoomed, but whole).
-        if self.transition_out > 0.0 && !sound && matches!(self.transition_out_kind, TransitionKind::Dip | TransitionKind::Flash) {
+        if self.transition_out > 0.0
+            && !sound
+            && matches!(self.transition_out_kind, TransitionKind::Dip | TransitionKind::Flash | TransitionKind::FadeWhite)
+        {
             ramps.push(Ramp {
-                white: self.transition_out_kind == TransitionKind::Flash,
+                white: matches!(self.transition_out_kind, TransitionKind::Flash | TransitionKind::FadeWhite),
                 fade_in: false,
                 start: length - self.transition_out,
                 length: self.transition_out / 2.0,
@@ -430,11 +464,33 @@ impl ClipSpec {
 
     /// Picture edits, scaling into the frame, and Smooth slow-mo in-between frames.
     fn picture_chain(&self, w: u32, h: u32, fps: u32) -> String {
-        // Fits inside size × the frame (or covers it, with `fill`), keeping its shape.
-        let (bw, bh) = (((w as f64) * self.size).round().max(2.0), ((h as f64) * self.size).round().max(2.0));
-        let fit = if self.fill { "increase" } else { "decrease" };
+        let scale = match self.aspect {
+            Some(a) => {
+                // Stretched box matching Preview `PictureLayer` and `layerBox.ts`, even dimensions for 4:2:0 / filters.
+                let (fw, fh) = (f64::from(w), f64::from(h));
+                let (box_aspect, frame_aspect) = (1.0 / a, fw / fh);
+                let wider = box_aspect >= frame_aspect;
+                let fit_w = if self.fill {
+                    if wider { box_aspect / frame_aspect } else { 1.0 }
+                } else if wider {
+                    1.0
+                } else {
+                    box_aspect / frame_aspect
+                };
+                let even = |v: f64| ((v / 2.0).round() * 2.0).max(2.0);
+                let raw_w = fw * fit_w * self.size;
+                let (sw, sh) = (even(raw_w), even(raw_w * a));
+                format!("scale=w={sw}:h={sh}")
+            }
+            None => {
+                // Fits inside size × the frame (or covers it, with `fill`), keeping its shape.
+                let (bw, bh) = (((w as f64) * self.size).round().max(2.0), ((h as f64) * self.size).round().max(2.0));
+                let fit = if self.fill { "increase" } else { "decrease" };
+                format!("scale=w={bw}:h={bh}:force_original_aspect_ratio={fit}:force_divisible_by=2")
+            }
+        };
         format!(
-            "setpts=PTS-STARTPTS{},scale=w={bw}:h={bh}:force_original_aspect_ratio={fit}:force_divisible_by=2,setsar=1{}{}",
+            "setpts=PTS-STARTPTS{},{scale},setsar=1{}{}",
             self.picture_edits(),
             self.smooth_frames(fps),
             if self.opacity < 1.0 { format!(",format=rgba,colorchannelmixer=aa={:.3}", self.opacity) } else { String::new() }
@@ -464,37 +520,80 @@ impl ClipSpec {
         if self.transition_in > 0.0 && from != 0 {
             moved.push_str(&format!("{}{axis}*(1-{})", sign(from), ease(self.start, self.transition_in)));
         }
-        // The outgoing clip leaves the way the next one comes in.
-        let to = -along(self.transition_out_kind);
-        if self.transition_out > 0.0 && to != 0 {
-            moved.push_str(&format!("{}{axis}*{}", sign(to), ease(self.end() - self.transition_out, self.transition_out)));
+        // The outgoing clip leaves the way the next one comes in (Cover keeps it still; Reveal slides it out at an even
+        // speed while xfade uncovers the incoming one).
+        if self.transition_out > 0.0 {
+            let out_from = self.end() - self.transition_out;
+            if self.transition_out_kind.slides_out() {
+                let to = -along(self.transition_out_kind);
+                if to != 0 {
+                    moved.push_str(&format!("{}{axis}*{}", sign(to), ease(out_from, self.transition_out)));
+                }
+            } else if axis == 'W' && matches!(self.transition_out_kind, TransitionKind::RevealLeft | TransitionKind::RevealRight) {
+                let dir = if self.transition_out_kind == TransitionKind::RevealLeft { '-' } else { '+' };
+                moved.push_str(&format!("{dir}W*clip((t-{})/{},0,1)", secs(out_from), secs(self.transition_out)));
+            }
         }
         moved
     }
 
-    /// Zoom and spin transitions on the clip's own picture, in its own time (`in` counts its frames, `t` is seconds),
-    /// after it has a see-through layer (the turned corners). Each starts with a comma.
+    /// Zoom, spin, squeeze and blur transitions on the clip's own picture, in its own time (`in` counts its frames, `t`
+    /// is seconds), after it has a see-through layer (the turned corners). Each starts with a comma.
     fn transition_moves(&self, fps: u32) -> String {
         let mut chain = String::new();
-        let mut zoom = |from: f64, d: f64, incoming: bool, spin: bool| {
+        let mut step = |from: f64, d: f64, incoming: bool, kind: TransitionKind| {
             let e = |time: &str| format!("(0.5-0.5*cos(PI*clip(({time}-{})/{},0,1)))", secs(from), secs(d));
-            // Only while it lasts: perspective and rotate redraw every pixel.
+            // Only while it lasts: perspective, rotate and gblur redraw every pixel.
             let on = format!("enable='between(t,{},{})'", secs(from), secs(from + d));
-            if spin {
+            if kind == TransitionKind::Spin {
                 // Turned first, then zoomed, as the preview's `rotate() scale()`: the outgoing clip turns a quarter
                 // clockwise, the incoming one comes in from a quarter back.
                 let a = if incoming { format!("-PI/2*(1-{})", e("t")) } else { format!("PI/2*{}", e("t")) };
                 chain.push_str(&format!(",{}", timed(&format!("rotate=a='{a}':c=black@0"), &on)));
             }
-            // The incoming clip settles from 1.5× to 1×; the outgoing one zooms from 1× to 1.5×.
-            let z = if incoming { format!("(1.5-0.5*{})", e(&format!("in/{fps}"))) } else { format!("(1+0.5*{})", e(&format!("in/{fps}"))) };
-            chain.push_str(&format!(",{}", timed(&warp(&z, "0", "0"), &on)));
+            if matches!(kind, TransitionKind::Zoom | TransitionKind::ZoomInBlur | TransitionKind::Spin) {
+                // The incoming clip settles from 1.5× to 1×; the outgoing one zooms from 1× to 1.5×.
+                let z = if incoming { format!("(1.5-0.5*{})", e(&format!("in/{fps}"))) } else { format!("(1+0.5*{})", e(&format!("in/{fps}"))) };
+                chain.push_str(&format!(",{}", timed(&warp(&z, "0", "0"), &on)));
+            }
+            if incoming && kind == TransitionKind::Squeeze {
+                // Stretches horizontally from the middle (`scaleX = max(0.001, e(p))`), while `reveal_in` clips the edges.
+                let sx = format!("max(0.001,{})", e(&format!("in/{fps}")));
+                let (left, right) = (format!("W/2-W/2/{sx}"), format!("W/2+W/2/{sx}"));
+                let squeeze = format!("perspective=x0='{left}':y0='0':x1='{right}':y1='0':x2='{left}':y2='H':x3='{right}':y3='H':eval=frame");
+                chain.push_str(&format!(",{}", timed(&squeeze, &on)));
+            }
+            let peak = match kind {
+                TransitionKind::Blur => 14.0,
+                TransitionKind::ZoomInBlur => 12.0,
+                _ => 0.0,
+            };
+            if peak > 0.0 {
+                // gblur's sigma is fixed per filter: 8 slices follow `peak * (1 - e(p))` in and `peak * e(p)` out.
+                for k in 0..8 {
+                    let p = (f64::from(k) + 0.5) / 8.0;
+                    let ease = 0.5 - 0.5 * (std::f64::consts::PI * p).cos();
+                    let sigma = (peak * if incoming { 1.0 - ease } else { ease }).max(0.1);
+                    let (t0, t1) = (secs(from + d * f64::from(k) / 8.0), secs(from + d * f64::from(k + 1) / 8.0));
+                    chain.push_str(&format!(",gblur=sigma={sigma:.1}:enable='gte(t,{t0})*lt(t,{t1})'"));
+                }
+            }
         };
-        if self.transition_in > 0.0 && matches!(self.transition_in_kind, TransitionKind::Zoom | TransitionKind::Spin) {
-            zoom(0.0, self.transition_in, true, self.transition_in_kind == TransitionKind::Spin);
+        if self.transition_in > 0.0
+            && matches!(
+                self.transition_in_kind,
+                TransitionKind::Blur | TransitionKind::Squeeze | TransitionKind::Zoom | TransitionKind::ZoomInBlur | TransitionKind::Spin
+            )
+        {
+            step(0.0, self.transition_in, true, self.transition_in_kind);
         }
-        if self.transition_out > 0.0 && matches!(self.transition_out_kind, TransitionKind::Zoom | TransitionKind::Spin) {
-            zoom(self.length() - self.transition_out, self.transition_out, false, self.transition_out_kind == TransitionKind::Spin);
+        if self.transition_out > 0.0
+            && matches!(
+                self.transition_out_kind,
+                TransitionKind::Blur | TransitionKind::Zoom | TransitionKind::ZoomInBlur | TransitionKind::Spin
+            )
+        {
+            step(self.length() - self.transition_out, self.transition_out, false, self.transition_out_kind);
         }
         chain
     }
@@ -504,11 +603,21 @@ impl ClipSpec {
     /// the rest is joined back on. Pads are named after clip `i`. Empty without one.
     fn reveal_in(&self, i: usize, fps: u32) -> String {
         let shape = match self.transition_in_kind {
+            TransitionKind::Dissolve => "dissolve",
+            TransitionKind::Squeeze => "horzopen",
+            TransitionKind::RevealLeft => "wipeleft",
+            TransitionKind::RevealRight => "wiperight",
             TransitionKind::Wipe => "wiperight",
             TransitionKind::WipeLeft => "wipeleft",
             TransitionKind::WipeUp => "wipeup",
             TransitionKind::WipeDown => "wipedown",
+            TransitionKind::WipeDiag => "wipetl",
+            TransitionKind::SmoothLeft => "smoothleft",
+            TransitionKind::SmoothRight => "smoothright",
             TransitionKind::Circle => "circleopen",
+            TransitionKind::CircleClose => "circleclose",
+            TransitionKind::Radial => "radial",
+            TransitionKind::Wind => "hrwind",
             _ => return String::new(),
         };
         if self.transition_in <= 0.0 {
@@ -516,12 +625,13 @@ impl ClipSpec {
         }
         let d = secs(self.transition_in);
         let n = (self.transition_in * f64::from(fps) - 1e-6).ceil().max(1.0) as u64;
-        let reveal = if shape == "circleopen" {
+        let reveal = if matches!(shape, "circleopen" | "circleclose") {
             // xfade's circle has a soft edge as wide as the whole picture: its middle third, cut at half, is a sharp
-            // circle growing evenly from nothing to the corners. Padding puts the clip's frames in that third.
+            // circle growing evenly from nothing to the corners (or closing from the corners to the middle). Padding
+            // puts the clip's frames in that third.
             // shortcut: about 3 s of export time per 1 s of circle at 1080p (three times the frames through xfade).
             format!(
-                "tpad=start={n}:stop={n}:stop_mode=clone:color=black@0,split[w{i}a][w{i}b];[w{i}a]lut=a=0[w{i}c];[w{i}c][w{i}b]xfade=transition=circleopen:duration={}:offset=0,trim=start_frame={n}:end_frame={},setpts=PTS-STARTPTS,lut=a='if(gte(val,128),255,0)'",
+                "tpad=start={n}:stop={n}:stop_mode=clone:color=black@0,split[w{i}a][w{i}b];[w{i}a]lut=a=0[w{i}c];[w{i}c][w{i}b]xfade=transition={shape}:duration={}:offset=0,trim=start_frame={n}:end_frame={},setpts=PTS-STARTPTS,lut=a='if(gte(val,128),255,0)'",
                 secs(3.0 * n as f64 / f64::from(fps)),
                 2 * n
             )
@@ -671,6 +781,7 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             || clip.look.len() > MAX_LOOK_STEPS
             || !clip.look.iter().all(|(op, amount)| look_filter(op, *amount).is_some())
             || clip.key.is_some_and(|k| key_filter(k).is_none())
+            || clip.aspect.is_some_and(|a| !a.is_finite() || !(0.05..=5.0).contains(&a))
         {
             return Err("A clip on the timeline has an invalid setting.".into());
         }
@@ -1262,6 +1373,7 @@ fn gpu_picture(spec: &RenderSpec, input_of: &HashMap<usize, (usize, &Source)>, t
         && clip.look.is_empty()
         && clip.effect.is_empty()
         && !clip.fill
+        && clip.aspect.is_none()
         && clip.size == 1.0
         && clip.crop == [0.0; 4]
         && clip.picture_fades().is_empty()
@@ -1530,7 +1642,7 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cover_bytes, effect_filter, frame_step, gpu_picture, jpg_q, key_filter, lerp, look_filter, piece_frames, pieces, timed, ClipSpec, Motion, RenderSpec, Source};
+    use super::{cover_bytes, effect_filter, frame_step, gpu_picture, jpg_q, key_filter, lerp, look_filter, piece_frames, pieces, timed, ClipSpec, Motion, RenderSpec, Source, TransitionKind};
     use crate::local::ProbeInfo;
     use std::collections::HashMap;
 
@@ -1575,6 +1687,26 @@ mod tests {
         assert!(gpu_picture(&spec(video), &one, 12.0).is_none());
         let text = r#"{"role":"text","layer":1,"start":0,"in":0,"out":2,"text":"hi"}"#;
         assert!(gpu_picture(&spec(&format!("{video},{text}")), &one, 10.0).is_none());
+        let stretched = r#"{"role":"video","layer":0,"mediaId":"a","start":0,"in":0,"out":10,"aspect":0.5}"#;
+        assert!(gpu_picture(&spec(stretched), &one, 10.0).is_none());
+    }
+
+    #[test]
+    fn scales_to_stretched_box_only_when_aspect_is_set() {
+        let clip = |json: &str| -> ClipSpec { serde_json::from_str(&format!(r#"{{"role":"video","start":0,"in":0,"out":2,{json}}}"#)).unwrap() };
+        // Absent aspect: exact same filter string as before.
+        assert_eq!(
+            clip(r#""size":0.5"#).picture_chain(1920, 1080, 30),
+            "setpts=PTS-STARTPTS,scale=w=960:h=540:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1"
+        );
+        assert_eq!(
+            clip(r#""size":0.5,"fill":true"#).picture_chain(1920, 1080, 30),
+            "setpts=PTS-STARTPTS,scale=w=960:h=540:force_original_aspect_ratio=increase:force_divisible_by=2,setsar=1"
+        );
+        // Set aspect: exact stretched box, no force_original_aspect_ratio.
+        assert_eq!(clip(r#""size":0.5,"aspect":0.5"#).picture_chain(1920, 1080, 30), "setpts=PTS-STARTPTS,scale=w=960:h=480,setsar=1");
+        assert_eq!(clip(r#""size":0.5,"aspect":1.5"#).picture_chain(1920, 1080, 30), "setpts=PTS-STARTPTS,scale=w=360:h=540,setsar=1");
+        assert_eq!(clip(r#""size":0.5,"aspect":0.5,"fill":true"#).picture_chain(1920, 1080, 30), "setpts=PTS-STARTPTS,scale=w=1080:h=540,setsar=1");
     }
 
     #[test]
@@ -1675,6 +1807,175 @@ mod tests {
         // A crossfade moves, zooms and wipes nothing.
         let fade = clip(r#""transitionIn":1,"transitionOut":1"#);
         assert_eq!(fade.slide('W') + &fade.slide('H') + &fade.transition_moves(30) + &fade.reveal_in(4, 30), "");
+    }
+
+    fn transition_clip(json: &str) -> ClipSpec {
+        serde_json::from_str(&format!(r#"{{"role":"video","start":2,"in":0,"out":3,{json}}}"#)).unwrap()
+    }
+
+    #[test]
+    fn deserializes_every_transition_kind_from_model_ts() {
+        let kinds = [
+            ("crossfade", TransitionKind::Crossfade),
+            ("dip", TransitionKind::Dip),
+            ("flash", TransitionKind::Flash),
+            ("fade-white", TransitionKind::FadeWhite),
+            ("dissolve", TransitionKind::Dissolve),
+            ("blur", TransitionKind::Blur),
+            ("squeeze", TransitionKind::Squeeze),
+            ("slide", TransitionKind::Slide),
+            ("slide-right", TransitionKind::SlideRight),
+            ("slide-up", TransitionKind::SlideUp),
+            ("slide-down", TransitionKind::SlideDown),
+            ("cover-left", TransitionKind::CoverLeft),
+            ("cover-right", TransitionKind::CoverRight),
+            ("reveal-left", TransitionKind::RevealLeft),
+            ("reveal-right", TransitionKind::RevealRight),
+            ("zoom", TransitionKind::Zoom),
+            ("zoom-in-blur", TransitionKind::ZoomInBlur),
+            ("wipe", TransitionKind::Wipe),
+            ("wipe-left", TransitionKind::WipeLeft),
+            ("wipe-up", TransitionKind::WipeUp),
+            ("wipe-down", TransitionKind::WipeDown),
+            ("wipe-diag", TransitionKind::WipeDiag),
+            ("smooth-left", TransitionKind::SmoothLeft),
+            ("smooth-right", TransitionKind::SmoothRight),
+            ("circle", TransitionKind::Circle),
+            ("circle-close", TransitionKind::CircleClose),
+            ("radial", TransitionKind::Radial),
+            ("wind", TransitionKind::Wind),
+            ("spin", TransitionKind::Spin),
+        ];
+        assert_eq!(kinds.len(), 29);
+        for (id, expected) in kinds {
+            let parsed: TransitionKind = serde_json::from_str(&format!(r#""{id}""#)).unwrap();
+            assert_eq!(parsed, expected, "{id}");
+        }
+    }
+
+    #[test]
+    fn transition_fade_white_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"fade-white","transitionOut":1,"transitionOutKind":"fade-white""#);
+        assert_eq!(
+            c.picture_fades(),
+            ",fade=t=in:st=0.500:d=0.500:color=white,fade=t=in:st=0.500:d=0.001:alpha=1,fade=t=out:st=2.000:d=0.500:color=white"
+        );
+    }
+
+    #[test]
+    fn transition_dissolve_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"dissolve""#);
+        assert!(c.reveal_in(4, 30).contains("xfade=transition=dissolve:duration=1.000:offset=0"));
+        assert_eq!(c.picture_fades(), "");
+    }
+
+    #[test]
+    fn transition_blur_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"blur","transitionOut":1,"transitionOutKind":"blur""#);
+        assert_eq!(c.picture_fades(), ",fade=t=in:st=0.000:d=1.000:alpha=1");
+        let moves = c.transition_moves(30);
+        assert!(moves.starts_with(",gblur=sigma=13.9:enable='gte(t,0.000)*lt(t,0.125)'"), "{moves}");
+        assert!(moves.contains(",gblur=sigma=0.1:enable='gte(t,0.875)*lt(t,1.000)'"), "{moves}");
+        assert!(moves.contains(",gblur=sigma=0.1:enable='gte(t,2.000)*lt(t,2.125)'"), "{moves}");
+        assert!(moves.ends_with(",gblur=sigma=13.9:enable='gte(t,2.875)*lt(t,3.000)'"), "{moves}");
+    }
+
+    #[test]
+    fn transition_squeeze_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"squeeze""#);
+        let moves = c.transition_moves(30);
+        assert!(
+            moves.starts_with(",perspective=x0='W/2-W/2/max(0.001,(0.5-0.5*cos(PI*clip((in/30-0.000)/1.000,0,1))))':y0='0':x1='W/2+W/2/max(0.001,"),
+            "{moves}"
+        );
+        assert!(c.reveal_in(4, 30).contains("xfade=transition=horzopen:duration=1.000:offset=0"));
+        assert_eq!(c.picture_fades(), "");
+    }
+
+    #[test]
+    fn transition_cover_left_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"cover-left","transitionOut":1,"transitionOutKind":"cover-left""#);
+        assert_eq!(c.slide('W'), "+W*(1-(0.5-0.5*cos(PI*clip((t-2.000)/1.000,0,1))))");
+        assert_eq!(c.slide('H'), "");
+        assert_eq!(c.picture_fades(), "");
+    }
+
+    #[test]
+    fn transition_cover_right_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"cover-right","transitionOut":1,"transitionOutKind":"cover-right""#);
+        assert_eq!(c.slide('W'), "-W*(1-(0.5-0.5*cos(PI*clip((t-2.000)/1.000,0,1))))");
+        assert_eq!(c.slide('H'), "");
+        assert_eq!(c.picture_fades(), "");
+    }
+
+    #[test]
+    fn transition_reveal_left_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"reveal-left","transitionOut":1,"transitionOutKind":"reveal-left""#);
+        assert!(c.reveal_in(4, 30).contains("xfade=transition=wipeleft:duration=1.000:offset=0"));
+        assert_eq!(c.slide('W'), "-W*clip((t-4.000)/1.000,0,1)");
+        assert_eq!(c.picture_fades(), "");
+    }
+
+    #[test]
+    fn transition_reveal_right_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"reveal-right","transitionOut":1,"transitionOutKind":"reveal-right""#);
+        assert!(c.reveal_in(4, 30).contains("xfade=transition=wiperight:duration=1.000:offset=0"));
+        assert_eq!(c.slide('W'), "+W*clip((t-4.000)/1.000,0,1)");
+        assert_eq!(c.picture_fades(), "");
+    }
+
+    #[test]
+    fn transition_zoom_in_blur_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"zoom-in-blur","transitionOut":1,"transitionOutKind":"zoom-in-blur""#);
+        assert_eq!(c.picture_fades(), ",fade=t=in:st=0.000:d=1.000:alpha=1");
+        let moves = c.transition_moves(30);
+        assert!(moves.starts_with(",perspective=x0='W/2-(W/2+0)/(1.5-0.5*(0.5-0.5*cos(PI*clip((in/30-0.000)/1.000,0,1))))'"), "{moves}");
+        assert!(moves.contains(",gblur=sigma=11.9:enable='gte(t,0.000)*lt(t,0.125)'"), "{moves}");
+        assert!(moves.contains("/(1+0.5*(0.5-0.5*cos(PI*clip((in/30-2.000)/1.000,0,1))))'"), "{moves}");
+        assert!(moves.ends_with(",gblur=sigma=11.9:enable='gte(t,2.875)*lt(t,3.000)'"), "{moves}");
+    }
+
+    #[test]
+    fn transition_wipe_diag_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"wipe-diag""#);
+        assert!(c.reveal_in(4, 30).contains("xfade=transition=wipetl:duration=1.000:offset=0"));
+        assert_eq!(c.picture_fades(), "");
+    }
+
+    #[test]
+    fn transition_smooth_left_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"smooth-left""#);
+        assert!(c.reveal_in(4, 30).contains("xfade=transition=smoothleft:duration=1.000:offset=0"));
+        assert_eq!(c.picture_fades(), "");
+    }
+
+    #[test]
+    fn transition_smooth_right_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"smooth-right""#);
+        assert!(c.reveal_in(4, 30).contains("xfade=transition=smoothright:duration=1.000:offset=0"));
+        assert_eq!(c.picture_fades(), "");
+    }
+
+    #[test]
+    fn transition_circle_close_filter() {
+        let c = transition_clip(r#""transitionIn":0.75,"transitionInKind":"circle-close""#);
+        let reveal = c.reveal_in(4, 30);
+        assert!(reveal.contains("trim=end_frame=23,tpad=start=23:stop=23:") && reveal.contains("circleclose:duration=2.300:offset=0,trim=start_frame=23:end_frame=46,"), "{reveal}");
+        assert_eq!(c.picture_fades(), "");
+    }
+
+    #[test]
+    fn transition_radial_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"radial""#);
+        assert!(c.reveal_in(4, 30).contains("xfade=transition=radial:duration=1.000:offset=0"));
+        assert_eq!(c.picture_fades(), "");
+    }
+
+    #[test]
+    fn transition_wind_filter() {
+        let c = transition_clip(r#""transitionIn":1,"transitionInKind":"wind""#);
+        assert!(c.reveal_in(4, 30).contains("xfade=transition=hrwind:duration=1.000:offset=0"));
+        assert_eq!(c.picture_fades(), "");
     }
 
     #[test]

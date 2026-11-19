@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import type { Frame } from "../types";
 import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, soundFadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
+import { stretchSide } from "../project/layerBox";
 import { newShapeClip, shapeBox, shapeSvg } from "../project/shapes";
 import { motionAt, textMotion } from "../project/textMotion";
 import type { FxItem } from "../project/effects";
@@ -9,7 +10,7 @@ import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
-import { RGB_SHARE, adjustSteps, blocksStyle, keyLine, posterLevels, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
+import { RGB_SHARE, adjustSteps, blocksStyle, duotoneMatrix, keyLine, posterLevels, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
 import { CRAFTORA_MEDIA, setWindowFullscreen } from "../lib/engine";
 import { textShadowFilter } from "../lib/textPicture";
 import { hasStyle, styleFilter } from "../lib/layerStyle";
@@ -133,7 +134,7 @@ async function captureStagePng(stage: HTMLElement, width: number, height: number
 }
 
 type Corner = "nw" | "ne" | "sw" | "se";
-/** Shapes also stretch from the middle of a side. */
+/** Shapes, photos and videos also stretch from any side. */
 type Edge = "n" | "s" | "e" | "w";
 
 /** A picture-in-picture, shape or text being moved or resized on the preview. */
@@ -145,6 +146,7 @@ interface Gesture {
   stage: DOMRect;
   box: DOMRect;
   size: number;
+  fill: boolean;
   isText: boolean;
   isShape: boolean;
   /** A caption: moves and resizes every caption together. */
@@ -434,31 +436,36 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
       return;
     }
     const free = (total: number, used: number, offset: number) => (total - used <= 0 ? 0.5 : clamp(offset / (total - used), 0, 1));
-    if (g.isShape) {
-      // Shapes stretch freely: a side handle moves that side, a corner both (Shift keeps the shape); the opposite stays.
+    if (g.isShape && !(e.shiftKey && g.mode.length === 2)) {
+      // Shapes stretch freely: a side handle moves that side, a corner both (Shift+corner keeps the shape below); the opposite stays.
       const has = (side: string) => g.mode.includes(side);
-      let width = box.width + (has("w") ? -dx : has("e") ? dx : 0);
-      let height = box.height + (has("n") ? -dy : has("s") ? dy : 0);
-      if (e.shiftKey && g.mode.length === 2) {
-        const k = Math.max(width / box.width, height / box.height);
-        [width, height] = [box.width * k, box.height * k];
-      }
-      width = clamp(width, MIN_SHAPE * stage.width, MAX_SHAPE * stage.width);
-      height = clamp(height, width * MIN_ASPECT, width * MAX_ASPECT);
+      const width = clamp(box.width + (has("w") ? -dx : has("e") ? dx : 0), MIN_SHAPE * stage.width, MAX_SHAPE * stage.width);
+      const height = clamp(box.height + (has("n") ? -dy : has("s") ? dy : 0), width * MIN_ASPECT, width * MAX_ASPECT);
       const left = has("w") ? left0 + box.width - width : left0;
       const top = has("n") ? top0 + box.height - height : top0;
       change({ size: width / stage.width, aspect: height / width, x: free(stage.width, width, left), y: free(stage.height, height, top) });
+      return;
+    }
+    if (g.mode.length === 1) {
+      // Photos and videos: dragging a side stretches only that side, keeping the opposite side put.
+      change(
+        stretchSide(
+          { size: g.size, x: g.x, y: g.y, fill: g.fill },
+          { left: left0, top: top0, width: box.width, height: box.height },
+          g.mode as Edge,
+          g.mode === "e" || g.mode === "w" ? dx : dy,
+          stage.width,
+          stage.height,
+          Boolean(still),
+        ),
+      );
       return;
     }
     // Resize from a corner, keeping the shape and the opposite corner where it is.
     const fromLeft = g.mode === "nw" || g.mode === "sw";
     const fromTop = g.mode === "nw" || g.mode === "ne";
     const scale = (box.width + (fromLeft ? -dx : dx)) / box.width;
-    const size = g.isShape
-      ? clamp(g.size * scale, MIN_SHAPE, MAX_SHAPE)
-      : g.isText
-        ? clamp(g.size * scale, MIN_TEXT, MAX_TEXT)
-        : clamp(g.size * scale, MIN_PICTURE, 1);
+    const size = g.isText ? clamp(g.size * scale, MIN_TEXT, MAX_TEXT) : g.isShape ? clamp(g.size * scale, MIN_SHAPE, MAX_SHAPE) : clamp(g.size * scale, MIN_PICTURE, 1);
     const ratio = size / g.size;
     const width = box.width * ratio;
     const height = box.height * ratio;
@@ -503,6 +510,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
       stage,
       box,
       size: clip.size,
+      fill: Boolean(clip.fill),
       isText: isText(clip),
       isShape: isShape(clip),
       captions,
@@ -551,7 +559,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   }, []);
 
   const handles = (clip: Clip) =>
-    (isShape(clip) ? ["nw", "ne", "sw", "se", "n", "s", "e", "w"] : ["nw", "ne", "sw", "se"]).map((corner) => (
+    (isText(clip) ? ["nw", "ne", "sw", "se"] : ["nw", "ne", "sw", "se", "n", "s", "e", "w"]).map((corner) => (
       <span key={corner} className={`preview__handle is-${corner}`} onPointerDown={beginGesture(clip, corner as Corner | Edge)} aria-hidden="true" />
     ));
 
@@ -658,6 +666,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 zoom={t === null ? 1 : mix(clip).zoom}
                 turn={t === null ? 0 : mix(clip).turn}
                 reveal={t === null ? "" : mix(clip).reveal}
+                scaleX={t === null ? 1 : (mix(clip).scaleX ?? 1)}
+                transFilter={t === null ? "" : (mix(clip).filter ?? "")}
                 selected={isSelected}
                 poster={poster}
                 mask={still ? maskStyle(clip) : undefined}
@@ -763,6 +773,17 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           {overlays.filter(active).map((clip) => {
             const isSelected = clip.id === selectedId;
             const viewingMask = viewingMaskClip?.id === clip.id;
+            const m = mix(clip);
+            const sw = stageRef.current?.clientWidth ?? frame.width;
+            const transTransform =
+              [
+                (m.shift !== 0 || m.lift !== 0) && `translate(${m.shift * sw}px, ${(m.lift * sw) / stageAspect}px)`,
+                m.turn !== 0 && `rotate(${m.turn}deg)`,
+                m.zoom !== 1 && `scale(${m.zoom})`,
+                (m.scaleX ?? 1) !== 1 && `scaleX(${m.scaleX})`,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined;
             if (isShape(clip)) {
               return (
                 <ShapeLayer
@@ -770,8 +791,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   z={stack?.get(clip.id)}
                   clip={clip}
                   // Drawn at the size shown, so an outline is as thick against the picture as in the export.
-                  frame={{ ...frame, width: stageRef.current?.clientWidth ?? frame.width, height: stageRef.current?.clientHeight ?? frame.height }}
-                  opacity={fadeAt(clip, time) * ownFill(clip)}
+                  frame={{ ...frame, width: sw, height: stageRef.current?.clientHeight ?? frame.height }}
+                  opacity={m.picture * ownFill(clip)}
+                  transFilter={m.filter}
+                  transTransform={transTransform}
+                  reveal={m.reveal}
                   selected={isSelected}
                   still={Boolean(still)}
                   viewingMask={viewingMask}
@@ -795,13 +819,15 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   top: `calc(${clip.y * 100}% + ${pose.dy * 100}cqh)`,
                   translate: `${-clip.x * 100}% ${-clip.y * 100}%`,
                   scale: pose.scale,
+                  transform: transTransform,
                   fontSize: `${clip.size * 100}cqh`,
                   color: clip.color,
-                  opacity: viewingMask ? 1 : fadeAt(clip, time) * pose.alpha * (clip.opacity ?? 1) * ownFill(clip),
+                  opacity: viewingMask ? 1 : m.picture * pose.alpha * (clip.opacity ?? 1) * ownFill(clip),
                   // The Image editor's layer blend mode (lib/compose.ts draws the same with globalCompositeOperation).
                   mixBlendMode: viewingMask ? undefined : clip.blend,
                   zIndex: viewingMask ? 99991 : stack?.get(clip.id),
-                  filter: viewingMask ? undefined : styled(clip),
+                  filter: viewingMask ? undefined : [styled(clip), m.filter].filter(Boolean).join(" ") || undefined,
+                  ...revealStyle(m.reveal),
                   ...textFont(clip),
                   // The Image editor's own (textPicture.ts draws them into the saved picture).
                   ...(still && { textShadow: shadows || viewingMask ? "none" : undefined, letterSpacing: clip.spacing ? `${clip.spacing}em` : undefined, rotate: clip.rotate ? `${clip.rotate}deg` : undefined }),
@@ -1131,10 +1157,15 @@ function AdjustFilters({ clips }: { clips: Clip[] }) {
   );
 }
 
+/** A transition's `reveal` string as CSS: a gradient is a mask, anything else is a clip-path. */
+const revealStyle = (reveal?: string): CSSProperties =>
+  !reveal ? {} : reveal.includes("gradient") ? { maskImage: reveal, WebkitMaskImage: reveal } : { clipPath: reveal };
+
 /**
- * Warmth (Edit → Adjust) and RGB split have no CSS filter function: SVG filters for each value, that the colour steps
- * point at (effects.ts `stepsFilter`). In sRGB like the CSS functions and the export; hidden by size, not `display: none`
- * (that would switch the filters off).
+ * Warmth (Edit → Adjust), RGB split, Duotone, Neon edges and Dissolve have no CSS filter function: SVG filters for each
+ * value, that the colour steps and transitions point at (effects.ts `stepsFilter`, `blocksStyle`; model.ts
+ * `transitionMix`). In sRGB like the CSS functions and the export; hidden by size, not `display: none` (that would
+ * switch the filters off).
  */
 const WARMTH_FILTERS = (
   <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
@@ -1154,6 +1185,80 @@ const WARMTH_FILTERS = (
           <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0" result="green" />
           <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0" result="b" />
           <feOffset in="b" dx={dx} result="blue" />
+          <feComposite in="red" in2="green" operator="arithmetic" k2={1} k3={1} result="rg" />
+          <feComposite in="rg" in2="blue" operator="arithmetic" k2={1} k3={1} />
+        </filter>
+      );
+    })}
+    {Array.from({ length: 101 }, (_, k) => (
+      <filter key={`duotone-${k}`} id={`duotone-${k}`} colorInterpolationFilters="sRGB">
+        <feColorMatrix type="matrix" values={duotoneMatrix(k / 50)} />
+      </filter>
+    ))}
+    {Array.from({ length: 101 }, (_, k) => {
+      const s = k / 50;
+      return (
+        <filter key={`neon-${k}`} id={`neon-${k}`} colorInterpolationFilters="sRGB">
+          <feConvolveMatrix
+            order={3}
+            kernelMatrix={`${-s} ${-s} ${-s} ${-s} ${8 * s + Math.max(0, 1 - s)} ${-s} ${-s} ${-s} ${-s}`}
+            divisor={1}
+            preserveAlpha="true"
+            edgeMode="duplicate"
+          />
+        </filter>
+      );
+    })}
+    {Array.from({ length: 51 }, (_, k) => (
+      <filter key={`dissolve-${k}`} id={`dissolve-${k}`} colorInterpolationFilters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves={1} seed={1} result="n" />
+        <feComponentTransfer in="n" result="m">
+          <feFuncA type="linear" slope={20} intercept={(k / 50) * 21 - 20} />
+        </feComponentTransfer>
+        <feComposite in="SourceGraphic" in2="m" operator="in" />
+      </filter>
+    ))}
+    {Array.from({ length: 24 }, (_, i) => {
+      const r = i + 1;
+      const b = 2 * r + 1;
+      return (
+        <filter key={`pixelate-${r}`} id={`pixelate-${r}`} x="0%" y="0%" width="100%" height="100%" colorInterpolationFilters="sRGB">
+          <feFlood x={r} y={r} width={1} height={1} />
+          <feComposite x={0} y={0} width={b} height={b} />
+          <feTile result="t" />
+          <feComposite in="SourceGraphic" in2="t" operator="in" />
+          <feMorphology operator="dilate" radius={r} />
+        </filter>
+      );
+    })}
+    {Array.from({ length: 101 }, (_, k) => {
+      const s = k / 50;
+      const d = 0.035 * s;
+      const w = 0.22 * Math.min(1, s);
+      const c = 1 - 3 * w;
+      return (
+        <filter key={`kaleido-${k}`} id={`kaleido-${k}`} colorInterpolationFilters="sRGB" primitiveUnits="objectBoundingBox">
+          <feOffset in="SourceGraphic" dx={-d} dy={-d} result="f1" />
+          <feOffset in="SourceGraphic" dx={d} dy={-d} result="f2" />
+          <feOffset in="SourceGraphic" dx={0} dy={d} result="f3" />
+          <feComposite in="SourceGraphic" in2="f1" operator="arithmetic" k2={c} k3={w} result="m1" />
+          <feComposite in="m1" in2="f2" operator="arithmetic" k2={1} k3={w} result="m2" />
+          <feComposite in="m2" in2="f3" operator="arithmetic" k2={1} k3={w} />
+        </filter>
+      );
+    })}
+    {Array.from({ length: 101 }, (_, k) => {
+      const s = k / 50;
+      const d = (0.6 * RGB_SHARE * k) / 50;
+      return (
+        <filter key={`lens-${k}`} id={`lens-${k}`} colorInterpolationFilters="sRGB" primitiveUnits="objectBoundingBox">
+          <feTurbulence type="fractalNoise" baseFrequency="0.003" numOctaves={1} seed={5} result="w" />
+          <feDisplacementMap in="SourceGraphic" in2="w" scale={0.04 * s} xChannelSelector="R" yChannelSelector="G" result="d" />
+          <feColorMatrix in="d" type="matrix" values="1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0" result="r" />
+          <feOffset in="r" dx={-d} dy={-d} result="red" />
+          <feColorMatrix in="d" type="matrix" values="0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0" result="green" />
+          <feColorMatrix in="d" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0" result="b" />
+          <feOffset in="b" dx={d} dy={d} result="blue" />
           <feComposite in="red" in2="green" operator="arithmetic" k2={1} k3={1} result="rg" />
           <feComposite in="rg" in2="blue" operator="arithmetic" k2={1} k3={1} />
         </filter>
@@ -1179,8 +1284,12 @@ interface PictureLayerProps {
   zoom: number;
   /** Degrees turned clockwise about the box centre by a spin transition (0 = none). */
   turn: number;
-  /** CSS `clip-path` for a wipe or circle transition ("" = none). */
+  /** CSS `clip-path` or mask for a wipe, circle, smooth or radial transition ("" = none). */
   reveal: string;
+  /** Horizontal scale about the box centre from a squeeze transition (1 = none). */
+  scaleX: number;
+  /** CSS filter from a blur or dissolve transition ("" = none). */
+  transFilter: string;
   selected: boolean;
   poster?: string;
   /** The Image editor: its layer mask over the box's pixels (lib/mask.ts `maskStyle`), not over the selection frame. */
@@ -1199,7 +1308,7 @@ interface PictureLayerProps {
  * One picture on the stage, placed like the export: fitted inside the frame, scaled by its
  * size, at its position. The crop is a window onto the video.
  */
-function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, selected, poster, mask, viewingMask, onPointerDown, handles, z, children }: PictureLayerProps) {
+function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, scaleX, transFilter, selected, poster, mask, viewingMask, onPointerDown, handles, z, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
@@ -1210,7 +1319,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
   // A quarter turn swaps the picture's shape; the crop window turns inside the box (the export: crop, then transpose).
   const rotate = clip.rotate ?? 0;
   const sideways = rotate === 90 || rotate === 270;
-  const aspect = sideways ? 1 / upright : upright;
+  const aspect = clip.aspect ? 1 / clip.aspect : sideways ? 1 / upright : upright;
   const turned: CSSProperties | undefined = rotate
     ? {
         inset: "auto",
@@ -1239,7 +1348,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
     top: `${clip.y * 100}%`,
     translate: `${-clip.x * 100}% ${-clip.y * 100}%`,
     transform: shift !== 0 || lift !== 0 ? `translate(${shift * stageWidth}px, ${(lift * stageWidth) / stageAspect}px)` : undefined,
-    clipPath: reveal || undefined,
+    ...revealStyle(reveal),
   };
   const video: CSSProperties = {
     width: `${100 / keptW}%`,
@@ -1270,10 +1379,19 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
         <div
           className="preview__clip-fx"
           style={
-            fx || zoom !== 1 || turn !== 0
+            fx || zoom !== 1 || turn !== 0 || scaleX !== 1 || transFilter
               ? {
-                  filter: fx?.filter,
-                  transform: [turn !== 0 && `rotate(${turn}deg)`, zoom !== 1 && `scale(${zoom})`, fx?.transform, fx?.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined,
+                  filter: [fx?.filter, transFilter].filter(Boolean).join(" ") || undefined,
+                  transform:
+                    [
+                      turn !== 0 && `rotate(${turn}deg)`,
+                      zoom !== 1 && `scale(${zoom})`,
+                      scaleX !== 1 && `scaleX(${scaleX})`,
+                      fx?.transform,
+                      fx?.mirror && "scaleX(-1)",
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || undefined,
                 }
               : undefined
           }
@@ -1331,6 +1449,9 @@ interface ShapeLayerProps {
   clip: Clip;
   frame: Frame;
   opacity: number;
+  transFilter?: string;
+  transTransform?: string;
+  reveal?: string;
   selected: boolean;
   onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
   handles: ReactNode;
@@ -1343,7 +1464,7 @@ interface ShapeLayerProps {
 }
 
 /** One shape on the stage: a full-frame SVG picture with a hit box over its bounding box. */
-function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles, z, still, viewingMask }: ShapeLayerProps) {
+function ShapeLayer({ clip, frame, opacity, transFilter, transTransform, reveal, selected, onPointerDown, handles, z, still, viewingMask }: ShapeLayerProps) {
   const src = useMemo(
     () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(shapeSvg(clip, frame.width, frame.height))}`,
     [clip.shape, clip.color, clip.size, clip.aspect, clip.x, clip.y, clip.opacity, clip.outline, clip.rotate, clip.points, frame.width, frame.height],
@@ -1351,15 +1472,23 @@ function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles, z,
   const box = shapeBox(clip, frame.width, frame.height);
   // The picture covers the frame, so its mask is placed on the shape's box there, turned with it.
   const mask = still ? maskStyle(clip, { width: frame.width, height: frame.height, box: { ...box, angle: clip.rotate ?? 0 } }) : undefined;
+  const shapeStyle: CSSProperties = {
+    opacity,
+    mixBlendMode: clip.blend,
+    zIndex: z,
+    filter: [styled(clip), transFilter].filter(Boolean).join(" ") || undefined,
+    transform: transTransform,
+    ...revealStyle(reveal),
+  };
   return (
     <>
       {mask?.maskImage ? (
         // Masked inside, styled outside: the layer style follows the masked pixels, as the saved picture draws it.
-        <div className="preview__shape" style={{ opacity, mixBlendMode: clip.blend, zIndex: z, filter: styled(clip) }}>
+        <div className="preview__shape" style={shapeStyle}>
           <img src={src} alt="" draggable={false} style={{ display: "block", width: "100%", height: "100%", ...mask }} />
         </div>
       ) : (
-        <img className="preview__shape" src={src} alt="" draggable={false} style={{ opacity, mixBlendMode: clip.blend, zIndex: z, filter: styled(clip) }} />
+        <img className="preview__shape" src={src} alt="" draggable={false} style={shapeStyle} />
       )}
       <div
         className={selected ? "preview__shape-box is-selected" : "preview__shape-box"}
