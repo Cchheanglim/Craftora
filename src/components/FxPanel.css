@@ -775,6 +775,593 @@
   }
 }
 
+.fx-tile.is-zoom-blur img {
+  animation: fx-zoom-blur 2.4s ease-in-out infinite;
+}
+
+@keyframes fx-zoom-blur {
+  0%,
+  15% {
+    transform: scale(1);
+    filter: blur(0);
+  }
+  75%,
+  100% {
+    transform: scale(1.3);
+    filter: blur(2.5px);
+  }
+}
+
+.fx-tile.is-heartbeat img {
+  animation: fx-heartbeat 1.4s ease-in-out infinite;
+}
+
+@keyframes fx-heartbeat {
+  0%,
+  20%,
+  45%,
+  100% {
+    transform: scale(1);
+  }
+  10% {
+    transform: scale(1.18);
+  }
+  32% {
+    transform: scale(1.12);
+  }
+}
+
+.fx-tile.is-swing img {
+  animation: fx-swing 2s ease-in-out infinite;
+}
+
+@keyframes fx-swing {
+  0%,
+  100% {
+    transform: scale(1.06) rotate(-6deg);
+  }
+  50% {
+    transform: scale(1.06) rotate(6deg);
+  }
+}
+
+.fx-tile.is-spin-in img {
+  animation: fx-spin-in-card 2.2s ease-out infinite;
+}
+
+@keyframes fx-spin-in-card {
+  0% {
+    transform: scale(1.35) rotate(-90deg);
+  }
+  45%,
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+
+.fx-tile.is-slide-in img {
+  animation: fx-slide-in-card 2.2s ease-out infinite;
+}
+
+@keyframes fx-slide-in-card {
+  0% {
+    transform: translateX(-25%) scale(1.2);
+  }
+  45%,
+  100% {
+    transform: translateX(0) scale(1);
+  }
+}
+
+.fx-tile.is-bounce img {
+  animation: fx-bounce 1.2s ease-in-out infinite;
+}
+
+@keyframes fx-bounce {
+  0%,
+  100% {
+    transform: translateY(0) scale(1.06);
+  }
+  50% {
+    transform: translateY(-10%) scale(1.06);
+  }
+}
+
+.fx-tile.is-lens-distort img {
+  animation: fx-lens-distort 2.4s ease-in-out infinite;
+}
+
+@keyframes fx-lens-distort {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(255, 0, 0, 0));
+  }
+  50% {
+    transform: scale(1.16, 1.08);
+    filter: drop-shadow(-2px 0 0 rgba(255, 0, 0, 0.6)) drop-shadow(2px 0 0 rgba(0, 255, 255, 0.6));
+  }
+}
+
+.fx-tile.is-pixelate img {
+  animation: fx-pixelate 2.4s steps(4) infinite;
+}
+
+@keyframes fx-pixelate {
+  0%,
+  100% {
+    filter: contrast(1);
+    transform: scale(1);
+  }
+  50% {
+    filter: contrast(1.4) saturate(1.2);
+    transform: scale(1.06);
+  }
+}
+
+.fx-tile.is-kaleidoscope img {
+  animation: fx-kaleidoscope 2.4s ease-in-out infinite;
+}
+
+@keyframes fx-kaleidoscope {
+  0%,
+  100% {
+    transform: rotate(0) scale(1);
+    filter: hue-rotate(0deg) drop-shadow(0 0 0 rgba(255, 255, 255, 0));
+  }
+  50% {
+    transform: rotate(12deg) scale(1.12);
+    filter: hue-rotate(120deg) drop-shadow(-4px -4px 0 rgba(255, 120, 255, 0.45)) drop-shadow(4px 4px 0 rgba(120, 255, 255, 0.45));
+  }
+}
+
+.fx-tile.is-glitch img {
+  animation: fx-glitch 1.6s steps(1) infinite;
+}
+
+@keyframes fx-glitch {
+  0%,
+  65%,
+  100% {
+    transform: translate(0, 0);
+    filter: none;
+  }
+  70% {
+    transform: translate(-5%, 1%);
+    filter: drop-shadow(-3px 0 0 rgba(255, 0, 0, 0.85)) drop-shadow(3px 0 0 rgba(0, 255, 255, 0.85));
+  }
+  78% {
+    transform: translate(5%, -2%);
+    filter: drop-shadow(3px 0 0 rgba(255, 0, 0, 0.85)) drop-shadow(-3px 0 0 rgba(0, 255, 255, 0.85));
+  }
+  85% {
+    transform: translate(-2%, 0);
+    filter: none;
+  }
+}
+
+.fx-tile.is-vhs img {
+  animation: fx-vhs 1.8s steps(2) infinite;
+}
+
+@keyframes fx-vhs {
+  0%,
+  100% {
+    transform: translate(0, 0);
+    filter: contrast(0.9) saturate(0.85) drop-shadow(-2px 0 0 rgba(255, 0, 0, 0.7)) drop-shadow(2px 0 0 rgba(0, 255, 255, 0.7));
+  }
+  50% {
+    transform: translate(1px, -1px);
+    filter: contrast(0.85) saturate(0.8) drop-shadow(-3px 0 0 rgba(255, 0, 0, 0.8)) drop-shadow(3px 0 0 rgba(0, 255, 255, 0.8));
+  }
+}
+
+.fx-tile.is-light-leak .fx-tile__stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 20% 25%, rgba(255, 160, 60, 0.85) 0%, rgba(255, 90, 30, 0.35) 50%, transparent 78%);
+  mix-blend-mode: screen;
+  animation: fx-vignette 2.4s ease-in-out infinite;
+}
+
+.fx-tile.is-rainbow img {
+  animation: fx-rainbow 2.4s linear infinite;
+}
+
+@keyframes fx-rainbow {
+  from {
+    filter: hue-rotate(0deg);
+  }
+  to {
+    filter: hue-rotate(360deg);
+  }
+}
+
+.fx-tile.is-old-film img {
+  animation: fx-old-film 0.8s steps(2) infinite;
+}
+
+@keyframes fx-old-film {
+  0%,
+  100% {
+    filter: sepia(0.65) contrast(1.15) brightness(1);
+    transform: translate(0, 0);
+  }
+  50% {
+    filter: sepia(0.65) contrast(1.15) brightness(0.86);
+    transform: translate(-1px, 1px);
+  }
+}
+
+.fx-tile.is-bokeh img {
+  animation: fx-bokeh 2.4s ease-in-out infinite;
+}
+
+@keyframes fx-bokeh {
+  0%,
+  100% {
+    filter: brightness(1) saturate(1.1) blur(0);
+  }
+  50% {
+    filter: brightness(1.25) saturate(1.25) blur(1.8px);
+  }
+}
+
+.fx-tile.is-neon img {
+  animation: fx-neon 2.2s ease-in-out infinite;
+}
+
+@keyframes fx-neon {
+  0%,
+  100% {
+    filter: contrast(1.2) saturate(1.4) drop-shadow(0 0 0 rgba(0, 255, 255, 0));
+  }
+  50% {
+    filter: contrast(1.6) saturate(2) drop-shadow(0 0 5px rgba(0, 255, 255, 0.85));
+  }
+}
+
+.fx-tile.is-bw-flash img {
+  animation: fx-bw-flash 1.8s ease-in-out infinite;
+}
+
+@keyframes fx-bw-flash {
+  0%,
+  100% {
+    filter: grayscale(0) contrast(1);
+  }
+  50% {
+    filter: grayscale(1) contrast(1.35);
+  }
+}
+
+.fx-tile.is-blink img {
+  animation: fx-blink 1.4s linear infinite;
+}
+
+@keyframes fx-blink {
+  0%,
+  50% {
+    filter: brightness(0.15);
+  }
+  15%,
+  49%,
+  65%,
+  100% {
+    filter: brightness(1);
+  }
+}
+
+.fx-tile.is-soft-glow img {
+  animation: fx-soft-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes fx-soft-glow {
+  0%,
+  100% {
+    filter: brightness(1) blur(0);
+  }
+  50% {
+    filter: brightness(1.18) contrast(0.92) saturate(1.2) blur(1.4px);
+  }
+}
+
+.fx-tile.is-duotone img {
+  animation: fx-duotone 2.4s ease-in-out infinite;
+}
+
+@keyframes fx-duotone {
+  0%,
+  100% {
+    filter: hue-rotate(0deg) saturate(1);
+  }
+  50% {
+    filter: sepia(0.6) hue-rotate(260deg) saturate(2.2) contrast(1.15);
+  }
+}
+
+/* Fade to white: the stage goes white between the first cat and the second. */
+.fx-tile.is-fade-white img {
+  animation: fx-dip-out 3s ease-in-out infinite;
+}
+
+.fx-tile.is-fade-white img.is-next {
+  animation-name: fx-dip-in;
+}
+
+.fx-tile.is-fade-white .fx-tile__stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  pointer-events: none;
+  animation: fx-fade-white 3s ease-in-out infinite;
+}
+
+/* Dissolve: the second cat speckles in over the first. */
+.fx-tile.is-dissolve img.is-next {
+  animation: fx-dissolve-in 3s steps(6) infinite;
+}
+
+/* Blur transition: the first cat blurs out while the second unblurs in. */
+.fx-tile.is-blur:has(.is-next) img {
+  animation: fx-trans-blur-out 3s ease-in-out infinite;
+}
+
+.fx-tile.is-blur img.is-next {
+  animation: fx-trans-blur-in 3s ease-in-out infinite;
+}
+
+/* Squeeze: the second cat unfolds horizontally from the middle over the first. */
+.fx-tile.is-squeeze img.is-next {
+  animation: fx-squeeze-in 3s ease-in-out infinite;
+}
+
+/* Cover left: the second cat slides in from the right over the first. */
+.fx-tile.is-cover-left img.is-next {
+  animation: fx-slide-in 3s ease-in-out infinite;
+}
+
+/* Cover right: the second cat slides in from the left over the first. */
+.fx-tile.is-cover-right img.is-next {
+  animation: fx-slide-right-in 3s ease-in-out infinite;
+}
+
+/* Reveal left: the first cat slides off to the left, uncovering the second. */
+.fx-tile.is-reveal-left img {
+  animation: fx-slide-out 3s ease-in-out infinite;
+}
+
+.fx-tile.is-reveal-left img.is-next {
+  animation: fx-wipe-left-in 3s ease-in-out infinite;
+}
+
+/* Reveal right: the first cat slides off to the right, uncovering the second. */
+.fx-tile.is-reveal-right img {
+  animation: fx-slide-right-out 3s ease-in-out infinite;
+}
+
+.fx-tile.is-reveal-right img.is-next {
+  animation: fx-wipe-in 3s ease-in-out infinite;
+}
+
+/* Zoom-in blur: like Zoom, blurred through the cut. */
+.fx-tile.is-zoom-in-blur img {
+  animation: fx-zoom-blur-out 3s ease-in-out infinite;
+}
+
+.fx-tile.is-zoom-in-blur img.is-next {
+  animation: fx-zoom-blur-in 3s ease-in-out infinite;
+}
+
+/* Diagonal wipe: the second cat wipes in from the top-left corner. */
+.fx-tile.is-wipe-diag img.is-next {
+  animation: fx-wipe-diag-in 3s ease-in-out infinite;
+}
+
+/* Smooth left: a soft wipe from right to left. */
+.fx-tile.is-smooth-left img.is-next {
+  animation: fx-smooth-left-in 3s ease-in-out infinite;
+}
+
+/* Smooth right: a soft wipe from left to right. */
+.fx-tile.is-smooth-right img.is-next {
+  animation: fx-smooth-right-in 3s ease-in-out infinite;
+}
+
+/* Circle close: the second cat closes in from the corners towards the middle. */
+.fx-tile.is-circle-close img:not(.is-next) {
+  z-index: 1;
+  animation: fx-circle-close-out 3s ease-in-out infinite;
+}
+
+/* Radial: a clock wipe around the middle. */
+.fx-tile.is-radial img.is-next {
+  animation: fx-radial-in 3s ease-in-out infinite;
+}
+
+/* Wind: jagged streaks sweep across from left to right. */
+.fx-tile.is-wind img.is-next {
+  animation: fx-wind-in 3s ease-in-out infinite;
+}
+
+@keyframes fx-fade-white {
+  0%,
+  25%,
+  75%,
+  100% {
+    opacity: 0;
+  }
+  45%,
+  55% {
+    opacity: 1;
+  }
+}
+
+@keyframes fx-dissolve-in {
+  0%,
+  30% {
+    opacity: 0;
+    filter: hue-rotate(180deg) contrast(1.8);
+  }
+  65%,
+  100% {
+    opacity: 1;
+    filter: hue-rotate(180deg) contrast(1);
+  }
+}
+
+@keyframes fx-trans-blur-out {
+  0%,
+  30% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  65%,
+  100% {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+
+@keyframes fx-trans-blur-in {
+  0%,
+  30% {
+    opacity: 0;
+    filter: hue-rotate(180deg) blur(4px);
+  }
+  65%,
+  100% {
+    opacity: 1;
+    filter: hue-rotate(180deg) blur(0);
+  }
+}
+
+@keyframes fx-squeeze-in {
+  0%,
+  30% {
+    transform: scaleX(0);
+  }
+  65%,
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes fx-zoom-blur-out {
+  0%,
+  30% {
+    transform: scale(1);
+    filter: blur(0);
+    opacity: 1;
+  }
+  65%,
+  100% {
+    transform: scale(1.5);
+    filter: blur(3px);
+    opacity: 0;
+  }
+}
+
+@keyframes fx-zoom-blur-in {
+  0%,
+  30% {
+    transform: scale(1.5);
+    filter: hue-rotate(180deg) blur(3px);
+    opacity: 0;
+  }
+  65%,
+  100% {
+    transform: scale(1);
+    filter: hue-rotate(180deg) blur(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fx-wipe-diag-in {
+  0%,
+  30% {
+    clip-path: polygon(0 0, 0% 0, 0 0%);
+  }
+  65%,
+  100% {
+    clip-path: polygon(0 0, 200% 0, 0 200%);
+  }
+}
+
+@keyframes fx-smooth-left-in {
+  0%,
+  30% {
+    clip-path: inset(0 0 0 100%);
+    opacity: 0.4;
+  }
+  65%,
+  100% {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+}
+
+@keyframes fx-smooth-right-in {
+  0%,
+  30% {
+    clip-path: inset(0 100% 0 0);
+    opacity: 0.4;
+  }
+  65%,
+  100% {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+}
+
+@keyframes fx-circle-close-out {
+  0%,
+  30% {
+    clip-path: circle(71% at 50% 50%);
+  }
+  65%,
+  100% {
+    clip-path: circle(0% at 50% 50%);
+  }
+}
+
+@keyframes fx-radial-in {
+  0%,
+  30% {
+    clip-path: polygon(50% 50%, 50% 0%, 50% 0%, 50% 0%, 50% 0%, 50% 0%);
+  }
+  40% {
+    clip-path: polygon(50% 50%, 50% 0%, 100% 0%, 100% 50%, 100% 50%, 100% 50%);
+  }
+  50% {
+    clip-path: polygon(50% 50%, 50% 0%, 100% 0%, 100% 100%, 50% 100%, 50% 100%);
+  }
+  60% {
+    clip-path: polygon(50% 50%, 50% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 50%);
+  }
+  65%,
+  100% {
+    clip-path: polygon(50% 50%, 50% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%);
+  }
+}
+
+@keyframes fx-wind-in {
+  0%,
+  30% {
+    clip-path: polygon(0 0, 0% 0%, 0% 25%, 0% 50%, 0% 75%, 0% 100%, 0 100%);
+  }
+  48% {
+    clip-path: polygon(0 0, 65% 0%, 35% 25%, 70% 50%, 30% 75%, 60% 100%, 0 100%);
+  }
+  65%,
+  100% {
+    clip-path: polygon(0 0, 100% 0%, 100% 25%, 100% 50%, 100% 75%, 100% 100%, 0 100%);
+  }
+}
+
 /* The Image editor: the picked layer's filter or effect */
 .fx-tile[aria-pressed="true"] {
   border-color: var(--text-3);
