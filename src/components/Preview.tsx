@@ -10,7 +10,7 @@ import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
-import { RGB_SHARE, adjustSteps, blocksStyle, keyLine, posterLevels, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
+import { RGB_SHARE, adjustSteps, blocksStyle, duotoneMatrix, keyLine, posterLevels, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
 import { CRAFTORA_MEDIA, setWindowFullscreen } from "../lib/engine";
 import { textShadowFilter } from "../lib/textPicture";
 import { hasStyle, styleFilter } from "../lib/layerStyle";
@@ -666,6 +666,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 zoom={t === null ? 1 : mix(clip).zoom}
                 turn={t === null ? 0 : mix(clip).turn}
                 reveal={t === null ? "" : mix(clip).reveal}
+                scaleX={t === null ? 1 : (mix(clip).scaleX ?? 1)}
+                transFilter={t === null ? "" : (mix(clip).filter ?? "")}
                 selected={isSelected}
                 poster={poster}
                 mask={still ? maskStyle(clip) : undefined}

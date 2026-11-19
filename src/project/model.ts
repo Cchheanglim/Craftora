@@ -116,16 +116,31 @@ export interface Transition {
     | "crossfade"
     | "dip"
     | "flash"
+    | "fade-white"
+    | "dissolve"
+    | "blur"
+    | "squeeze"
     | "slide"
     | "slide-right"
     | "slide-up"
     | "slide-down"
+    | "cover-left"
+    | "cover-right"
+    | "reveal-left"
+    | "reveal-right"
     | "zoom"
+    | "zoom-in-blur"
     | "wipe"
     | "wipe-left"
     | "wipe-up"
     | "wipe-down"
+    | "wipe-diag"
+    | "smooth-left"
+    | "smooth-right"
     | "circle"
+    | "circle-close"
+    | "radial"
+    | "wind"
     | "spin";
   /** Seconds, as set; the real overlap may be shorter for short clips (see `transitionLength`). */
   duration: number;
@@ -147,16 +162,31 @@ export const TRANSITION_KINDS: { kind: Transition["kind"]; label: string }[] = [
   { kind: "crossfade", label: "Crossfade" },
   { kind: "dip", label: "Dip to black" },
   { kind: "flash", label: "Flash" },
+  { kind: "fade-white", label: "Fade to white" },
+  { kind: "dissolve", label: "Dissolve" },
+  { kind: "blur", label: "Blur" },
+  { kind: "squeeze", label: "Squeeze" },
   { kind: "slide", label: "Slide left" },
   { kind: "slide-right", label: "Slide right" },
   { kind: "slide-up", label: "Slide up" },
   { kind: "slide-down", label: "Slide down" },
+  { kind: "cover-left", label: "Cover left" },
+  { kind: "cover-right", label: "Cover right" },
+  { kind: "reveal-left", label: "Reveal left" },
+  { kind: "reveal-right", label: "Reveal right" },
   { kind: "zoom", label: "Zoom" },
+  { kind: "zoom-in-blur", label: "Zoom-in blur" },
   { kind: "wipe", label: "Wipe right" },
   { kind: "wipe-left", label: "Wipe left" },
   { kind: "wipe-up", label: "Wipe up" },
   { kind: "wipe-down", label: "Wipe down" },
+  { kind: "wipe-diag", label: "Diagonal wipe" },
+  { kind: "smooth-left", label: "Smooth left" },
+  { kind: "smooth-right", label: "Smooth right" },
   { kind: "circle", label: "Circle" },
+  { kind: "circle-close", label: "Circle close" },
+  { kind: "radial", label: "Radial" },
+  { kind: "wind", label: "Wind" },
   { kind: "spin", label: "Spin" },
 ];
 
@@ -464,13 +494,13 @@ export function transitionLength(prev: Clip | undefined, cur: Clip): number {
  * Transitions at time `t` for a clip on a magnetic track (`order` is that track's clips), matching the export:
  * how visible (`picture`) and loud (`sound`) it is (0–1), how white (`white`, for a flash), how far moved right (`shift`)
  * and down (`lift`) in frame widths/heights, how scaled (`zoom`) and turned clockwise in degrees (`turn`) about its box
- * centre, and its CSS `clip-path` (`reveal`, "" when none). The incoming clip is drawn above the outgoing one.
+ * centre, and its CSS `clip-path` or mask (`reveal`, "" when none). The incoming clip is drawn above the outgoing one.
  */
 export function transitionMix(
   order: Clip[],
   clip: Clip,
   t: number
-): { picture: number; sound: number; white: number; shift: number; lift: number; zoom: number; turn: number; reveal: string } {
+): { picture: number; sound: number; white: number; shift: number; lift: number; zoom: number; turn: number; reveal: string; scaleX?: number; filter?: string } {
   const i = order.findIndex((c) => c.id === clip.id);
   if (i === -1) return { picture: 1, sound: 1, white: 0, shift: 0, lift: 0, zoom: 1, turn: 0, reveal: "" };
   let picture = 1;
@@ -481,6 +511,8 @@ export function transitionMix(
   let zoom = 1;
   let turn = 0;
   let reveal = "";
+  let scaleX = 1;
+  let filter = "";
   const e = (p: number) => 0.5 - 0.5 * Math.cos(Math.PI * p);
   const incoming = meets(order[i - 1], clip) ? transitionLength(order[i - 1], clip) : 0;
   if (incoming > 0 && t < clip.start + incoming) {
@@ -488,20 +520,40 @@ export function transitionMix(
     const kind = clip.transition!.kind;
     // A flash's incoming clip is hidden until the outgoing one is all white (as the export does).
     if (kind === "dip") picture = Math.max(0, 2 * p - 1);
-    else if (kind === "flash") {
+    else if (kind === "flash" || kind === "fade-white") {
       picture = p < 0.5 ? 0 : 1;
       white = 1 - Math.max(0, 2 * p - 1);
-    } else if (kind === "slide") shift = 1 - e(p);
-    else if (kind === "slide-right") shift = -(1 - e(p));
+    } else if (kind === "dissolve") {
+      if (p < 1) filter = `url(#dissolve-${Math.round(p * 50)})`;
+    } else if (kind === "blur") {
+      picture = p;
+      const b = Math.round(14 * (1 - e(p)) * 10) / 10;
+      if (b > 0) filter = `blur(${b}px)`;
+    } else if (kind === "squeeze") {
+      scaleX = Math.max(0.001, e(p));
+      if (p < 1) reveal = `inset(0 ${(1 - p) * 50}% 0 ${(1 - p) * 50}%)`;
+    } else if (kind === "slide" || kind === "cover-left") shift = 1 - e(p);
+    else if (kind === "slide-right" || kind === "cover-right") shift = -(1 - e(p));
     else if (kind === "slide-up") lift = 1 - e(p);
     else if (kind === "slide-down") lift = -(1 - e(p));
-    else if (kind === "zoom") {
+    else if (kind === "reveal-left") {
+      if (p < 1) reveal = `inset(0 0 0 ${(1 - p) * 100}%)`;
+    } else if (kind === "reveal-right") {
+      if (p < 1) reveal = `inset(0 ${(1 - p) * 100}% 0 0)`;
+    } else if (kind === "zoom") {
       picture = p;
       zoom = 1.5 - 0.5 * e(p);
+    } else if (kind === "zoom-in-blur") {
+      picture = p;
+      zoom = 1.5 - 0.5 * e(p);
+      const b = Math.round(12 * (1 - e(p)) * 10) / 10;
+      if (b > 0) filter = `blur(${b}px)`;
     } else if (kind === "spin") {
       picture = p;
       zoom = 1.5 - 0.5 * e(p);
       turn = -90 * (1 - e(p));
+    } else if (kind === "wipe-diag") {
+      if (p < 1) reveal = `polygon(0 0, ${200 * p}% 0, 0 ${200 * p}%)`;
     } else if (kind.startsWith("wipe")) {
       const h = (1 - p) * 100;
       if (h > 0) {
@@ -514,8 +566,22 @@ export function transitionMix(
                 ? `inset(${h}% 0 0 0)`
                 : `inset(0 0 ${h}% 0)`;
       }
+    } else if (kind === "smooth-left") {
+      if (p < 1) reveal = `linear-gradient(to left, #000 ${p * 130 - 30}%, transparent ${p * 130}%)`;
+    } else if (kind === "smooth-right") {
+      if (p < 1) reveal = `linear-gradient(to right, #000 ${p * 130 - 30}%, transparent ${p * 130}%)`;
     } else if (kind === "circle") {
       if (p < 1) reveal = `circle(${70.711 * p}% at 50% 50%)`;
+    } else if (kind === "circle-close") {
+      if (p < 1) reveal = `radial-gradient(circle farthest-corner at 50% 50%, transparent ${(1 - p) * 100}%, #000 ${(1 - p) * 100}%)`;
+    } else if (kind === "radial") {
+      if (p < 1) reveal = `conic-gradient(from -90deg at 50% 50%, #000 ${p * 360}deg, transparent 0deg)`;
+    } else if (kind === "wind") {
+      if (p < 1) {
+        const edge = (lag: number) => Math.min(100, Math.max(0, (p * 1.35 - lag) * 100)).toFixed(1);
+        const pts = [0, 0.22, 0.08, 0.3, 0.04, 0.26, 0.12, 0.35, 0.06].map((lag, k) => `${edge(lag)}% ${k * 12.5}%`).join(", ");
+        reveal = `polygon(0 0, ${pts}, 0 100%)`;
+      }
     } else picture = p;
     sound = transitionGain(p, true, clip.transition!.volume);
   }
@@ -526,19 +592,28 @@ export function transitionMix(
     const kind = next.transition!.kind;
     // Crossfade, zoom, wipe and circle keep the outgoing picture underneath; dip fades it to black, flash to white.
     if (kind === "dip") picture = Math.min(picture, Math.max(0, 1 - 2 * p));
-    else if (kind === "flash") white = Math.max(white, Math.min(1, 2 * p));
-    else if (kind === "slide") shift = -e(p);
+    else if (kind === "flash" || kind === "fade-white") white = Math.max(white, Math.min(1, 2 * p));
+    else if (kind === "blur") {
+      const b = Math.round(14 * e(p) * 10) / 10;
+      if (b > 0) filter = [filter, `blur(${b}px)`].filter(Boolean).join(" ");
+    } else if (kind === "slide") shift = -e(p);
     else if (kind === "slide-right") shift = e(p);
     else if (kind === "slide-up") lift = -e(p);
     else if (kind === "slide-down") lift = e(p);
+    else if (kind === "reveal-left") shift = -p;
+    else if (kind === "reveal-right") shift = p;
     else if (kind === "zoom") zoom = 1 + 0.5 * e(p);
-    else if (kind === "spin") {
+    else if (kind === "zoom-in-blur") {
+      zoom = 1 + 0.5 * e(p);
+      const b = Math.round(12 * e(p) * 10) / 10;
+      if (b > 0) filter = [filter, `blur(${b}px)`].filter(Boolean).join(" ");
+    } else if (kind === "spin") {
       zoom = 1 + 0.5 * e(p);
       turn = 90 * e(p);
     }
     sound = Math.min(sound, transitionGain(p, false, next.transition!.volume));
   }
-  return { picture, sound, white, shift, lift, zoom, turn, reveal };
+  return { picture, sound, white, shift, lift, zoom, turn, reveal, ...(scaleX !== 1 && { scaleX }), ...(filter && { filter }) };
 }
 
 export function projectDuration(p: Project): number {

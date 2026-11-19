@@ -189,11 +189,28 @@ export const PICTURE_EFFECTS = [
   { id: "zoom-out", label: "Zoom out", category: "camera" },
   { id: "punch", label: "Zoom punch", category: "camera" },
   { id: "shake", label: "Shake", category: "camera" },
+  { id: "zoom-blur", label: "Zoom blur", category: "camera" },
+  { id: "heartbeat", label: "Heartbeat", category: "camera" },
+  { id: "swing", label: "Swing", category: "camera" },
+  { id: "spin-in", label: "Spin in", category: "camera" },
+  { id: "slide-in", label: "Slide in", category: "camera" },
+  { id: "bounce", label: "Bounce", category: "camera" },
   { id: "bars", label: "Cinema bars", category: "style" },
   { id: "vignette", label: "Vignette", category: "style" },
   { id: "strobe", label: "Strobe", category: "style" },
   { id: "rgb-split", label: "RGB split", category: "style" },
   { id: "grain", label: "Film grain", category: "style" },
+  { id: "glitch", label: "Glitch", category: "style" },
+  { id: "vhs", label: "VHS", category: "style" },
+  { id: "light-leak", label: "Light leak", category: "style" },
+  { id: "rainbow", label: "Rainbow", category: "style" },
+  { id: "old-film", label: "Old film", category: "style" },
+  { id: "bokeh", label: "Bokeh glow", category: "style" },
+  { id: "neon", label: "Neon edges", category: "style" },
+  { id: "bw-flash", label: "Black & white flash", category: "style" },
+  { id: "blink", label: "Blink", category: "style" },
+  { id: "soft-glow", label: "Soft glow", category: "style" },
+  { id: "duotone", label: "Duotone", category: "style" },
 ] as const satisfies readonly { id: string; label: string; category: "camera" | "style" | "old" }[];
 export type PictureEffectId = (typeof PICTURE_EFFECTS)[number]["id"];
 
@@ -204,11 +221,34 @@ export const EFFECT_SETTINGS: Partial<Record<PictureEffectId, readonly ("strengt
   "zoom-out": ["strength"],
   punch: ["strength", "speed"],
   shake: ["strength", "speed"],
+  "zoom-blur": ["strength"],
+  heartbeat: ["strength", "speed"],
+  swing: ["strength", "speed"],
+  "spin-in": ["strength", "speed"],
+  "slide-in": ["strength", "speed"],
+  bounce: ["strength", "speed"],
   vignette: ["strength"],
   strobe: ["strength", "speed"],
   "rgb-split": ["strength"],
   grain: ["strength"],
+  glitch: ["strength", "speed"],
+  vhs: ["strength"],
+  "light-leak": ["strength", "speed"],
+  rainbow: ["speed"],
+  "old-film": ["strength", "speed"],
+  bokeh: ["strength", "speed"],
+  neon: ["strength"],
+  "bw-flash": ["strength", "speed"],
+  blink: ["strength", "speed"],
+  "soft-glow": ["strength"],
+  duotone: ["strength"],
 };
+
+/** Duotone's colour matrix at strength `s` (0–2): blends the picture into a magenta-and-teal duotone (project.rs `effect_filter`). */
+export function duotoneMatrix(s: number): string {
+  const k = clamp(0.75 * s, 0, 1);
+  return `${round4(1 - 0.65 * k)} ${round4(0.85 * k)} ${round4(0.15 * k)} 0 0 ${round4(0.1 * k)} ${round4(1 - 0.55 * k)} ${round4(0.35 * k)} 0 0 ${round4(0.45 * k)} ${round4(0.25 * k)} ${round4(1 - 0.3 * k)} 0 0 0 0 0 1 0`;
+}
 
 /** An effect's strength as a multiple of how it was made (0–2, 1 at the slider's middle) and its speed (0.5–3×). */
 export const effectStrength = (c: Pick<Clip, "effectStrength">) => clamp(c.effectStrength ?? 50, 0, 100) / 50;
@@ -446,6 +486,74 @@ export function blocksStyle(
     } else if (b.effect === "bars") {
       // On for the whole block, no slide: the export's drawbox has no clock to animate them with.
       bars = Math.max(bars, width > height ? Math.max(0, (1 - width / height / 2.39) / 2) : 0.1);
+    } else if (b.effect === "zoom-blur") {
+      filters.push(`blur(${(0.6 * BLUR_SHARE * width * s).toFixed(2)}px)`);
+      transforms.unshift(`translate(0%, 0%) scale(${round4(1 + 0.3 * s * ease(through))})`);
+    } else if (b.effect === "heartbeat") {
+      // Two quick beats ("lub-dub") and a rest every 1/speed seconds.
+      const p = (u * v) % 1;
+      const beat = p < 0.2 ? Math.sin((Math.PI * p) / 0.2) : p >= 0.25 && p < 0.45 ? 0.7 * Math.sin((Math.PI * (p - 0.25)) / 0.2) : 0;
+      transforms.unshift(`translate(0%, 0%) scale(${round4(1 + 0.18 * s * beat)})`);
+    } else if (b.effect === "swing") {
+      const a = 4 * s * Math.sin(2 * Math.PI * 0.6 * v * u);
+      transforms.unshift(`translate(0%, 0%) scale(${round4(1 + 0.12 * s)}) rotate(${round4(a)}deg)`);
+    } else if (b.effect === "spin-in") {
+      const span = Math.min(d, 0.6 / v);
+      const left = 1 - ease(clamp(u / span, 0, 1));
+      transforms.unshift(`translate(0%, 0%) scale(${round4(1 + 0.35 * s * left)}) rotate(${round4(-90 * s * left)}deg)`);
+    } else if (b.effect === "slide-in") {
+      const span = Math.min(d, 0.6 / v);
+      const left = 1 - ease(clamp(u / span, 0, 1));
+      transforms.unshift(`translate(${round4(-12 * s * left)}%, 0%) scale(${round4(1 + 0.24 * s * left)})`);
+    } else if (b.effect === "bounce") {
+      const y = -6 * s * (0.5 - 0.5 * Math.cos(2 * Math.PI * 1.5 * v * u));
+      transforms.unshift(`translate(0%, ${round4(y)}%) scale(${round4(1 + 0.12 * s)})`);
+    } else if (b.effect === "glitch") {
+      const wave = Math.sin(2 * Math.PI * 3.7 * v * u) * Math.sin(2 * Math.PI * 8.3 * v * u);
+      const burst = Math.abs(wave) > 0.45 ? Math.sign(wave) : 0;
+      const x = 3.5 * s * burst;
+      const y = 0.8 * s * Math.sin(2 * Math.PI * 13.1 * v * u) * Math.abs(burst);
+      transforms.unshift(`translate(${round4(x)}%, ${round4(y)}%) scale(${round4(1 + 0.08 * s)})`);
+      filters.push(`url(#rgb-${Math.round(clamp(s * (0.4 + 0.6 * Math.abs(burst)), 0, 2) * 50)})`);
+    } else if (b.effect === "vhs") {
+      filters.push(`url(#rgb-${Math.round(0.75 * s * 50)}) contrast(${round4(1 - 0.1 * s)}) saturate(${round4(1 - 0.15 * s)})`);
+      const n = Math.floor(u * 30);
+      layers.push({ color: `${GRAIN} ${(n * 73) % 160}px ${(n * 151) % 160}px / 160px 160px`, opacity: round4(Math.min(1, 0.22 * s)), blend: "overlay" });
+    } else if (b.effect === "light-leak") {
+      const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * 0.4 * v * u);
+      const p = Math.min(1, 0.35 * s) * (0.4 + 0.6 * w);
+      filters.push(`url(#warmth-${Math.round(clamp(0.8 * s, 0, 1) * 100)}) contrast(${round4(1 - 0.2 * p)}) brightness(${round4(1 + 0.32 * p)}) saturate(${round4(1 + 0.2 * p)})`);
+      layers.push({
+        color: "radial-gradient(circle at 18% 22%, rgba(255,160,60,0.85) 0%, rgba(255,90,30,0.35) 50%, transparent 78%)",
+        opacity: round4(p),
+        blend: "screen",
+      });
+    } else if (b.effect === "rainbow") {
+      filters.push(`hue-rotate(${round4((360 * v * u) % 360)}deg)`);
+    } else if (b.effect === "old-film") {
+      const flicker = 1 - 0.12 * s * (0.5 + 0.5 * Math.sin(2 * Math.PI * 6 * v * u) * Math.cos(2 * Math.PI * 9.5 * v * u));
+      filters.push(`sepia(${round4(Math.min(1, 0.65 * s))}) contrast(${round4(1 + 0.15 * s)}) brightness(${round4(flicker)})`);
+      layers.push({ color: vignetteGradient(0.8 * s), opacity: 1 });
+      const n = Math.floor(u * 30);
+      layers.push({ color: `${GRAIN} ${(n * 73) % 160}px ${(n * 151) % 160}px / 160px 160px`, opacity: round4(Math.min(1, 0.25 * s)), blend: "overlay" });
+    } else if (b.effect === "bokeh") {
+      const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * 0.5 * v * u);
+      const p = 0.25 * s * (0.5 + 0.5 * w);
+      filters.push(
+        `url(#warmth-${Math.round(clamp(0.5 * s, 0, 1) * 100)}) brightness(${round4(1 + p)}) saturate(${round4(1 + 0.2 * s)}) blur(${(0.35 * BLUR_SHARE * width * s).toFixed(2)}px)`,
+      );
+    } else if (b.effect === "neon") {
+      filters.push(`url(#neon-${Math.round(s * 50)}) saturate(${round4(Math.min(2, 1 + 0.8 * s))})`);
+    } else if (b.effect === "bw-flash") {
+      const p = Math.min(1, s) * (0.5 + 0.5 * Math.cos(2 * Math.PI * v * u));
+      filters.push(`grayscale(${round4(p)}) contrast(${round4(1 + 0.35 * p)})`);
+    } else if (b.effect === "blink") {
+      const period = 0.5 / v;
+      layers.push({ color: "#000", opacity: round4(Math.min(1, 0.85 * s) * Math.max(0, 1 - (u % period) / (0.5 * period)) ** 2) });
+    } else if (b.effect === "soft-glow") {
+      filters.push(`brightness(${round4(1 + 0.12 * s)}) contrast(${round4(1 - 0.08 * s)}) saturate(${round4(1 + 0.15 * s)}) blur(${(0.25 * BLUR_SHARE * width * s).toFixed(2)}px)`);
+    } else if (b.effect === "duotone") {
+      filters.push(`url(#duotone-${Math.round(s * 50)})`);
     }
   }
   return {
