@@ -245,6 +245,10 @@ test("the media library remembers files on this PC, newest first, and keeps star
   expect(after.length).toBe(LIBRARY_LIMIT);
   expect(after[0].name).toBe("beach.mp4");
   expect(after.some((e) => e.saved)).toBe(true); // the starred oldest one stays
+  const gif = mediaFromSource({ ...source("image"), url: String.raw`C:\clips\wave.gif`, animated: 1.5 });
+  const withGif = withImported([], [gif], LIBRARY_LIMIT, 1);
+  expect(withGif[0]).toMatchObject({ name: "wave.gif", kind: "image", animated: 1.5 });
+  expect(withImported([{ ...withGif[0], animated: undefined }], [gif], LIBRARY_LIMIT, 2)[0].animated).toBe(1.5);
 });
 
 test("captions go on a new Captions track, lined up with each clip after cuts and speed changes", () => {

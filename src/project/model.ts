@@ -965,13 +965,15 @@ export function withImported(entries: LibraryEntry[], media: MediaItem[], limit:
     const path = m.source.url;
     if (!m.source.local || m.source.live || m.missing || isWorkingFile(path)) continue;
     const thumbnail = m.source.thumbnail?.startsWith("data:") ? m.source.thumbnail : undefined;
+    const animated = m.source.animated;
     const at = next.findIndex((e) => e.path === path);
     if (at >= 0) {
       if (thumbnail && next[at].thumbnail !== thumbnail) [next[at], changed] = [{ ...next[at], thumbnail }, true];
+      if (animated && !next[at].animated) [next[at], changed] = [{ ...next[at], animated }, true];
       continue;
     }
     const kind = m.source.image ? "image" : m.hasVideo ? "video" : "audio";
-    next.unshift({ path, name: path.split(/[\\/]/).pop() ?? m.name, kind, duration: m.source.image ? 0 : m.source.duration, thumbnail, addedAt: now });
+    next.unshift({ path, name: path.split(/[\\/]/).pop() ?? m.name, kind, duration: m.source.image ? 0 : m.source.duration, animated, thumbnail, addedAt: now });
     changed = true;
   }
   for (let i = next.length - 1; next.length > limit && i >= 0; i--) if (!next[i].saved) next.splice(i, 1);

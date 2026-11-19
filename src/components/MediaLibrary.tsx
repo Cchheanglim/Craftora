@@ -23,13 +23,14 @@ interface MediaLibraryProps {
   onImport?: () => void;
 }
 
-type Filter = "all" | "video" | "image" | "audio" | "saved";
+type Filter = "all" | "video" | "image" | "audio" | "gif" | "saved";
 
 const FILTERS: { id: Filter; label: ReactNode }[] = [
   { id: "all", label: "All" },
   { id: "video", label: "Videos" },
   { id: "image", label: "Pictures" },
   { id: "audio", label: "Sound" },
+  { id: "gif", label: "GIFs" },
   {
     id: "saved",
     label: (
@@ -65,7 +66,10 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const words = search.trim().toLowerCase();
   const hidden = useHidden("media");
   const matching = entries.filter(
-    (e) => (filter === "all" || (filter === "saved" ? e.saved : e.kind === filter)) && (!words || e.name.toLowerCase().includes(words)),
+    (e) =>
+      (filter === "all" ||
+        (filter === "saved" ? e.saved : filter === "gif" ? Boolean(e.animated) : filter === "image" ? e.kind === "image" && !e.animated : e.kind === filter)) &&
+      (!words || e.name.toLowerCase().includes(words)),
   );
   const shown = matching.filter((e) => !hidden.isHidden(e.path));
   const hiddenShown = matching.filter((e) => hidden.isHidden(e.path));
@@ -83,7 +87,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           play={entry.kind === "video"}
         />
       }
-      tag={KIND_LABEL[entry.kind]}
+      tag={entry.animated ? "GIF" : KIND_LABEL[entry.kind]}
       badge={entry.kind !== "image" && entry.duration > 0 ? formatClock(entry.duration) : undefined}
       name={entry.name}
       meta={`Imported ${dateFormat.format(entry.addedAt)}`}
@@ -120,7 +124,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           </div>
         </div>
 
-        {entries.length === 0 ? (
+        {filter === "gif" && !entries.some((e) => e.animated) ? (
+          <p className="pc-muted">No GIFs yet. Import a GIF and it shows up here and in the editor's GIFs tab.</p>
+        ) : entries.length === 0 ? (
           <p className="pc-muted">Files you import into a project show up here, so you can find them again.</p>
         ) : shown.length === 0 ? (
           <p className="pc-muted">{hiddenShown.length ? "Everything here is hidden." : "Nothing matches."}</p>

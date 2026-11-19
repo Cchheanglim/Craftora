@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { ExportSettings, Job, MediaSource } from "./types";
 import { DEMO_JOBS, DEMO_SOURCES } from "./data/demo";
 import {
@@ -38,6 +38,7 @@ import {
   saveSrt,
   openCaptionsFile,
   pickMediaFiles,
+  pickGifFiles,
   pickMediaFile,
   revealFile,
   pickPicture,
@@ -160,6 +161,7 @@ import { TimelineDivider } from "./components/TimelineDivider";
 import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/EdgeResizer";
 import { EFFECT_SETTINGS, LOOKS, PICTURE_EFFECTS, dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, STILL_EFFECTS, type FxTab } from "./components/FxPanel";
+import { GifPanel } from "./components/GifPanel";
 import { CropDialog } from "./components/CropDialog";
 import { IconTabs } from "./components/IconTabs";
 import { loadFont } from "./lib/fonts";
@@ -169,7 +171,7 @@ import { LEVEL_STEP, VoicePanel } from "./components/VoicePanel";
 import { Tooltip } from "./components/Tooltip";
 import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
-import { TimelineEditor, type ClipCommand } from "./components/TimelineEditor";
+import { TimelineEditor, beginMediaDrag, type ClipCommand } from "./components/TimelineEditor";
 import { AddText, CaptionStyle, Inspector, KEY_START, Slider, type ClipSection } from "./components/Inspector";
 import { ExportPanel } from "./components/ExportPanel";
 import { ExportDialog } from "./components/ExportDialog";
@@ -1568,6 +1570,46 @@ export default function App() {
     setView("editor");
   };
 
+  const importingGif = useRef(new Map<string, Promise<string>>());
+  const ensureGifMedia = (path: string): Promise<string> => {
+    const existing = projectRef.current.media.find((m) => m.source.url === path);
+    if (existing) return Promise.resolve(existing.id);
+    let pending = importingGif.current.get(path);
+    if (!pending) {
+      pending = openLocal(path)
+        .then((source) => importSource(source, false).id)
+        .finally(() => importingGif.current.delete(path));
+      importingGif.current.set(path, pending);
+    }
+    return pending;
+  };
+  const addGif = async (path: string) => {
+    try {
+      const mediaId = await ensureGifMedia(path);
+      const clipId = crypto.randomUUID();
+      api.edit({ type: "addClip", clipId, mediaId, at: playback.time });
+      setSelectedId(clipId);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  const dragGif = async (path: string, e: ReactPointerEvent) => {
+    try {
+      const mediaId = await ensureGifMedia(path);
+      beginMediaDrag(mediaId, e);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  const importGifs = async () => {
+    try {
+      const paths = await pickGifFiles();
+      if (paths.length) await importFiles(paths);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+
   /** The selected clip, or else the clip under the playhead on the lowest track that has one. */
   const splitTarget = () => {
     const t = playback.time;
@@ -2609,6 +2651,15 @@ export default function App() {
       usedMedia={usedMedia}
       onRecordVoice={inDesktopApp ? openVoice : undefined}
       fx={(tab) => fxPanel(tab, false)}
+      gifs={
+        <GifPanel
+          entries={library.filter((e) => Boolean(e.animated))}
+          onAdd={(path) => void addGif(path)}
+          onDrag={(path, e) => void dragGif(path, e)}
+          onImport={() => void importGifs()}
+          onForget={(path) => changeLibrary((entries) => entries.filter((e) => e.path !== path))}
+        />
+      }
       only={only}
     />
   );

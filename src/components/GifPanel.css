@@ -1,0 +1,24 @@
+.gif-panel.is-empty {
+  flex: 1;
+  justify-content: center;
+}
+
+.gif-panel__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-3);
+  text-align: center;
+}
+
+.gif-panel__tile .fx-tile__stage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gif-panel__import {
+  width: 100%;
+  justify-content: center;
+}
