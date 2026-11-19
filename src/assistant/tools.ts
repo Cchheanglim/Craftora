@@ -4,6 +4,7 @@
  * edits behave exactly like the user's and can be undone the same way.
  */
 import { applyEdit, type ClipPatch, type EditAction } from "../project/actions";
+import { PICTURE_EFFECTS, type PictureEffectId } from "../project/effects";
 import {
   POSITIONS,
   SPEEDS,
@@ -66,6 +67,7 @@ export function describe(p: Project, playhead: number, ids: ShortIds): string {
       if (c.volume !== 1) out.volume = r2(c.volume);
       if (c.mirror) out.mirror = true;
       if (c.reverse) out.reverse = true;
+      if (c.effect) out.effect = c.effect;
       if (c.fadeIn) out.fadeIn = c.fadeIn;
       if (c.fadeOut) out.fadeOut = c.fadeOut;
       if (c.transition) out.transition = c.transition;
@@ -203,6 +205,12 @@ export const TOOLS = [
         volume: { ...num, description: "0–1." },
         mirror: { type: "boolean" },
         reverse: { type: "boolean" },
+        effect: {
+          type: "string",
+          enum: ["none", ...PICTURE_EFFECTS.map((e) => e.id)],
+          description:
+            "Picture effect (none to remove): blur, mirror, zoom-in, zoom-out, punch, shake, zoom-blur, heartbeat, swing, spin-in, slide-in, bounce, lens-distort, bars, vignette, strobe, rgb-split, grain, pixelate, kaleidoscope, glitch, vhs, light-leak, rainbow, old-film, bokeh, neon, bw-flash, blink, soft-glow, duotone (or fade-in, fade-out, flash).",
+        },
         fade_in: { ...num, description: "Seconds." },
         fade_out: { ...num, description: "Seconds." },
         size: { ...num, description: "Video: scale, where 1 fills the frame as far as its shape allows (0.1–1). Text: height as a fraction of the frame (0.02–0.3)." },
@@ -236,7 +244,8 @@ export const TOOLS = [
         kind: {
           type: "string",
           enum: ["none", ...TRANSITION_KINDS.map((t) => t.kind)],
-          description: "dip = through black, flash = through white, slide = in from the right, zoom = zoom in, wipe = left to right.",
+          description:
+            "crossfade = fade across, dip = through black, flash = through white, fade-white = fade to white, dissolve = pixel dissolve, blur = blur across, squeeze = horizontal squeeze, slide = in from the right, slide-right = in from the left, slide-up = in from below, slide-down = in from above, cover-left = cover from the right, cover-right = cover from the left, reveal-left = uncover to the left, reveal-right = uncover to the right, zoom = zoom in, zoom-in-blur = zoom in with blur, wipe = left to right, wipe-left = right to left, wipe-up = bottom to top, wipe-down = top to bottom, wipe-diag = diagonal wipe, smooth-left = soft wipe left, smooth-right = soft wipe right, circle = circle open, circle-close = circle close, radial = clock wipe, wind = wind wipe, spin = spin in.",
         },
         duration: { ...num, description: "Seconds (default 1)." },
       },
@@ -374,6 +383,12 @@ export function runTool(name: string, args: Record<string, unknown>, ctx: ToolCo
       if (isNum(args.volume)) patch.volume = Math.min(1, Math.max(0, args.volume));
       if (typeof args.mirror === "boolean") patch.mirror = args.mirror;
       if (typeof args.reverse === "boolean") patch.reverse = args.reverse;
+      if (typeof args.effect === "string") {
+        if (args.effect === "none") Object.assign(patch, { effect: undefined, effectStrength: undefined, effectSpeed: undefined });
+        else if (PICTURE_EFFECTS.some((e) => e.id === args.effect)) {
+          Object.assign(patch, { effect: args.effect as PictureEffectId, effectStrength: undefined, effectSpeed: undefined });
+        }
+      }
       if (isNum(args.fade_in)) patch.fadeIn = Math.max(0, args.fade_in);
       if (isNum(args.fade_out)) patch.fadeOut = Math.max(0, args.fade_out);
       if (isNum(args.size)) patch.size = clip!.mediaId ? Math.min(1, Math.max(0.1, args.size)) : Math.min(0.3, Math.max(0.02, args.size));

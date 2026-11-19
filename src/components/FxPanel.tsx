@@ -48,7 +48,7 @@ function pictureAt(project: Project | undefined, time: number): { url: string; i
  * Filters show the current frame at the playhead with each filter's CSS; effects and transitions loop on Craftora's cat.
  */
 /** Effects that look the same in every frame, so they mean something on a still picture. */
-export const STILL_EFFECTS = ["blur", "mirror", "bars", "vignette", "rgb-split"];
+export const STILL_EFFECTS = ["blur", "mirror", "bars", "vignette", "rgb-split", "pixelate", "neon", "soft-glow", "duotone"];
 
 export function FxPanel({
   tab,
