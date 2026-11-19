@@ -4,6 +4,78 @@
   gap: 20px;
 }
 
+.pc-page.is-dragging-org {
+  user-select: none;
+  cursor: grabbing;
+}
+
+.media-library__tabs {
+  position: relative;
+  flex-wrap: wrap;
+}
+
+.media-library__tabs .pc-tab.is-dragging {
+  opacity: 0.45;
+}
+
+.media-library__tabs .pc-tab.is-drop-target {
+  background: var(--accent-wash);
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.media-library__tab-insert {
+  position: absolute;
+  width: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.media-library__tab-rename {
+  height: 24px;
+  width: 120px;
+  padding: 0 6px;
+  margin: 3px 2px;
+  box-sizing: border-box;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+}
+
+.pc-bar__end .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.media-library__list .pcard .thumb img,
+.media-library__list .pcard .thumb video {
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+.media-library__drag-ghost {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  max-width: 220px;
+  padding: 4px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .media-library__gif-actions {
   display: flex;
   flex-wrap: wrap;
