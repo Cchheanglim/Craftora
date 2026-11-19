@@ -179,6 +179,8 @@ export interface RenderClip {
   effectSpeed: number;
   /** Cover the frame instead of fitting inside it. */
   fill: boolean;
+  /** Video/picture: stretched box height / width in frame pixels; the picture's own shape when absent. */
+  aspect?: number;
   fadeIn: number;
   fadeOut: number;
   soundFadeIn: number;

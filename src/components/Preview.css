@@ -117,6 +117,7 @@
 .preview__video {
   position: absolute;
   display: block;
+  object-fit: fill;
 }
 
 .preview__video.is-mirrored {
@@ -193,33 +194,47 @@
   cursor: nwse-resize;
 }
 
-/* Shapes: the middle of each side stretches just that side. */
+/* Shapes, photos and videos: the whole side between corners stretches just that side. */
+.preview__handle.is-n,
+.preview__handle.is-s,
+.preview__handle.is-e,
+.preview__handle.is-w {
+  z-index: 1;
+  overflow: hidden;
+}
+
 .preview__handle.is-n,
 .preview__handle.is-s {
-  left: calc(50% - 5.5px);
+  left: 11px;
+  right: 11px;
+  width: auto;
+  height: 10px;
   cursor: ns-resize;
 }
 
 .preview__handle.is-n {
-  top: 0;
+  top: -5px;
 }
 
 .preview__handle.is-s {
-  bottom: 0;
+  bottom: -5px;
 }
 
 .preview__handle.is-e,
 .preview__handle.is-w {
-  top: calc(50% - 5.5px);
+  top: 11px;
+  bottom: 11px;
+  width: 10px;
+  height: auto;
   cursor: ew-resize;
 }
 
 .preview__handle.is-e {
-  right: 0;
+  right: -5px;
 }
 
 .preview__handle.is-w {
-  left: 0;
+  left: -5px;
 }
 
 /* Shown while the clock waits for a clip to load after a jump. */

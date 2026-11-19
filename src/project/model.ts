@@ -216,7 +216,7 @@ export interface Clip {
   outline?: number;
   /** Star shapes: how many points (5 when absent). */
   points?: number;
-  /** Shape clips: box height / box width in frame pixels (1 when absent). */
+  /** Box height / box width in frame pixels (shapes: 1 when absent; pictures/videos: the picture's own ratio when absent). */
   aspect?: number;
   /** Seconds of fade from black/silence at the start and to black/silence at the end. */
   fadeIn: number;

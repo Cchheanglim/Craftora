@@ -185,6 +185,9 @@ struct ClipSpec {
     /// Cover size × the frame (what spills over is cut off by the frame) instead of fitting inside.
     #[serde(default)]
     fill: bool,
+    /// Stretched box height / width in frame pixels (pictures and videos); the picture's own ratio when absent.
+    #[serde(default)]
+    aspect: Option<f64>,
     /// Seconds of fade in and out (picture from/to transparent, sound from/to silence).
     #[serde(default)]
     fade_in: f64,
@@ -430,11 +433,33 @@ impl ClipSpec {
 
     /// Picture edits, scaling into the frame, and Smooth slow-mo in-between frames.
     fn picture_chain(&self, w: u32, h: u32, fps: u32) -> String {
-        // Fits inside size × the frame (or covers it, with `fill`), keeping its shape.
-        let (bw, bh) = (((w as f64) * self.size).round().max(2.0), ((h as f64) * self.size).round().max(2.0));
-        let fit = if self.fill { "increase" } else { "decrease" };
+        let scale = match self.aspect {
+            Some(a) => {
+                // Stretched box matching Preview `PictureLayer` and `layerBox.ts`, even dimensions for 4:2:0 / filters.
+                let (fw, fh) = (f64::from(w), f64::from(h));
+                let (box_aspect, frame_aspect) = (1.0 / a, fw / fh);
+                let wider = box_aspect >= frame_aspect;
+                let fit_w = if self.fill {
+                    if wider { box_aspect / frame_aspect } else { 1.0 }
+                } else if wider {
+                    1.0
+                } else {
+                    box_aspect / frame_aspect
+                };
+                let even = |v: f64| ((v / 2.0).round() * 2.0).max(2.0);
+                let raw_w = fw * fit_w * self.size;
+                let (sw, sh) = (even(raw_w), even(raw_w * a));
+                format!("scale=w={sw}:h={sh}")
+            }
+            None => {
+                // Fits inside size × the frame (or covers it, with `fill`), keeping its shape.
+                let (bw, bh) = (((w as f64) * self.size).round().max(2.0), ((h as f64) * self.size).round().max(2.0));
+                let fit = if self.fill { "increase" } else { "decrease" };
+                format!("scale=w={bw}:h={bh}:force_original_aspect_ratio={fit}:force_divisible_by=2")
+            }
+        };
         format!(
-            "setpts=PTS-STARTPTS{},scale=w={bw}:h={bh}:force_original_aspect_ratio={fit}:force_divisible_by=2,setsar=1{}{}",
+            "setpts=PTS-STARTPTS{},{scale},setsar=1{}{}",
             self.picture_edits(),
             self.smooth_frames(fps),
             if self.opacity < 1.0 { format!(",format=rgba,colorchannelmixer=aa={:.3}", self.opacity) } else { String::new() }
@@ -671,6 +696,7 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
             || clip.look.len() > MAX_LOOK_STEPS
             || !clip.look.iter().all(|(op, amount)| look_filter(op, *amount).is_some())
             || clip.key.is_some_and(|k| key_filter(k).is_none())
+            || clip.aspect.is_some_and(|a| !a.is_finite() || !(0.05..=5.0).contains(&a))
         {
             return Err("A clip on the timeline has an invalid setting.".into());
         }
@@ -1262,6 +1288,7 @@ fn gpu_picture(spec: &RenderSpec, input_of: &HashMap<usize, (usize, &Source)>, t
         && clip.look.is_empty()
         && clip.effect.is_empty()
         && !clip.fill
+        && clip.aspect.is_none()
         && clip.size == 1.0
         && clip.crop == [0.0; 4]
         && clip.picture_fades().is_empty()
@@ -1575,6 +1602,26 @@ mod tests {
         assert!(gpu_picture(&spec(video), &one, 12.0).is_none());
         let text = r#"{"role":"text","layer":1,"start":0,"in":0,"out":2,"text":"hi"}"#;
         assert!(gpu_picture(&spec(&format!("{video},{text}")), &one, 10.0).is_none());
+        let stretched = r#"{"role":"video","layer":0,"mediaId":"a","start":0,"in":0,"out":10,"aspect":0.5}"#;
+        assert!(gpu_picture(&spec(stretched), &one, 10.0).is_none());
+    }
+
+    #[test]
+    fn scales_to_stretched_box_only_when_aspect_is_set() {
+        let clip = |json: &str| -> ClipSpec { serde_json::from_str(&format!(r#"{{"role":"video","start":0,"in":0,"out":2,{json}}}"#)).unwrap() };
+        // Absent aspect: exact same filter string as before.
+        assert_eq!(
+            clip(r#""size":0.5"#).picture_chain(1920, 1080, 30),
+            "setpts=PTS-STARTPTS,scale=w=960:h=540:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1"
+        );
+        assert_eq!(
+            clip(r#""size":0.5,"fill":true"#).picture_chain(1920, 1080, 30),
+            "setpts=PTS-STARTPTS,scale=w=960:h=540:force_original_aspect_ratio=increase:force_divisible_by=2,setsar=1"
+        );
+        // Set aspect: exact stretched box, no force_original_aspect_ratio.
+        assert_eq!(clip(r#""size":0.5,"aspect":0.5"#).picture_chain(1920, 1080, 30), "setpts=PTS-STARTPTS,scale=w=960:h=480,setsar=1");
+        assert_eq!(clip(r#""size":0.5,"aspect":1.5"#).picture_chain(1920, 1080, 30), "setpts=PTS-STARTPTS,scale=w=360:h=540,setsar=1");
+        assert_eq!(clip(r#""size":0.5,"aspect":0.5,"fill":true"#).picture_chain(1920, 1080, 30), "setpts=PTS-STARTPTS,scale=w=1080:h=540,setsar=1");
     }
 
     #[test]

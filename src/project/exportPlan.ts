@@ -79,6 +79,7 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
     adjustSteps(clip.adjust).length === 0 &&
     !clip.chroma &&
     !clip.fill &&
+    !clip.aspect &&
     clip.size >= 0.999 &&
     clip.start < 0.001;
   return media?.hasVideo && !media.source.image && untouched && onVideoTrack ? { clip, media } : null;
@@ -207,6 +208,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       // A shape's size is drawn into its picture; it may be wider than the frame, which the export's check refuses.
       size: c.shape ? 1 : c.size,
       fill: Boolean(c.fill),
+      aspect: c.shape ? undefined : c.aspect,
       opacity: c.shape ? undefined : c.opacity,
       x: c.x,
       y: c.y,
@@ -262,6 +264,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     project.clips.some(isBlock) && "filters and effects",
     project.clips.some((c) => c.reverse) && "reverse",
     project.clips.some((c) => isCropped(c.crop)) && "crop",
+    project.clips.some((c) => c.mediaId && c.aspect) && "scale",
     project.clips.some((c) => c.speed !== 1) && "setpts, atempo",
     project.clips.some((c) => c.fadeIn || c.fadeOut)
       ? "fade, afade"

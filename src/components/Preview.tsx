@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import type { Frame } from "../types";
 import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, soundFadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
+import { stretchSide } from "../project/layerBox";
 import { newShapeClip, shapeBox, shapeSvg } from "../project/shapes";
 import { motionAt, textMotion } from "../project/textMotion";
 import type { FxItem } from "../project/effects";
@@ -133,7 +134,7 @@ async function captureStagePng(stage: HTMLElement, width: number, height: number
 }
 
 type Corner = "nw" | "ne" | "sw" | "se";
-/** Shapes also stretch from the middle of a side. */
+/** Shapes, photos and videos also stretch from any side. */
 type Edge = "n" | "s" | "e" | "w";
 
 /** A picture-in-picture, shape or text being moved or resized on the preview. */
@@ -145,6 +146,7 @@ interface Gesture {
   stage: DOMRect;
   box: DOMRect;
   size: number;
+  fill: boolean;
   isText: boolean;
   isShape: boolean;
   /** A caption: moves and resizes every caption together. */
@@ -434,31 +436,36 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
       return;
     }
     const free = (total: number, used: number, offset: number) => (total - used <= 0 ? 0.5 : clamp(offset / (total - used), 0, 1));
-    if (g.isShape) {
-      // Shapes stretch freely: a side handle moves that side, a corner both (Shift keeps the shape); the opposite stays.
+    if (g.isShape && !(e.shiftKey && g.mode.length === 2)) {
+      // Shapes stretch freely: a side handle moves that side, a corner both (Shift+corner keeps the shape below); the opposite stays.
       const has = (side: string) => g.mode.includes(side);
-      let width = box.width + (has("w") ? -dx : has("e") ? dx : 0);
-      let height = box.height + (has("n") ? -dy : has("s") ? dy : 0);
-      if (e.shiftKey && g.mode.length === 2) {
-        const k = Math.max(width / box.width, height / box.height);
-        [width, height] = [box.width * k, box.height * k];
-      }
-      width = clamp(width, MIN_SHAPE * stage.width, MAX_SHAPE * stage.width);
-      height = clamp(height, width * MIN_ASPECT, width * MAX_ASPECT);
+      const width = clamp(box.width + (has("w") ? -dx : has("e") ? dx : 0), MIN_SHAPE * stage.width, MAX_SHAPE * stage.width);
+      const height = clamp(box.height + (has("n") ? -dy : has("s") ? dy : 0), width * MIN_ASPECT, width * MAX_ASPECT);
       const left = has("w") ? left0 + box.width - width : left0;
       const top = has("n") ? top0 + box.height - height : top0;
       change({ size: width / stage.width, aspect: height / width, x: free(stage.width, width, left), y: free(stage.height, height, top) });
+      return;
+    }
+    if (g.mode.length === 1) {
+      // Photos and videos: dragging a side stretches only that side, keeping the opposite side put.
+      change(
+        stretchSide(
+          { size: g.size, x: g.x, y: g.y, fill: g.fill },
+          { left: left0, top: top0, width: box.width, height: box.height },
+          g.mode as Edge,
+          g.mode === "e" || g.mode === "w" ? dx : dy,
+          stage.width,
+          stage.height,
+          Boolean(still),
+        ),
+      );
       return;
     }
     // Resize from a corner, keeping the shape and the opposite corner where it is.
     const fromLeft = g.mode === "nw" || g.mode === "sw";
     const fromTop = g.mode === "nw" || g.mode === "ne";
     const scale = (box.width + (fromLeft ? -dx : dx)) / box.width;
-    const size = g.isShape
-      ? clamp(g.size * scale, MIN_SHAPE, MAX_SHAPE)
-      : g.isText
-        ? clamp(g.size * scale, MIN_TEXT, MAX_TEXT)
-        : clamp(g.size * scale, MIN_PICTURE, 1);
+    const size = g.isText ? clamp(g.size * scale, MIN_TEXT, MAX_TEXT) : g.isShape ? clamp(g.size * scale, MIN_SHAPE, MAX_SHAPE) : clamp(g.size * scale, MIN_PICTURE, 1);
     const ratio = size / g.size;
     const width = box.width * ratio;
     const height = box.height * ratio;
@@ -503,6 +510,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
       stage,
       box,
       size: clip.size,
+      fill: Boolean(clip.fill),
       isText: isText(clip),
       isShape: isShape(clip),
       captions,
@@ -551,7 +559,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   }, []);
 
   const handles = (clip: Clip) =>
-    (isShape(clip) ? ["nw", "ne", "sw", "se", "n", "s", "e", "w"] : ["nw", "ne", "sw", "se"]).map((corner) => (
+    (isText(clip) ? ["nw", "ne", "sw", "se"] : ["nw", "ne", "sw", "se", "n", "s", "e", "w"]).map((corner) => (
       <span key={corner} className={`preview__handle is-${corner}`} onPointerDown={beginGesture(clip, corner as Corner | Edge)} aria-hidden="true" />
     ));
 
@@ -1210,7 +1218,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
   // A quarter turn swaps the picture's shape; the crop window turns inside the box (the export: crop, then transpose).
   const rotate = clip.rotate ?? 0;
   const sideways = rotate === 90 || rotate === 270;
-  const aspect = sideways ? 1 / upright : upright;
+  const aspect = clip.aspect ? 1 / clip.aspect : sideways ? 1 / upright : upright;
   const turned: CSSProperties | undefined = rotate
     ? {
         inset: "auto",
