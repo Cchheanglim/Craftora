@@ -5,7 +5,7 @@
 .DESCRIPTION
   Fetches official release builds, verifies their SHA-256 checksums, and places them in
   src-tauri/bin/ as folders bundled as resources: FFmpeg and FFprobe with the libraries they
-  share as bin/ffmpeg, yt-dlp's unpacked build as bin/yt-dlp, Deno, whisper.cpp, the ISNet
+  share as bin/ffmpeg, yt-dlp's unpacked build as bin/yt-dlp, Deno, whisper.cpp, the BiRefNet
   background-removal model in bin/models, and ONNX Runtime + DirectML in bin/onnxruntime. The
   binaries are gitignored; run this once per machine:
 
@@ -194,28 +194,30 @@ if ($engineBuild -and ($Force -or -not (Test-Path $engineTarget))) {
   Set-Content -Path (Join-Path $engineDir "README.txt") -Value "Craftora's fetch engine (craftora-observer.exe) goes here; see scripts/fetch-sidecars.ps1."
 }
 
-# --- Remove background (ISNet model + ONNX Runtime + DirectML) ------------------
+# --- Remove background (BiRefNet model + ONNX Runtime + DirectML) ---------------
 $modelsDir = Join-Path $binDir "models"
-$modelTarget = Join-Path $modelsDir "isnet-general-use.onnx"
-$modelSizeExpected = 178648008
-$modelSha256 = "60920e99c45464f2ba57bee2ad08c919a52bbf852739e96947fbb4358c0d964a"
+Remove-Item (Join-Path $modelsDir "isnet-general-use.onnx") -ErrorAction SilentlyContinue
+$modelFile = "birefnet-lite-fp16.onnx"
+$modelTarget = Join-Path $modelsDir $modelFile
+$modelSizeExpected = 114538221
+$modelSha256 = "d39b897ceb16ae654c1731f3dba0cf9b368d9cae74b5a57459b455cc8bfec402"
 if ($Force -or -not (Test-Path $modelTarget)) {
-  Write-Host "ISNet background-removal model"
+  Write-Host "BiRefNet background-removal model"
   $modelTmpDir = Join-Path $tmp "models"
   if (Test-Path $modelTmpDir) { Remove-Item -Recurse -Force $modelTmpDir }
   New-Item -ItemType Directory -Force -Path $modelTmpDir | Out-Null
-  $modelTmp = Join-Path $modelTmpDir "isnet-general-use.onnx"
-  Get-File "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx" $modelTmp
+  $modelTmp = Join-Path $modelTmpDir $modelFile
+  Get-File "https://huggingface.co/onnx-community/BiRefNet_lite-ONNX/resolve/de15b22ba131738a16dff04aab8bdf8dc32e3ac1/onnx/model_fp16.onnx" $modelTmp
   $modelSizeActual = (Get-Item $modelTmp).Length
   if ($modelSizeActual -ne $modelSizeExpected) {
-    throw "Size mismatch for isnet-general-use.onnx (expected $modelSizeExpected bytes, got $modelSizeActual)"
+    throw "Size mismatch for $modelFile (expected $modelSizeExpected bytes, got $modelSizeActual)"
   }
-  Assert-Sha256 $modelTmp $modelSha256 "isnet-general-use.onnx"
+  Assert-Sha256 $modelTmp $modelSha256 $modelFile
   New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
   Move-Item $modelTmp $modelTarget -Force
   Remove-Item -Recurse -Force $modelTmpDir -ErrorAction SilentlyContinue
 } else {
-  Write-Host "ISNet model already present (use -Force to replace)"
+  Write-Host "BiRefNet model already present (use -Force to replace)"
 }
 
 $ortVersion = "1.24.4"

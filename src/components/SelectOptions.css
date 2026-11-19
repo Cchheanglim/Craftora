@@ -1,0 +1,9 @@
+/* Options bar extras for the Image editor's selection tools; the rest reuses PaintOptions.css. */
+
+.btn.select-opts__btn {
+  height: 22px;
+  min-height: 0;
+  padding: 0 8px;
+  flex: none;
+  font-size: 11px;
+}

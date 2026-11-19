@@ -1,8 +1,9 @@
 /**
- * Remove background (Background tab): an AI model (cutout.rs) finds a photo's subject and everything else turns
- * see-through. It runs in this window, on the graphics card when it can (WebGPU), else on the processor. The maths is
- * rembg's for this model: the photo stretched to 1024 × 1024, its values over its brightest one, minus 0.5; the mask's
- * lowest..highest spread over 0..1, then stretched back to the photo's own size.
+ * Remove background (Background tab): an AI model (BiRefNet lite fp16, ~115 MB, usually run offline in cutout.rs)
+ * finds a photo's subject and everything else turns see-through. The in-page fallback runs in this window, on the
+ * graphics card when it can (WebGPU), else on the processor. The maths: the photo resized to 1024 × 1024, ImageNet-
+ * normalised `(pixel / 255 - mean) / std`; logits passed through sigmoid, spread over 0..1, then stretched back to
+ * the photo's own size.
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -13,6 +14,8 @@ import wasm from "../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded
 import mjs from "../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs?url";
 
 const SIZE = 1024;
+const MEAN = [0.485, 0.456, 0.406];
+const STD = [0.229, 0.224, 0.225];
 let session: Promise<InferenceSession> | undefined;
 
 const canvas = (width: number, height: number) => Object.assign(document.createElement("canvas"), { width, height });
@@ -29,7 +32,7 @@ function picture(src: string): Promise<HTMLImageElement> {
 /** Cuts the subject out of the picture at `path` (a file opened in Craftora); `onStatus` says what's happening. Returns
  * the PNG's path on this PC. */
 export async function removeBackground(path: string, onStatus: (text: string) => void): Promise<string> {
-  onStatus("Finding the subject…");
+  onStatus("Removing the background… this can take up to 20 seconds");
   // A project reopened after a restart hasn't let this file be read yet.
   await allowLocal(path);
   try {
@@ -43,7 +46,7 @@ export async function removeBackground(path: string, onStatus: (text: string) =>
   ort.env.wasm.wasmPaths = { wasm, mjs };
   session ??= (async () => {
     onStatus("Getting the AI model ready…");
-    const stop = await listen<{ percent: number }>("cutout-progress", (e) => onStatus(`Getting the cut-out tool (170 MB, once)… ${e.payload.percent}%`));
+    const stop = await listen<{ percent: number }>("cutout-progress", (e) => onStatus(`Getting the cut-out tool (115 MB, once)… ${e.payload.percent}%`));
     const model = new Uint8Array(await invoke<ArrayBuffer>("cutout_model").finally(stop));
     onStatus("Starting the AI…");
     return ort.InferenceSession.create(model, { executionProviders: "gpu" in navigator ? ["webgpu", "wasm"] : ["wasm"] });
@@ -53,7 +56,7 @@ export async function removeBackground(path: string, onStatus: (text: string) =>
     throw err;
   });
 
-  onStatus("Removing the background…");
+  onStatus("Removing the background… this can take up to 20 seconds");
   // A project reopened after a restart hasn't let this file be read yet.
   await allowLocal(path);
   const bytes = await invoke<ArrayBuffer>("cutout_source", { path });
@@ -62,19 +65,29 @@ export async function removeBackground(path: string, onStatus: (text: string) =>
   const [w, h] = [img.naturalWidth, img.naturalHeight];
   const small = canvas(SIZE, SIZE);
   const ctx = small.getContext("2d", { willReadFrequently: true })!;
+  ctx.imageSmoothingQuality = "high";
   ctx.drawImage(img, 0, 0, SIZE, SIZE);
   const px = ctx.getImageData(0, 0, SIZE, SIZE).data;
-  let brightest = 1e-6;
-  for (let i = 0; i < px.length; i += 4) brightest = Math.max(brightest, px[i], px[i + 1], px[i + 2]);
   const plane = SIZE * SIZE;
   const input = new Float32Array(3 * plane);
-  for (let p = 0; p < plane; p++) for (let c = 0; c < 3; c++) input[c * plane + p] = px[p * 4 + c] / brightest - 0.5;
+  for (let p = 0; p < plane; p++) {
+    for (let c = 0; c < 3; c++) {
+      input[c * plane + p] = (px[p * 4 + c] / 255 - MEAN[c]) / STD[c];
+    }
+  }
   const out = await ai.run({ [ai.inputNames[0]]: new ort.Tensor("float32", input, [1, 3, SIZE, SIZE]) });
   const pred = out[ai.outputNames[0]].data as Float32Array;
+  const prob = new Float32Array(plane);
   let [lo, hi] = [Infinity, -Infinity];
-  for (let i = 0; i < plane; i++) [lo, hi] = [Math.min(lo, pred[i]), Math.max(hi, pred[i])];
+  for (let i = 0; i < plane; i++) {
+    const s = 1 / (1 + Math.exp(-pred[i]));
+    prob[i] = s;
+    if (s < lo) lo = s;
+    if (s > hi) hi = s;
+  }
+  const span = hi - lo || 1;
   const mask = ctx.createImageData(SIZE, SIZE);
-  for (let i = 0; i < plane; i++) mask.data[i * 4 + 3] = Math.round(((pred[i] - lo) / (hi - lo || 1)) * 255);
+  for (let i = 0; i < plane; i++) mask.data[i * 4 + 3] = Math.round(((prob[i] - lo) / span) * 255);
   ctx.putImageData(mask, 0, 0);
 
   // The photo at its own size, kept only where the mask is.

@@ -309,7 +309,8 @@ export function TimelineEditor({
   }, []);
 
   // Zoomed all the way out, the whole edit fits however long it is (a 2-hour video too).
-  const minPps = Math.min(MIN_PPS, (viewWidth - 40) / Math.max(duration * 1.5, 15));
+  // Above 0 even before the lanes are measured (width 0), or the zoom slider's log reads NaN.
+  const minPps = Math.max(0.01, Math.min(MIN_PPS, (viewWidth - 40) / Math.max(duration * 1.5, 15)));
   // Fit: the whole edit fills the lanes (a little room after its end), scrolled back to its start.
   const fitPps = Math.min(MAX_PPS, Math.max(minPps, (viewWidth - 24) / Math.max(duration, 1)));
   const fit = () => {
