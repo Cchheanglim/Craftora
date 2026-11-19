@@ -211,6 +211,29 @@ export async function composeCanvas(project: Project, options: Pick<ComposeOptio
   return canvas;
 }
 
+let lastThumbnail: { project: Project; longSide: number; promise: Promise<string | undefined> } | undefined;
+
+/** Small WebP preview of the composed picture (never upscaled; `undefined` when blank or unreadable). */
+export async function composeThumbnail(project: Project, longSide = 480): Promise<string | undefined> {
+  if (!project.image || project.clips.length === 0) return undefined;
+  if (lastThumbnail?.project === project && lastThumbnail.longSide === longSide) return lastThumbnail.promise;
+  const promise = (async () => {
+    try {
+      const max = Math.max(project.image!.width, project.image!.height);
+      if (max <= 0) return undefined;
+      const scale = Math.min(1, longSide / max);
+      const width = Math.max(1, Math.round(project.image!.width * scale));
+      const height = Math.max(1, Math.round(project.image!.height * scale));
+      const canvas = await composeCanvas(project, { width, height });
+      return canvas.toDataURL("image/webp", 0.8);
+    } catch {
+      return undefined;
+    }
+  })();
+  lastThumbnail = { project, longSide, promise };
+  return promise;
+}
+
 /** Every layer from the bottom of the Layers list up. */
 async function drawLayers(project: Project, ctx: CanvasRenderingContext2D, W: number, H: number) {
   // The Layers order, as the preview stacks them (z-index): bottom track first; on a track, later clips over earlier ones.

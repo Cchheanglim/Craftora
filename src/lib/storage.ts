@@ -5,7 +5,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import type { Job } from "../types";
-import type { Project } from "../project/model";
+import { isWorkingFile, type Project } from "../project/model";
 import { errorText, inDesktopApp } from "./engine";
 
 /** What the project list shows. */
@@ -133,7 +133,7 @@ export interface LibraryEntry {
 const MEDIA_LIBRARY = "craftora.mediaLibrary";
 /** About 15 kB each with a picture, so the list stays far below what the window's storage holds. */
 export const LIBRARY_LIMIT = 300;
-export const loadMediaLibrary = (): LibraryEntry[] => browserRead<LibraryEntry[]>(MEDIA_LIBRARY, []);
+export const loadMediaLibrary = (): LibraryEntry[] => browserRead<LibraryEntry[]>(MEDIA_LIBRARY, []).filter((e) => !isWorkingFile(e.path));
 export const saveMediaLibrary = (entries: LibraryEntry[]) => browserWrite(MEDIA_LIBRARY, entries);
 
 /** Downloads not finished when Craftora closed, so they wait in the queue next time (their parts stay on disk). */

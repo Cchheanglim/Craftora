@@ -167,7 +167,7 @@
 
 .tl__head svg {
   flex-shrink: 0;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 /* Cover, on the main track: its picture, or an icon. */

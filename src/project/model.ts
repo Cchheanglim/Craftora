@@ -876,6 +876,9 @@ export function silencesFromPeaks(media: MediaItem, start: number, end: number):
 }
 
 
+/** Craftora's own working files (cut-outs and paint strokes in AppData), never shown in the Media library. */
+export const isWorkingFile = (path: string) => /com\.cchheanglim\.craftora[\\/]cutouts[\\/]/i.test(path);
+
 /**
  * `entries` with every file on this PC in `media` added (newest first) or its picture filled in;
  * past `limit` the oldest unstarred ones drop off. The same array when nothing changed.
@@ -884,8 +887,8 @@ export function withImported(entries: LibraryEntry[], media: MediaItem[], limit:
   const next = [...entries];
   let changed = false;
   for (const m of media) {
-    if (!m.source.local || m.source.live || m.missing) continue;
     const path = m.source.url;
+    if (!m.source.local || m.source.live || m.missing || isWorkingFile(path)) continue;
     const thumbnail = m.source.thumbnail?.startsWith("data:") ? m.source.thumbnail : undefined;
     const at = next.findIndex((e) => e.path === path);
     if (at >= 0) {

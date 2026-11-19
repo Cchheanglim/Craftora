@@ -147,7 +147,7 @@ import { ColourSquares } from "./components/ColourSquares";
 import { PaintOptions } from "./components/PaintOptions";
 import { SelectOptions } from "./components/SelectOptions";
 import { SelectModifyDialog, type ModifyKind } from "./components/SelectModifyDialog";
-import { composeCanvas, composeImage, photo } from "./lib/compose";
+import { composeCanvas, composeImage, composeThumbnail, photo } from "./lib/compose";
 import { blankMask, clipMaskBox, cutoutMask, greyHex, greysOf, lumaToAlpha, maskAffine, remapMask } from "./lib/mask";
 import { DocumentSummary, ImageSizePanel } from "./components/ImageSizePanel";
 import { ImageOptions } from "./components/ImageOptions";
@@ -341,11 +341,6 @@ const isTyping = (el: EventTarget | null) =>
   el instanceof HTMLElement && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
 
 
-/** The project's picture for lists: the first media that has one. */
-/**
- * The project's picture for lists (Projects, Home, Exports): one kept in the app (a data URL) or a
- * website's picture. Not a file's preview address: it stops working once Craftora restarts.
- */
 /** What the project list shows of a project, saved beside it. */
 const projectEntry = (id: string, project: Project): ProjectEntry => ({
   id,
@@ -641,9 +636,11 @@ export default function App() {
   const pendingSave = useRef<(() => void) | undefined>(undefined);
   useEffect(() => {
     if (project.media.length === 0 && project.clips.length === 0) return;
-    const save = () => {
+    const save = async () => {
       pendingSave.current = undefined;
-      const entry = projectEntry(projectId, project);
+      const base = projectEntry(projectId, project);
+      const thumbnail = project.image && !project.cover ? (await composeThumbnail(project)) ?? base.thumbnail : base.thumbnail;
+      const entry = { ...base, thumbnail };
       saveProject({ ...entry, version: 1, project })
         .then(() => setProjects((list) => [entry, ...list.filter((p) => p.id !== entry.id)]))
         .catch((err) => setError(`Couldn't save the project: ${errorText(err)}`));
@@ -2080,8 +2077,10 @@ export default function App() {
   };
 
   /** Queues `plan`, an export of `source` (the timeline, or one clip of it: Export this clip). */
-  const queueExport = (plan: ExportPlan, source: Project) => {
+  const queueExport = async (plan: ExportPlan, source: Project) => {
     if (plan.kind === "empty") return;
+    // A picture's card shows the picture (usually ready already: autosave made it for this project).
+    const thumbnail = (source.image && !source.cover && (await composeThumbnail(source))) || coverOf(source);
     const id = crypto.randomUUID();
     // An edited video renders links from whole downloads (or copies in progress), which go on where
     // they were after a pause, and then the editor plays the files instead of streaming the links.
@@ -2116,7 +2115,7 @@ export default function App() {
           ? composeImage(source, { width: plan.spec.width, height: plan.spec.height, transparent: plan.spec.transparent, type: plan.spec.container === "jpg" ? "image/jpeg" : plan.spec.container === "webp" ? "image/webp" : "image/png", quality: plan.spec.imageQuality })
           : undefined,
       after: after.length ? after : undefined,
-      thumbnail: coverOf(source),
+      thumbnail,
     };
     queue.add(job);
     setFreshId(id);
@@ -3114,7 +3113,21 @@ export default function App() {
         <aside className="export" aria-label="Clip settings">
           <div className="export__body is-edit">
           {/* The Image editor's Document block says it with nothing picked. */}
-          {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} still={imageMode} /> : !imageMode && <p className="export__hint">Click a clip on the timeline to change it here.</p>)}
+          {!selected && selectedId !== SHOWN_CAPTIONS && (rightTab === "text" ? <AddText onAdd={addText} still={imageMode} /> : !imageMode && (
+            <div className="panel-empty">
+              <Icon name="pointer" size={28} />
+              <h3>Nothing picked</h3>
+              <p>Click a clip on the timeline to change it here.</p>
+              <dl>
+                <dt>Frame</dt>
+                <dd>{frameOf(effective).label.split(" (")[0]}</dd>
+                <dt>Length</dt>
+                <dd>{formatClock(duration)}</dd>
+                <dt>Clips</dt>
+                <dd>{project.clips.length}</dd>
+              </dl>
+            </div>
+          ))}
           {/* Nothing picked in the Image editor: the picture's own size and background. */}
           {imageMode && !selected && rightTab !== "text" && <DocumentSummary project={project} api={api} onCanvasSize={() => setImageTool("size")} />}
           {rightTab === "edit" && (selectedId === SHOWN_CAPTIONS || selectedTrack?.name === "Captions") && (
