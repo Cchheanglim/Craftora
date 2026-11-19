@@ -68,6 +68,9 @@ struct MediaSpec {
     /// A still picture, shown for as long as its clips last.
     #[serde(default)]
     image: bool,
+    /// Animated GIF: its loop length in seconds.
+    #[serde(default)]
+    animated: Option<f64>,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq)]
@@ -839,9 +842,25 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
 struct Source {
     path: PathBuf,
     image: bool,
+    animated: Option<f64>,
     /// Downloaded sections start at the section's beginning, not at 0.
     offset: f64,
     info: ProbeInfo,
+}
+
+/// FFmpeg input flags before and including `-i` for one clip.
+fn clip_input_args(clip: &ClipSpec, source: &Source, fps: u32) -> Vec<String> {
+    let mut args = if source.animated.is_some() {
+        vec!["-ignore_loop".into(), "0".into(), "-t".into(), secs(clip.length())]
+    } else if source.image {
+        // One picture, repeated at the frame rate for as long as the clip lasts.
+        vec!["-loop".into(), "1".into(), "-framerate".into(), fps.to_string(), "-t".into(), secs(clip.length())]
+    } else {
+        let from = (clip.in_point - source.offset).max(0.0);
+        vec!["-ss".into(), secs(from), "-t".into(), secs(clip.out - clip.in_point)]
+    };
+    args.extend(["-i".into(), source.path.to_string_lossy().into_owned()]);
+    args
 }
 
 /// Available physical memory in bytes, so Smooth slow-mo doesn't start more FFmpeg processes
@@ -944,7 +963,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
             (download(app, &spec.id, &request, work, &format!("media-{n}")).await?, from)
         };
         let info = probe(app, &path).await?;
-        sources.insert(media.id.as_str(), Source { path, offset, info, image: media.image });
+        sources.insert(media.id.as_str(), Source { path, offset, info, image: media.image, animated: media.animated });
     }
 
     // Pre-render each Smooth slow-mo video clip in up to 4 pieces side by side.
@@ -1065,14 +1084,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
     for (i, clip) in spec.clips.iter().enumerate() {
         let Some(source) = clip.media_id.as_deref().and_then(|id| sources.get(id)) else { continue };
         input_at.insert(i, inputs.len());
-        if source.image {
-            // One picture, repeated at the frame rate for as long as the clip lasts.
-            inputs.extend(["-loop".into(), "1".into(), "-framerate".into(), fps.to_string(), "-t".into(), secs(clip.length())]);
-        } else {
-            let from = (clip.in_point - source.offset).max(0.0);
-            inputs.extend(["-ss".into(), secs(from), "-t".into(), secs(clip.out - clip.in_point)]);
-        }
-        inputs.extend(["-i".into(), source.path.to_string_lossy().into_owned()]);
+        inputs.extend(clip_input_args(clip, source, fps));
         input_of.insert(i, (next_input, source));
         next_input += 1;
         if smoothed.contains(&i) {
@@ -1808,9 +1820,22 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cover_bytes, effect_filter, frame_step, gpu_picture, jpg_q, key_filter, lerp, look_filter, piece_frames, pieces, timed, ClipSpec, Motion, RenderSpec, Source, TransitionKind};
+    use super::{clip_input_args, cover_bytes, effect_filter, frame_step, gpu_picture, jpg_q, key_filter, lerp, look_filter, piece_frames, pieces, timed, ClipSpec, Motion, RenderSpec, Source, TransitionKind};
     use crate::local::ProbeInfo;
     use std::collections::HashMap;
+
+    #[test]
+    fn animated_gif_loops_with_ignore_loop_and_plain_photo_uses_loop_1() {
+        let clip: ClipSpec = serde_json::from_str(r#"{"role":"video","start":0,"in":0,"out":4.5}"#).unwrap();
+        let info = || ProbeInfo { has_video: true, has_audio: false, fps: Some(10.0), turned: false };
+        let gif = Source { path: "cat.gif".into(), image: true, animated: Some(1.5), offset: 0.0, info: info() };
+        let gif_args = clip_input_args(&clip, &gif, 30);
+        assert_eq!(gif_args, ["-ignore_loop", "0", "-t", "4.500", "-i", "cat.gif"]);
+        assert!(!gif_args.contains(&"-loop".to_string()));
+
+        let photo = Source { path: "cat.png".into(), image: true, animated: None, offset: 0.0, info: info() };
+        assert_eq!(clip_input_args(&clip, &photo, 30), ["-loop", "1", "-framerate", "30", "-t", "4.500", "-i", "cat.png"]);
+    }
 
     #[test]
     fn jpg_quality_maps_onto_ffmpeg_q() {
@@ -1840,7 +1865,7 @@ mod tests {
         let spec = |clips: &str| -> RenderSpec {
             serde_json::from_str(&format!(r#"{{"id":"t","media":[],"clips":[{clips}],"width":1920,"height":1080,"fps":30,"output":"video","container":"mp4","fileName":"x"}}"#)).unwrap()
         };
-        let source = |turned| Source { path: "a.mp4".into(), image: false, offset: 0.0, info: ProbeInfo { has_video: true, has_audio: true, fps: Some(25.0), turned } };
+        let source = |turned| Source { path: "a.mp4".into(), image: false, animated: None, offset: 0.0, info: ProbeInfo { has_video: true, has_audio: true, fps: Some(25.0), turned } };
         let (plain, phone) = (source(false), source(true));
         let video = r#"{"role":"video","layer":0,"mediaId":"a","start":0,"in":0,"out":10,"mirror":true}"#;
         let one = HashMap::from([(0, (0, &plain))]);

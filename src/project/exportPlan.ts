@@ -230,6 +230,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       id: m.id,
       local: Boolean(m.source.local),
       image: Boolean(m.source.image),
+      animated: m.source.animated,
       src: m.source.url,
       format: m.source.local ? "" : pictureNeeded ? m.videoFormat : m.audioFormat,
     };

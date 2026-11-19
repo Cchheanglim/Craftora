@@ -42,6 +42,8 @@ export interface MediaSource {
   previewProxy?: "audio" | "video" | "";
   /** A still picture (PNG, JPEG…): no sound, shown for as long as its clip lasts. */
   image?: boolean;
+  /** Animated GIF: its loop length in seconds; repeats from its first frame for as long as its clip lasts. */
+  animated?: number;
   /** A small picture: the site's picture for a link, or a JPEG data URL of a file's first frame. */
   thumbnail?: string;
   /** Links: the site's other pictures for the video, best first, tried when `thumbnail` won't load. */
@@ -120,7 +122,7 @@ export interface RenderSpec {
   id: string;
   /** Video files: the cover picture (a JPEG data URL), built in as the file's cover. */
   cover?: string;
-  media: { id: string; local: boolean; image: boolean; src: string; format: string }[];
+  media: { id: string; local: boolean; image: boolean; animated?: number; src: string; format: string }[];
   clips: RenderClip[];
   width: number;
   height: number;

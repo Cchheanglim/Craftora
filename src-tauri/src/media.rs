@@ -146,6 +146,9 @@ pub struct MediaSource {
     pub(crate) preview_proxy: &'static str,
     /// A still picture (PNG, JPEG…) rather than a video; it can be shown for any length.
     pub(crate) image: bool,
+    /// Animated GIF: its loop length in seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) animated: Option<f64>,
     /// Links: the site's picture for the video; empty when there is none.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub(crate) thumbnail: String,
@@ -605,6 +608,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>, engin
             preview_hls: false,
             preview_proxy: "",
             image: false,
+            animated: None,
             thumbnail: info.thumbnail.unwrap_or_default(),
             thumbnails,
             chapters: Vec::new(),
@@ -725,6 +729,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>, engin
         preview_hls,
         preview_proxy: "",
         image: false,
+        animated: None,
         thumbnail: info.thumbnail.unwrap_or_default(),
         thumbnails,
         chapters: info
