@@ -122,12 +122,30 @@ import { MediaPanel, type Tab as MediaTab } from "./components/MediaPanel";
 import { LayersPanel, layerName } from "./components/LayersPanel";
 import { CommandBox, type Command } from "./components/CommandBox";
 import { removeBackground, savePicture } from "./lib/cutout";
-import { BRUSH_MAX, BRUSH_MIN, COLOURS_START, PAINT_START, PAINT_TOOLS, invert, photoToImage, type PaintColours, type PaintTool } from "./lib/paint";
+import { BRUSH_MAX, BRUSH_MIN, COLOURS_START, PAINT_START, PAINT_TOOLS, invert, multiply, photoToImage, type PaintColours, type PaintTool } from "./lib/paint";
+import {
+  SELECT_START,
+  SELECT_TOOLS,
+  combine,
+  expandSelection,
+  featherSelection,
+  gridOf,
+  invertSelection,
+  keepTo,
+  selectAll,
+  selectionFromAlpha,
+  selectionInLayer,
+  selectionMask,
+  wandSelection,
+  type Selection,
+  type SelectMode,
+  type SelectTool,
+} from "./lib/selection";
 import { pngOf, type Painting } from "./components/PaintSurface";
 import { ColourSquares } from "./components/ColourSquares";
 import { PaintOptions } from "./components/PaintOptions";
-import { composeImage, photo } from "./lib/compose";
-import { blankMask, clipMaskBox, cutoutMask, greysOf, lumaToAlpha, remapMask } from "./lib/mask";
+import { composeCanvas, composeImage, photo } from "./lib/compose";
+import { blankMask, clipMaskBox, cutoutMask, greyHex, greysOf, lumaToAlpha, maskAffine, remapMask } from "./lib/mask";
 import { DocumentSummary, ImageSizePanel } from "./components/ImageSizePanel";
 import { ImageOptions } from "./components/ImageOptions";
 import { NewImageDialog } from "./components/NewImageDialog";
@@ -192,6 +210,11 @@ const PANEL_TABS: { id: "edit" | "transcript" | "assistant" | (typeof CLIP_TABS)
 const IMAGE_TOOLS: ImageTool[] = [
   { id: "move", label: "Move", icon: "pointer", hint: "Move and resize layers", group: "select", key: "V" },
   { id: "hand", label: "Hand", icon: "hand", hint: "Move around the picture", group: "select", key: "H" },
+  { id: "marquee", label: "Rectangle select", icon: "marquee", hint: "Drag to select a box", group: "select", key: "M" },
+  { id: "ellipse", label: "Ellipse select", icon: "ellipse", hint: "Drag to select an oval", group: "select", key: "Shift+M" },
+  { id: "lasso", label: "Lasso", icon: "lasso", hint: "Draw around what to select", group: "select", key: "L" },
+  { id: "polygon", label: "Polygon lasso", icon: "polygon", hint: "Click corners; double-click to close", group: "select", key: "Shift+L" },
+  { id: "wand", label: "Magic wand", icon: "wand", hint: "Click a colour to select it", group: "select", key: "W" },
   { id: "text", label: "Text", icon: "text", hint: "Add and edit text", group: "content", key: "T" },
   { id: "shapes", label: "Shapes", icon: "star", hint: "Add stars, arrows and other shapes", group: "content", key: "U" },
   { id: "media", label: "Photos", icon: "image", hint: "Add photos from this PC as layers", group: "content" },
@@ -399,6 +422,19 @@ export default function App() {
   // The painting tools' settings and the foreground/background colours (for this session).
   const [paintSettings, setPaintSettings] = useState(PAINT_START);
   const [paintColours, setPaintColours] = useState(COLOURS_START);
+  // Image editor selection (marquee, lasso, wand…): what painting, Delete, Fill and new masks act on. Not saved.
+  // shortcut: selection changes aren't undo steps (Reselect brings the last one back); put them in history if asked.
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [selectSettings, setSelectSettings] = useState(SELECT_START);
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const lastSelection = useRef<Selection | null>(null);
+  const changeSelection = (next: Selection | null) => {
+    if (selectionRef.current) lastSelection.current = selectionRef.current;
+    selectionRef.current = next;
+    setSelection(next);
+  };
+  const [selectNote, setSelectNote] = useState("");
   /** The do-anything box asked to remove this layer's background: its Cut out tab starts it. */
   const [cutRequest, setCutRequest] = useState<string | null>(null);
   // Image editor → Select → Colour range…: Remove a colour in its own panel, apart from Remove background (owner: like Photoshop).
@@ -531,6 +567,12 @@ export default function App() {
     }
   }, [imageMode]);
   const paintTool = imageMode && PAINT_TOOLS.includes(imageTool) ? (imageTool as PaintTool) : null;
+  const selectTool = imageMode && SELECT_TOOLS.includes(imageTool) ? (imageTool as SelectTool) : null;
+  // Another picture, or this one resized: the old selection doesn't fit it.
+  useEffect(() => {
+    lastSelection.current = null;
+    setSelection(null);
+  }, [projectId, project.image?.width, project.image?.height]);
   const imageView = useImageView(project.image ?? NO_IMAGE);
   const duration = projectDuration(project);
   const playback = usePlayback(duration);
@@ -2102,6 +2144,8 @@ export default function App() {
     if (isTyping(e.target) || !inEditor) return;
     if (ctrl && key === "z" && !e.shiftKey) return (e.preventDefault(), api.undo());
     if (ctrl && (key === "y" || (key === "z" && e.shiftKey))) return (e.preventDefault(), api.redo());
+    // Image editor selections, with photo editors' keys.
+    if (imageMode && selectionKeys(e, ctrl, key)) return e.preventDefault();
     if (ctrl && key === "d") return (e.preventDefault(), duplicate());
     // Image editor, as in photo editors: Ctrl+J copies the layer (onto its own layer), Ctrl+] / Ctrl+[ move it up / down.
     if (ctrl && imageMode && key === "j") return (e.preventDefault(), duplicate());
@@ -2134,6 +2178,9 @@ export default function App() {
       v: () => imageMode && setImageTool("move"),
       h: () => imageMode && setImageTool("hand"),
       u: () => imageMode && setImageTool("shapes"),
+      m: () => imageMode && setImageTool(e.shiftKey ? "ellipse" : "marquee"),
+      l: () => imageMode && setImageTool(e.shiftKey ? "polygon" : "lasso"),
+      w: () => imageMode && setImageTool("wand"),
       // The painting tools and their colours, with photo editors' keys.
       b: () => imageMode && inDesktopApp && setImageTool("brush"),
       e: () => imageMode && inDesktopApp && setImageTool("eraser"),
@@ -3184,7 +3231,7 @@ export default function App() {
             options={imageOptions}
             doc={{ name: project.media.length ? projectName(project) : "Untitled image", ...project.image }}
             // The Text tool has no panel: a click on the picture types (its styles are in the top bar and the Text tab).
-            flyout={imageTool !== "move" && imageTool !== "hand" && imageTool !== "text" && !paintTool ? mediaPanel(imageTool as MediaTab) : null}
+            flyout={imageTool !== "move" && imageTool !== "hand" && imageTool !== "text" && !paintTool && !selectTool ? mediaPanel(imageTool as MediaTab) : null}
             colours={<ColourSquares colours={paintColours} onChange={changeColours} />}
             canvas={preview}
             view={imageView}

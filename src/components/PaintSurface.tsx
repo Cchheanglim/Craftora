@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { composeCanvas, photo } from "../lib/compose";
 import { clipMaskBox, greyHex, maskAffine } from "../lib/mask";
 import { apply, dabSpacing, dabsAlong, floodMask, hexOf, photoToImage, invert, rgbOf, scaleOf, tipStops, type Affine, type PaintColours, type PaintSettings, type PaintTool } from "../lib/paint";
+import { keepTo, selectionInLayer, type Selection } from "../lib/selection";
 import type { Clip, Project } from "../project/model";
 
 /** What the Image editor paints with and where (Preview's `painting`); App keeps the settings and saves the results. */
@@ -13,6 +14,8 @@ export interface Painting {
   clipId: string | null;
   /** True when painting into `clipId`'s layer mask instead of its pixels. */
   mask?: boolean;
+  /** Paint lands only inside it (none = everywhere). */
+  selection?: Selection | null;
   /** Adds an empty layer the picture's size and picks it; its clip id. */
   onNewLayer: () => Promise<string>;
   /** Layer `clipId` now looks like `png`: saves it and swaps the layer's photo (one undo step); the file's path. */
@@ -58,6 +61,9 @@ interface Session {
   last?: Pt;
   carry: number;
   dirty?: [number, number, number, number];
+  /** The selection in the layer's pixels, and a canvas to keep the brush's dabs to it. */
+  keep?: HTMLCanvasElement;
+  kept?: HTMLCanvasElement;
 }
 
 interface Op {
@@ -377,9 +383,19 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
     const ctx = s.live.getContext("2d")!;
     ctx.clearRect(x0, y0, w, h);
     ctx.drawImage(s.base, x0, y0, w, h, x0, y0, w, h);
+    let dabs = s.dabs!;
+    if (s.keep) {
+      dabs = s.kept ??= canvasOf(s.base.width, s.base.height)[0];
+      const k = dabs.getContext("2d")!;
+      k.clearRect(x0, y0, w, h);
+      k.drawImage(s.dabs!, x0, y0, w, h, x0, y0, w, h);
+      k.globalCompositeOperation = "destination-in";
+      k.drawImage(s.keep, x0, y0, w, h, x0, y0, w, h);
+      k.globalCompositeOperation = "source-over";
+    }
     ctx.globalAlpha = opacity;
     ctx.globalCompositeOperation = !s.mask && tool === "eraser" ? "destination-out" : "source-over";
-    ctx.drawImage(s.dabs!, x0, y0, w, h, x0, y0, w, h);
+    ctx.drawImage(dabs, x0, y0, w, h, x0, y0, w, h);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
     if (s.mask) pushLiveMask(s);
@@ -410,7 +426,7 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
     pctx.putImageData(pixels, 0, 0);
     const ctx = s.live.getContext("2d")!;
     ctx.globalAlpha = settings.bucket.opacity;
-    ctx.drawImage(paint, 0, 0);
+    ctx.drawImage(keepTo(paint, s.keep), 0, 0);
     ctx.globalAlpha = 1;
     return true;
   };
@@ -419,22 +435,26 @@ export function PaintSurface({ painting, project, width: W, height: H, onLive }:
   const gradient = (s: Session, a: Pt, b: Pt) => {
     const { colours, settings } = now.current.painting;
     const [p, q] = [apply(s.toLayer, a), apply(s.toLayer, b)];
-    const ctx = s.live.getContext("2d")!;
+    const [paint, ctx] = canvasOf(s.live.width, s.live.height);
     const g = settings.gradient.kind === "radial" ? ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], Math.hypot(q[0] - p[0], q[1] - p[1])) : ctx.createLinearGradient(p[0], p[1], q[0], q[1]);
     const fg = s.mask ? greyHex(colours.fg) : colours.fg;
     const bg = s.mask ? greyHex(colours.bg) : colours.bg;
     const [r, gr, bl] = rgbOf(fg);
     g.addColorStop(0, fg);
     g.addColorStop(1, settings.gradient.to === "clear" ? `rgba(${r},${gr},${bl},0)` : bg);
-    ctx.globalAlpha = settings.gradient.opacity;
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, s.live.width, s.live.height);
-    ctx.globalAlpha = 1;
+    const live = s.live.getContext("2d")!;
+    live.globalAlpha = settings.gradient.opacity;
+    live.drawImage(keepTo(paint, s.keep), 0, 0);
+    live.globalAlpha = 1;
   };
 
   /** The layer's pixels arrived: catch up with the pointer, and finish if it already let go. */
   const ready = (o: Op, s: Session) => {
     o.session = s;
+    const { selection } = now.current.painting;
+    if (selection) s.keep = selectionInLayer(selection, W, H, s.toLayer, s.base.width, s.base.height);
     if (o.tool === "brush" || o.tool === "eraser") {
       const { size, hardness, flow } = now.current.painting.settings[o.tool];
       s.width = Math.max(1, size * scaleOf(s.toLayer));

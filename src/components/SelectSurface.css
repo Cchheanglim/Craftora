@@ -1,0 +1,47 @@
+/* The selection's marching ants (SelectSurface.tsx): a white line under black dashes, seen on light and dark. */
+.select-surface__outline,
+.select-surface__live {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* Just under the painting tools' surface (100000), so the ants also show while painting. */
+.select-surface__outline {
+  z-index: 99998;
+}
+
+.select-surface__line,
+.select-surface__ants {
+  fill: none;
+  stroke-width: 1px;
+  shape-rendering: crispEdges;
+}
+
+.select-surface__line {
+  stroke: #fff;
+}
+
+.select-surface__ants {
+  stroke: #000;
+  stroke-dasharray: 4px 4px;
+  animation: select-surface-ants 0.5s linear infinite;
+}
+
+@keyframes select-surface-ants {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .select-surface__ants {
+    animation: none;
+  }
+}
