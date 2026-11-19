@@ -773,6 +773,17 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           {overlays.filter(active).map((clip) => {
             const isSelected = clip.id === selectedId;
             const viewingMask = viewingMaskClip?.id === clip.id;
+            const m = mix(clip);
+            const sw = stageRef.current?.clientWidth ?? frame.width;
+            const transTransform =
+              [
+                (m.shift !== 0 || m.lift !== 0) && `translate(${m.shift * sw}px, ${(m.lift * sw) / stageAspect}px)`,
+                m.turn !== 0 && `rotate(${m.turn}deg)`,
+                m.zoom !== 1 && `scale(${m.zoom})`,
+                (m.scaleX ?? 1) !== 1 && `scaleX(${m.scaleX})`,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined;
             if (isShape(clip)) {
               return (
                 <ShapeLayer
@@ -780,8 +791,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   z={stack?.get(clip.id)}
                   clip={clip}
                   // Drawn at the size shown, so an outline is as thick against the picture as in the export.
-                  frame={{ ...frame, width: stageRef.current?.clientWidth ?? frame.width, height: stageRef.current?.clientHeight ?? frame.height }}
-                  opacity={fadeAt(clip, time) * ownFill(clip)}
+                  frame={{ ...frame, width: sw, height: stageRef.current?.clientHeight ?? frame.height }}
+                  opacity={m.picture * ownFill(clip)}
+                  transFilter={m.filter}
+                  transTransform={transTransform}
+                  reveal={m.reveal}
                   selected={isSelected}
                   still={Boolean(still)}
                   viewingMask={viewingMask}
@@ -805,13 +819,15 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   top: `calc(${clip.y * 100}% + ${pose.dy * 100}cqh)`,
                   translate: `${-clip.x * 100}% ${-clip.y * 100}%`,
                   scale: pose.scale,
+                  transform: transTransform,
                   fontSize: `${clip.size * 100}cqh`,
                   color: clip.color,
-                  opacity: viewingMask ? 1 : fadeAt(clip, time) * pose.alpha * (clip.opacity ?? 1) * ownFill(clip),
+                  opacity: viewingMask ? 1 : m.picture * pose.alpha * (clip.opacity ?? 1) * ownFill(clip),
                   // The Image editor's layer blend mode (lib/compose.ts draws the same with globalCompositeOperation).
                   mixBlendMode: viewingMask ? undefined : clip.blend,
                   zIndex: viewingMask ? 99991 : stack?.get(clip.id),
-                  filter: viewingMask ? undefined : styled(clip),
+                  filter: viewingMask ? undefined : [styled(clip), m.filter].filter(Boolean).join(" ") || undefined,
+                  ...revealStyle(m.reveal),
                   ...textFont(clip),
                   // The Image editor's own (textPicture.ts draws them into the saved picture).
                   ...(still && { textShadow: shadows || viewingMask ? "none" : undefined, letterSpacing: clip.spacing ? `${clip.spacing}em` : undefined, rotate: clip.rotate ? `${clip.rotate}deg` : undefined }),
@@ -1141,10 +1157,15 @@ function AdjustFilters({ clips }: { clips: Clip[] }) {
   );
 }
 
+/** A transition's `reveal` string as CSS: a gradient is a mask, anything else is a clip-path. */
+const revealStyle = (reveal?: string): CSSProperties =>
+  !reveal ? {} : reveal.includes("gradient") ? { maskImage: reveal, WebkitMaskImage: reveal } : { clipPath: reveal };
+
 /**
- * Warmth (Edit → Adjust) and RGB split have no CSS filter function: SVG filters for each value, that the colour steps
- * point at (effects.ts `stepsFilter`). In sRGB like the CSS functions and the export; hidden by size, not `display: none`
- * (that would switch the filters off).
+ * Warmth (Edit → Adjust), RGB split, Duotone, Neon edges and Dissolve have no CSS filter function: SVG filters for each
+ * value, that the colour steps and transitions point at (effects.ts `stepsFilter`, `blocksStyle`; model.ts
+ * `transitionMix`). In sRGB like the CSS functions and the export; hidden by size, not `display: none` (that would
+ * switch the filters off).
  */
 const WARMTH_FILTERS = (
   <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
@@ -1164,6 +1185,80 @@ const WARMTH_FILTERS = (
           <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0" result="green" />
           <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0" result="b" />
           <feOffset in="b" dx={dx} result="blue" />
+          <feComposite in="red" in2="green" operator="arithmetic" k2={1} k3={1} result="rg" />
+          <feComposite in="rg" in2="blue" operator="arithmetic" k2={1} k3={1} />
+        </filter>
+      );
+    })}
+    {Array.from({ length: 101 }, (_, k) => (
+      <filter key={`duotone-${k}`} id={`duotone-${k}`} colorInterpolationFilters="sRGB">
+        <feColorMatrix type="matrix" values={duotoneMatrix(k / 50)} />
+      </filter>
+    ))}
+    {Array.from({ length: 101 }, (_, k) => {
+      const s = k / 50;
+      return (
+        <filter key={`neon-${k}`} id={`neon-${k}`} colorInterpolationFilters="sRGB">
+          <feConvolveMatrix
+            order={3}
+            kernelMatrix={`${-s} ${-s} ${-s} ${-s} ${8 * s + Math.max(0, 1 - s)} ${-s} ${-s} ${-s} ${-s}`}
+            divisor={1}
+            preserveAlpha="true"
+            edgeMode="duplicate"
+          />
+        </filter>
+      );
+    })}
+    {Array.from({ length: 51 }, (_, k) => (
+      <filter key={`dissolve-${k}`} id={`dissolve-${k}`} colorInterpolationFilters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves={1} seed={1} result="n" />
+        <feComponentTransfer in="n" result="m">
+          <feFuncA type="linear" slope={20} intercept={(k / 50) * 21 - 20} />
+        </feComponentTransfer>
+        <feComposite in="SourceGraphic" in2="m" operator="in" />
+      </filter>
+    ))}
+    {Array.from({ length: 24 }, (_, i) => {
+      const r = i + 1;
+      const b = 2 * r + 1;
+      return (
+        <filter key={`pixelate-${r}`} id={`pixelate-${r}`} x="0%" y="0%" width="100%" height="100%" colorInterpolationFilters="sRGB">
+          <feFlood x={r} y={r} width={1} height={1} />
+          <feComposite x={0} y={0} width={b} height={b} />
+          <feTile result="t" />
+          <feComposite in="SourceGraphic" in2="t" operator="in" />
+          <feMorphology operator="dilate" radius={r} />
+        </filter>
+      );
+    })}
+    {Array.from({ length: 101 }, (_, k) => {
+      const s = k / 50;
+      const d = 0.035 * s;
+      const w = 0.22 * Math.min(1, s);
+      const c = 1 - 3 * w;
+      return (
+        <filter key={`kaleido-${k}`} id={`kaleido-${k}`} colorInterpolationFilters="sRGB" primitiveUnits="objectBoundingBox">
+          <feOffset in="SourceGraphic" dx={-d} dy={-d} result="f1" />
+          <feOffset in="SourceGraphic" dx={d} dy={-d} result="f2" />
+          <feOffset in="SourceGraphic" dx={0} dy={d} result="f3" />
+          <feComposite in="SourceGraphic" in2="f1" operator="arithmetic" k2={c} k3={w} result="m1" />
+          <feComposite in="m1" in2="f2" operator="arithmetic" k2={1} k3={w} result="m2" />
+          <feComposite in="m2" in2="f3" operator="arithmetic" k2={1} k3={w} />
+        </filter>
+      );
+    })}
+    {Array.from({ length: 101 }, (_, k) => {
+      const s = k / 50;
+      const d = (0.6 * RGB_SHARE * k) / 50;
+      return (
+        <filter key={`lens-${k}`} id={`lens-${k}`} colorInterpolationFilters="sRGB" primitiveUnits="objectBoundingBox">
+          <feTurbulence type="fractalNoise" baseFrequency="0.003" numOctaves={1} seed={5} result="w" />
+          <feDisplacementMap in="SourceGraphic" in2="w" scale={0.04 * s} xChannelSelector="R" yChannelSelector="G" result="d" />
+          <feColorMatrix in="d" type="matrix" values="1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0" result="r" />
+          <feOffset in="r" dx={-d} dy={-d} result="red" />
+          <feColorMatrix in="d" type="matrix" values="0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0" result="green" />
+          <feColorMatrix in="d" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0" result="b" />
+          <feOffset in="b" dx={d} dy={d} result="blue" />
           <feComposite in="red" in2="green" operator="arithmetic" k2={1} k3={1} result="rg" />
           <feComposite in="rg" in2="blue" operator="arithmetic" k2={1} k3={1} />
         </filter>
@@ -1189,8 +1284,12 @@ interface PictureLayerProps {
   zoom: number;
   /** Degrees turned clockwise about the box centre by a spin transition (0 = none). */
   turn: number;
-  /** CSS `clip-path` for a wipe or circle transition ("" = none). */
+  /** CSS `clip-path` or mask for a wipe, circle, smooth or radial transition ("" = none). */
   reveal: string;
+  /** Horizontal scale about the box centre from a squeeze transition (1 = none). */
+  scaleX: number;
+  /** CSS filter from a blur or dissolve transition ("" = none). */
+  transFilter: string;
   selected: boolean;
   poster?: string;
   /** The Image editor: its layer mask over the box's pixels (lib/mask.ts `maskStyle`), not over the selection frame. */
@@ -1209,7 +1308,7 @@ interface PictureLayerProps {
  * One picture on the stage, placed like the export: fitted inside the frame, scaled by its
  * size, at its position. The crop is a window onto the video.
  */
-function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, selected, poster, mask, viewingMask, onPointerDown, handles, z, children }: PictureLayerProps) {
+function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, scaleX, transFilter, selected, poster, mask, viewingMask, onPointerDown, handles, z, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
@@ -1249,7 +1348,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
     top: `${clip.y * 100}%`,
     translate: `${-clip.x * 100}% ${-clip.y * 100}%`,
     transform: shift !== 0 || lift !== 0 ? `translate(${shift * stageWidth}px, ${(lift * stageWidth) / stageAspect}px)` : undefined,
-    clipPath: reveal || undefined,
+    ...revealStyle(reveal),
   };
   const video: CSSProperties = {
     width: `${100 / keptW}%`,
@@ -1280,10 +1379,19 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
         <div
           className="preview__clip-fx"
           style={
-            fx || zoom !== 1 || turn !== 0
+            fx || zoom !== 1 || turn !== 0 || scaleX !== 1 || transFilter
               ? {
-                  filter: fx?.filter,
-                  transform: [turn !== 0 && `rotate(${turn}deg)`, zoom !== 1 && `scale(${zoom})`, fx?.transform, fx?.mirror && "scaleX(-1)"].filter(Boolean).join(" ") || undefined,
+                  filter: [fx?.filter, transFilter].filter(Boolean).join(" ") || undefined,
+                  transform:
+                    [
+                      turn !== 0 && `rotate(${turn}deg)`,
+                      zoom !== 1 && `scale(${zoom})`,
+                      scaleX !== 1 && `scaleX(${scaleX})`,
+                      fx?.transform,
+                      fx?.mirror && "scaleX(-1)",
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || undefined,
                 }
               : undefined
           }
@@ -1341,6 +1449,9 @@ interface ShapeLayerProps {
   clip: Clip;
   frame: Frame;
   opacity: number;
+  transFilter?: string;
+  transTransform?: string;
+  reveal?: string;
   selected: boolean;
   onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
   handles: ReactNode;
@@ -1353,7 +1464,7 @@ interface ShapeLayerProps {
 }
 
 /** One shape on the stage: a full-frame SVG picture with a hit box over its bounding box. */
-function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles, z, still, viewingMask }: ShapeLayerProps) {
+function ShapeLayer({ clip, frame, opacity, transFilter, transTransform, reveal, selected, onPointerDown, handles, z, still, viewingMask }: ShapeLayerProps) {
   const src = useMemo(
     () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(shapeSvg(clip, frame.width, frame.height))}`,
     [clip.shape, clip.color, clip.size, clip.aspect, clip.x, clip.y, clip.opacity, clip.outline, clip.rotate, clip.points, frame.width, frame.height],
@@ -1361,15 +1472,23 @@ function ShapeLayer({ clip, frame, opacity, selected, onPointerDown, handles, z,
   const box = shapeBox(clip, frame.width, frame.height);
   // The picture covers the frame, so its mask is placed on the shape's box there, turned with it.
   const mask = still ? maskStyle(clip, { width: frame.width, height: frame.height, box: { ...box, angle: clip.rotate ?? 0 } }) : undefined;
+  const shapeStyle: CSSProperties = {
+    opacity,
+    mixBlendMode: clip.blend,
+    zIndex: z,
+    filter: [styled(clip), transFilter].filter(Boolean).join(" ") || undefined,
+    transform: transTransform,
+    ...revealStyle(reveal),
+  };
   return (
     <>
       {mask?.maskImage ? (
         // Masked inside, styled outside: the layer style follows the masked pixels, as the saved picture draws it.
-        <div className="preview__shape" style={{ opacity, mixBlendMode: clip.blend, zIndex: z, filter: styled(clip) }}>
+        <div className="preview__shape" style={shapeStyle}>
           <img src={src} alt="" draggable={false} style={{ display: "block", width: "100%", height: "100%", ...mask }} />
         </div>
       ) : (
-        <img className="preview__shape" src={src} alt="" draggable={false} style={{ opacity, mixBlendMode: clip.blend, zIndex: z, filter: styled(clip) }} />
+        <img className="preview__shape" src={src} alt="" draggable={false} style={shapeStyle} />
       )}
       <div
         className={selected ? "preview__shape-box is-selected" : "preview__shape-box"}

@@ -195,11 +195,14 @@ export const PICTURE_EFFECTS = [
   { id: "spin-in", label: "Spin in", category: "camera" },
   { id: "slide-in", label: "Slide in", category: "camera" },
   { id: "bounce", label: "Bounce", category: "camera" },
+  { id: "lens-distort", label: "Lens distort", category: "camera" },
   { id: "bars", label: "Cinema bars", category: "style" },
   { id: "vignette", label: "Vignette", category: "style" },
   { id: "strobe", label: "Strobe", category: "style" },
   { id: "rgb-split", label: "RGB split", category: "style" },
   { id: "grain", label: "Film grain", category: "style" },
+  { id: "pixelate", label: "Pixelate", category: "style" },
+  { id: "kaleidoscope", label: "Kaleidoscope", category: "style" },
   { id: "glitch", label: "Glitch", category: "style" },
   { id: "vhs", label: "VHS", category: "style" },
   { id: "light-leak", label: "Light leak", category: "style" },
@@ -227,10 +230,13 @@ export const EFFECT_SETTINGS: Partial<Record<PictureEffectId, readonly ("strengt
   "spin-in": ["strength", "speed"],
   "slide-in": ["strength", "speed"],
   bounce: ["strength", "speed"],
+  "lens-distort": ["strength"],
   vignette: ["strength"],
   strobe: ["strength", "speed"],
   "rgb-split": ["strength"],
   grain: ["strength"],
+  pixelate: ["strength"],
+  kaleidoscope: ["strength", "speed"],
   glitch: ["strength", "speed"],
   vhs: ["strength"],
   "light-leak": ["strength", "speed"],
@@ -275,6 +281,9 @@ const GRAIN = `url("data:image/svg+xml,${encodeURIComponent(
 
 /** Blur's strength: its standard deviation as a share of the frame width (CSS blur and FFmpeg gblur both use one). */
 export const BLUR_SHARE = 0.006;
+
+/** Pixelate's block radius at strength 1 as a share of the frame width (Preview.tsx `WARMTH_FILTERS`, project.rs `effect_filter`). */
+export const PIXEL_SHARE = 0.005;
 
 /** A time effect's change: a new speed, other settings, or both. */
 export type TimeChange = { speed?: number; patch?: ClipPatch };
@@ -508,6 +517,17 @@ export function blocksStyle(
     } else if (b.effect === "bounce") {
       const y = -6 * s * (0.5 - 0.5 * Math.cos(2 * Math.PI * 1.5 * v * u));
       transforms.unshift(`translate(0%, ${round4(y)}%) scale(${round4(1 + 0.12 * s)})`);
+    } else if (b.effect === "lens-distort") {
+      filters.push(`url(#lens-${Math.round(s * 50)})`);
+      transforms.unshift(`translate(0%, 0%) scale(${round4(1 + 0.14 * s)})`);
+      layers.push({ color: vignetteGradient(0.55 * s), opacity: 1 });
+    } else if (b.effect === "pixelate") {
+      const r = clamp(Math.round(PIXEL_SHARE * width * s), 0, 24);
+      if (r > 0) filters.push(`url(#pixelate-${r})`);
+    } else if (b.effect === "kaleidoscope") {
+      const a = 12 * s * Math.sin(2 * Math.PI * 0.4 * v * u);
+      transforms.unshift(`translate(0%, 0%) scale(${round4(1 + 0.2 * s)}) rotate(${round4(a)}deg)`);
+      filters.push(`url(#kaleido-${Math.round(s * 50)}) hue-rotate(${round4((180 * v * u) % 360)}deg) saturate(${round4(1 + 0.35 * s)})`);
     } else if (b.effect === "glitch") {
       const wave = Math.sin(2 * Math.PI * 3.7 * v * u) * Math.sin(2 * Math.PI * 8.3 * v * u);
       const burst = Math.abs(wave) > 0.45 ? Math.sign(wave) : 0;
