@@ -7,3 +7,12 @@
 .mascot.is-shy .mascot__eye.is-right .mascot__lid {
   visibility: visible;
 }
+
+/* Between lines (Mascot `cycle`): the bubble fades out but keeps its place, so nothing below it jumps. */
+.mascot-bubble {
+  transition: opacity 0.4s ease;
+}
+
+.mascot-bubble.is-gone {
+  opacity: 0;
+}

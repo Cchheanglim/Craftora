@@ -2,6 +2,7 @@ mod agents;
 mod assistant;
 mod captions;
 mod diag;
+mod drop;
 mod encoders;
 mod engine;
 mod cutout;
@@ -90,6 +91,8 @@ pub fn run() {
                 // No "Saved info" list under the link box and other fields (the sign-in window keeps it). A touchpad
                 // pinch reaches the page (as Ctrl + wheel) only with pinch zoom on: the page keeps the window from
                 // zooming (main.tsx) and zooms the timeline with it instead.
+                #[cfg(windows)]
+                drop::register(&main);
                 #[cfg(windows)]
                 let _ = main.with_webview(|webview| {
                     use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Settings4, ICoreWebView2Settings5};
@@ -195,6 +198,7 @@ pub fn run() {
             agents::agent_run,
             agents::local_models,
             agents::local_generate,
+            drop::save_gif_from,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

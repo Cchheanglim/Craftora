@@ -4,6 +4,7 @@ import { formatClock } from "../lib/timecode";
 import { Icon } from "./Icon";
 import { FileThumb } from "./Thumb";
 import { useConfirm } from "./ConfirmDialog";
+import { GifLinkBox } from "./GifLinkBox";
 import { HiddenFold, useHidden } from "./Hidden";
 import { PageSearch, PageTabs, PictureAction, PictureCard } from "./PictureCard";
 import "./Library.css";
@@ -20,7 +21,10 @@ interface MediaLibraryProps {
   /** Takes it off this list; the file isn't touched. */
   onForget: (path: string) => void;
   /** Imports new files into the library / project. */
-  onImport?: () => void;
+  /** Imports GIF files into the library / project. */
+  onImportGifs?: () => void;
+  /** Downloads a GIF from a URL and adds it to the library / project. */
+  onDownloadGif?: (url: string) => Promise<void>;
 }
 
 type Filter = "all" | "video" | "image" | "audio" | "gif" | "saved";
@@ -50,7 +54,7 @@ const KIND_LABEL: Record<LibraryEntry["kind"], string> = {
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
-export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, onImport }: MediaLibraryProps) {
+export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, onImportGifs, onDownloadGif }: MediaLibraryProps) {
   const { ask, dialog } = useConfirm();
   const forget = async (entry: LibraryEntry) => {
     const ok = await ask({
@@ -104,14 +108,6 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           <h1 id="media-library-title">Media library</h1>
           <p>Videos, pictures and sounds you've imported or fetched.</p>
         </div>
-        {onImport && (
-          <div className="pc-head__actions">
-            <button type="button" className="btn btn--primary" onClick={onImport}>
-              <Icon name="upload" size={14} />
-              Import files
-            </button>
-          </div>
-        )}
       </header>
 
       <div className="media-library__list">
@@ -123,6 +119,18 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
             <PageSearch id="media-search" value={search} onChange={setSearch} placeholder="Search by file name" />
           </div>
         </div>
+
+        {filter === "gif" && (onDownloadGif || onImportGifs) && (
+          <div className="media-library__gif-actions">
+            {onDownloadGif && <GifLinkBox onDownload={onDownloadGif} />}
+            {onImportGifs && (
+              <button type="button" className="btn btn--secondary" onClick={onImportGifs}>
+                <Icon name="upload" size={14} />
+                Import GIFs
+              </button>
+            )}
+          </div>
+        )}
 
         {filter === "gif" && !entries.some((e) => e.animated) ? (
           <p className="pc-muted">No GIFs yet. Import a GIF and it shows up here and in the editor's GIFs tab.</p>

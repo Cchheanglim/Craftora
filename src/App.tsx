@@ -33,6 +33,7 @@ import {
   RECORDINGS,
   allowLocal,
   pickFolder,
+  saveGifFrom,
   saveSnapshot,
   saveVoice,
   saveSrt,
@@ -377,6 +378,26 @@ function siteOf(link: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Returns trimmed `raw` when it is an http(s) link to a `.gif` or a Giphy page/media URL. */
+function gifUrlFromText(raw: string): string | null {
+  const text = raw.trim();
+  if (!text || /\s/.test(text)) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(text);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  const host = parsed.hostname.toLowerCase();
+  const path = parsed.pathname;
+  if (path.toLowerCase().endsWith(".gif")) return text;
+  if ((host === "giphy.com" || host === "www.giphy.com") && /^\/gifs\/[^/]+/.test(path)) return text;
+  if (/^media\d*\.giphy\.com$/.test(host) && /^\/media\/[^/]+/.test(path)) return text;
+  if (host === "i.giphy.com" && /^\/[^/]+\.(gif|webp)$/i.test(path)) return text;
+  return null;
 }
 
 /**
@@ -1360,14 +1381,17 @@ export default function App() {
   importRef.current = importFiles;
   useEffect(() => {
     if (!inDesktopApp) return;
-    const unlisten = onFileDrop((state) => {
-      if (state === "over") setDragging(true);
-      else if (state === "left") setDragging(false);
-      else {
-        setDragging(false);
-        if (state.dropped.length) void importRef.current(state.dropped);
-      }
-    });
+    const unlisten = onFileDrop(
+      (state) => {
+        if (state === "over") setDragging(true);
+        else if (state === "left") setDragging(false);
+        else {
+          setDragging(false);
+          if (state.dropped.length) void importRef.current(state.dropped);
+        }
+      },
+      (msg) => setError(msg),
+    );
     return () => void unlisten.then((stop) => stop());
   }, []);
 
@@ -1609,6 +1633,10 @@ export default function App() {
     } catch (err) {
       setError(errorText(err));
     }
+  };
+  const downloadGif = async (link: string) => {
+    const path = await saveGifFrom(link);
+    await importFiles([path]);
   };
 
   /** The selected clip, or else the clip under the playhead on the lowest track that has one. */
@@ -2439,6 +2467,40 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const pasteGif = useRef<(e: ClipboardEvent) => void>(() => {});
+  pasteGif.current = (e: ClipboardEvent) => {
+    if (!inDesktopApp || isTyping(e.target) || document.querySelector("dialog[open]")) return;
+    const dt = e.clipboardData;
+    if (!dt) return;
+    const files = Array.from(dt.files);
+    const imageFile = files.find((f) => f.type.startsWith("image/") || /\.(gif|png|jpe?g|webp)$/i.test(f.name));
+    let url = gifUrlFromText(dt.getData("text/plain"));
+    if (!url && imageFile) {
+      const html = dt.getData("text/html");
+      const src = html ? new DOMParser().parseFromString(html, "text/html").querySelector("img")?.getAttribute("src") : null;
+      if (src) url = gifUrlFromText(src);
+    }
+    if (url) {
+      e.preventDefault();
+      setBusy(true);
+      setError(null);
+      void downloadGif(url)
+        .catch((err) => setError(errorText(err)))
+        .finally(() => setBusy(false));
+      return;
+    }
+    // `drop.rs`'s `save_gif_from` only takes a URL string right now, not raw clipboard bytes.
+    if (imageFile && (imageFile.type === "image/gif" || /\.gif$/i.test(imageFile.name))) {
+      e.preventDefault();
+      setError("Drop the GIF file onto the window or paste its link instead.");
+    }
+  };
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => pasteGif.current(e);
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
+
   const exported = history ?? [];
   const shownExports = exported.filter((j) => !j.hidden);
   const usedMedia = new Set(project.clips.map((c) => c.mediaId).filter((id): id is string => Boolean(id)));
@@ -2658,6 +2720,7 @@ export default function App() {
           onAdd={(path) => void addGif(path)}
           onDrag={(path, e) => void dragGif(path, e)}
           onImport={() => void importGifs()}
+          onDownload={downloadGif}
           onForget={(path) => changeLibrary((entries) => entries.filter((e) => e.path !== path))}
         />
       }
@@ -3458,7 +3521,8 @@ export default function App() {
         {view === "media" && (
           <MediaLibrary
             entries={library}
-            onImport={inDesktopApp ? () => void importFiles() : undefined}
+            onImportGifs={inDesktopApp ? () => void importGifs() : undefined}
+            onDownloadGif={inDesktopApp ? downloadGif : undefined}
             onAdd={(path) => void importFiles([path])}
             onSave={(path, saved) => changeLibrary((entries) => entries.map((e) => (e.path === path ? { ...e, saved } : e)))}
             onThumbnail={(path, thumbnail) => changeLibrary((entries) => entries.map((e) => (e.path === path ? { ...e, thumbnail } : e)))}

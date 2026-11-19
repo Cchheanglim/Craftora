@@ -4,7 +4,6 @@
  */
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { Caption, JobSpec, MediaSource, RenderSpec } from "../types";
@@ -302,6 +301,8 @@ export async function openLocal(path: string): Promise<MediaSource> {
     const previewUrl = assetUrl(quick.path);
     const detail = quick.ext.toUpperCase() || "Local";
     if (quick.kind === "image") {
+      // Animated GIFs need ffprobe (`open_local`) for their loop length so they land in My GIFs.
+      if (quick.ext === "gif") return await probeLocal(quick.path);
       return {
         url: quick.path,
         title: quick.title,
@@ -411,14 +412,36 @@ export async function pickFolder(title: string): Promise<string | null> {
   return typeof picked === "string" ? picked : null;
 }
 
+type DropEvent =
+  | { kind: "enter" | "over" | "leave" }
+  | { kind: "drop"; paths: string[] }
+  | { kind: "error"; message: string };
+
 /** Files dragged onto the window. */
-export const onFileDrop = (handler: (state: DropState) => void): Promise<UnlistenFn> =>
-  getCurrentWebview().onDragDropEvent((event) => {
-    const { type } = event.payload;
-    if (type === "enter" || type === "over") handler("over");
-    else if (type === "leave") handler("left");
-    else if (type === "drop") handler({ dropped: event.payload.paths });
+export const onFileDrop = (
+  handler: (state: DropState) => void,
+  onError?: (message: string) => void,
+): Promise<UnlistenFn> =>
+  listen<DropEvent>("craftora-drop", (event) => {
+    const payload = event.payload;
+    if (payload.kind === "enter" || payload.kind === "over") handler("over");
+    else if (payload.kind === "leave") handler("left");
+    else if (payload.kind === "drop") handler({ dropped: payload.paths });
+    else if (payload.kind === "error") {
+      handler("left");
+      onError?.(payload.message);
+    }
   });
+
+/** Downloads a GIF (or Giphy page/media link) into the app's gifs folder and returns its saved path. */
+export async function saveGifFrom(source: string): Promise<string> {
+  if (!inDesktopApp) throw new Error("Downloading GIFs needs the desktop app.");
+  try {
+    return await invoke<string>("save_gif_from", { source });
+  } catch (err) {
+    throw new Error(message(err));
+  }
+}
 
 export async function startJob(spec: JobSpec): Promise<void> {
   try {

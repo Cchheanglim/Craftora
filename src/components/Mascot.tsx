@@ -41,38 +41,64 @@ const RUNS = ART.flatMap((row, y) => {
 /** Each eye: 2 × 3 dark pixels with a white shine at its top right; the left edge of each. */
 const EYES = [3, 11];
 
-type Phase = "talking" | "happy" | "idle";
+type Phase = "talking" | "happy" | "idle" | "resting";
 export type MascotMood = "calm" | "excited" | "shy";
 const stillMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-export function Mascot({ say, mood = "calm" }: { say: string; mood?: MascotMood }) {
+/**
+ * `say`: one line, or several to pick from at random (never the same twice in a row). Without `cycle` the line stays up.
+ * With `cycle` (ms): the line shows for a moment with the `mood` face, the bubble fades, the face goes back to calm,
+ * and `cycle` ms later it says another line.
+ */
+export function Mascot({ say, mood = "calm", cycle }: { say: string | string[]; mood?: MascotMood; cycle?: number }) {
   const root = useRef<SVGSVGElement>(null);
+  const linesKey = (Array.isArray(say) ? say : [say]).join("\n");
   const [blinking, setBlinking] = useState(false);
-  const [shown, setShown] = useState(() => (stillMotion() ? say.length : 0));
+  const [text, setText] = useState(() => linesKey.split("\n")[0]);
+  const [shown, setShown] = useState(() => (stillMotion() ? text.length : 0));
   const [phase, setPhase] = useState<Phase>(() => (stillMotion() ? "idle" : "talking"));
-  // Typed out once per line, a letter every 55 ms; then a happy squint for a moment.
   useEffect(() => {
-    if (stillMotion()) return;
-    setShown(0);
-    setPhase("talking");
-    let squint = 0;
-    const typing = createTimer({
-      delay: 350,
-      duration: say.length * 55,
-      onUpdate: (t) => setShown(Math.ceil(t.progress * say.length)),
-      onComplete: () => {
-        setShown(say.length);
-        setPhase("happy");
-        squint = window.setTimeout(() => setPhase("idle"), 900);
-      },
-    });
-    return () => {
-      typing.revert();
-      window.clearTimeout(squint);
+    const lines = linesKey.split("\n");
+    const pick = (last?: string) => {
+      const pool = lines.length > 1 ? lines.filter((l) => l !== last) : lines;
+      return pool[Math.floor(Math.random() * pool.length)];
     };
-  }, [say]);
+    if (stillMotion()) {
+      setText(lines[0]);
+      setShown(lines[0].length);
+      setPhase("idle");
+      return;
+    }
+    const timers: number[] = [];
+    const later = (run: () => void, ms: number) => timers.push(window.setTimeout(run, ms));
+    let typing: ReturnType<typeof createTimer> | undefined;
+    // Typed a letter every 55 ms, a happy squint, the mood face; with `cycle`, then fade, rest and say the next one.
+    const speak = (line: string) => {
+      setText(line);
+      setShown(0);
+      setPhase("talking");
+      typing = createTimer({
+        delay: 350,
+        duration: line.length * 55,
+        onUpdate: (t) => setShown(Math.ceil(t.progress * line.length)),
+        onComplete: () => {
+          setShown(line.length);
+          setPhase("happy");
+          later(() => {
+            setPhase("idle");
+            if (cycle) later(() => (setPhase("resting"), later(() => speak(pick(line)), cycle)), 2500);
+          }, 900);
+        },
+      });
+    };
+    speak(pick());
+    return () => {
+      typing?.revert();
+      timers.forEach((t) => window.clearTimeout(t));
+    };
+  }, [linesKey, cycle]);
   // Talking: the mouth opens on most letters and closes on spaces and every third one.
-  const talking = phase === "talking" && shown > 0 && shown % 3 !== 0 && say[shown - 1] !== " ";
+  const talking = phase === "talking" && shown > 0 && shown % 3 !== 0 && text[shown - 1] !== " ";
   const open = talking || (phase === "idle" && mood === "excited");
   useEffect(() => {
     const svg = root.current;
@@ -110,11 +136,11 @@ export function Mascot({ say, mood = "calm" }: { say: string; mood?: MascotMood 
   }, []);
   return (
     <div className="mascot-say">
-      <p className="mascot-bubble">
-        <span aria-hidden="true">{say.slice(0, shown)}</span>
+      <p className={phase === "resting" ? "mascot-bubble is-gone" : "mascot-bubble"} aria-live="polite">
+        <span aria-hidden="true">{text.slice(0, shown)}</span>
         {/* The rest takes its space already, so the bubble doesn't grow while typing. */}
-        <span aria-hidden="true" className="mascot-bubble__rest">{say.slice(shown)}</span>
-        <span className="sr-only">{say}</span>
+        <span aria-hidden="true" className="mascot-bubble__rest">{text.slice(shown)}</span>
+        <span className="sr-only">{text}</span>
         <svg className="mascot-bubble__tail" viewBox="0 0 6 4" shapeRendering="crispEdges" aria-hidden="true">
           <rect className="mascot-bubble__fill" x={0} y={0} width={6} height={1} />
           <rect className="mascot-bubble__line" x={0} y={1} width={1} height={1} />

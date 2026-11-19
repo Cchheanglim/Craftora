@@ -1,7 +1,9 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { inDesktopApp, playableFile } from "../lib/engine";
+import { preference } from "../lib/preferences";
 import type { LibraryEntry } from "../lib/storage";
 import { ContextMenu } from "./ContextMenu";
+import { GifLinkBox } from "./GifLinkBox";
 import { Icon } from "./Icon";
 import { Mascot } from "./Mascot";
 import "./FxPanel.css";
@@ -12,6 +14,7 @@ export interface GifPanelProps {
   onAdd: (path: string) => void;
   onDrag: (path: string, e: ReactPointerEvent) => void;
   onImport: () => void;
+  onDownload: (url: string) => Promise<void>;
   onForget: (path: string) => void;
 }
 
@@ -38,7 +41,7 @@ function GifImage({ path, fallback }: { path: string; fallback?: string }) {
   );
 }
 
-export function GifPanel({ entries, onAdd, onDrag, onImport, onForget }: GifPanelProps) {
+export function GifPanel({ entries, onAdd, onDrag, onImport, onDownload, onForget }: GifPanelProps) {
   const [rawQuery, setQuery] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; entry: LibraryEntry } | null>(null);
   const query = rawQuery.trim().toLowerCase();
@@ -48,7 +51,8 @@ export function GifPanel({ entries, onAdd, onDrag, onImport, onForget }: GifPane
     return (
       <section className="fx-panel gif-panel is-empty" aria-label="GIFs">
         <div className="gif-panel__empty">
-          <Mascot say="You don't have any GIFs yet." />
+          {preference("showCat") ? <Mascot say="You don't have any GIFs yet." /> : <p className="fx-panel__hint">You don't have any GIFs yet.</p>}
+          <GifLinkBox onDownload={onDownload} />
           <button type="button" className="btn btn--secondary gif-panel__import" onClick={onImport}>
             <Icon name="upload" size={14} />
             Import GIFs
@@ -122,6 +126,16 @@ export function GifPanel({ entries, onAdd, onDrag, onImport, onForget }: GifPane
       ) : (
         <p className="fx-panel__hint">No GIFs match</p>
       )}
+      {preference("showCat") && (
+        <div className="gif-panel__mascot">
+          <Mascot
+            say={entries.length >= 4 ? ["Nice GIFs!", "Cool!", "Interesting GIFs"] : "Don't be shy, import more!"}
+            cycle={10000}
+            mood={entries.length >= 4 ? "excited" : "shy"}
+          />
+        </div>
+      )}
+      <GifLinkBox onDownload={onDownload} />
       <button type="button" className="btn btn--secondary gif-panel__import" onClick={onImport}>
         <Icon name="upload" size={14} />
         Import GIFs

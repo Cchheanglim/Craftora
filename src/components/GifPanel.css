@@ -134,3 +134,9 @@
   width: 100%;
   justify-content: center;
 }
+
+.gif-panel__mascot {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--space-2);
+}
