@@ -20,7 +20,6 @@ export function usePlayback(duration: number) {
   const slowTimer = useRef<number | undefined>(undefined);
   const calmTimer = useRef<number | undefined>(undefined);
   const timeRef = useRef(0);
-  timeRef.current = time;
   /**
    * Media elements still loading. The clock holds for as long as any is: it used to give up after
    * 8 s and run on without the picture. Media that fails stops loading (SyncedMedia's onFailed).
@@ -39,10 +38,12 @@ export function usePlayback(duration: number) {
       }
       const next = timeRef.current + (elapsed / 1000) * speed;
       if (next >= duration) {
+        timeRef.current = duration;
         setTime(duration);
         setPlaying(false);
         return;
       }
+      timeRef.current = next;
       setTime(next);
       frame = requestAnimationFrame(tick);
     });
@@ -50,13 +51,20 @@ export function usePlayback(duration: number) {
   }, [playing, speed, duration]);
 
   // The playhead goes anywhere on the timeline, past the last clip too (even with no clips).
-  const seek = useCallback((t: number) => setTime(Math.max(0, t)), []);
+  const seek = useCallback((t: number) => {
+    const next = Math.max(0, t);
+    timeRef.current = next;
+    setTime(next);
+  }, []);
 
   const toggle = useCallback(() => {
     if (duration <= 0) return;
     setPlaying((p) => {
       // At the end, Play starts over.
-      if (!p && timeRef.current >= duration - 0.01) setTime(0);
+      if (!p && timeRef.current >= duration - 0.01) {
+        timeRef.current = 0;
+        setTime(0);
+      }
       return !p;
     });
   }, [duration]);
@@ -82,7 +90,7 @@ export function usePlayback(duration: number) {
   }, []);
 
   return {
-    time,
+    time: playing ? timeRef.current : time,
     playing,
     speed,
     /** Something on screen is still loading; the clock is holding. */

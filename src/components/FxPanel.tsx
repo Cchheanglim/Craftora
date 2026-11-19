@@ -94,9 +94,30 @@ export function FxPanel({
   still?: boolean;
 }) {
   const [frame, setFrame] = useState<string>();
-  const [shapeQuery, setShapeQuery] = useState("");
-  const query = shapeQuery.trim().toLowerCase();
-  const shapes = SHAPES.filter((s) => !query || s.label.toLowerCase().includes(query) || s.id.includes(query));
+  const [queries, setQueries] = useState<Record<FxTab, string>>({
+    filters: "",
+    effects: "",
+    transitions: "",
+    shapes: "",
+  });
+  const rawQuery = queries[tab];
+  const query = rawQuery.trim().toLowerCase();
+  const setQuery = (value: string) => setQueries((prev) => ({ ...prev, [tab]: value }));
+  const matches = (label: string, id: string) => !query || label.toLowerCase().includes(query) || id.toLowerCase().includes(query);
+  const showAdjust = !still && matches("Adjust layer", "layer");
+  const looks = LOOKS.filter((look) => matches(look.label, look.id));
+  const stillEffects = PICTURE_EFFECTS.filter((e) => STILL_EFFECTS.includes(e.id) && matches(e.label, e.id));
+  const cameraEffects = PICTURE_EFFECTS.filter((e) => e.category === "camera" && matches(e.label, e.id));
+  const styleEffects = PICTURE_EFFECTS.filter((e) => e.category === "style" && matches(e.label, e.id));
+  const timeEffects = TIME_EFFECTS.filter((e) => matches(e.label, e.id));
+  const betweenTransitions = TRANSITION_KINDS.filter((t) => matches(t.label, t.kind));
+  const fades = (
+    [
+      { id: "in", label: "Fade in" },
+      { id: "out", label: "Fade out" },
+    ] as const
+  ).filter((f) => matches(f.label, f.id));
+  const shapes = SHAPES.filter((s) => matches(s.label, s.id));
   const shownRef = useRef(false);
   const capturedKey = useRef("");
 
@@ -340,52 +361,105 @@ export function FxPanel({
     );
   }
 
+  const searchPlaceholder =
+    tab === "filters" ? "Search filters" : tab === "effects" ? "Search effects" : tab === "transitions" ? "Search transitions" : "Search shapes";
+  const searchBox = (
+    <input
+      type="search"
+      className="field fx-panel__search"
+      placeholder={searchPlaceholder}
+      aria-label={searchPlaceholder}
+      value={rawQuery}
+      onChange={(e) => setQuery(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          setQuery("");
+        }
+      }}
+    />
+  );
+
   return (
     <section className="fx-panel" aria-label={tab === "filters" ? "Filters" : tab === "effects" ? "Effects" : tab === "transitions" ? "Transitions" : "Shapes"}>
       {tab === "filters" && (
         <>
           {!still && <p className="fx-panel__hint">Drag a filter onto a video: it goes inside that clip. Drop it on empty track space for a block of its own that colours every picture under it (not text). Click it on the timeline for its settings.</p>}
-          <div className="fx__grid">
-            {/* Its own Adjust sliders (its settings panel) for every picture under it; the tile hints at a change. */}
-            {!still && tile({ kind: "adjust", id: "layer" }, "Adjust layer", "brightness(1.1) contrast(1.1) saturate(1.3)")}
-            {LOOKS.map((look) => tile({ kind: "filter", id: look.id }, look.label, lookFilter(look.id)))}
-          </div>
+          {searchBox}
+          {showAdjust || looks.length ? (
+            <div className="fx__grid">
+              {/* Its own Adjust sliders (its settings panel) for every picture under it; the tile hints at a change. */}
+              {showAdjust && tile({ kind: "adjust", id: "layer" }, "Adjust layer", "brightness(1.1) contrast(1.1) saturate(1.3)")}
+              {looks.map((look) => tile({ kind: "filter", id: look.id }, look.label, lookFilter(look.id)))}
+            </div>
+          ) : (
+            <p className="fx-panel__hint">No filters match</p>
+          )}
         </>
       )}
       {tab === "effects" && still && (
         // A picture is one moment: only the effects that don't move.
-        <div className="fx__grid">{PICTURE_EFFECTS.filter((e) => STILL_EFFECTS.includes(e.id)).map((effect) => tile({ kind: "effect", id: effect.id }, effect.label))}</div>
+        <>
+          {searchBox}
+          {stillEffects.length ? (
+            <div className="fx__grid">{stillEffects.map((effect) => tile({ kind: "effect", id: effect.id }, effect.label))}</div>
+          ) : (
+            <p className="fx-panel__hint">No effects match</p>
+          )}
+        </>
       )}
       {tab === "effects" && !still && (
         <>
           <p className="fx-panel__hint">Drag an effect onto a video: it goes inside that clip. Drop it on empty track space for a block of its own that you can stretch over several clips. Click it on the timeline for its settings.</p>
-          <h3 className="section-label">Camera</h3>
-          <div className="fx__grid">
-            {PICTURE_EFFECTS.filter((e) => e.category === "camera").map((effect) => tile({ kind: "effect", id: effect.id }, effect.label))}
-          </div>
-          <h3 className="section-label">Style</h3>
-          <div className="fx__grid">
-            {PICTURE_EFFECTS.filter((e) => e.category === "style").map((effect) => tile({ kind: "effect", id: effect.id }, effect.label))}
-          </div>
-          <h3 className="section-label">Speed and direction</h3>
-          <p className="fx-panel__hint">
-            Drop one on a clip: it plays slower, faster or backwards. Split the clip first to change just a part. Smooth slow-mo makes in-between
-            frames in the export, so it takes longer to export.
-          </p>
-          <div className="fx__grid">{TIME_EFFECTS.map((effect) => tile({ kind: "time", id: effect.id }, effect.label))}</div>
+          {searchBox}
+          {cameraEffects.length > 0 && (
+            <>
+              <h3 className="section-label">Camera</h3>
+              <div className="fx__grid">
+                {cameraEffects.map((effect) => tile({ kind: "effect", id: effect.id }, effect.label))}
+              </div>
+            </>
+          )}
+          {styleEffects.length > 0 && (
+            <>
+              <h3 className="section-label">Style</h3>
+              <div className="fx__grid">
+                {styleEffects.map((effect) => tile({ kind: "effect", id: effect.id }, effect.label))}
+              </div>
+            </>
+          )}
+          {timeEffects.length > 0 && (
+            <>
+              <h3 className="section-label">Speed and direction</h3>
+              <p className="fx-panel__hint">
+                Drop one on a clip: it plays slower, faster or backwards. Split the clip first to change just a part. Smooth slow-mo makes in-between
+                frames in the export, so it takes longer to export.
+              </p>
+              <div className="fx__grid">{timeEffects.map((effect) => tile({ kind: "time", id: effect.id }, effect.label))}</div>
+            </>
+          )}
+          {!cameraEffects.length && !styleEffects.length && !timeEffects.length && <p className="fx-panel__hint">No effects match</p>}
         </>
       )}
       {tab === "transitions" && (
         <>
-          <h3 className="section-label">Between clips</h3>
-          <p className="fx-panel__hint">Drag one onto a clip or a cut, or click one to add it at the playhead. Click a transition on the timeline for its settings.</p>
-          <div className="fx__grid">{TRANSITION_KINDS.map((t) => tile({ kind: "transition", id: t.kind }, t.label))}</div>
-          <h3 className="section-label">In & out</h3>
-          <p className="fx-panel__hint">Drop on a clip: it fades in from black at its start, or out at its end.</p>
-          <div className="fx__grid">
-            {tile({ kind: "fade", id: "in" }, "Fade in")}
-            {tile({ kind: "fade", id: "out" }, "Fade out")}
-          </div>
+          {searchBox}
+          {betweenTransitions.length > 0 && (
+            <>
+              <h3 className="section-label">Between clips</h3>
+              <p className="fx-panel__hint">Drag one onto a clip or a cut, or click one to add it at the playhead. Click a transition on the timeline for its settings.</p>
+              <div className="fx__grid">{betweenTransitions.map((t) => tile({ kind: "transition", id: t.kind }, t.label))}</div>
+            </>
+          )}
+          {fades.length > 0 && (
+            <>
+              <h3 className="section-label">In & out</h3>
+              <p className="fx-panel__hint">Drop on a clip: it fades in from black at its start, or out at its end.</p>
+              <div className="fx__grid">{fades.map((f) => tile({ kind: "fade", id: f.id }, f.label))}</div>
+            </>
+          )}
+          {!betweenTransitions.length && !fades.length && <p className="fx-panel__hint">No transitions match</p>}
         </>
       )}
       {tab === "shapes" && (
@@ -395,18 +469,11 @@ export function FxPanel({
               Drag a shape onto the timeline; select it to change its colour, outline, see-through and angle; drag it in the preview to move or resize it.
             </p>
           )}
-          <input
-            type="search"
-            className="field fx-panel__search"
-            placeholder="Search shapes"
-            aria-label="Search shapes"
-            value={shapeQuery}
-            onChange={(e) => setShapeQuery(e.target.value)}
-          />
+          {searchBox}
           {shapes.length ? (
             <div className="fx__grid is-shapes">{shapes.map((shape) => tile({ kind: "shape", id: shape.id }, shape.label, undefined, shape))}</div>
           ) : (
-            <p className="fx-panel__hint">No shape called “{shapeQuery.trim()}”.</p>
+            <p className="fx-panel__hint">No shape called “{rawQuery.trim()}”.</p>
           )}
         </>
       )}

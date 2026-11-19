@@ -67,6 +67,8 @@ on Hugging Face.
 ## Libraries built into Craftora
 
 The app is built with [Tauri](https://tauri.app) (MIT or Apache-2.0), [React](https://react.dev)
-(MIT), [hls.js](https://github.com/video-dev/hls.js) (Apache-2.0, plays stream previews) and other open-source Rust crates and npm packages under permissive licences (MIT,
+(MIT), [hls.js](https://github.com/video-dev/hls.js) (Apache-2.0, plays stream previews),
+[anime.js](https://animejs.com) (MIT, the empty-state cat's motion), the Pixelify Sans font (SIL Open Font License 1.1, the cat's
+speech bubble) and other open-source Rust crates and npm packages under permissive licences (MIT,
 Apache-2.0, BSD, ISC, Zlib, Unicode). Their licence texts are in each package's source; run
 `cargo license` in `src-tauri/` or check `bun.lock` for the full list.

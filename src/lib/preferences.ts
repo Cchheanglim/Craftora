@@ -1,5 +1,5 @@
 /** Settings → Preferences: small on/off choices, remembered on this PC. */
-export type Preference = "finishSound" | "importToTimeline" | "captionsOnGpu";
+export type Preference = "finishSound" | "importToTimeline" | "captionsOnGpu" | "showCat";
 
 const DEFAULTS: Record<Preference, boolean> = {
   // Craftora's sound when a download or export finishes.
@@ -8,6 +8,8 @@ const DEFAULTS: Record<Preference, boolean> = {
   importToTimeline: false,
   // whisper uses the graphics card when there is one (speech.rs); off: the processor only.
   captionsOnGpu: true,
+  // Craftora's pixel cat in the GIFs tab (Mascot.tsx).
+  showCat: true,
 };
 
 export function preference(name: Preference): boolean {

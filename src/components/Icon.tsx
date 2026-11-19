@@ -265,6 +265,12 @@ const paths = {
       <path d="m10 12 4 0M12 10l2 2-2 2" />
     </>
   ),
+  gif: (
+    <>
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <path d="M9 10H7a1.5 1.5 0 0 0-1.5 1.5v1A1.5 1.5 0 0 0 7 14h2v-2H8M12 10v4M15 14v-4h3M15 12h2" />
+    </>
+  ),
   lock: (
     <>
       <rect x="4" y="11" width="16" height="10" rx="2" />

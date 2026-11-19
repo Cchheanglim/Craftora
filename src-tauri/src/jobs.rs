@@ -27,6 +27,7 @@ pub(crate) enum Output {
 pub(crate) enum Container {
     Mp4,
     Mkv,
+    Gif,
     Mp3,
     Wav,
     Flac,
@@ -39,6 +40,7 @@ impl Container {
         match self {
             Container::Mp4 => "mp4",
             Container::Mkv => "mkv",
+            Container::Gif => "gif",
             Container::Mp3 => "mp3",
             Container::Wav => "wav",
             Container::Flac => "flac",
@@ -47,7 +49,7 @@ impl Container {
         }
     }
     pub(crate) fn is_video(self) -> bool {
-        matches!(self, Container::Mp4 | Container::Mkv)
+        matches!(self, Container::Mp4 | Container::Mkv | Container::Gif)
     }
     pub(crate) fn is_image(self) -> bool {
         matches!(self, Container::Png | Container::Jpg)

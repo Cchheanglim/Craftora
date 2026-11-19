@@ -51,6 +51,8 @@ struct ProbeStream {
     height: Option<u32>,
     avg_frame_rate: Option<String>,
     bit_rate: Option<String>,
+    nb_frames: Option<String>,
+    duration: Option<String>,
     disposition: Option<Disposition>,
     #[serde(default)]
     side_data_list: Vec<SideData>,
@@ -306,7 +308,7 @@ pub fn allow_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: String)
     allow_preview(&app, &path)?;
     opened.allow(path.clone());
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    let kind = if ["png", "jpg", "jpeg", "jfif", "webp", "bmp", "tif", "tiff", "avif", "ico"].contains(&ext.as_str()) {
+    let kind = if ["png", "jpg", "jpeg", "jfif", "webp", "bmp", "tif", "tiff", "avif", "ico", "gif"].contains(&ext.as_str()) {
         "image"
     } else if ["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"].contains(&ext.as_str()) {
         "audio"
@@ -341,6 +343,16 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
             (Some(w), Some(h)) => format!("Image · {w}×{h}"),
             _ => "Image".into(),
         };
+        let is_gif = probe.format.format_name.as_deref().is_some_and(|f| f.contains("gif"));
+        let frames = image.nb_frames.as_deref().and_then(|n| n.parse::<u64>().ok());
+        let gif_duration = probe
+            .format
+            .duration
+            .as_deref()
+            .or(image.duration.as_deref())
+            .and_then(|d| d.parse::<f64>().ok())
+            .filter(|&d| d > 0.0);
+        let animated = (is_gif && frames.is_none_or(|n| n > 1)).then_some(gif_duration).flatten();
         return Ok(MediaSource {
             title: path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Untitled".into()),
             uploader: "On this PC".into(),
@@ -352,6 +364,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
             preview_hls: false,
             preview_proxy: "",
             image: true,
+            animated,
             thumbnail: String::new(),
             thumbnails: Vec::new(),
             chapters: Vec::new(),
@@ -434,6 +447,7 @@ pub async fn open_local(app: AppHandle, opened: State<'_, OpenedFiles>, path: St
         preview_hls: false,
         preview_proxy: if cached.is_some() { "" } else { kind.name() },
         image: false,
+        animated: None,
         thumbnail: String::new(),
         thumbnails: Vec::new(),
         chapters: Vec::new(),

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { ExportSettings, Job, MediaSource } from "./types";
 import { DEMO_JOBS, DEMO_SOURCES } from "./data/demo";
 import {
@@ -33,11 +33,13 @@ import {
   RECORDINGS,
   allowLocal,
   pickFolder,
+  saveGifFrom,
   saveSnapshot,
   saveVoice,
   saveSrt,
   openCaptionsFile,
   pickMediaFiles,
+  pickGifFiles,
   pickMediaFile,
   revealFile,
   pickPicture,
@@ -154,12 +156,14 @@ import { ImageOptions } from "./components/ImageOptions";
 import { NewImageDialog } from "./components/NewImageDialog";
 import { ColourRangePanel } from "./components/ColourRangePanel";
 import { MenuBar, type Menu, type MenuItem } from "./components/MenuBar";
+import { ContextMenu, type MenuItem as CtxMenuItem } from "./components/ContextMenu";
 import { ImageWorkspace, ZoomSelect, useImageView, type ImageTool } from "./components/ImageWorkspace";
 import { Home, ago, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
 import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/EdgeResizer";
 import { EFFECT_SETTINGS, LOOKS, PICTURE_EFFECTS, dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, STILL_EFFECTS, type FxTab } from "./components/FxPanel";
+import { GifPanel } from "./components/GifPanel";
 import { CropDialog } from "./components/CropDialog";
 import { IconTabs } from "./components/IconTabs";
 import { loadFont } from "./lib/fonts";
@@ -169,7 +173,7 @@ import { LEVEL_STEP, VoicePanel } from "./components/VoicePanel";
 import { Tooltip } from "./components/Tooltip";
 import { useFetchReview } from "./components/FetchDetails";
 import { Preview } from "./components/Preview";
-import { TimelineEditor, type ClipCommand } from "./components/TimelineEditor";
+import { TimelineEditor, beginMediaDrag, type ClipCommand } from "./components/TimelineEditor";
 import { AddText, CaptionStyle, Inspector, KEY_START, Slider, type ClipSection } from "./components/Inspector";
 import { ExportPanel } from "./components/ExportPanel";
 import { ExportDialog } from "./components/ExportDialog";
@@ -374,6 +378,26 @@ function siteOf(link: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Returns trimmed `raw` when it is an http(s) link to a `.gif` or a Giphy page/media URL. */
+function gifUrlFromText(raw: string): string | null {
+  const text = raw.trim();
+  if (!text || /\s/.test(text)) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(text);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  const host = parsed.hostname.toLowerCase();
+  const path = parsed.pathname;
+  if (path.toLowerCase().endsWith(".gif")) return text;
+  if ((host === "giphy.com" || host === "www.giphy.com") && /^\/gifs\/[^/]+/.test(path)) return text;
+  if (/^media\d*\.giphy\.com$/.test(host) && /^\/media\/[^/]+/.test(path)) return text;
+  if (host === "i.giphy.com" && /^\/[^/]+\.(gif|webp)$/i.test(path)) return text;
+  return null;
 }
 
 /**
@@ -1357,14 +1381,17 @@ export default function App() {
   importRef.current = importFiles;
   useEffect(() => {
     if (!inDesktopApp) return;
-    const unlisten = onFileDrop((state) => {
-      if (state === "over") setDragging(true);
-      else if (state === "left") setDragging(false);
-      else {
-        setDragging(false);
-        if (state.dropped.length) void importRef.current(state.dropped);
-      }
-    });
+    const unlisten = onFileDrop(
+      (state) => {
+        if (state === "over") setDragging(true);
+        else if (state === "left") setDragging(false);
+        else {
+          setDragging(false);
+          if (state.dropped.length) void importRef.current(state.dropped);
+        }
+      },
+      (msg) => setError(msg),
+    );
     return () => void unlisten.then((stop) => stop());
   }, []);
 
@@ -1566,6 +1593,50 @@ export default function App() {
     api.edit({ type: "addClip", clipId, mediaId, at: playback.time });
     setSelectedId(clipId);
     setView("editor");
+  };
+
+  const importingGif = useRef(new Map<string, Promise<string>>());
+  const ensureGifMedia = (path: string): Promise<string> => {
+    const existing = projectRef.current.media.find((m) => m.source.url === path);
+    if (existing) return Promise.resolve(existing.id);
+    let pending = importingGif.current.get(path);
+    if (!pending) {
+      pending = openLocal(path)
+        .then((source) => importSource(source, false).id)
+        .finally(() => importingGif.current.delete(path));
+      importingGif.current.set(path, pending);
+    }
+    return pending;
+  };
+  const addGif = async (path: string) => {
+    try {
+      const mediaId = await ensureGifMedia(path);
+      const clipId = crypto.randomUUID();
+      api.edit({ type: "addClip", clipId, mediaId, at: playback.time });
+      setSelectedId(clipId);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  const dragGif = async (path: string, e: ReactPointerEvent) => {
+    try {
+      const mediaId = await ensureGifMedia(path);
+      beginMediaDrag(mediaId, e);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  const importGifs = async () => {
+    try {
+      const paths = await pickGifFiles();
+      if (paths.length) await importFiles(paths);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  const downloadGif = async (link: string) => {
+    const path = await saveGifFrom(link);
+    await importFiles([path]);
   };
 
   /** The selected clip, or else the clip under the playhead on the lowest track that has one. */
@@ -2396,6 +2467,40 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const pasteGif = useRef<(e: ClipboardEvent) => void>(() => {});
+  pasteGif.current = (e: ClipboardEvent) => {
+    if (!inDesktopApp || isTyping(e.target) || document.querySelector("dialog[open]")) return;
+    const dt = e.clipboardData;
+    if (!dt) return;
+    const files = Array.from(dt.files);
+    const imageFile = files.find((f) => f.type.startsWith("image/") || /\.(gif|png|jpe?g|webp)$/i.test(f.name));
+    let url = gifUrlFromText(dt.getData("text/plain"));
+    if (!url && imageFile) {
+      const html = dt.getData("text/html");
+      const src = html ? new DOMParser().parseFromString(html, "text/html").querySelector("img")?.getAttribute("src") : null;
+      if (src) url = gifUrlFromText(src);
+    }
+    if (url) {
+      e.preventDefault();
+      setBusy(true);
+      setError(null);
+      void downloadGif(url)
+        .catch((err) => setError(errorText(err)))
+        .finally(() => setBusy(false));
+      return;
+    }
+    // `drop.rs`'s `save_gif_from` only takes a URL string right now, not raw clipboard bytes.
+    if (imageFile && (imageFile.type === "image/gif" || /\.gif$/i.test(imageFile.name))) {
+      e.preventDefault();
+      setError("Drop the GIF file onto the window or paste its link instead.");
+    }
+  };
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => pasteGif.current(e);
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
+
   const exported = history ?? [];
   const shownExports = exported.filter((j) => !j.hidden);
   const usedMedia = new Set(project.clips.map((c) => c.mediaId).filter((id): id is string => Boolean(id)));
@@ -2609,6 +2714,16 @@ export default function App() {
       usedMedia={usedMedia}
       onRecordVoice={inDesktopApp ? openVoice : undefined}
       fx={(tab) => fxPanel(tab, false)}
+      gifs={
+        <GifPanel
+          entries={library.filter((e) => Boolean(e.animated))}
+          onAdd={(path) => void addGif(path)}
+          onDrag={(path, e) => void dragGif(path, e)}
+          onImport={() => void importGifs()}
+          onDownload={downloadGif}
+          onForget={(path) => changeLibrary((entries) => entries.filter((e) => e.path !== path))}
+        />
+      }
       only={only}
     />
   );
@@ -2635,8 +2750,10 @@ export default function App() {
         onError: setError,
       }
     : undefined;
+  const [itemMenu, setItemMenu] = useState<{ clipId: string; x: number; y: number } | null>(null);
   const preview = (
     <Preview
+      onItemMenu={(clipId, x, y) => setItemMenu({ clipId, x, y })}
       silent={voiceSilent}
       painting={painting}
       picking={picking ? { clipId: picking.clipId, onPicked: (color) => endPick(color), onCancel: (unreadable) => endPick(undefined, unreadable) } : undefined}
@@ -2730,11 +2847,11 @@ export default function App() {
   }));
   // The Image editor's do-anything box (Ctrl K): what the picked layer can do first, then adding, the picture and the view.
   // Each of these also has a button somewhere; the box is the quick way to them.
-  const moveLayer = (by: -1 | 1) => {
-    if (!selected) return;
+  const moveLayer = (by: -1 | 1, clip = selected) => {
+    if (!clip) return;
     const layers = layersOf(project);
-    const next = layers[layers.findIndex((l) => l.clip.id === selected.id) + by];
-    if (next) api.edit({ type: "moveTrack", trackId: selected.trackId, to: project.tracks.indexOf(next.track) });
+    const next = layers[layers.findIndex((l) => l.clip.id === clip.id) + by];
+    if (next) api.edit({ type: "moveTrack", trackId: clip.trackId, to: project.tracks.indexOf(next.track) });
   };
   const picked = selected ? layerName(selected, project) : "";
   const pictureCommands = (clip: Clip): Command[] => [
@@ -3404,7 +3521,8 @@ export default function App() {
         {view === "media" && (
           <MediaLibrary
             entries={library}
-            onImport={inDesktopApp ? () => void importFiles() : undefined}
+            onImportGifs={inDesktopApp ? () => void importGifs() : undefined}
+            onDownloadGif={inDesktopApp ? downloadGif : undefined}
             onAdd={(path) => void importFiles([path])}
             onSave={(path, saved) => changeLibrary((entries) => entries.map((e) => (e.path === path ? { ...e, saved } : e)))}
             onThumbnail={(path, thumbnail) => changeLibrary((entries) => entries.map((e) => (e.path === path ? { ...e, thumbnail } : e)))}
@@ -3576,6 +3694,45 @@ export default function App() {
 
 
       <TextMenu />
+      {itemMenu &&
+        (() => {
+          const clip = project.clips.find((c) => c.id === itemMenu.clipId);
+          if (!clip) return null;
+          const picture = showsPicture(project, clip);
+          const patch = (p: Partial<Clip>) => api.edit({ type: "updateClip", clipId: clip.id, patch: p });
+          const run = (cmd: ClipCommand) => clipCommand(cmd, clip, playback.time);
+          const items: CtxMenuItem[] = [
+            { label: "Copy", icon: "copy", onClick: () => run("copy") },
+            { label: "Cut", icon: "scissors", onClick: () => run("cut") },
+            ...(canPaste ? [{ label: "Paste", icon: "clipboard" as const, onClick: () => run("paste") }] : []),
+            { label: "Duplicate", icon: "plus", onClick: () => run("duplicate") },
+            "sep",
+            // Size 1 is full frame for a photo or video; for text or a shape it would blow it up, so they only get Center.
+            ...(picture ? [{ label: "Reset size and position", icon: "rotate" as const, onClick: () => patch({ size: 1, x: 0.5, y: 0.5, aspect: undefined, fill: false }) }] : []),
+            { label: "Center in frame", icon: "fit", onClick: () => patch({ x: 0.5, y: 0.5 }) },
+            ...(picture ? [{ label: "Fill the frame", icon: "maximize" as const, onClick: () => patch({ fill: !clip.fill }) }] : []),
+            "sep",
+            ...(picture
+              ? [
+                  { label: "Mirror", icon: "flip" as const, onClick: () => run("mirror") },
+                  { label: "Rotate 90°", icon: "rotate" as const, onClick: () => run("rotate") },
+                  { label: "Crop…", icon: "crop" as const, onClick: () => run("crop") },
+                ]
+              : []),
+            { label: "Bring forward", icon: "chevronUp", onClick: () => moveLayer(-1, clip) },
+            { label: "Send backward", icon: "chevronDown", onClick: () => moveLayer(1, clip) },
+            ...(!imageMode && picture
+              ? [
+                  "sep" as const,
+                  { label: "Copy effects", icon: "sparkle" as const, onClick: () => run("copyEffects") },
+                  ...(canPasteEffects ? [{ label: "Paste effects", icon: "clipboard" as const, onClick: () => run("pasteEffects") }] : []),
+                ]
+              : []),
+            "sep",
+            { label: "Delete", icon: "trash", danger: true, onClick: () => run("delete") },
+          ];
+          return <ContextMenu x={itemMenu.x} y={itemMenu.y} label="Clip" items={items} onClose={() => setItemMenu(null)} />;
+        })()}
       {closeDialog}
       {croppingClip && (
         <CropDialog

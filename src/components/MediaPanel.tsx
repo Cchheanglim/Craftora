@@ -33,19 +33,22 @@ export interface MediaPanelProps {
   onRecordVoice?: () => void;
   /** The Filters, Effects, Transitions and Shapes tiles (FxPanel), drawn in their tabs here. */
   fx: (tab: FxTab) => ReactNode;
+  /** The user's animated GIFs tab (GifPanel), drawn in the video editor's tools panel. */
+  gifs?: ReactNode;
   /** The Image editor: its own Text and Size tabs instead of Audio and Transitions. */
   still?: { text: ReactNode; size: ReactNode };
   /** The Image editor's tool strip picked this tab: shown alone, without the panel's own tab row. */
   only?: Tab;
 }
 
-export type Tab = "media" | "audio" | "text" | "size" | FxTab;
+export type Tab = "media" | "audio" | "text" | "size" | "gifs" | FxTab;
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: "media", label: "Media", icon: "film" },
   { id: "audio", label: "Audio", icon: "music" },
   { id: "filters", label: "Filters", icon: "blend" },
   { id: "effects", label: "Effects", icon: "sparkle" },
   { id: "transitions", label: "Transitions", icon: "transition" },
+  { id: "gifs", label: "GIFs", icon: "gif" },
   { id: "shapes", label: "Shapes", icon: "star" },
 ];
 const STILL_TABS: { id: Tab; label: string; icon: IconName }[] = [
@@ -71,12 +74,14 @@ export function MediaPanel({
   usedMedia,
   onRecordVoice,
   fx,
+  gifs,
   still,
   only,
 }: MediaPanelProps) {
   const [picked, setTab] = useState<Tab>("media");
   const tab = only ?? picked;
-  const visuals = media.filter((m) => m.hasVideo);
+  // In the Video editor animated GIFs live in their own GIFs tab; the Image editor (no GIFs tab) lists them as photos.
+  const visuals = media.filter((m) => m.hasVideo && !(m.source.animated && !still));
   const sounds = media.filter((m) => !m.hasVideo);
 
   /** The status after the name, worded as the old sidebar list had it. */
@@ -163,7 +168,13 @@ export function MediaPanel({
         </div>
       )}
 
-      {tab !== "media" && tab !== "audio" && tab !== "text" && tab !== "size" && (
+      {tab === "gifs" && (
+        <div className="media-panel__fx" id="media-panel-body" role="tabpanel" aria-labelledby="media-panel-tab-gifs">
+          {gifs}
+        </div>
+      )}
+
+      {tab !== "media" && tab !== "audio" && tab !== "text" && tab !== "size" && tab !== "gifs" && (
         <div className="media-panel__fx" id="media-panel-body" role="tabpanel" aria-labelledby={`media-panel-tab-${tab}`}>
           {fx(tab)}
         </div>

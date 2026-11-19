@@ -124,6 +124,8 @@ export interface LibraryEntry {
   kind: "video" | "audio" | "image";
   /** Seconds; 0 for pictures. */
   duration: number;
+  /** An animated GIF: its loop length in seconds. */
+  animated?: number;
   /** A small JPEG data URL, when one was made. */
   thumbnail?: string;
   addedAt: number;

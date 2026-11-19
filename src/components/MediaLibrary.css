@@ -3,3 +3,19 @@
   flex-direction: column;
   gap: 20px;
 }
+
+.media-library__gif-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.media-library__gif-actions .gif-link-box {
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+.media-library__gif-actions > .btn {
+  flex-shrink: 0;
+}

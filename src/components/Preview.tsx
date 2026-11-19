@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type SyntheticEvent } from "react";
 import type { Frame } from "../types";
 import { isBlock, isShape, isText, showsPicture, clipEnd, fadeAt, soundFadeAt, mediaTimeAt, peakBetween, peaksFor, textLines, trackOrder, trackSilent, transitionMix, CAPTIONS, TEXT_FONTS, type Clip, type Project } from "../project/model";
 import { stretchSide } from "../project/layerBox";
@@ -15,6 +15,7 @@ import { CRAFTORA_MEDIA, setWindowFullscreen } from "../lib/engine";
 import { textShadowFilter } from "../lib/textPicture";
 import { hasStyle, styleFilter } from "../lib/layerStyle";
 import { maskOn, maskStyle } from "../lib/mask";
+import { gifFrameAt, loadGif, type DecodedGif } from "../lib/gif";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
 import { SyncedMedia } from "./SyncedMedia";
@@ -77,6 +78,8 @@ interface PreviewProps {
   selecting?: Selecting;
   /** The Image editor's selection, outlined over the picture whatever the tool. */
   selection?: Selection | null;
+  /** Opens the right-click menu for a picture, video, shape or text on the stage. */
+  onItemMenu?: (clipId: string, x: number, y: number) => void;
 }
 
 const WAVE_BARS = 140;
@@ -191,7 +194,7 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { ...edge, fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : edge;
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, onDropMedia, placeText, silent, picking, still, painting, maskView, selecting, selection }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, onDropMedia, placeText, silent, picking, still, painting, maskView, selecting, selection, onItemMenu }: PreviewProps) {
   const [mutedByHand, setMuted] = useState(false);
   const muted = mutedByHand || Boolean(silent);
   // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
@@ -222,7 +225,25 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const [snapping, setSnapping] = useState(false);
   /** Preview files that failed to load (refused by their server, or unplayable). */
   const [failed, setFailed] = useState<Set<string>>(() => new Set());
-  const fail = (src: string) => setFailed((all) => (all.has(src) ? all : new Set(all).add(src)));
+  const fail = useCallback((src: string) => setFailed((all) => (all.has(src) ? all : new Set(all).add(src))), []);
+  const loadingCbs = useRef(new Map<string, (on: boolean) => void>());
+  const onMediaLoading = (key: string) => {
+    let fn = loadingCbs.current.get(key);
+    if (!fn) {
+      fn = (on: boolean) => playback.setLoading(key, on);
+      loadingCbs.current.set(key, fn);
+    }
+    return fn;
+  };
+  const failCbs = useRef(new Map<string, () => void>());
+  const onMediaFailed = (src: string) => {
+    let fn = failCbs.current.get(src);
+    if (!fn) {
+      fn = () => fail(src);
+      failCbs.current.set(src, fn);
+    }
+    return fn;
+  };
   const stageRef = useRef<HTMLDivElement>(null);
   // A layer being painted, shown from its canvas until its saved photo has loaded (1.5 s at most: a photo that came
   // out the same as before never loads again).
@@ -352,6 +373,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const editable = (c?: Clip) => Boolean(c && (!c.mediaId || showsPicture(project, c)));
 
   // The combined radio wave across the timeline, shown right under the video.
+  const waveKey = project.clips
+    .map((c) => `${c.id}:${c.trackId}:${c.mediaId ?? ""}:${c.start}:${c.in}:${c.out}:${c.speed}:${c.reverse ? 1 : 0}:${c.volume}:${c.fadeIn}:${c.fadeOut}:${c.soundFadeIn ?? 0}:${c.soundFadeOut ?? 0}`)
+    .join("|");
   const timelineWave = useMemo(() => {
     if (duration <= 0) return [];
     const audible = project.clips.filter((c) => {
@@ -376,7 +400,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
       }
       return Math.max(6, Math.min(100, Math.round(sum)));
     });
-  }, [project.clips, project.media, project.tracks, duration]);
+  }, [waveKey, project.media, project.tracks, duration]);
 
   const scrubWave = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 || duration <= 0) return;
@@ -520,9 +544,9 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     };
     const move = (ev: PointerEvent) => onPointerMove.current(ev);
     const up = () => {
-      if (gestureRef.current?.moved) {
+      if (gestureRef.current) {
         justDragged.current = true;
-        window.setTimeout(() => (justDragged.current = false), 0);
+        window.setTimeout(() => (justDragged.current = false), 100);
       }
       gestureRef.current = null;
       window.removeEventListener("pointermove", move);
@@ -558,9 +582,17 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const openItemMenu = (clip: Clip) => (e: ReactMouseEvent<HTMLElement>) => {
+    if (clip.trackId.startsWith(SHOWN_CAPTIONS)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onSelect(clip.id);
+    onItemMenu?.(clip.id, e.clientX, e.clientY);
+  };
+
   const handles = (clip: Clip) =>
     (isText(clip) ? ["nw", "ne", "sw", "se"] : ["nw", "ne", "sw", "se", "n", "s", "e", "w"]).map((corner) => (
-      <span key={corner} className={`preview__handle is-${corner}`} onPointerDown={beginGesture(clip, corner as Corner | Edge)} aria-hidden="true" />
+      <span key={corner} className={`preview__handle is-${corner}`} onPointerDown={beginGesture(clip, corner as Corner | Edge)} onContextMenu={openItemMenu(clip)} aria-hidden="true" />
     ));
 
   return (
@@ -568,9 +600,12 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
       <div
         className="preview__screen"
         onClick={() => {
-          if (justDragged.current) return;
+          if (justDragged.current) {
+            justDragged.current = false;
+            return;
+          }
           // With a picture or text selected, a click beside it lets go of it; otherwise it plays.
-          if (editable(selected) || still) onSelect(null);
+          if (editable(selected) || selectedId === SHOWN_CAPTIONS || still) onSelect(null);
           else playback.toggle();
         }}
       >
@@ -673,30 +708,46 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 mask={still ? maskStyle(clip) : undefined}
                 viewingMask={viewingMaskClip?.id === clip.id}
                 onPointerDown={beginGesture(clip, "move")}
+                onContextMenu={openItemMenu(clip)}
                 handles={isSelected ? handles(clip) : null}
               >
-                {(onShape, style, onReady) =>
+                {(onShape, style, onReady, onLoadedMetadata) =>
                   media.source.image ? (
                     <>
                       {live?.clipId === clip.id && <LiveCanvas canvas={live.canvas} className={clip.mirror ? "preview__video is-mirrored" : "preview__video"} style={style} />}
-                      <img
-                        src={(canPlay ? media.source.previewUrl : poster) || poster}
-                        // Craftora's own addresses answer with CORS: asking for it lets Remove a colour → Pick read the photo.
-                        crossOrigin={((canPlay ? media.source.previewUrl : poster) || poster)?.startsWith(CRAFTORA_MEDIA) ? "anonymous" : undefined}
-                        alt=""
-                        className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
-                        style={live?.clipId === clip.id ? { ...style, visibility: "hidden" } : style}
-                        draggable={false}
-                        onError={() => {
-                          if (canPlay) fail(media.source.previewUrl);
-                        }}
-                        onLoad={(e) => {
-                          onShape(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight);
-                          onReady();
-                          // The painted photo is in: its canvas can go.
-                          setLive((l) => (l?.clipId === clip.id && l.settled ? null : l));
-                        }}
-                      />
+                      {media.source.animated && canPlay ? (
+                        <GifLayer
+                          src={media.source.previewUrl}
+                          time={still ? 0 : time - clip.start}
+                          className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
+                          style={live?.clipId === clip.id ? { ...style, visibility: "hidden" } : style}
+                          onError={onMediaFailed(media.source.previewUrl)}
+                          onShape={onShape}
+                          onReady={() => {
+                            onReady();
+                            setLive((l) => (l?.clipId === clip.id && l.settled ? null : l));
+                          }}
+                        />
+                      ) : (
+                        <img
+                          src={(canPlay ? media.source.previewUrl : poster) || poster}
+                          // Craftora's own addresses answer with CORS: asking for it lets Remove a colour → Pick read the photo.
+                          crossOrigin={((canPlay ? media.source.previewUrl : poster) || poster)?.startsWith(CRAFTORA_MEDIA) ? "anonymous" : undefined}
+                          alt=""
+                          className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
+                          style={live?.clipId === clip.id ? { ...style, visibility: "hidden" } : style}
+                          draggable={false}
+                          onError={() => {
+                            if (canPlay) fail(media.source.previewUrl);
+                          }}
+                          onLoad={(e) => {
+                            onShape(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight);
+                            onReady();
+                            // The painted photo is in: its canvas can go.
+                            setLive((l) => (l?.clipId === clip.id && l.settled ? null : l));
+                          }}
+                        />
+                      )}
                     </>
                   ) : (
                   <>
@@ -711,11 +762,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         muted={muted || trackMuted(clip) || separateSound}
                         rate={rate}
                         reverse={clip.reverse}
-                        onLoading={(on) => playback.setLoading(`${clip.id}:video`, on)}
-                        onFailed={() => fail(media.source.previewUrl)}
+                        onLoading={onMediaLoading(`${clip.id}:video`)}
+                        onFailed={onMediaFailed(media.source.previewUrl)}
                         className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
                         style={style}
-                        onLoadedMetadata={(e) => onShape(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
+                        onLoadedMetadata={onLoadedMetadata}
                         onReady={onReady}
                       />
                     )}
@@ -730,7 +781,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         muted={muted || trackMuted(clip)}
                         rate={rate}
                         reverse={clip.reverse}
-                        onLoading={(on) => playback.setLoading(`${clip.id}:audio`, on)}
+                        onLoading={onMediaLoading(`${clip.id}:audio`)}
                       />
                     )}
                   </>
@@ -765,8 +816,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 muted={muted || trackMuted(clip)}
                 rate={playback.speed * clip.speed}
                 reverse={clip.reverse}
-                onLoading={(on) => playback.setLoading(`${clip.id}:audio`, on)}
-                onFailed={() => fail(src)}
+                onLoading={onMediaLoading(`${clip.id}:audio`)}
+                onFailed={onMediaFailed(src)}
               />
             );
           })}
@@ -800,6 +851,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   still={Boolean(still)}
                   viewingMask={viewingMask}
                   onPointerDown={beginGesture(clip, "move")}
+                  onContextMenu={openItemMenu(clip)}
                   handles={isSelected ? handles(clip) : null}
                 />
               );
@@ -834,6 +886,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   ...(viewingMask && { background: "transparent", boxShadow: "none" }),
                 }}
                 onPointerDown={beginGesture(clip, "move")}
+                onContextMenu={openItemMenu(clip)}
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Softness and glow on the letters only: not the box edge or the selection outline; its mask likewise. */}
@@ -1115,6 +1168,7 @@ const styled = (clip: Clip) => (hasStyle(clip.style) ? `url(#style-${clip.id})` 
 const ownFill = (clip: Clip) => (hasStyle(clip.style) ? 1 : (clip.fillOpacity ?? 1));
 
 function AdjustFilters({ clips }: { clips: Clip[] }) {
+  const adjustKey = clips.map((c) => (c.adjust ? JSON.stringify(c.adjust) : "")).join("|");
   const used = useMemo(() => {
     const steps = new Map<string, LookStep>();
     for (const c of clips) {
@@ -1123,7 +1177,7 @@ function AdjustFilters({ clips }: { clips: Clip[] }) {
       }
     }
     return [...steps];
-  }, [clips]);
+  }, [adjustKey]);
   if (!used.length) return null;
   return (
     <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
@@ -1297,21 +1351,30 @@ interface PictureLayerProps {
   /** The Image editor: show the mask greyscale alone in place of the layer's pixels. */
   viewingMask?: boolean;
   onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
+  onContextMenu?: (e: ReactMouseEvent<HTMLElement>) => void;
   handles: ReactNode;
   /** The Image editor: its place in the stack (Layers order), photos and text and shapes together. */
   z?: number;
   /** Renders the picture: a video or an image. It reports its pixel size and when it's ready. */
-  children: (onShape: (width: number, height: number) => void, style: CSSProperties, onReady: () => void) => ReactNode;
+  children: (onShape: (width: number, height: number) => void, style: CSSProperties, onReady: () => void, onLoadedMetadata: (e: SyntheticEvent<HTMLVideoElement>) => void) => ReactNode;
 }
 
 /**
  * One picture on the stage, placed like the export: fitted inside the frame, scaled by its
  * size, at its position. The crop is a window onto the video.
  */
-function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, scaleX, transFilter, selected, poster, mask, viewingMask, onPointerDown, handles, z, children }: PictureLayerProps) {
+function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, scaleX, transFilter, selected, poster, mask, viewingMask, onPointerDown, onContextMenu, handles, z, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
+  const onShape = useCallback((width: number, height: number) => {
+    if (width && height) setVideoAspect(width / height);
+  }, []);
+  const onLoadedMetadata = useCallback((e: SyntheticEvent<HTMLVideoElement>) => {
+    const { videoWidth, videoHeight } = e.currentTarget;
+    if (videoWidth && videoHeight) setVideoAspect(videoWidth / videoHeight);
+  }, []);
+  const onReady = useCallback(() => setReady(true), []);
   const { left, top, right, bottom } = clip.crop;
   const keptW = 1 - left - right;
   const keptH = 1 - top - bottom;
@@ -1350,12 +1413,15 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
     transform: shift !== 0 || lift !== 0 ? `translate(${shift * stageWidth}px, ${(lift * stageWidth) / stageAspect}px)` : undefined,
     ...revealStyle(reveal),
   };
-  const video: CSSProperties = {
-    width: `${100 / keptW}%`,
-    height: `${100 / keptH}%`,
-    left: `${(-left / keptW) * 100}%`,
-    top: `${(-top / keptH) * 100}%`,
-  };
+  const video = useMemo<CSSProperties>(
+    () => ({
+      width: `${100 / keptW}%`,
+      height: `${100 / keptH}%`,
+      left: `${(-left / keptW) * 100}%`,
+      top: `${(-top / keptH) * 100}%`,
+    }),
+    [keptW, keptH, left, top],
+  );
 
   return (
     <div
@@ -1371,6 +1437,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
         rotate: clip.angle ? `${clip.angle}deg` : undefined,
       }}
       onPointerDown={onPointerDown}
+      onContextMenu={onContextMenu}
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
     >
       {/* The mask goes on the box's pixels, not on the box itself, which also holds the selection frame. */}
@@ -1410,13 +1477,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
               }}
             />
           )}
-          {children(
-            (width, height) => {
-              if (width && height) setVideoAspect(width / height);
-            },
-            video,
-            () => setReady(true),
-          )}
+          {children(onShape, video, onReady, onLoadedMetadata)}
         </div>
       </div>
       {/* A flash transition whitens the clip itself (the export fades its picture to white). */}
@@ -1445,6 +1506,61 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
   );
 }
 
+function GifLayer({
+  src,
+  time,
+  className,
+  style,
+  onShape,
+  onReady,
+  onError,
+}: {
+  src: string;
+  time: number;
+  className: string;
+  style: CSSProperties;
+  onShape: (width: number, height: number) => void;
+  onReady: () => void;
+  onError: () => void;
+}) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const [gif, setGif] = useState<DecodedGif | null>(null);
+  const callbacks = useRef({ onShape, onReady, onError });
+  callbacks.current = { onShape, onReady, onError };
+
+  useEffect(() => {
+    let cancelled = false;
+    setGif(null);
+    loadGif(src).then(
+      (decoded) => {
+        if (cancelled) return;
+        const first = decoded.frames[0];
+        if (first) callbacks.current.onShape(first.width, first.height);
+        setGif(decoded);
+        callbacks.current.onReady();
+      },
+      () => {
+        if (!cancelled) callbacks.current.onError();
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    const ctx = canvas?.getContext("2d");
+    const frame = gif?.frames[gifFrameAt(gif.times, gif.length, time)] ?? gif?.frames[0];
+    if (!canvas || !ctx || !frame) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(frame, 0, 0);
+  }, [gif, time]);
+
+  if (!gif) return null;
+  return <canvas ref={ref} width={gif.frames[0]?.width} height={gif.frames[0]?.height} className={className} style={style} />;
+}
+
 interface ShapeLayerProps {
   clip: Clip;
   frame: Frame;
@@ -1454,6 +1570,7 @@ interface ShapeLayerProps {
   reveal?: string;
   selected: boolean;
   onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
+  onContextMenu?: (e: ReactMouseEvent<HTMLElement>) => void;
   handles: ReactNode;
   /** The Image editor: its place in the stack (Layers order), photos and text and shapes together. */
   z?: number;
@@ -1464,7 +1581,7 @@ interface ShapeLayerProps {
 }
 
 /** One shape on the stage: a full-frame SVG picture with a hit box over its bounding box. */
-function ShapeLayer({ clip, frame, opacity, transFilter, transTransform, reveal, selected, onPointerDown, handles, z, still, viewingMask }: ShapeLayerProps) {
+function ShapeLayer({ clip, frame, opacity, transFilter, transTransform, reveal, selected, onPointerDown, onContextMenu, handles, z, still, viewingMask }: ShapeLayerProps) {
   const src = useMemo(
     () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(shapeSvg(clip, frame.width, frame.height))}`,
     [clip.shape, clip.color, clip.size, clip.aspect, clip.x, clip.y, clip.opacity, clip.outline, clip.rotate, clip.points, frame.width, frame.height],
@@ -1502,6 +1619,7 @@ function ShapeLayer({ clip, frame, opacity, transFilter, transTransform, reveal,
           zIndex: viewingMask ? 99991 : z,
         }}
         onPointerDown={onPointerDown}
+        onContextMenu={onContextMenu}
         onClick={(e) => e.stopPropagation()}
       >
         {viewingMask && clip.mask && (

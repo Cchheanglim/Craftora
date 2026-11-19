@@ -12,7 +12,18 @@
   padding: 8px;
 }
 
-/* All in one row once each tab has room for its label: six tabs (left panel) or eight (right panel). */
+/* Seven tabs (left panel with GIFs): four across leaves "Transitions" too narrow for its label, so three. */
+.icon-tabs[data-count="7"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* All in one row once each tab has room for its label: six or seven tabs (left panel) or eight (right panel). */
+@container (min-width: 490px) {
+  .icon-tabs[data-count="7"] {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+
 @container (min-width: 420px) {
   .icon-tabs[data-count="6"] {
     grid-template-columns: repeat(6, minmax(0, 1fr));

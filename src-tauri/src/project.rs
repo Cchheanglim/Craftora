@@ -27,7 +27,7 @@ const MAX_CLIPS: usize = 150;
 const MAX_TEXT_CLIPS: usize = 5000;
 const MAX_TEXT: usize = 500;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderSpec {
     id: String,
@@ -53,9 +53,14 @@ pub struct RenderSpec {
     /// JPG images: 1–100 (high when absent).
     #[serde(default)]
     image_quality: Option<u32>,
+    /// GIF exports: width in pixels (480, 720 or 1080; 720 when absent) and frame rate (10, 15 or 24; 15 when absent).
+    #[serde(default)]
+    gif_width: Option<u32>,
+    #[serde(default)]
+    gif_fps: Option<u32>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct MediaSpec {
     id: String,
@@ -68,6 +73,9 @@ struct MediaSpec {
     /// A still picture, shown for as long as its clips last.
     #[serde(default)]
     image: bool,
+    /// Animated GIF: its loop length in seconds.
+    #[serde(default)]
+    animated: Option<f64>,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq)]
@@ -161,7 +169,7 @@ fn one() -> f64 {
     1.0
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct ClipSpec {
     role: Role,
@@ -275,7 +283,7 @@ struct ClipSpec {
 }
 
 /// A text's animation (textMotion.ts `TextMotion`): [seconds from the clip's start, value] points joined by straight lines.
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 struct Motion {
     #[serde(default)]
     alpha: Vec<(f64, f64)>,
@@ -291,7 +299,7 @@ struct Motion {
 }
 
 /// A looping move: one cycle of points over `period` seconds, repeated from the clip's start.
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Cycle {
     period: f64,
     #[serde(default)]
@@ -301,7 +309,7 @@ struct Cycle {
 }
 
 /// Typewriter: `text` shows until `until` seconds after the clip's start.
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Typed {
     text: String,
     until: f64,
@@ -731,6 +739,9 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
     if spec.transparent && spec.container != Container::Png || spec.image_quality.is_some_and(|q| !(1..=100).contains(&q)) {
         return Err("That image setting isn't one Craftora offers.".into());
     }
+    if spec.gif_width.is_some_and(|w| ![480, 720, 1080].contains(&w)) || spec.gif_fps.is_some_and(|f| ![10, 15, 24].contains(&f)) {
+        return Err("That GIF setting isn't one Craftora offers.".into());
+    }
     // It goes into the filter graph.
     let bg = &spec.background;
     if !bg.is_empty() && !(bg.len() == 7 && bg.starts_with('#') && bg[1..].chars().all(|c| c.is_ascii_hexdigit())) {
@@ -839,9 +850,25 @@ fn validate(app: &AppHandle, spec: &RenderSpec) -> Result<(), String> {
 struct Source {
     path: PathBuf,
     image: bool,
+    animated: Option<f64>,
     /// Downloaded sections start at the section's beginning, not at 0.
     offset: f64,
     info: ProbeInfo,
+}
+
+/// FFmpeg input flags before and including `-i` for one clip.
+fn clip_input_args(clip: &ClipSpec, source: &Source, fps: u32) -> Vec<String> {
+    let mut args = if source.animated.is_some() {
+        vec!["-ignore_loop".into(), "0".into(), "-t".into(), secs(clip.length())]
+    } else if source.image {
+        // One picture, repeated at the frame rate for as long as the clip lasts.
+        vec!["-loop".into(), "1".into(), "-framerate".into(), fps.to_string(), "-t".into(), secs(clip.length())]
+    } else {
+        let from = (clip.in_point - source.offset).max(0.0);
+        vec!["-ss".into(), secs(from), "-t".into(), secs(clip.out - clip.in_point)]
+    };
+    args.extend(["-i".into(), source.path.to_string_lossy().into_owned()]);
+    args
 }
 
 /// Available physical memory in bytes, so Smooth slow-mo doesn't start more FFmpeg processes
@@ -893,12 +920,54 @@ async fn render(app: &AppHandle, spec: &RenderSpec) -> Result<PathBuf, String> {
     let ext = spec.container.ext();
     // Rendered inside the working folder; only a finished file reaches the export folder.
     let temp = work.join(format!("output.{ext}"));
-    let result = match if spec.transparent { see_through(app, spec, &work, &temp).await } else { render_in(app, spec, &work, &temp, None).await } {
+    let step = if spec.transparent {
+        see_through(app, spec, &work, &temp).await
+    } else if spec.container == Container::Gif {
+        let mkv = work.join("video.mkv");
+        let mut mkv_spec = spec.clone();
+        mkv_spec.container = Container::Mkv;
+        match render_in(app, &mkv_spec, &work, &mkv, None).await {
+            Ok(()) => {
+                let total = spec.clips.iter().map(ClipSpec::end).fold(0.0, f64::max);
+                let args = gif_args(&mkv, &temp, spec.gif_width.unwrap_or(720), spec.gif_fps.unwrap_or(15), spec.width);
+                run_ffmpeg(app, &spec.id, args, total, "encoding", Some(&work)).await
+            }
+            Err(e) => Err(e),
+        }
+    } else {
+        render_in(app, spec, &work, &temp, None).await
+    };
+    let result = match step {
         Ok(()) => deliver(&temp, &dir, &safe_stem(&spec.file_name), ext),
         Err(e) => Err(e),
     };
     let _ = std::fs::remove_dir_all(&work);
     result
+}
+
+fn gif_args(input: &Path, output: &Path, width: u32, fps: u32, frame_width: u32) -> Vec<String> {
+    let w = width.min(frame_width);
+    let vf = format!(
+        "fps={fps},scale={w}:-2:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle"
+    );
+    [
+        "-y",
+        "-hide_banner",
+        "-nostats",
+        "-progress",
+        "pipe:1",
+        "-i",
+        &input.to_string_lossy(),
+        "-vf",
+        &vf,
+        "-loop",
+        "0",
+        "-an",
+        &output.to_string_lossy(),
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
 }
 
 /// A see-through PNG: drawtext can't draw onto see-through pixels, so the image is drawn on black and on white, and
@@ -944,7 +1013,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
             (download(app, &spec.id, &request, work, &format!("media-{n}")).await?, from)
         };
         let info = probe(app, &path).await?;
-        sources.insert(media.id.as_str(), Source { path, offset, info, image: media.image });
+        sources.insert(media.id.as_str(), Source { path, offset, info, image: media.image, animated: media.animated });
     }
 
     // Pre-render each Smooth slow-mo video clip in up to 4 pieces side by side.
@@ -1065,14 +1134,7 @@ async fn render_in(app: &AppHandle, spec: &RenderSpec, work: &Path, output: &Pat
     for (i, clip) in spec.clips.iter().enumerate() {
         let Some(source) = clip.media_id.as_deref().and_then(|id| sources.get(id)) else { continue };
         input_at.insert(i, inputs.len());
-        if source.image {
-            // One picture, repeated at the frame rate for as long as the clip lasts.
-            inputs.extend(["-loop".into(), "1".into(), "-framerate".into(), fps.to_string(), "-t".into(), secs(clip.length())]);
-        } else {
-            let from = (clip.in_point - source.offset).max(0.0);
-            inputs.extend(["-ss".into(), secs(from), "-t".into(), secs(clip.out - clip.in_point)]);
-        }
-        inputs.extend(["-i".into(), source.path.to_string_lossy().into_owned()]);
+        inputs.extend(clip_input_args(clip, source, fps));
         input_of.insert(i, (next_input, source));
         next_input += 1;
         if smoothed.contains(&i) {
@@ -1808,9 +1870,23 @@ fn look_filter(op: &str, amount: f64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cover_bytes, effect_filter, frame_step, gpu_picture, jpg_q, key_filter, lerp, look_filter, piece_frames, pieces, timed, ClipSpec, Motion, RenderSpec, Source, TransitionKind};
+    use super::{clip_input_args, cover_bytes, effect_filter, frame_step, gif_args, gpu_picture, jpg_q, key_filter, lerp, look_filter, piece_frames, pieces, timed, ClipSpec, Motion, RenderSpec, Source, TransitionKind};
     use crate::local::ProbeInfo;
     use std::collections::HashMap;
+    use std::path::Path;
+
+    #[test]
+    fn animated_gif_loops_with_ignore_loop_and_plain_photo_uses_loop_1() {
+        let clip: ClipSpec = serde_json::from_str(r#"{"role":"video","start":0,"in":0,"out":4.5}"#).unwrap();
+        let info = || ProbeInfo { has_video: true, has_audio: false, fps: Some(10.0), turned: false };
+        let gif = Source { path: "cat.gif".into(), image: true, animated: Some(1.5), offset: 0.0, info: info() };
+        let gif_args = clip_input_args(&clip, &gif, 30);
+        assert_eq!(gif_args, ["-ignore_loop", "0", "-t", "4.500", "-i", "cat.gif"]);
+        assert!(!gif_args.contains(&"-loop".to_string()));
+
+        let photo = Source { path: "cat.png".into(), image: true, animated: None, offset: 0.0, info: info() };
+        assert_eq!(clip_input_args(&clip, &photo, 30), ["-loop", "1", "-framerate", "30", "-t", "4.500", "-i", "cat.png"]);
+    }
 
     #[test]
     fn jpg_quality_maps_onto_ffmpeg_q() {
@@ -1840,7 +1916,7 @@ mod tests {
         let spec = |clips: &str| -> RenderSpec {
             serde_json::from_str(&format!(r#"{{"id":"t","media":[],"clips":[{clips}],"width":1920,"height":1080,"fps":30,"output":"video","container":"mp4","fileName":"x"}}"#)).unwrap()
         };
-        let source = |turned| Source { path: "a.mp4".into(), image: false, offset: 0.0, info: ProbeInfo { has_video: true, has_audio: true, fps: Some(25.0), turned } };
+        let source = |turned| Source { path: "a.mp4".into(), image: false, animated: None, offset: 0.0, info: ProbeInfo { has_video: true, has_audio: true, fps: Some(25.0), turned } };
         let (plain, phone) = (source(false), source(true));
         let video = r#"{"role":"video","layer":0,"mediaId":"a","start":0,"in":0,"out":10,"mirror":true}"#;
         let one = HashMap::from([(0, (0, &plain))]);
@@ -2263,5 +2339,30 @@ mod tests {
         assert!(look_filter("blur", 1.0).is_none());
         assert!(look_filter("brightness", f64::NAN).is_none());
         assert!(look_filter("grayscale';drawtext", 1.0).is_none());
+    }
+
+    #[test]
+    fn builds_gif_args_and_caps_width_to_frame() {
+        let args = gif_args(Path::new("video.mkv"), Path::new("output.gif"), 720, 15, 1920);
+        assert_eq!(
+            args,
+            [
+                "-y",
+                "-hide_banner",
+                "-nostats",
+                "-progress",
+                "pipe:1",
+                "-i",
+                "video.mkv",
+                "-vf",
+                "fps=15,scale=720:-2:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle",
+                "-loop",
+                "0",
+                "-an",
+                "output.gif",
+            ]
+        );
+        let capped = gif_args(Path::new("video.mkv"), Path::new("output.gif"), 1080, 24, 640);
+        assert!(capped.contains(&"fps=24,scale=640:-2:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle".to_string()));
     }
 }

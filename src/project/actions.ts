@@ -458,7 +458,7 @@ function edit(p: Project, action: EditAction): Project {
       const media = p.media.find((m) => m.id === action.mediaId);
       if (!media) return p;
       const track = p.tracks.find((t) => t.id === action.trackId) ?? (media.hasVideo ? mainTrack(p) : undefined);
-      const length = media.source.image ? (action.length ?? DEFAULT_IMAGE_LENGTH) : media.source.duration;
+      const length = media.source.image ? (media.source.animated ?? action.length ?? DEFAULT_IMAGE_LENGTH) : media.source.duration;
       const clip = newClip({ id: action.clipId, trackId: track?.id ?? "", mediaId: media.id, start: 0, in: 0, out: length });
       return place(p, track, clip, action.at);
     }

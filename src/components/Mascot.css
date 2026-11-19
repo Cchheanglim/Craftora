@@ -1,0 +1,18 @@
+/* The cat's moods (Mascot.tsx `mood`). Shy: the right eye winks shut while the left keeps watching the pointer. */
+.mascot.is-shy .mascot__eye.is-right .mascot__eye-dark,
+.mascot.is-shy .mascot__eye.is-right .mascot__shine {
+  visibility: hidden;
+}
+
+.mascot.is-shy .mascot__eye.is-right .mascot__lid {
+  visibility: visible;
+}
+
+/* Between lines (Mascot `cycle`): the bubble fades out but keeps its place, so nothing below it jumps. */
+.mascot-bubble {
+  transition: opacity 0.4s ease;
+}
+
+.mascot-bubble.is-gone {
+  opacity: 0;
+}
