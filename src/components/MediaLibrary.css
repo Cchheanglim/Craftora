@@ -91,3 +91,55 @@
 .media-library__gif-actions > .btn {
   flex-shrink: 0;
 }
+
+/* Folders (in the grid, nested): a folder card's picture, and the path line to go back up. Both take a drop. */
+.media-library__folder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-3);
+  background: var(--bg-raised);
+}
+
+.media-library__folder.is-drop-target {
+  color: var(--accent);
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.media-library__path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.media-library__crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-3);
+}
+
+.media-library__crumb button {
+  padding: 3px 6px;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.media-library__crumb button:hover,
+.media-library__crumb button[aria-current] {
+  color: var(--text);
+}
+
+.media-library__crumb button.is-drop-target {
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--text);
+}

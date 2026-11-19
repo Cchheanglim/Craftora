@@ -1,16 +1,23 @@
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   addCollection,
+  addFolder,
   deleteCollection,
+  deleteFolder,
+  folderPath,
   forgetPath,
+  moveFolder,
   moveTab,
+  moveToFolder,
   orderedTabs,
   removeFromCollection,
   renameCollection,
+  renameFolder,
   setTitle,
   titleOf,
   toggleInCollection,
   type Collection,
+  type Folder,
   type Organize,
 } from "../lib/libraryOrganize";
 import { loadOrganize, saveOrganize, type LibraryEntry } from "../lib/storage";
@@ -21,6 +28,7 @@ import { useConfirm } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { GifLinkBox } from "./GifLinkBox";
 import { HiddenFold, useHidden } from "./Hidden";
+import { HoverPreview } from "./HoverPreview";
 import { PageSearch, PictureAction, PictureCard } from "./PictureCard";
 import "./Library.css";
 import "./MediaLibrary.css";
@@ -76,7 +84,8 @@ const newCollectionId = () =>
 type MenuState =
   | { kind: "tab"; x: number; y: number; collection: Collection }
   | { kind: "card"; x: number; y: number; entry: LibraryEntry; hidden: boolean }
-  | { kind: "pick-collection"; x: number; y: number; entry: LibraryEntry };
+  | { kind: "pick-collection"; x: number; y: number; entry: LibraryEntry }
+  | { kind: "folder"; x: number; y: number; folder: Folder };
 
 type TabDragState = {
   tabId: string;
@@ -96,6 +105,10 @@ type CardDragState = {
   y: number;
   active: boolean;
   hoverCollectionId: string | null;
+  /** Dragging a folder card instead of a file. */
+  folderId?: string;
+  /** The folder under the pointer (a folder card or a part of the path line); null = the top level; absent = none. */
+  hoverFolder?: string | null;
 };
 
 function computeTabInsert(
@@ -160,6 +173,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const [activeTab, setActiveTab] = useState<string>("all");
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  /** The folder being viewed (null = the top level). */
+  const [openFolder, setOpenFolder] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
 
   const tabBarRef = useRef<HTMLDivElement>(null);
@@ -255,7 +271,19 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           break;
         }
       }
-      const next: CardDragState = { ...cur, active: true, x: e.clientX, y: e.clientY, hoverCollectionId };
+      // A folder card or a part of the path line under the pointer (folder cards come first in the grid).
+      let hoverFolder: string | null | undefined;
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      const crumb = under?.closest<HTMLElement>("[data-drop-folder]");
+      if (crumb) hoverFolder = crumb.dataset.dropFolder || null;
+      else {
+        const li = under?.closest(".pcard");
+        const ul = gridRef.current;
+        const idx = li && ul && li.parentElement === ul ? Array.prototype.indexOf.call(ul.children, li) : -1;
+        if (idx >= 0 && idx < levelFoldersRef.current.length) hoverFolder = levelFoldersRef.current[idx].id;
+      }
+      if (hoverFolder !== undefined && hoverFolder === cur.folderId) hoverFolder = undefined;
+      const next: CardDragState = { ...cur, active: true, x: e.clientX, y: e.clientY, hoverCollectionId, hoverFolder };
       cardDragRef.current = next;
       setCardDrag(next);
     };
@@ -268,7 +296,11 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
       window.setTimeout(() => {
         suppressCardClickRef.current = false;
       }, 0);
-      if (commit && cur.hoverCollectionId) {
+      if (commit && cur.hoverFolder !== undefined) {
+        const to = cur.hoverFolder;
+        const folderId = cur.folderId;
+        updateOrganize((o) => (folderId ? moveFolder(o, folderId, to) : moveToFolder(o, cur.path, to)));
+      } else if (commit && cur.hoverCollectionId && !cur.folderId) {
         const colId = cur.hoverCollectionId;
         const path = cur.path;
         updateOrganize((o) => {
@@ -314,7 +346,6 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
       title: "Add to your project?",
       message: `${shownName} goes into the project you're working on.`,
       confirmLabel: "Add",
-      danger: true,
       note: "",
     });
     if (ok) onAdd(entry.path);
@@ -331,6 +362,19 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     if (!ok) return;
     updateOrganize((o) => deleteCollection(o, col.id));
     if (activeTab === COLLECTION_PREFIX + col.id) setActiveTab("all");
+  };
+
+  const confirmDeleteFolder = async (folder: Folder) => {
+    const ok = await ask({
+      title: `Delete the folder “${folder.name}”?`,
+      message: "What's inside moves up one level. Nothing is deleted from your Media library or your PC.",
+      confirmLabel: "Delete folder",
+      danger: true,
+      note: "This never deletes any files.",
+    });
+    if (!ok) return;
+    updateOrganize((o) => deleteFolder(o, folder.id));
+    if (openFolder && folderPath(organize, openFolder).some((f) => f.id === folder.id)) setOpenFolder(folder.parent);
   };
 
   const createCollection = () => {
@@ -354,6 +398,72 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   });
   const shown = matching.filter((e) => !hidden.isHidden(e.path));
   const hiddenShown = matching.filter((e) => hidden.isHidden(e.path));
+
+  // Folders show on All and the kind tabs; Saved, collections and a search are flat lists of every match.
+  const foldersOn = !words && !activeCollection && currentTab !== "saved";
+  const here = openFolder && organize.folders.some((f) => f.id === openFolder) ? openFolder : null;
+  const parentOf = new Map(organize.folders.map((f) => [f.id, f.parent]));
+  /** Every folder that holds (at any depth) one of `list`, with how many. */
+  const holding = (list: LibraryEntry[]) => {
+    const counts = new Map<string, number>();
+    for (const e of list) {
+      for (let f: string | null | undefined = organize.placed[e.path]; f; f = parentOf.get(f)) counts.set(f, (counts.get(f) ?? 0) + 1);
+    }
+    return counts;
+  };
+  const inside = holding(entries);
+  const matchingInside = holding(shown);
+  const levelFolders = foldersOn ? organize.folders.filter((f) => f.parent === here && (currentTab === "all" || matchingInside.has(f.id))) : [];
+  const levelFoldersRef = useRef(levelFolders);
+  levelFoldersRef.current = levelFolders;
+  const levelFiles = foldersOn ? shown.filter((e) => (organize.placed[e.path] ?? null) === here) : shown;
+
+  // A bigger look at a file card when the pointer rests on it (owner): 450 ms the first time, 150 ms to the next card
+  // while one is showing. Not for sounds, nor while dragging, renaming or with a menu open.
+  const [preview, setPreview] = useState<{ entry: LibraryEntry; rect: DOMRect; leaving: boolean } | null>(null);
+  const hoverTimer = useRef(0);
+  const hoverPath = useRef<string | null>(null);
+  const hidePreview = () => {
+    window.clearTimeout(hoverTimer.current);
+    hoverPath.current = null;
+    setPreview((p) => (p && !p.leaving ? { ...p, leaving: true } : p));
+    hoverTimer.current = window.setTimeout(() => setPreview(null), 120);
+  };
+  const busy = Boolean(cardDrag || tabDrag || menu || renamingPath || renamingFolderId || renamingTabId);
+  useEffect(() => {
+    if (!preview) return;
+    const hide = () => hidePreview();
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("blur", hide);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("blur", hide);
+    };
+  }, [preview !== null]);
+  useEffect(() => () => window.clearTimeout(hoverTimer.current), []);
+  const hoverCard = (e: ReactPointerEvent<HTMLUListElement>) => {
+    if (e.pointerType !== "mouse" || e.buttons || busy) return hidePreview();
+    const ul = gridRef.current;
+    const li = (e.target as HTMLElement).closest(".pcard");
+    const idx = li && ul && li.parentElement === ul ? Array.prototype.indexOf.call(ul.children, li) : -1;
+    const entry = idx >= levelFolders.length ? levelFiles[idx - levelFolders.length] : undefined;
+    if (!entry || entry.kind === "audio") return hoverPath.current && hidePreview();
+    if (hoverPath.current === entry.path) return;
+    hoverPath.current = entry.path;
+    window.clearTimeout(hoverTimer.current);
+    const rect = (li as HTMLElement).getBoundingClientRect();
+    hoverTimer.current = window.setTimeout(() => setPreview({ entry, rect, leaving: false }), preview && !preview.leaving ? 150 : 450);
+  };
+  const createFolder = () => {
+    const id = newCollectionId();
+    const parent = foldersOn ? here : null;
+    if (!foldersOn) {
+      setActiveTab("all");
+      setSearch("");
+    }
+    updateOrganize((o) => addFolder(o, "New folder", parent, id));
+    setRenamingFolderId(id);
+  };
 
   const openMenuAt = (e: ReactMouseEvent, nextMenu: (x: number, y: number) => MenuState) => {
     e.preventDefault();
@@ -409,6 +519,18 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         ],
       };
     }
+    if (menu.kind === "folder") {
+      const { folder } = menu;
+      return {
+        label: folder.name,
+        items: [
+          { label: "Open", icon: "folder", onClick: () => setOpenFolder(folder.id) },
+          { label: "Rename", icon: "pencil", onClick: () => setRenamingFolderId(folder.id) },
+          "sep",
+          { label: "Delete folder", icon: "trash", danger: true, onClick: () => void confirmDeleteFolder(folder) },
+        ],
+      };
+    }
     if (menu.kind === "pick-collection") {
       const { entry } = menu;
       const items: MenuItem[] =
@@ -461,6 +583,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     <section className={tabDrag?.active || cardDrag?.active ? "pc-page is-dragging-org" : "pc-page"} aria-labelledby="media-library-title">
       {dialog}
       {menu && activeMenu && <ContextMenu x={menu.x} y={menu.y} label={activeMenu.label} items={activeMenu.items} onClose={() => setMenu(null)} />}
+      {preview && <HoverPreview entry={preview.entry} anchor={preview.rect} name={titleOf(organize, preview.entry.path, preview.entry.name)} leaving={preview.leaving} />}
       {cardDrag?.active && (
         <div className="media-library__drag-ghost" style={{ left: cardDrag.x + 12, top: cardDrag.y + 12 }} aria-hidden="true">
           {cardDrag.name}
@@ -562,6 +685,10 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               <Icon name="plus" size={14} />
               New Collection
             </button>
+            <button type="button" className="btn btn--secondary" onClick={createFolder}>
+              <Icon name="folder" size={14} />
+              New folder
+            </button>
           </div>
         </div>
 
@@ -577,14 +704,43 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           </div>
         )}
 
+        {foldersOn && here && (
+          <nav className="media-library__path" aria-label="Folder">
+            {[null, ...folderPath(organize, here).map((f) => f.id)].map((id, i, all) => {
+              const name = id ? organize.folders.find((f) => f.id === id)?.name : "Media library";
+              const target = cardDrag?.active && cardDrag.hoverFolder !== undefined && cardDrag.hoverFolder === id;
+              return (
+                <span key={id ?? "top"} className="media-library__crumb">
+                  {i > 0 && <Icon name="chevronRight" size={12} />}
+                  <button
+                    type="button"
+                    data-drop-folder={id ?? ""}
+                    className={target ? "is-drop-target" : undefined}
+                    aria-current={i === all.length - 1 ? "location" : undefined}
+                    onClick={() => setOpenFolder(id)}
+                  >
+                    {name}
+                  </button>
+                </span>
+              );
+            })}
+          </nav>
+        )}
+
         {currentTab === "gif" && !entries.some((e) => e.animated) ? (
           <p className="pc-muted">No GIFs yet. Import a GIF and it shows up here and in the editor's GIFs tab.</p>
         ) : entries.length === 0 ? (
           <p className="pc-muted">Files you import into a project show up here, so you can find them again.</p>
         ) : activeCollection && !words && matching.length === 0 ? (
           <p className="pc-muted">This collection is empty. Drag files onto its tab or right-click a file to add it.</p>
-        ) : shown.length === 0 ? (
-          <p className="pc-muted">{hiddenShown.length ? "Everything here is hidden." : "Nothing matches."}</p>
+        ) : levelFiles.length + levelFolders.length === 0 ? (
+          <p className="pc-muted">
+            {here
+              ? "This folder is empty. Drag files onto a folder card, or onto a name in the path above, to move them."
+              : hiddenShown.length
+                ? "Everything here is hidden."
+                : "Nothing matches."}
+          </p>
         ) : (
           <ul
             ref={gridRef}
@@ -595,14 +751,25 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               e.stopPropagation();
               e.preventDefault();
             }}
+            onPointerMove={hoverCard}
+            onPointerLeave={hidePreview}
             onPointerDown={(e) => {
+              hidePreview();
               if (e.button !== 0) return;
               if ((e.target as HTMLElement).closest("input, .pcard__actions")) return;
               const ul = gridRef.current;
               const li = (e.target as HTMLElement).closest(".pcard");
               if (!ul || !li || li.parentElement !== ul) return;
               const idx = Array.prototype.indexOf.call(ul.children, li);
-              const entry = shown[idx];
+              const folder = levelFolders[idx];
+              if (folder) {
+                if (renamingFolderId === folder.id) return;
+                const start: CardDragState = { path: "", name: folder.name, folderId: folder.id, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, active: false, hoverCollectionId: null };
+                cardDragRef.current = start;
+                setCardDrag(start);
+                return;
+              }
+              const entry = levelFiles[idx - levelFolders.length];
               if (!entry) return;
               const initial: CardDragState = {
                 path: entry.path,
@@ -618,7 +785,31 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               setCardDrag(initial);
             }}
           >
-            {shown.map((entry) => {
+            {levelFolders.map((folder) => {
+              const n = inside.get(folder.id) ?? 0;
+              const target = cardDrag?.active && cardDrag.hoverFolder === folder.id;
+              return (
+                <PictureCard
+                  key={`folder:${folder.id}`}
+                  thumb={
+                    <span className={target ? "media-library__folder is-drop-target" : "media-library__folder"}>
+                      <Icon name="folder" size={36} />
+                    </span>
+                  }
+                  tag="Folder"
+                  name={folder.name}
+                  meta={n === 1 ? "1 file" : `${n} files`}
+                  onOpen={() => setOpenFolder(folder.id)}
+                  onMenu={(e) => openMenuAt(e, (x, y) => ({ kind: "folder", x, y, folder }))}
+                  renaming={renamingFolderId === folder.id}
+                  onRename={(next) => {
+                    setRenamingFolderId(null);
+                    if (next !== null) updateOrganize((o) => renameFolder(o, folder.id, next));
+                  }}
+                />
+              );
+            })}
+            {levelFiles.map((entry) => {
               const shownName = titleOf(organize, entry.path, entry.name);
               return renderCard(
                 entry,
