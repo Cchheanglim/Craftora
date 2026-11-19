@@ -12,6 +12,118 @@
   text-align: center;
 }
 
+/* The pixel cat above the empty note (Mascot.tsx): 16 × 13 pixels at 5px each, so every pixel stays sharp. Fur and
+   collar take the theme's colours; the soft pinks and the dark eyes are the same in every theme. */
+.mascot {
+  display: block;
+  width: 80px;
+  height: 65px;
+  margin-bottom: var(--space-1);
+}
+
+.mascot__fur {
+  fill: var(--text-2);
+  fill-opacity: 0.62;
+}
+
+.mascot__pink {
+  fill: #ffaebf;
+}
+
+.mascot__mouth {
+  fill: #2a2a30;
+}
+
+.mascot__collar {
+  fill: var(--accent);
+}
+
+.mascot__eye-dark {
+  fill: #18181c;
+}
+
+.mascot__shine {
+  fill: #ffffff;
+}
+
+.mascot__lid {
+  fill: #18181c;
+  visibility: hidden;
+}
+
+.mascot__tongue {
+  fill: #ff7a95;
+}
+
+.mascot__happy {
+  fill: #18181c;
+  visibility: hidden;
+}
+
+.mascot.is-happy .mascot__eye {
+  visibility: hidden;
+}
+
+.mascot.is-happy .mascot__happy {
+  visibility: visible;
+}
+
+/* The cat's speech bubble: pixel text, square stepped corners (a 2px outline on each side, none at the corners), and a
+   pixel tail pointing down at the cat. Its colours are the theme's. */
+.mascot-say {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.mascot-bubble {
+  position: relative;
+  max-width: 180px;
+  margin: 0;
+  padding: 6px 10px 7px;
+  font: 400 13px/1.3 "Pixelify Sans", var(--font-mono);
+  color: var(--text);
+  text-align: center;
+  background: var(--bg-raised);
+  box-shadow:
+    0 -2px 0 var(--line-strong),
+    0 2px 0 var(--line-strong),
+    -2px 0 0 var(--line-strong),
+    2px 0 0 var(--line-strong);
+}
+
+.mascot-bubble__rest {
+  visibility: hidden;
+}
+
+.mascot-bubble__tail {
+  position: absolute;
+  left: 50%;
+  bottom: -8px;
+  width: 12px;
+  height: 8px;
+  translate: -50% 0;
+}
+
+.mascot-bubble__fill {
+  fill: var(--bg-raised);
+}
+
+.mascot-bubble__line {
+  fill: var(--line-strong);
+}
+
+/* A blink: the eyes close to a happy line. */
+.mascot.is-blinking .mascot__eye-dark,
+.mascot.is-blinking .mascot__shine {
+  visibility: hidden;
+}
+
+.mascot.is-blinking:not(.is-happy) .mascot__lid {
+  visibility: visible;
+}
+
 .gif-panel__tile .fx-tile__stage img {
   width: 100%;
   height: 100%;

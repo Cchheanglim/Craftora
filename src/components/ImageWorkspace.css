@@ -686,8 +686,8 @@
   box-shadow: 0 0 0 1px rgb(0 0 0 / 0.55);
 }
 
-/* Both editors: you can see where to grab (the Video editor's handles used to be invisible). */
-.preview__handle::after {
+/* Image editor only: the owner wants no dots in the Video editor (its edges still show the resize cursor). */
+.app--image .preview__handle::after {
   content: "";
   position: absolute;
   top: 50%;

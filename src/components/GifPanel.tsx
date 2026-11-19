@@ -3,6 +3,7 @@ import { inDesktopApp, playableFile } from "../lib/engine";
 import type { LibraryEntry } from "../lib/storage";
 import { ContextMenu } from "./ContextMenu";
 import { Icon } from "./Icon";
+import { Mascot } from "./Mascot";
 import "./FxPanel.css";
 import "./GifPanel.css";
 
@@ -47,7 +48,7 @@ export function GifPanel({ entries, onAdd, onDrag, onImport, onForget }: GifPane
     return (
       <section className="fx-panel gif-panel is-empty" aria-label="GIFs">
         <div className="gif-panel__empty">
-          <p className="fx-panel__hint">You don't have any GIFs yet.</p>
+          <Mascot say="You don't have any GIFs yet." />
           <button type="button" className="btn btn--secondary gif-panel__import" onClick={onImport}>
             <Icon name="upload" size={14} />
             Import GIFs

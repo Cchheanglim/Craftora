@@ -155,6 +155,7 @@ import { ImageOptions } from "./components/ImageOptions";
 import { NewImageDialog } from "./components/NewImageDialog";
 import { ColourRangePanel } from "./components/ColourRangePanel";
 import { MenuBar, type Menu, type MenuItem } from "./components/MenuBar";
+import { ContextMenu, type MenuItem as CtxMenuItem } from "./components/ContextMenu";
 import { ImageWorkspace, ZoomSelect, useImageView, type ImageTool } from "./components/ImageWorkspace";
 import { Home, ago, type LinkSettings } from "./components/Home";
 import { TimelineDivider } from "./components/TimelineDivider";
@@ -2686,8 +2687,10 @@ export default function App() {
         onError: setError,
       }
     : undefined;
+  const [itemMenu, setItemMenu] = useState<{ clipId: string; x: number; y: number } | null>(null);
   const preview = (
     <Preview
+      onItemMenu={(clipId, x, y) => setItemMenu({ clipId, x, y })}
       silent={voiceSilent}
       painting={painting}
       picking={picking ? { clipId: picking.clipId, onPicked: (color) => endPick(color), onCancel: (unreadable) => endPick(undefined, unreadable) } : undefined}
@@ -2781,11 +2784,11 @@ export default function App() {
   }));
   // The Image editor's do-anything box (Ctrl K): what the picked layer can do first, then adding, the picture and the view.
   // Each of these also has a button somewhere; the box is the quick way to them.
-  const moveLayer = (by: -1 | 1) => {
-    if (!selected) return;
+  const moveLayer = (by: -1 | 1, clip = selected) => {
+    if (!clip) return;
     const layers = layersOf(project);
-    const next = layers[layers.findIndex((l) => l.clip.id === selected.id) + by];
-    if (next) api.edit({ type: "moveTrack", trackId: selected.trackId, to: project.tracks.indexOf(next.track) });
+    const next = layers[layers.findIndex((l) => l.clip.id === clip.id) + by];
+    if (next) api.edit({ type: "moveTrack", trackId: clip.trackId, to: project.tracks.indexOf(next.track) });
   };
   const picked = selected ? layerName(selected, project) : "";
   const pictureCommands = (clip: Clip): Command[] => [
@@ -3627,6 +3630,45 @@ export default function App() {
 
 
       <TextMenu />
+      {itemMenu &&
+        (() => {
+          const clip = project.clips.find((c) => c.id === itemMenu.clipId);
+          if (!clip) return null;
+          const picture = showsPicture(project, clip);
+          const patch = (p: Partial<Clip>) => api.edit({ type: "updateClip", clipId: clip.id, patch: p });
+          const run = (cmd: ClipCommand) => clipCommand(cmd, clip, playback.time);
+          const items: CtxMenuItem[] = [
+            { label: "Copy", icon: "copy", onClick: () => run("copy") },
+            { label: "Cut", icon: "scissors", onClick: () => run("cut") },
+            ...(canPaste ? [{ label: "Paste", icon: "clipboard" as const, onClick: () => run("paste") }] : []),
+            { label: "Duplicate", icon: "plus", onClick: () => run("duplicate") },
+            "sep",
+            // Size 1 is full frame for a photo or video; for text or a shape it would blow it up, so they only get Center.
+            ...(picture ? [{ label: "Reset size and position", icon: "rotate" as const, onClick: () => patch({ size: 1, x: 0.5, y: 0.5, aspect: undefined, fill: false }) }] : []),
+            { label: "Center in frame", icon: "fit", onClick: () => patch({ x: 0.5, y: 0.5 }) },
+            ...(picture ? [{ label: "Fill the frame", icon: "maximize" as const, onClick: () => patch({ fill: !clip.fill }) }] : []),
+            "sep",
+            ...(picture
+              ? [
+                  { label: "Mirror", icon: "flip" as const, onClick: () => run("mirror") },
+                  { label: "Rotate 90°", icon: "rotate" as const, onClick: () => run("rotate") },
+                  { label: "Crop…", icon: "crop" as const, onClick: () => run("crop") },
+                ]
+              : []),
+            { label: "Bring forward", icon: "chevronUp", onClick: () => moveLayer(-1, clip) },
+            { label: "Send backward", icon: "chevronDown", onClick: () => moveLayer(1, clip) },
+            ...(!imageMode && picture
+              ? [
+                  "sep" as const,
+                  { label: "Copy effects", icon: "sparkle" as const, onClick: () => run("copyEffects") },
+                  ...(canPasteEffects ? [{ label: "Paste effects", icon: "clipboard" as const, onClick: () => run("pasteEffects") }] : []),
+                ]
+              : []),
+            "sep",
+            { label: "Delete", icon: "trash", danger: true, onClick: () => run("delete") },
+          ];
+          return <ContextMenu x={itemMenu.x} y={itemMenu.y} label="Clip" items={items} onClose={() => setItemMenu(null)} />;
+        })()}
       {closeDialog}
       {croppingClip && (
         <CropDialog

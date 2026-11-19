@@ -78,6 +78,8 @@ interface PreviewProps {
   selecting?: Selecting;
   /** The Image editor's selection, outlined over the picture whatever the tool. */
   selection?: Selection | null;
+  /** Opens the right-click menu for a picture, video, shape or text on the stage. */
+  onItemMenu?: (clipId: string, x: number, y: number) => void;
 }
 
 const WAVE_BARS = 140;
@@ -192,7 +194,7 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { ...edge, fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : edge;
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, onDropMedia, placeText, silent, picking, still, painting, maskView, selecting, selection }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, onDropMedia, placeText, silent, picking, still, painting, maskView, selecting, selection, onItemMenu }: PreviewProps) {
   const [mutedByHand, setMuted] = useState(false);
   const muted = mutedByHand || Boolean(silent);
   // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
@@ -559,9 +561,17 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const openItemMenu = (clip: Clip) => (e: ReactMouseEvent<HTMLElement>) => {
+    if (clip.trackId.startsWith(SHOWN_CAPTIONS)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onSelect(clip.id);
+    onItemMenu?.(clip.id, e.clientX, e.clientY);
+  };
+
   const handles = (clip: Clip) =>
     (isText(clip) ? ["nw", "ne", "sw", "se"] : ["nw", "ne", "sw", "se", "n", "s", "e", "w"]).map((corner) => (
-      <span key={corner} className={`preview__handle is-${corner}`} onPointerDown={beginGesture(clip, corner as Corner | Edge)} aria-hidden="true" />
+      <span key={corner} className={`preview__handle is-${corner}`} onPointerDown={beginGesture(clip, corner as Corner | Edge)} onContextMenu={openItemMenu(clip)} aria-hidden="true" />
     ));
 
   return (
@@ -674,6 +684,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 mask={still ? maskStyle(clip) : undefined}
                 viewingMask={viewingMaskClip?.id === clip.id}
                 onPointerDown={beginGesture(clip, "move")}
+                onContextMenu={openItemMenu(clip)}
                 handles={isSelected ? handles(clip) : null}
               >
                 {(onShape, style, onReady) =>
@@ -816,6 +827,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   still={Boolean(still)}
                   viewingMask={viewingMask}
                   onPointerDown={beginGesture(clip, "move")}
+                  onContextMenu={openItemMenu(clip)}
                   handles={isSelected ? handles(clip) : null}
                 />
               );
@@ -850,6 +862,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                   ...(viewingMask && { background: "transparent", boxShadow: "none" }),
                 }}
                 onPointerDown={beginGesture(clip, "move")}
+                onContextMenu={openItemMenu(clip)}
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Softness and glow on the letters only: not the box edge or the selection outline; its mask likewise. */}
@@ -1313,6 +1326,7 @@ interface PictureLayerProps {
   /** The Image editor: show the mask greyscale alone in place of the layer's pixels. */
   viewingMask?: boolean;
   onPointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
+  onContextMenu?: (e: ReactMouseEvent<HTMLElement>) => void;
   handles: ReactNode;
   /** The Image editor: its place in the stack (Layers order), photos and text and shapes together. */
   z?: number;
@@ -1324,7 +1338,7 @@ interface PictureLayerProps {
  * One picture on the stage, placed like the export: fitted inside the frame, scaled by its
  * size, at its position. The crop is a window onto the video.
  */
-function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, scaleX, transFilter, selected, poster, mask, viewingMask, onPointerDown, handles, z, children }: PictureLayerProps) {
+function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, white, shift, lift, zoom, turn, reveal, scaleX, transFilter, selected, poster, mask, viewingMask, onPointerDown, onContextMenu, handles, z, children }: PictureLayerProps) {
   // The video's own shape, known once it has loaded.
   const [videoAspect, setVideoAspect] = useState(16 / 9);
   const [ready, setReady] = useState(false);
@@ -1387,6 +1401,7 @@ function PictureLayer({ clip, time, stageAspect, stageWidth, visible, opacity, w
         rotate: clip.angle ? `${clip.angle}deg` : undefined,
       }}
       onPointerDown={onPointerDown}
+      onContextMenu={onContextMenu}
       onClick={onPointerDown ? (e) => e.stopPropagation() : undefined}
     >
       {/* The mask goes on the box's pixels, not on the box itself, which also holds the selection frame. */}
@@ -1525,6 +1540,7 @@ interface ShapeLayerProps {
   reveal?: string;
   selected: boolean;
   onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
+  onContextMenu?: (e: ReactMouseEvent<HTMLElement>) => void;
   handles: ReactNode;
   /** The Image editor: its place in the stack (Layers order), photos and text and shapes together. */
   z?: number;
@@ -1535,7 +1551,7 @@ interface ShapeLayerProps {
 }
 
 /** One shape on the stage: a full-frame SVG picture with a hit box over its bounding box. */
-function ShapeLayer({ clip, frame, opacity, transFilter, transTransform, reveal, selected, onPointerDown, handles, z, still, viewingMask }: ShapeLayerProps) {
+function ShapeLayer({ clip, frame, opacity, transFilter, transTransform, reveal, selected, onPointerDown, onContextMenu, handles, z, still, viewingMask }: ShapeLayerProps) {
   const src = useMemo(
     () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(shapeSvg(clip, frame.width, frame.height))}`,
     [clip.shape, clip.color, clip.size, clip.aspect, clip.x, clip.y, clip.opacity, clip.outline, clip.rotate, clip.points, frame.width, frame.height],
@@ -1573,6 +1589,7 @@ function ShapeLayer({ clip, frame, opacity, transFilter, transTransform, reveal,
           zIndex: viewingMask ? 99991 : z,
         }}
         onPointerDown={onPointerDown}
+        onContextMenu={onContextMenu}
         onClick={(e) => e.stopPropagation()}
       >
         {viewingMask && clip.mask && (
