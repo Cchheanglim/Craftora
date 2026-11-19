@@ -20,6 +20,12 @@
   --text: #e6e6e6;
   --text-2: #bdbdbd;
   --text-3: #a0a0a0;
+  /* The dark glass's panes: the light glass's white ones would sit under this view's light text. */
+  --glass-edge: rgb(255 255 255 / 0.1);
+  --glass-hi: rgb(255 255 255 / 0.14);
+  --glass-shadow: 0 20px 50px rgb(0 0 0 / 0.4);
+  --glass-thumb: rgb(255 255 255 / 0.13);
+  --glass-thumb-shadow: rgb(0 0 0 / 0.3);
   --toolbar-h: 30px;
   gap: 0;
   padding: 0;
