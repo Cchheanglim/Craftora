@@ -83,7 +83,9 @@ test("move shifts and drops what goes off the picture", () => {
 
 test("outline: a square is four lines; the wand picks the joined colour", () => {
   const a = polygonSelection(10, 10, rectPoints([2, 2], [6, 6]));
-  expect(outlinePath(a).d).toBe("M2 2h4M2 6h4M2 2v4M6 2v4");
+  expect(outlinePath(a).d).toBe("M2 2L6 2L6 6L2 6Z");
+  // A hole is its own loop.
+  expect(outlinePath(combine(a, polygonSelection(10, 10, rectPoints([3, 3], [5, 5])), "subtract")!).d.split("Z").length - 1).toBe(2);
   const rgba = new Uint8ClampedArray(4 * 4 * 4);
   for (let i = 0; i < 16; i++) rgba.set(i % 4 < 2 ? [255, 0, 0, 255] : [0, 0, 255, 255], i * 4);
   const wand = wandSelection(rgba, 4, 4, 0.5, 0.5, 8, 8, 10, true);

@@ -27,7 +27,7 @@ export interface SelectSettings {
 }
 export const SELECT_START: SelectSettings = { mode: "new", feather: 0, tolerance: 32, contiguous: true };
 
-type Pt = readonly [number, number];
+type Pt = [number, number];
 
 /** The grid size for a `W` × `H` picture. */
 export const gridOf = (W: number, H: number) => maskSize(W, H);
@@ -53,7 +53,7 @@ export function ellipsePoints(a: Pt, b: Pt, steps = 360): Pt[] {
   const [cx, cy, rx, ry] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, Math.abs(b[0] - a[0]) / 2, Math.abs(b[1] - a[1]) / 2];
   return Array.from({ length: steps }, (_, i) => {
     const t = (i / steps) * 2 * Math.PI;
-    return [cx + rx * Math.cos(t), cy + ry * Math.sin(t)] as const;
+    return [cx + rx * Math.cos(t), cy + ry * Math.sin(t)] as Pt;
   });
 }
 
@@ -66,7 +66,7 @@ export function polygonSelection(W: number, H: number, points: readonly Pt[]): S
   const { width: gw, height: gh, data } = sel;
   if (points.length < 3) return sel;
   const [kx, ky] = [gw / W, gh / H];
-  const pts = points.map(([x, y]) => [x * kx, y * ky] as const);
+  const pts = points.map(([x, y]) => [x * kx, y * ky]);
   const ys = pts.map((p) => p[1]);
   const [y0, y1] = [Math.max(0, Math.floor(Math.min(...ys))), Math.min(gh, Math.ceil(Math.max(...ys)))];
   const acc = new Float32Array(gw);
@@ -210,28 +210,38 @@ export function outlinePath(sel: Selection, maxSide = 2048): { d: string; width:
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) on[y * w + x] = sel.data[Math.min(sel.height - 1, y * f + (f >> 1)) * sel.width + Math.min(sel.width - 1, x * f + (f >> 1))] >= 128 ? 1 : 0;
   const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < w && y < h ? on[y * w + x] : 0);
+  // Each selected pixel's sides that face an unselected one, as edges going clockwise round it (vertex = y·(w+1)+x),
+  // then joined into closed loops so the ants run on without a break; corners only where the line turns.
+  const V = w + 1;
+  const next = new Map<number, number[]>();
+  const edge = (a: number, b: number) => {
+    const out = next.get(a);
+    if (out) out.push(b);
+    else next.set(a, [b]);
+  };
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      if (!on[y * w + x]) continue;
+      if (!at(x, y - 1)) edge(y * V + x, y * V + x + 1);
+      if (!at(x + 1, y)) edge(y * V + x + 1, (y + 1) * V + x + 1);
+      if (!at(x, y + 1)) edge((y + 1) * V + x + 1, (y + 1) * V + x);
+      if (!at(x - 1, y)) edge((y + 1) * V + x, y * V + x);
+    }
   const parts: string[] = [];
-  // Edges along rows (between row y - 1 and y), then along columns, each run of them as one line.
-  for (let y = 0; y <= h; y++)
-    for (let x = 0; x < w; ) {
-      if (at(x, y - 1) === at(x, y)) {
-        x++;
-        continue;
-      }
-      const start = x;
-      while (x < w && at(x, y - 1) !== at(x, y)) x++;
-      parts.push(`M${start} ${y}h${x - start}`);
-    }
-  for (let x = 0; x <= w; x++)
-    for (let y = 0; y < h; ) {
-      if (at(x - 1, y) === at(x, y)) {
-        y++;
-        continue;
-      }
-      const start = y;
-      while (y < h && at(x - 1, y) !== at(x, y)) y++;
-      parts.push(`M${x} ${start}v${y - start}`);
-    }
+  const xy = (v: number) => `${v % V} ${Math.floor(v / V)}`;
+  for (const start of next.keys()) {
+    if (!next.has(start)) continue;
+    let [cur, dir] = [start, 0];
+    let d = `M${xy(start)}`;
+    do {
+      const out = next.get(cur)!;
+      const to = out.pop()!;
+      if (!out.length) next.delete(cur);
+      if (dir && to - cur !== dir) d += `L${xy(cur)}`;
+      [dir, cur] = [to - cur, to];
+    } while (cur !== start && next.has(cur));
+    parts.push(`${d}Z`);
+  }
   return { d: parts.join(""), width: w, height: h };
 }
 

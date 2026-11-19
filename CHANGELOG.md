@@ -177,9 +177,21 @@
   with your recent pictures on the left (the open one marked "Open now": click to carry on) and the new sizes and Open a
   photo on the right; closing it keeps the picture behind it (your last one). Fixed: right after starting Craftora it
   could show a new blank picture instead of your last one.
+- **Image editor: selections**, like a photo editor's: Rectangle and Ellipse select (M, Shift+M), Lasso and Polygon
+  lasso (L, Shift+L) and the Magic wand (W) in the tool column, with marching ants round what's selected. Shift adds,
+  Alt takes away, Shift+Alt keeps the overlap (or pick New / Add / Subtract / Intersect in the options bar); Shift while
+  dragging makes a square or circle, Alt draws it from the middle; drag inside the selection to move it; a click
+  deselects. Feather softens each new shape, the wand has Tolerance and Contiguous, and **Select subject** finds the
+  picked photo's subject with Remove background's AI (on this PC). Select menu: All (Ctrl+A), Deselect (Ctrl+D),
+  Reselect (Ctrl+Shift+D), Inverse (Ctrl+Shift+I), Subject, Modify → Feather (Shift+F6) / Expand / Contract.
+  Brush, Eraser, Paint bucket and Gradient paint only inside the selection; Delete clears it, Alt+Backspace /
+  Ctrl+Backspace fill it with the foreground / background colour, Ctrl+J / Ctrl+Shift+J copy / cut it to a new layer,
+  and Layer → Layer mask → Reveal / Hide selection makes a mask from it (on a mask being edited, Delete and Fill paint
+  the mask).
 
 **Fixed**
 
+- The timeline's zoom slider got an invalid value for a moment when the editor opened (a warning in the developer log).
 - A YouTube video with dubbed sound tracks came with captions in one of the dubs' languages (such as Bangla for an
   English video): Craftora now takes the captions of what was really said.
 - "Make captions from the sound" is offered for videos whose captions are the site's automatic ones too, and making

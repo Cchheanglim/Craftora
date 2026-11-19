@@ -312,7 +312,6 @@ const paths = {
   ellipse: <path d="M12 4a8 8 0 0 1 3 .6M18.4 7a8 8 0 0 1 1.6 5M19.4 15a8 8 0 0 1-4.4 4.4M12 20a8 8 0 0 1-3-.6M5.6 17A8 8 0 0 1 4 12M4.6 9A8 8 0 0 1 9 4.6" />,
   lasso: <path d="M7 22a5 5 0 0 1-2-4M3.3 14A6.6 6.6 0 0 1 2 10c0-4.4 4.5-8 10-8s10 3.6 10 8-4.5 8-10 8a12 12 0 0 1-5-1M5 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" />,
   polygon: <path d="M3 9 9 3l8 3 4 9-7 6-9-3-2-9ZM3 9h.01M9 3h.01M17 6h.01M21 15h.01M14 21h.01M5 18h.01" />,
-  wand: <path d="m3 21 12-12M14 3v3M19.5 4.5l-2 2M21 10h-3M8 4.5l2 2M17.5 13.5l-2-2" />,
 } as const;
 
 export type IconName = keyof typeof paths;

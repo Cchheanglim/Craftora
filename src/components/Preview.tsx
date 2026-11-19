@@ -18,6 +18,8 @@ import { Icon } from "./Icon";
 import { Select } from "./Select";
 import { SyncedMedia } from "./SyncedMedia";
 import { LiveCanvas, PaintSurface, type LivePaint, type Painting } from "./PaintSurface";
+import { SelectSurface, SelectionOutline, type Selecting } from "./SelectSurface";
+import type { Selection } from "../lib/selection";
 import "./Preview.css";
 
 const FRAME = 1 / 30;
@@ -70,6 +72,10 @@ interface PreviewProps {
   painting?: Painting;
   /** The Image editor: clip id whose mask is shown alone over a black stage. */
   maskView?: string | null;
+  /** The Image editor's selection tools (marquee, lasso, wand): they take every click on the picture. */
+  selecting?: Selecting;
+  /** The Image editor's selection, outlined over the picture whatever the tool. */
+  selection?: Selection | null;
 }
 
 const WAVE_BARS = 140;
@@ -183,7 +189,7 @@ function textFont(clip: Clip): CSSProperties {
   return font ? { ...edge, fontFamily: `${font.css}, "Segoe UI", sans-serif`, fontWeight: font.id === "impact" ? 400 : undefined } : edge;
 }
 
-export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, onDropMedia, placeText, silent, picking, still, painting, maskView }: PreviewProps) {
+export function Preview({ project, api, playback, frame, duration, selectedId, onSelect, onSnapshot, captionStatus, showCaptions, onToggleCaptions, onMakeCaptions, quality, onDownload, onDropShape, onDropMedia, placeText, silent, picking, still, painting, maskView, selecting, selection }: PreviewProps) {
   const [mutedByHand, setMuted] = useState(false);
   const muted = mutedByHand || Boolean(silent);
   // Up / Down (App.tsx) set the preview's volume in tenths, shown for a moment.
@@ -600,6 +606,11 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             />
           )}
           {painting && <PaintSurface painting={painting} project={project} width={frame.width} height={frame.height} onLive={setLive} />}
+          {selecting ? (
+            <SelectSurface selecting={selecting} width={frame.width} height={frame.height} />
+          ) : (
+            selection && <SelectionOutline selection={selection} width={frame.width} height={frame.height} />
+          )}
           {live && live.clipId === null && <LiveCanvas canvas={live.canvas} className="preview__paint-live" />}
           {pictures.some((c) => {
             // A link with nothing playable, or whose preview failed, would otherwise just be black.

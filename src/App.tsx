@@ -144,6 +144,8 @@ import {
 import { pngOf, type Painting } from "./components/PaintSurface";
 import { ColourSquares } from "./components/ColourSquares";
 import { PaintOptions } from "./components/PaintOptions";
+import { SelectOptions } from "./components/SelectOptions";
+import { SelectModifyDialog, type ModifyKind } from "./components/SelectModifyDialog";
 import { composeCanvas, composeImage, photo } from "./lib/compose";
 import { blankMask, clipMaskBox, cutoutMask, greyHex, greysOf, lumaToAlpha, maskAffine, remapMask } from "./lib/mask";
 import { DocumentSummary, ImageSizePanel } from "./components/ImageSizePanel";
@@ -517,6 +519,8 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false);
   /** The Image editor's Layer style window, for the picked layer. */
   const [styleOpen, setStyleOpen] = useState(false);
+  /** Select → Modify → Feather / Expand / Contract…: its window is open. */
+  const [modifying, setModifying] = useState<ModifyKind | null>(null);
   // Where the Sound or Voice-over panel's Back button goes: the tab it was opened from.
   const panelBack = useRef<typeof rightTab>("edit");
   // A voice-over take: where on the timeline it started, and the preview kept quiet while it records.
@@ -1779,10 +1783,8 @@ export default function App() {
     api.edit({ type: "paint", clipId, source, newMediaId: crypto.randomUUID() });
     return path;
   };
-  /** Adds a reveal-all or hide-all mask sized to `clip`'s box in image pixels, and targets it for editing. */
-  const addLayerMask = async (clip: Clip, fill: "white" | "black") => {
-    const { width: W, height: H } = projectRef.current.image ?? NO_IMAGE;
-    if (!W || !H) return;
+  /** A layer's photo's width / height (the picture's for text and shapes). */
+  const photoAspectOf = async (clip: Clip, W: number, H: number) => {
     let aspect = W / H;
     if (clip.mediaId) {
       const shown = document.querySelector<HTMLImageElement>(`[data-clip="${CSS.escape(clip.id)}"] img`);
@@ -1798,9 +1800,160 @@ export default function App() {
         }
       }
     }
-    const { width, height } = clipMaskBox(clip, W, H, aspect);
-    api.edit({ type: "setMask", clipId: clip.id, mask: blankMask(width, height, fill) });
+    return aspect;
+  };
+  /**
+   * Adds a mask sized to `clip`'s box in image pixels, and targets it for editing: reveal all or hide all, or from the
+   * selection (`"selection"` shows it, `"outside"` hides it).
+   */
+  const addLayerMask = async (clip: Clip, fill: "white" | "black" | "selection" | "outside") => {
+    const { width: W, height: H } = projectRef.current.image ?? NO_IMAGE;
+    if (!W || !H) return;
+    const box = clipMaskBox(clip, W, H, await photoAspectOf(clip, W, H));
+    const sel = selectionRef.current;
+    const mask = fill === "white" || fill === "black" || !sel ? blankMask(box.width, box.height, fill === "black" ? "black" : "white") : selectionMask(fill === "outside" ? invertSelection(sel) : sel, W, H, box);
+    api.edit({ type: "setMask", clipId: clip.id, mask });
     setMaskEdit(clip.id);
+  };
+  /** A new selection shape joined to the current one by `mode`, softened by the options bar's Feather. */
+  const addShape = (shape: Selection, mode: SelectMode) => {
+    const { feather } = selectSettings;
+    changeSelection(combine(selectionRef.current, feather > 0 ? featherSelection(shape, feather, (projectRef.current.image ?? NO_IMAGE).width) : shape, mode));
+  };
+  /** Magic wand: the colour under `p` (picture px) in the whole picture as it looks. */
+  const wand = async (p: [number, number], mode: SelectMode) => {
+    const { width: W, height: H } = projectRef.current.image ?? NO_IMAGE;
+    const grid = gridOf(W, H);
+    const canvas = await composeCanvas(projectRef.current, grid);
+    const rgba = canvas.getContext("2d")!.getImageData(0, 0, grid.width, grid.height).data;
+    addShape(wandSelection(rgba, grid.width, grid.height, p[0], p[1], W, H, selectSettings.tolerance, selectSettings.contiguous), mode);
+  };
+  /** Select subject: the picked photo's subject (Remove background's model, on this PC), as the selection. */
+  const selectSubject = async () => {
+    const clip = selected;
+    const media = project.media.find((m) => m.id === clip?.mediaId);
+    if (!clip || !media?.source.image || !media.source.local || !inDesktopApp) return setError("Pick a photo layer to select its subject.");
+    setSelectNote("Finding the subject…");
+    try {
+      const img = await photo(await removeBackground(media.source.url, setSelectNote));
+      const { width: W, height: H } = projectRef.current.image ?? NO_IMAGE;
+      const current = projectRef.current.clips.find((c) => c.id === clip.id) ?? clip;
+      const grid = gridOf(W, H);
+      const canvas = document.createElement("canvas");
+      [canvas.width, canvas.height] = [grid.width, grid.height];
+      const ctx = canvas.getContext("2d")!;
+      const m = multiply([grid.width / W, 0, 0, grid.height / H, 0, 0], photoToImage(current, { width: img.naturalWidth, height: img.naturalHeight }, W, H, current.effect === "mirror"));
+      ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0);
+      addShape(selectionFromAlpha(ctx.getImageData(0, 0, grid.width, grid.height).data, grid.width, grid.height), selectSettings.mode);
+    } finally {
+      setSelectNote("");
+    }
+  };
+  /**
+   * What Delete, Fill and New layer from selection change: the picked layer's mask while it's being edited, else the
+   * picked photo or painted layer's pixels, each with the selection over them (`keep`). Null when there is none.
+   */
+  const selectionTarget = async (sel: Selection) => {
+    const clip = selected;
+    if (!clip) return null;
+    const { width: W, height: H } = projectRef.current.image ?? NO_IMAGE;
+    const canvasOf = (img: HTMLImageElement) => {
+      const canvas = document.createElement("canvas");
+      [canvas.width, canvas.height] = [img.naturalWidth, img.naturalHeight];
+      canvas.getContext("2d")!.drawImage(img, 0, 0);
+      return canvas;
+    };
+    if (editingMask && clip.mask) {
+      // A data URL, not a file (`photo` reads files through Rust).
+      const img = new Image();
+      img.src = clip.mask;
+      await img.decode();
+      const canvas = canvasOf(img);
+      const toLayer = maskAffine(clipMaskBox(clip, W, H, await photoAspectOf(clip, W, H)), canvas);
+      return { clip, mask: true, canvas, toImage: invert(toLayer), keep: selectionInLayer(sel, W, H, toLayer, canvas.width, canvas.height) };
+    }
+    const media = project.media.find((m) => m.id === clip.mediaId);
+    if (!paintsOn(clip) || !media) return null;
+    const canvas = canvasOf(await photo(media.source.url));
+    const toImage = photoToImage(clip, canvas, W, H, clip.effect === "mirror");
+    return { clip, mask: false, canvas, toImage, keep: selectionInLayer(sel, W, H, invert(toImage), canvas.width, canvas.height) };
+  };
+  /**
+   * Edit → Clear / Fill, and Layer via copy / cut (Ctrl+J / Ctrl+Shift+J) with a selection: on the picked layer's
+   * pixels (or its mask while editing it: Clear hides, Fill paints the colour's grey).
+   */
+  const selectionEdit = async (op: "clear" | "fg" | "bg" | "copy" | "cut") => {
+    const sel = selectionRef.current;
+    if (!sel) return;
+    const target = await selectionTarget(sel);
+    if (!target) return setError(editingMask ? "Couldn't read the layer mask." : "Pick a photo or painted layer first.");
+    const { clip, mask, canvas, toImage, keep } = target;
+    const { width: W, height: H } = projectRef.current.image ?? NO_IMAGE;
+    if (op === "copy" || op === "cut") {
+      if (mask) return setError("Switch off mask editing to copy pixels.");
+      const out = document.createElement("canvas");
+      [out.width, out.height] = [W, H];
+      const octx = out.getContext("2d")!;
+      octx.setTransform(toImage[0], toImage[1], toImage[2], toImage[3], toImage[4], toImage[5]);
+      octx.imageSmoothingQuality = "high";
+      octx.drawImage(canvas, 0, 0);
+      octx.setTransform(1, 0, 0, 1, 0, 0);
+      keepTo(out, selectionInLayer(sel, W, H, [1, 0, 0, 1, 0, 0], W, H));
+      // shortcut: the copy is a new top layer, two undo steps (empty layer, then its pixels); place it above the source if asked.
+      const id = await newPaintLayer();
+      await paintLayer(id, await pngOf(out));
+      if (op === "copy") return;
+    }
+    const ctx = canvas.getContext("2d")!;
+    if (op === "clear" || op === "cut") {
+      if (mask) {
+        const black = document.createElement("canvas");
+        [black.width, black.height] = [canvas.width, canvas.height];
+        const b = black.getContext("2d")!;
+        b.fillStyle = "#000000";
+        b.fillRect(0, 0, black.width, black.height);
+        ctx.drawImage(keepTo(black, keep), 0, 0);
+      } else {
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.drawImage(keep, 0, 0);
+        ctx.globalCompositeOperation = "source-over";
+      }
+    } else {
+      const colour = op === "fg" ? paintColours.fg : paintColours.bg;
+      const paint = document.createElement("canvas");
+      [paint.width, paint.height] = [canvas.width, canvas.height];
+      const p = paint.getContext("2d")!;
+      p.fillStyle = mask ? greyHex(colour) : colour;
+      p.fillRect(0, 0, paint.width, paint.height);
+      ctx.drawImage(keepTo(paint, keep), 0, 0);
+    }
+    if (mask) api.edit({ type: "setMask", clipId: clip.id, mask: canvas.toDataURL("image/png") });
+    else await paintLayer(clip.id, await pngOf(canvas));
+  };
+  const runSelectionEdit = (op: Parameters<typeof selectionEdit>[0]) => void selectionEdit(op).catch((err) => setError(`Couldn't change the pixels: ${errorText(err)}`));
+  /** Select → Modify: Feather, Expand or Contract the selection by `by` picture px. */
+  const modifySelection = (kind: "feather" | "expand" | "contract", by: number) => {
+    const sel = selectionRef.current;
+    const { width: W } = projectRef.current.image ?? NO_IMAGE;
+    if (sel && by > 0) changeSelection(kind === "feather" ? featherSelection(sel, by, W) : expandSelection(sel, kind === "expand" ? by : -by, W));
+  };
+  /** The selection's keys (photo editors'); true when the key was one of them. */
+  const selectionKeys = (e: KeyboardEvent, ctrl: boolean, key: string) => {
+    const { width: W, height: H } = projectRef.current.image ?? NO_IMAGE;
+    const sel = selectionRef.current;
+    if (ctrl && !e.shiftKey && key === "a") return changeSelection(selectAll(W, H)), true;
+    if (ctrl && !e.shiftKey && key === "d") return changeSelection(null), true;
+    if (ctrl && e.shiftKey && key === "d") return lastSelection.current && changeSelection(lastSelection.current), true;
+    if (ctrl && e.shiftKey && key === "i") return sel && changeSelection(invertSelection(sel)), true;
+    if (!sel) return false;
+    if (e.shiftKey && key === "f6") return setModifying("feather"), true;
+    if (ctrl && key === "j") return runSelectionEdit(e.shiftKey ? "cut" : "copy"), true;
+    if (ctrl && key === "backspace") return runSelectionEdit("bg"), true;
+    if (e.altKey && key === "backspace") return runSelectionEdit("fg"), true;
+    if (!ctrl && !e.altKey && (key === "delete" || key === "backspace")) return runSelectionEdit("clear"), true;
+    return false;
   };
   /** Bakes a photo layer's mask into its pixels at the photo's own size and removes the mask. */
   const applyLayerMask = async (clip: Clip) => {
@@ -2447,6 +2600,7 @@ export default function App() {
         colours: paintColours,
         clipId: editingMask ? selected!.id : paintsOn(selected),
         mask: editingMask,
+        selection,
         onNewLayer: newPaintLayer,
         onPainted: paintLayer,
         onMaskLive: (clipId, url) => setLiveMask(url ? { clipId, url } : (cur) => (cur?.clipId === clipId ? null : cur)),
@@ -2484,6 +2638,8 @@ export default function App() {
       frame={project.image ? { id: "image", label: "", ...project.image } : frameOf(effective)}
       still={imageMode && project.image ? { background: project.image.background } : undefined}
       maskView={imageMode ? maskView : null}
+      selecting={selectTool ? { tool: selectTool, settings: selectSettings, selection, onChange: changeSelection, onWand: (p, mode) => void wand(p, mode).catch((err) => setError(`Couldn't select: ${errorText(err)}`)) } : undefined}
+      selection={imageMode ? selection : null}
       duration={duration}
       selectedId={selectedId}
       onSelect={setSelectedId}
@@ -2538,6 +2694,8 @@ export default function App() {
   );
   // Image editor: Text needs a text (or nothing picked, to add one); the picture tabs need a picture.
   const picturePicked = Boolean(selected && showsPicture(project, selected));
+  const canSelectSubject = Boolean(inDesktopApp && project.media.find((m) => m.id === selected?.mediaId && m.source.image && m.source.local));
+  const runSelectSubject = () => void selectSubject().catch((err) => setError(`Couldn't select the subject: ${errorText(err)}`));
   const imageTabs = IMAGE_PANEL_TABS.map((t) => ({
     ...t,
     disabled: t.id === "text" ? Boolean(selected && !isText(selected)) : ["adjust", "filters", "effects", "background"].includes(t.id) && !picturePicked,
@@ -2636,6 +2794,10 @@ export default function App() {
             menuItem("dup", "Duplicate layer"),
             menuItem("delete", "Delete layer"),
             "sep",
+            { id: "clear", label: "Clear", keys: "Delete", disabled: !selection, run: () => runSelectionEdit("clear") },
+            { id: "fillfg", label: "Fill with foreground colour", keys: "Alt+Backspace", disabled: !selection, run: () => runSelectionEdit("fg") },
+            { id: "fillbg", label: "Fill with background colour", keys: "Ctrl+Backspace", disabled: !selection, run: () => runSelectionEdit("bg") },
+            "sep",
             { id: "search", label: "Search actions…", keys: "Ctrl+K", run: () => pressKey("k", true) },
           ],
         },
@@ -2669,6 +2831,8 @@ export default function App() {
             menuItem("addphoto", "New photo layer…"),
             "sep",
             menuItem("dup", "Duplicate layer"),
+            { id: "viacopy", label: "New layer via copy", keys: "Ctrl+J", disabled: !selection || !selected, run: () => runSelectionEdit("copy") },
+            { id: "viacut", label: "New layer via cut", keys: "Ctrl+Shift+J", disabled: !selection || !selected, run: () => runSelectionEdit("cut") },
             menuItem("layerstyle", "Layer style…"),
             {
               id: "layermask",
@@ -2681,6 +2845,8 @@ export default function App() {
                 menuItem("maskoff", selected?.maskOff ? "Enable" : "Disable"),
                 menuItem("maskapply", "Apply"),
                 menuItem("maskdelete", "Delete"),
+                { id: "maskselection", label: "Reveal selection", disabled: !selection || !selected, run: () => selected && void addLayerMask(selected, "selection") },
+                { id: "maskoutside", label: "Hide selection", disabled: !selection || !selected, run: () => selected && void addLayerMask(selected, "outside") },
               ],
             },
             menuItem("up", "Bring forward"),
@@ -2692,8 +2858,24 @@ export default function App() {
         {
           label: "Select",
           items: [
-            { id: "none", label: "Deselect", disabled: !selected, run: () => setSelectedId(null) },
+            { id: "all", label: "All", keys: "Ctrl+A", run: () => pressKey("a", true) },
+            { id: "deselect", label: "Deselect", keys: "Ctrl+D", disabled: !selection, run: () => changeSelection(null) },
+            { id: "reselect", label: "Reselect", keys: "Ctrl+Shift+D", disabled: !lastSelection.current, run: () => changeSelection(lastSelection.current) },
+            { id: "inverse", label: "Inverse", keys: "Ctrl+Shift+I", disabled: !selection, run: () => selection && changeSelection(invertSelection(selection)) },
+            "sep",
+            { id: "subject", label: "Subject", disabled: !canSelectSubject || Boolean(selectNote), run: runSelectSubject },
             { ...menuItem("colour", "Colour range…"), disabled: !picturePicked },
+            {
+              id: "modify",
+              label: "Modify",
+              disabled: !selection,
+              run: () => {},
+              items: [
+                { id: "feather", label: "Feather…", keys: "Shift+F6", run: () => setModifying("feather") },
+                { id: "expand", label: "Expand…", run: () => setModifying("expand") },
+                { id: "contract", label: "Contract…", run: () => setModifying("contract") },
+              ],
+            },
             "sep",
             ...layersOf(project).map((l): MenuItem => ({ id: `layer-${l.clip.id}`, label: layerName(l.clip, project), checked: l.clip.id === selectedId, run: () => setSelectedId(l.clip.id) })),
           ],
@@ -2750,6 +2932,15 @@ export default function App() {
       <span className="image-ws__opt-sep" />
       {paintTool ? (
         <PaintOptions tool={paintTool} settings={paintSettings} onChange={setPaintSettings} />
+      ) : selectTool ? (
+        <SelectOptions
+          tool={selectTool}
+          settings={selectSettings}
+          onChange={setSelectSettings}
+          onSubject={canSelectSubject ? runSelectSubject : undefined}
+          busy={selectNote || undefined}
+          onDeselect={selection ? () => changeSelection(null) : undefined}
+        />
       ) : (
         // The current tool's options (owner: like Photoshop); adding text, shapes and photos is the tools' job.
         <ImageOptions
@@ -3034,6 +3225,7 @@ export default function App() {
         }}
         onClose={() => setNewImageOpen(false)}
       />
+      {modifying && imageMode && <SelectModifyDialog kind={modifying} onApply={(by) => modifySelection(modifying, by)} onClose={() => setModifying(null)} />}
       {styleOpen && imageMode && selected && (
         <LayerStyleDialog
           style={selected.style}
