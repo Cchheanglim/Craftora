@@ -238,6 +238,8 @@ test("the media library remembers files on this PC, newest first, and keeps star
   const once = withImported([], [video, link], LIBRARY_LIMIT, 1);
   expect(once.map((e) => [e.name, e.kind])).toEqual([["beach.mp4", "video"]]);
   expect(withImported(once, [video], LIBRARY_LIMIT, 2)).toBe(once); // nothing new: the same list
+  const cutout = mediaFromSource({ ...source("image"), url: String.raw`C:\Users\a\AppData\Roaming\com.cchheanglim.craftora\cutouts\3f2a.png` });
+  expect(withImported(once, [cutout], LIBRARY_LIMIT, 2)).toBe(once); // Craftora's own working files stay out
   const full = Array.from({ length: LIBRARY_LIMIT }, (_, i) => ({ path: `C:/old${i}.mp4`, name: `old${i}.mp4`, kind: "video" as const, duration: 1, addedAt: 0, saved: i === LIBRARY_LIMIT - 1 }));
   const after = withImported(full, [video], LIBRARY_LIMIT, 3);
   expect(after.length).toBe(LIBRARY_LIMIT);

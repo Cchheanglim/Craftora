@@ -121,8 +121,8 @@
   display: flex;
   justify-content: space-between;
   gap: var(--space-2);
-  font-size: 12px;
-  color: var(--text);
+  font-size: 11.5px;
+  color: var(--text-3);
 }
 
 .side__task-head .mono {
@@ -177,9 +177,16 @@
   }
 }
 
+/* What is running first, then its bar, then the status and percent in grey. */
 .side__task-detail {
-  font-size: 11.5px;
-  color: var(--text-3);
+  order: -2;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.side__task-bar {
+  order: -1;
 }
 
 .side__count {

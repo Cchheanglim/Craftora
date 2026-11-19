@@ -152,7 +152,8 @@ export function SelectSurface({ selecting, width: W, height: H }: { selecting: S
   useEffect(() => {
     if (!polyOpen) return;
     const key = (e: KeyboardEvent) => {
-      if (e.target instanceof Element && e.target.closest("input, textarea, select, [contenteditable]")) return;
+      if (e.target instanceof Element && e.target.closest("input, textarea, select, [contenteditable], [role=menu], [role=menubar]")) return;
+      if (e.ctrlKey || e.altKey || e.metaKey || document.querySelector("dialog[open]")) return;
       const o = poly.current;
       if (!o) return;
       if (e.key === "Enter") closePolygon();

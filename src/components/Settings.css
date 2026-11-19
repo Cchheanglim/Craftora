@@ -51,11 +51,13 @@
   flex-shrink: 0;
 }
 
+/* Every choice the same width, so their edges line up down the page; options sized to their words. */
 .set-choice {
-  min-width: 180px;
+  width: 300px;
 }
 
 .set-choice button {
+  flex: 1 1 auto;
   height: 28px;
   padding: 0 12px;
 }

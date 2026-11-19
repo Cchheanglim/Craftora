@@ -23,9 +23,9 @@ export function PictureCard({
 }: {
   /** Usually a `<Thumb>`: it fills the picture. */
   thumb: ReactNode;
-  /** "Video", "Picture", "Sound"… top-left on the picture. */
+  /** "Video", "Picture", "Sound"…: first on the line under the name, so it never covers the picture. */
   tag?: string;
-  /** The tag in red: the project open in the editor. */
+  /** The tag is a status in red over the picture's top-left instead ("Open now": the project open in the editor). */
   tagOpen?: boolean;
   /** Length or size, bottom-right on the picture. */
   badge?: string;
@@ -47,7 +47,7 @@ export function PictureCard({
     <>
       <span className="pcard__pic">
         {thumb}
-        {tag && <span className={tagOpen ? "pcard__tag is-open" : "pcard__tag"}>{tag}</span>}
+        {tag && tagOpen && <span className="pcard__tag is-open">{tag}</span>}
         {badge && <span className="pcard__badge mono">{badge}</span>}
         {picked !== undefined && (
           <span className="pcard__box" aria-hidden="true">
@@ -76,7 +76,11 @@ export function PictureCard({
         ) : (
           <span className="pcard__name truncate">{name}</span>
         )}
-        {meta && <span className="pcard__meta truncate">{meta}</span>}
+        {(meta || (tag && !tagOpen)) && (
+          <span className="pcard__meta truncate">
+            {tag && !tagOpen ? (meta ? <>{tag} · {meta}</> : tag) : meta}
+          </span>
+        )}
       </span>
     </>
   );

@@ -110,7 +110,9 @@ export function combine(base: Selection | null, shape: Selection, mode: SelectMo
 }
 
 export function invertSelection(sel: Selection): Selection {
-  return { ...sel, data: sel.data.map((v) => 255 - v) };
+  const data = new Uint8Array(sel.data.length);
+  for (let i = 0; i < data.length; i++) data[i] = 255 - sel.data[i];
+  return { ...sel, data };
 }
 
 /** One pass of a box blur `r` grid px wide each way, along rows (`step` 1) or columns (`step` = width); edges repeat. */
@@ -118,12 +120,33 @@ function boxPass(src: Float32Array, dst: Float32Array, lines: number, length: nu
   const n = 2 * r + 1;
   for (let l = 0; l < lines; l++) {
     const base = l * lineStep;
-    const at = (i: number) => src[base + Math.min(length - 1, Math.max(0, i)) * step];
-    let sum = 0;
-    for (let i = -r; i <= r; i++) sum += at(i);
-    for (let i = 0; i < length; i++) {
-      dst[base + i * step] = sum / n;
-      sum += at(i + r + 1) - at(i - r);
+    const first = src[base];
+    const last = src[base + (length - 1) * step];
+    let sum = first * (r + 1);
+    for (let i = 1; i <= r; i++) sum += src[base + Math.min(length - 1, i) * step];
+    for (let i = 0, o = base; i < length; i++, o += step) {
+      dst[o] = sum / n;
+      const add = i + r + 1;
+      const out = i - r;
+      sum += (add < length ? src[base + add * step] : last) - (out >= 0 ? src[base + out * step] : first);
+    }
+  }
+}
+
+/** The same box blur down every column at once, a row at a time (walking down each column alone misses the cache). */
+function boxColumns(src: Float32Array, dst: Float32Array, w: number, h: number, r: number) {
+  const n = 2 * r + 1;
+  const sum = new Float64Array(w);
+  for (let x = 0; x < w; x++) sum[x] = src[x] * (r + 1);
+  for (let i = 1; i <= r; i++) {
+    const row = Math.min(h - 1, i) * w;
+    for (let x = 0; x < w; x++) sum[x] += src[row + x];
+  }
+  for (let y = 0; y < h; y++) {
+    const [o, add, out] = [y * w, Math.min(h - 1, y + r + 1) * w, Math.max(0, y - r) * w];
+    for (let x = 0; x < w; x++) {
+      dst[o + x] = sum[x] / n;
+      sum[x] += src[add + x] - src[out + x];
     }
   }
 }
@@ -137,9 +160,12 @@ export function featherSelection(sel: Selection, radius: number, W: number): Sel
   const b = new Float32Array(a.length);
   for (let pass = 0; pass < 3; pass++) {
     boxPass(a, b, h, w, w, 1, r);
-    boxPass(b, a, w, h, 1, w, r);
+    boxColumns(b, a, w, h, r);
   }
-  return { width: w, height: h, data: Uint8Array.from(a, (v) => Math.round(v)) };
+  // Uint8Array rounds and clamps on its own (no per-pixel callback: slow on big pictures).
+  const data = new Uint8Array(a.length);
+  data.set(a);
+  return { width: w, height: h, data };
 }
 
 /**
@@ -151,26 +177,42 @@ export function expandSelection(sel: Selection, by: number, W: number): Selectio
   if (r < 0.5) return sel;
   const grow = by > 0;
   const { width: w, height: h } = sel;
-  const far = 1e9;
+  const far = 1 << 30;
   // Distance (×3) from each pixel to the nearest pixel that counts as "in" (in = selected when growing, unselected when shrinking).
-  const d = new Float64Array(w * h);
+  // Whole numbers: the 3-4 chamfer steps are integers (half the memory of doubles on a 4096 px grid).
+  const d = new Int32Array(w * h);
   for (let i = 0; i < d.length; i++) d[i] = sel.data[i] >= 128 === grow ? 0 : far;
-  const near = (i: number, x: number, y: number, dx: number, dy: number, cost: number) => {
-    const [nx, ny] = [x + dx, y + dy];
-    if (nx >= 0 && ny >= 0 && nx < w && ny < h) d[i] = Math.min(d[i], d[ny * w + nx] + cost);
-  };
+  // Forward then backward pass over the 8 neighbours (written out: a helper per neighbour was 10× slower).
   for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) {
-      const i = y * w + x;
-      near(i, x, y, -1, 0, 3), near(i, x, y, 0, -1, 3), near(i, x, y, -1, -1, 4), near(i, x, y, 1, -1, 4);
+    for (let x = 0, i = y * w; x < w; x++, i++) {
+      let v = d[i];
+      if (!v) continue;
+      if (x > 0 && d[i - 1] + 3 < v) v = d[i - 1] + 3;
+      if (y > 0) {
+        const up = i - w;
+        if (d[up] + 3 < v) v = d[up] + 3;
+        if (x > 0 && d[up - 1] + 4 < v) v = d[up - 1] + 4;
+        if (x < w - 1 && d[up + 1] + 4 < v) v = d[up + 1] + 4;
+      }
+      d[i] = v;
     }
   for (let y = h - 1; y >= 0; y--)
-    for (let x = w - 1; x >= 0; x--) {
-      const i = y * w + x;
-      near(i, x, y, 1, 0, 3), near(i, x, y, 0, 1, 3), near(i, x, y, 1, 1, 4), near(i, x, y, -1, 1, 4);
+    for (let x = w - 1, i = y * w + x; x >= 0; x--, i--) {
+      let v = d[i];
+      if (!v) continue;
+      if (x < w - 1 && d[i + 1] + 3 < v) v = d[i + 1] + 3;
+      if (y < h - 1) {
+        const down = i + w;
+        if (d[down] + 3 < v) v = d[down] + 3;
+        if (x < w - 1 && d[down + 1] + 4 < v) v = d[down + 1] + 4;
+        if (x > 0 && d[down - 1] + 4 < v) v = d[down - 1] + 4;
+      }
+      d[i] = v;
     }
   const limit = r * 3;
-  return { width: w, height: h, data: Uint8Array.from(d, (v) => (v <= limit === grow ? 255 : 0)) };
+  const data = new Uint8Array(w * h);
+  for (let i = 0; i < data.length; i++) data[i] = d[i] <= limit === grow ? 255 : 0;
+  return { width: w, height: h, data };
 }
 
 /** The selection moved `dx`, `dy` picture px on a `W` × `H` picture; what goes past the edges is lost. */
@@ -178,6 +220,7 @@ export function moveSelection(sel: Selection, dx: number, dy: number, W: number,
   const { width: w, height: h } = sel;
   const [gx, gy] = [Math.round(dx * (w / W)), Math.round(dy * (h / H))];
   const out = new Uint8Array(w * h);
+  if (Math.abs(gx) >= w || Math.abs(gy) >= h) return { width: w, height: h, data: out };
   for (let y = Math.max(0, gy); y < Math.min(h, h + gy); y++) out.set(sel.data.subarray((y - gy) * w + Math.max(0, -gx), (y - gy) * w + Math.min(w, w - gx)), y * w + Math.max(0, gx));
   return { width: w, height: h, data: out };
 }
@@ -199,16 +242,26 @@ export function selectionBounds(sel: Selection, W: number, H: number): { left: n
   return { left: x0 * kx, top: y0 * ky, width: (x1 + 1 - x0) * kx, height: (y1 + 1 - y0) * ky };
 }
 
+const MAX_EDGES = 150_000;
+
 /**
  * The selection's outline (where it crosses half-selected) as an SVG path in its own grid px, `width` × `height` for the
  * viewBox. Drawn on a grid of at most `maxSide` px so a speckled magic-wand pick stays quick to draw.
  */
 export function outlinePath(sel: Selection, maxSide = 2048): { d: string; width: number; height: number } {
-  const f = Math.max(1, Math.ceil(Math.max(sel.width, sel.height) / maxSide));
-  const [w, h] = [Math.ceil(sel.width / f), Math.ceil(sel.height / f)];
-  const on = new Uint8Array(w * h);
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) on[y * w + x] = sel.data[Math.min(sel.height - 1, y * f + (f >> 1)) * sel.width + Math.min(sel.width - 1, x * f + (f >> 1))] >= 128 ? 1 : 0;
+  let f = Math.max(1, Math.ceil(Math.max(sel.width, sel.height) / maxSide));
+  let [w, h, on] = [0, 0, new Uint8Array(0)];
+  // A speckled pick (the wand on noise) has edges everywhere: drawn coarser until it has at most MAX_EDGES.
+  for (;;) {
+    [w, h] = [Math.ceil(sel.width / f), Math.ceil(sel.height / f)];
+    on = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) on[y * w + x] = sel.data[Math.min(sel.height - 1, y * f + (f >> 1)) * sel.width + Math.min(sel.width - 1, x * f + (f >> 1))] >= 128 ? 1 : 0;
+    let edges = 0;
+    for (let i = 0; i < on.length; i++) if (on[i] !== (on[i + 1] ?? 0) || on[i] !== (on[i + w] ?? 0)) edges++;
+    if (edges <= MAX_EDGES || w < 64) break;
+    f *= 2;
+  }
   const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < w && y < h ? on[y * w + x] : 0);
   // Each selected pixel's sides that face an unselected one, as edges going clockwise round it (vertex = y·(w+1)+x),
   // then joined into closed loops so the ants run on without a break; corners only where the line turns.

@@ -36,6 +36,14 @@
   font-weight: 600;
 }
 
+/* Can't be used yet (Fetch with no link): grey, not a dull red. */
+.btn--primary:disabled {
+  background: var(--bg-hover);
+  border-color: var(--line);
+  color: var(--text-3);
+  opacity: 1;
+}
+
 .btn--primary:hover:not(:disabled) {
   background: var(--accent-fill-hover);
 }

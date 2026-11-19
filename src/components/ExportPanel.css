@@ -309,6 +309,57 @@
   line-height: 1.45;
 }
 
+/* Video editor's right panel with nothing picked: what to do, then the project at a glance. */
+.panel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 56px 20px 20px;
+  text-align: center;
+}
+
+.panel-empty > svg {
+  margin-bottom: 6px;
+  color: var(--text-3);
+}
+
+.panel-empty h3 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.panel-empty p {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.panel-empty dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 12px;
+  width: 100%;
+  margin: 28px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: var(--text-xs);
+  text-align: left;
+}
+
+.panel-empty dt {
+  color: var(--text-3);
+}
+
+.panel-empty dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  color: var(--text);
+  text-align: right;
+}
+
 /* Dense photo-editor look for the Export picture window */
 .export-dialog.is-picture .export__body {
   padding: 10px 12px;
