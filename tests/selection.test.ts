@@ -79,6 +79,8 @@ test("move shifts and drops what goes off the picture", () => {
   const moved = moveSelection(a, 3, 2, 20, 20);
   expect(selectionBounds(moved, 20, 20)).toEqual({ left: 3, top: 2, width: 4, height: 4 });
   expect(sum(moveSelection(a, -2, 0, 20, 20).data)).toBe(8);
+  // Dragged right off the picture: nothing left, no error.
+  for (const [dx, dy] of [[25, 0], [-25, 0], [0, 30], [0, -30]]) expect(isEmpty(moveSelection(a, dx, dy, 20, 20))).toBe(true);
 });
 
 test("outline: a square is four lines; the wand picks the joined colour", () => {

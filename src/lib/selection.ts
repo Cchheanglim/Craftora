@@ -220,6 +220,7 @@ export function moveSelection(sel: Selection, dx: number, dy: number, W: number,
   const { width: w, height: h } = sel;
   const [gx, gy] = [Math.round(dx * (w / W)), Math.round(dy * (h / H))];
   const out = new Uint8Array(w * h);
+  if (Math.abs(gx) >= w || Math.abs(gy) >= h) return { width: w, height: h, data: out };
   for (let y = Math.max(0, gy); y < Math.min(h, h + gy); y++) out.set(sel.data.subarray((y - gy) * w + Math.max(0, -gx), (y - gy) * w + Math.min(w, w - gx)), y * w + Math.max(0, gx));
   return { width: w, height: h, data: out };
 }

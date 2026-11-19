@@ -192,6 +192,8 @@
 **Fixed**
 
 - The timeline's zoom slider got an invalid value for a moment when the editor opened (a warning in the developer log).
+- Keys pressed while a window was open (Export, Layer style, Crop…) still acted on the editor behind it: Delete deleted the
+  picked layer. Now the window has them to itself.
 - A YouTube video with dubbed sound tracks came with captions in one of the dubs' languages (such as Bangla for an
   English video): Craftora now takes the captions of what was really said.
 - "Make captions from the sound" is offered for videos whose captions are the site's automatic ones too, and making

@@ -128,6 +128,7 @@ import {
   SELECT_TOOLS,
   combine,
   expandSelection,
+  isEmpty,
   featherSelection,
   gridOf,
   invertSelection,
@@ -428,10 +429,13 @@ export default function App() {
   // shortcut: selection changes aren't undo steps (Reselect brings the last one back); put them in history if asked.
   const [selection, setSelection] = useState<Selection | null>(null);
   const [selectSettings, setSelectSettings] = useState(SELECT_START);
+  const selectSettingsRef = useRef(selectSettings);
+  selectSettingsRef.current = selectSettings;
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   const lastSelection = useRef<Selection | null>(null);
   const changeSelection = (next: Selection | null) => {
+    if (next && isEmpty(next)) next = null;
     if (selectionRef.current) lastSelection.current = selectionRef.current;
     selectionRef.current = next;
     setSelection(next);
@@ -1817,16 +1821,30 @@ export default function App() {
   };
   /** A new selection shape joined to the current one by `mode`, softened by the options bar's Feather. */
   const addShape = (shape: Selection, mode: SelectMode) => {
-    const { feather } = selectSettings;
+    const { feather } = selectSettingsRef.current;
     changeSelection(combine(selectionRef.current, feather > 0 ? featherSelection(shape, feather, (projectRef.current.image ?? NO_IMAGE).width) : shape, mode));
   };
   /** Magic wand: the colour under `p` (picture px) in the whole picture as it looks. */
   const wand = async (p: [number, number], mode: SelectMode) => {
-    const { width: W, height: H } = projectRef.current.image ?? NO_IMAGE;
+    const image = projectRef.current.image;
+    if (!image) return;
+    const { width: W, height: H } = image;
     const grid = gridOf(W, H);
     const canvas = await composeCanvas(projectRef.current, grid);
+    if (projectRef.current.image?.width !== W || projectRef.current.image.height !== H) return;
     const rgba = canvas.getContext("2d")!.getImageData(0, 0, grid.width, grid.height).data;
-    addShape(wandSelection(rgba, grid.width, grid.height, p[0], p[1], W, H, selectSettings.tolerance, selectSettings.contiguous), mode);
+    const { tolerance, contiguous } = selectSettingsRef.current;
+    addShape(wandSelection(rgba, grid.width, grid.height, p[0], p[1], W, H, tolerance, contiguous), mode);
+  };
+  /** Keeps what `ctx` draws next to `clip`'s box (its crop window, turned by its angle), the picture scaled by `k`. */
+  const clipToLayer = (ctx: CanvasRenderingContext2D, clip: Clip, natural: { width: number; height: number }, W: number, H: number, k: [number, number]) => {
+    const box = layerBox(clip, natural.width / natural.height, W, H);
+    ctx.setTransform(k[0], 0, 0, k[1], 0, 0);
+    ctx.translate(box.left + box.width / 2, box.top + box.height / 2);
+    ctx.rotate(((clip.angle ?? 0) * Math.PI) / 180);
+    ctx.beginPath();
+    ctx.rect(-box.width / 2, -box.height / 2, box.width, box.height);
+    ctx.clip();
   };
   /** Select subject: the picked photo's subject (Remove background's model, on this PC), as the selection. */
   const selectSubject = async () => {
@@ -1836,17 +1854,21 @@ export default function App() {
     setSelectNote("Finding the subject…");
     try {
       const img = await photo(await removeBackground(media.source.url, setSelectNote));
-      const { width: W, height: H } = projectRef.current.image ?? NO_IMAGE;
-      const current = projectRef.current.clips.find((c) => c.id === clip.id) ?? clip;
+      // Still the same picture and layer (it takes a while: the editor may have changed meanwhile).
+      const current = projectRef.current.clips.find((c) => c.id === clip.id);
+      if (!current || !projectRef.current.image) return;
+      const { width: W, height: H } = projectRef.current.image;
       const grid = gridOf(W, H);
       const canvas = document.createElement("canvas");
       [canvas.width, canvas.height] = [grid.width, grid.height];
       const ctx = canvas.getContext("2d")!;
-      const m = multiply([grid.width / W, 0, 0, grid.height / H, 0, 0], photoToImage(current, { width: img.naturalWidth, height: img.naturalHeight }, W, H, current.effect === "mirror"));
+      const natural = { width: img.naturalWidth, height: img.naturalHeight };
+      clipToLayer(ctx, current, natural, W, H, [grid.width / W, grid.height / H]);
+      const m = multiply([grid.width / W, 0, 0, grid.height / H, 0, 0], photoToImage(current, natural, W, H, current.effect === "mirror"));
       ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
       ctx.imageSmoothingQuality = "high";
       ctx.drawImage(img, 0, 0);
-      addShape(selectionFromAlpha(ctx.getImageData(0, 0, grid.width, grid.height).data, grid.width, grid.height), selectSettings.mode);
+      addShape(selectionFromAlpha(ctx.getImageData(0, 0, grid.width, grid.height).data, grid.width, grid.height), selectSettingsRef.current.mode);
     } finally {
       setSelectNote("");
     }
@@ -1865,6 +1887,8 @@ export default function App() {
       canvas.getContext("2d")!.drawImage(img, 0, 0);
       return canvas;
     };
+    const track = project.tracks.find((t) => t.id === clip.trackId);
+    if (track?.locked || track?.hidden) return null;
     if (editingMask && clip.mask) {
       // A data URL, not a file (`photo` reads files through Rust).
       const img = new Image();
@@ -1888,7 +1912,7 @@ export default function App() {
     const sel = selectionRef.current;
     if (!sel) return;
     const target = await selectionTarget(sel);
-    if (!target) return setError(editingMask ? "Couldn't read the layer mask." : "Pick a photo or painted layer first.");
+    if (!target) return setError("Pick a photo or painted layer that isn't locked or hidden.");
     const { clip, mask, canvas, toImage, keep } = target;
     const { width: W, height: H } = projectRef.current.image ?? NO_IMAGE;
     if (op === "copy" || op === "cut") {
@@ -1896,6 +1920,7 @@ export default function App() {
       const out = document.createElement("canvas");
       [out.width, out.height] = [W, H];
       const octx = out.getContext("2d")!;
+      clipToLayer(octx, clip, canvas, W, H, [1, 1]);
       octx.setTransform(toImage[0], toImage[1], toImage[2], toImage[3], toImage[4], toImage[5]);
       octx.imageSmoothingQuality = "high";
       octx.drawImage(canvas, 0, 0);
@@ -2295,6 +2320,8 @@ export default function App() {
     if (ctrl && key === "o" && inDesktopApp) return (e.preventDefault(), void importFiles());
     if (ctrl && key === "b") return (e.preventDefault(), e.altKey ? toggleRight() : toggleLeft());
     if (isTyping(e.target) || !inEditor) return;
+    // A window is open (Export, Layer style, Feather…): its keys are its own, not the picture's behind it.
+    if (document.querySelector("dialog[open]")) return;
     if (ctrl && key === "z" && !e.shiftKey) return (e.preventDefault(), api.undo());
     if (ctrl && (key === "y" || (key === "z" && e.shiftKey))) return (e.preventDefault(), api.redo());
     // Image editor selections, with photo editors' keys.
