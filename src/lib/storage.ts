@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Job } from "../types";
 import { isWorkingFile, type Project } from "../project/model";
 import { errorText, inDesktopApp } from "./engine";
+import { EMPTY_ORGANIZE, type Organize } from "./libraryOrganize";
 
 /** What the project list shows. */
 export interface ProjectEntry {
@@ -137,6 +138,13 @@ const MEDIA_LIBRARY = "craftora.mediaLibrary";
 export const LIBRARY_LIMIT = 300;
 export const loadMediaLibrary = (): LibraryEntry[] => browserRead<LibraryEntry[]>(MEDIA_LIBRARY, []).filter((e) => !isWorkingFile(e.path));
 export const saveMediaLibrary = (entries: LibraryEntry[]) => browserWrite(MEDIA_LIBRARY, entries);
+
+const LIBRARY_ORGANIZE = "craftora.libraryOrganize";
+export const loadOrganize = (): Organize => {
+  const saved = browserRead<Partial<Organize>>(LIBRARY_ORGANIZE, EMPTY_ORGANIZE);
+  return saved && typeof saved === "object" ? { ...EMPTY_ORGANIZE, ...saved } : EMPTY_ORGANIZE;
+};
+export const saveOrganize = (o: Organize) => browserWrite(LIBRARY_ORGANIZE, o);
 
 /** Downloads not finished when Craftora closed, so they wait in the queue next time (their parts stay on disk). */
 export const loadPausedDownloads = (): Job[] => browserRead<Job[]>(PAUSED_DOWNLOADS, []);

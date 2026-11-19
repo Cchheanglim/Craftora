@@ -1,0 +1,65 @@
+/* HoverPreview: a raised pane beside a Media library card. Fades and rises in; fades out when the pointer leaves. */
+.hover-preview {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-raised);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 0.35);
+  animation: hover-preview-in 180ms ease-out both;
+}
+
+.hover-preview.is-leaving {
+  animation: hover-preview-out 120ms ease-in both;
+}
+
+.hover-preview__media {
+  display: grid;
+  place-items: center;
+  max-height: 260px;
+  min-height: 120px;
+  background: #000;
+  overflow: hidden;
+}
+
+.hover-preview__media video,
+.hover-preview__media img {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+}
+
+.hover-preview__name {
+  margin: 0;
+  padding: 6px 10px 7px;
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes hover-preview-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes hover-preview-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hover-preview,
+  .hover-preview.is-leaving {
+    animation: none;
+  }
+}
