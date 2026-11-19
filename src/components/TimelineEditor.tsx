@@ -267,6 +267,22 @@ export function TimelineEditor({
   const overMain = (t: Track) => !main || project.tracks.indexOf(t) <= project.tracks.indexOf(main);
   /** The track whose … menu is open, and where to draw it. */
   const [menu, setMenu] = useState<{ trackId: string; x: number; y: number; up: boolean } | null>(null);
+  // The track menu opens on hover (owner): it waits a moment after the pointer leaves both the … and the menu, so
+  // crossing the gap between them doesn't close it.
+  const menuHide = useRef(0);
+  const keepMenu = () => window.clearTimeout(menuHide.current);
+  const hideMenuSoon = (e: ReactPointerEvent) => {
+    if (e.pointerType !== "mouse") return;
+    keepMenu();
+    menuHide.current = window.setTimeout(() => setMenu(null), 250);
+  };
+  useEffect(() => keepMenu, []);
+  const openTrackMenu = (trackId: string, button: HTMLElement) => {
+    const r = button.getBoundingClientRect();
+    // Upwards when there's no room under the button.
+    const up = r.bottom + 260 > window.innerHeight;
+    setMenu({ trackId, x: r.left, y: up ? window.innerHeight - r.top + 4 : r.bottom + 4, up });
+  };
   // The menus sit at a fixed place on screen: they close when the timeline moves under them
   // (resized with the bar above it, scrolled) or the window changes size.
   const menuOpen = Boolean(menu || coverMenu || clipMenu);
@@ -921,18 +937,25 @@ export function TimelineEditor({
                     aria-haspopup="menu"
                     aria-label={`More for ${name}`}
                     title="Track height, waveform size and more"
+                    onPointerEnter={(e) => {
+                      // A plain mouse hover; not while dragging something across the heads.
+                      if (e.pointerType !== "mouse" || e.buttons) return;
+                      keepMenu();
+                      if (!menuOpen) openTrackMenu(track.id, e.currentTarget);
+                    }}
+                    onPointerLeave={hideMenuSoon}
                     onClick={(e) => {
-                      const r = e.currentTarget.getBoundingClientRect();
-                      // Upwards when there's no room under the button.
-                      const up = r.bottom + 260 > window.innerHeight;
-                      setMenu(menuOpen ? null : { trackId: track.id, x: r.left, y: up ? window.innerHeight - r.top + 4 : r.bottom + 4, up });
+                      // Keyboard (and touch) still toggle it; a mouse click keeps the menu the hover opened.
+                      if (e.detail > 0 && menuOpen) return;
+                      if (menuOpen) setMenu(null);
+                      else openTrackMenu(track.id, e.currentTarget);
                     }}
                   >
                     <Icon name="more" size={12} />
                   </button>
                   {menuOpen && createPortal(
                     // On the page itself, so the timeline's scrolling box (and a glass theme's blur) can't cut it off.
-                    <div className="tl__menu tl__track-menu" role="menu" style={{ position: "fixed", left: menu.x, ...(menu.up ? { top: "auto", bottom: menu.y } : { top: menu.y }) }}>
+                    <div className="tl__menu tl__track-menu" role="menu" onPointerEnter={keepMenu} onPointerLeave={hideMenuSoon} style={{ position: "fixed", left: menu.x, ...(menu.up ? { top: "auto", bottom: menu.y } : { top: menu.y }) }}>
                       <p className="tl__menu-label">Track height</p>
                       <div className="tl__sizes" role="group" aria-label="Track height">
                         {SIZES.map(({ size, label }) => (

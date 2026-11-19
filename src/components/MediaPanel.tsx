@@ -80,7 +80,8 @@ export function MediaPanel({
 }: MediaPanelProps) {
   const [picked, setTab] = useState<Tab>("media");
   const tab = only ?? picked;
-  const visuals = media.filter((m) => m.hasVideo);
+  // In the Video editor animated GIFs live in their own GIFs tab; the Image editor (no GIFs tab) lists them as photos.
+  const visuals = media.filter((m) => m.hasVideo && !(m.source.animated && !still));
   const sounds = media.filter((m) => !m.hasVideo);
 
   /** The status after the name, worded as the old sidebar list had it. */

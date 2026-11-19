@@ -20,7 +20,6 @@ interface MediaLibraryProps {
   onThumbnail: (path: string, thumbnail: string) => void;
   /** Takes it off this list; the file isn't touched. */
   onForget: (path: string) => void;
-  /** Imports new files into the library / project. */
   /** Imports GIF files into the library / project. */
   onImportGifs?: () => void;
   /** Downloads a GIF from a URL and adds it to the library / project. */
