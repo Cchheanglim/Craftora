@@ -17,6 +17,8 @@ export interface Folder {
   parent: string | null;
   /** The collection it was made in; absent = the library's own folders (All and the kind tabs). */
   collection?: string;
+  /** The picture on its card (a small JPEG data URL), instead of the folder icon. */
+  cover?: string;
 }
 
 export interface Organize {
@@ -129,6 +131,13 @@ export function renameFolder(o: Organize, id: string, name: string): Organize {
   const target = o.folders.find((f) => f.id === id);
   if (!target || target.name === trimmed) return o;
   return { ...o, folders: o.folders.map((f) => (f.id === id ? { ...f, name: trimmed } : f)) };
+}
+
+/** A folder's card picture; null puts the folder icon back. */
+export function setFolderCover(o: Organize, id: string, cover: string | null): Organize {
+  const target = o.folders.find((f) => f.id === id);
+  if (!target || (target.cover ?? null) === cover) return o;
+  return { ...o, folders: o.folders.map((f) => (f.id === id ? { ...f, cover: cover ?? undefined } : f)) };
 }
 
 export function deleteFolder(o: Organize, id: string): Organize {

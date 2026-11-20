@@ -17,6 +17,7 @@ import {
   removeFromCollection,
   renameCollection,
   renameFolder,
+  setFolderCover,
   setTitle,
   titleOf,
   toggleInCollection,
@@ -24,6 +25,7 @@ import {
   type Folder,
   type Organize,
 } from "../lib/libraryOrganize";
+import { errorText, fileThumbnail, inDesktopApp, pickPicture } from "../lib/engine";
 import { loadOrganize, saveOrganize, type LibraryEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
 import { Icon } from "./Icon";
@@ -184,6 +186,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   /** The name typed for a collection that another one already has. */
   const [tabNameClash, setTabNameClash] = useState<string | null>(null);
+  /** The folder whose cover is being picked from the Media library's pictures. */
+  const [coverFor, setCoverFor] = useState<Folder | null>(null);
+  const [coverError, setCoverError] = useState<string | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   /** The folder being viewed (null = the top level). */
@@ -480,6 +485,22 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     const rect = (li as HTMLElement).getBoundingClientRect();
     hoverTimer.current = window.setTimeout(() => setPreview({ entry, rect, leaving: false }), preview && !preview.leaving ? 150 : 450);
   };
+  /** A picture file as a folder's cover: its small thumbnail is kept, so the cover stays if the file moves. */
+  const setCoverFrom = async (folder: Folder, path: string, thumbnail?: string) => {
+    setCoverError(null);
+    const cover = thumbnail ?? (await fileThumbnail(path, true));
+    if (!cover) return setCoverError("Couldn't read that picture.");
+    updateOrganize((o) => setFolderCover(o, folder.id, cover));
+  };
+  const coverFromPc = async (folder: Folder) => {
+    try {
+      const path = await pickPicture();
+      if (path) await setCoverFrom(folder, path);
+    } catch (err) {
+      setCoverError(errorText(err));
+    }
+  };
+
   const createFolder = () => {
     const id = newCollectionId();
     const parent = foldersOn ? here : null;
@@ -556,6 +577,10 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         items: [
           { label: "Open", icon: "folder", onClick: () => setOpenFolder(folder.id) },
           { label: "Rename", icon: "pencil", onClick: () => setRenamingFolderId(folder.id) },
+          "sep",
+          { label: "Cover from Media library", icon: "image", onClick: () => setCoverFor(folder) },
+          ...(inDesktopApp ? [{ label: "Cover from this PC", icon: "upload" as const, onClick: () => void coverFromPc(folder) }] : []),
+          ...(folder.cover ? [{ label: "Remove cover", icon: "x" as const, onClick: () => updateOrganize((o) => setFolderCover(o, folder.id, null)) }] : []),
           "sep",
           { label: "Delete folder", icon: "trash", danger: true, onClick: () => void confirmDeleteFolder(folder) },
         ],
@@ -729,6 +754,19 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         </div>
 
         {tabNameClash && <p className="media-library__note" role="alert">There's already a collection called “{tabNameClash}”.</p>}
+        {coverError && <p className="media-library__note" role="alert">{coverError}</p>}
+        {coverFor && (
+          <CoverPicker
+            pictures={entries.filter((e) => e.kind === "image")}
+            name={(e) => titleOf(organize, e.path, e.name)}
+            onPick={(e) => {
+              const folder = coverFor;
+              setCoverFor(null);
+              void setCoverFrom(folder, e.path, e.thumbnail);
+            }}
+            onClose={() => setCoverFor(null)}
+          />
+        )}
 
         {currentTab === "gif" && (onDownloadGif || onImportGifs) && (
           <div className="media-library__gif-actions">
@@ -846,7 +884,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                   key={`folder:${folder.id}`}
                   thumb={
                     <span className={target ? "media-library__folder is-drop-target" : "media-library__folder"}>
-                      <Icon name="folder" size={36} />
+                      {folder.cover ? <img className="media-library__folder-cover" src={folder.cover} alt="" draggable={false} /> : <Icon name="folder" size={36} />}
                     </span>
                   }
                   tag="Folder"
@@ -895,5 +933,51 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         </ul>
       </HiddenFold>
     </section>
+  );
+}
+
+/** Right-click a folder > Cover from Media library: the library's pictures in a window; a click picks one. */
+function CoverPicker({ pictures, name, onPick, onClose }: { pictures: LibraryEntry[]; name: (e: LibraryEntry) => string; onPick: (e: LibraryEntry) => void; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="confirm media-library__cover-pick"
+      aria-labelledby="cover-pick-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="confirm__box">
+        <h2 id="cover-pick-title">Choose a cover</h2>
+        {pictures.length === 0 ? (
+          <p className="confirm__message">There are no pictures in your Media library yet.</p>
+        ) : (
+          <ul className="media-library__cover-grid">
+            {pictures.map((e) => (
+              <li key={e.path}>
+                <button type="button" onClick={() => onPick(e)} title={name(e)}>
+                  <FileThumb path={e.path} src={e.thumbnail} image icon="image" />
+                  <span className="truncate">{name(e)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="confirm__actions">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </dialog>
   );
 }

@@ -153,3 +153,56 @@
   box-shadow: inset 0 0 0 1px var(--accent);
   color: var(--text);
 }
+
+/* A folder's own cover picture fills its card. */
+.media-library__folder-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Cover from Media library: a window of picture tiles. */
+.media-library__cover-pick {
+  width: min(560px, calc(100vw - 32px));
+  max-width: none;
+}
+
+.media-library__cover-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: var(--space-2);
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.media-library__cover-grid button {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.media-library__cover-grid button:hover,
+.media-library__cover-grid button:focus-visible {
+  border-color: var(--line-hover);
+  color: var(--text);
+}
+
+.media-library__cover-grid .thumb,
+.media-library__cover-grid img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+}
