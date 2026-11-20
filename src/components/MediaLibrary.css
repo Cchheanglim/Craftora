@@ -154,11 +154,29 @@
   color: var(--text);
 }
 
-/* A folder's own cover picture fills its card. */
+/* A folder's own cover picture fills its card, with a small folder mark in the corner so it still reads as a folder. */
 .media-library__folder-cover {
+  grid-area: 1 / 1;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.media-library__folder:has(.media-library__folder-badge) {
+  position: relative;
+}
+
+.media-library__folder-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: rgb(0 0 0 / 0.6);
+  color: #ffffff;
 }
 
 /* Cover from Media library: a window of picture tiles. */

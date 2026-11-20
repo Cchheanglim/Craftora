@@ -223,11 +223,12 @@
 - The track ⋯ menu opens when you point at it.
 - **Sound FX**: a new tab in the editor's tools panel and in the Media library for your own meme sounds and sound
   effects, kept for every project like your GIFs. Import sounds, paste a link to a sound file (MP3, WAV, OGG, M4A, AAC
-  or FLAC, up to 50 MB) or drag them in from File Explorer while the tab is open. Each card has a play button to hear
+  or FLAC, up to 50 MB; a sound site's page for one sound works too) or drag them in from File Explorer or from a
+  browser (a sound file, or a sound's page from a sound site). Each card has a play button to hear
   it first; click a card to add it at the playhead on a free audio track, or drag it onto the timeline. The Media
   library's "Sound" tab is now called "Audio".
 - **Folder covers**: right-click a folder in the Media library for Cover from Media library or Cover from this PC, and
-  Remove cover to bring the folder icon back.
+  Remove cover to bring the folder icon back. A GIF cover moves on the card.
 
 **Fixed**
 

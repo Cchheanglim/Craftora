@@ -59,10 +59,19 @@ interface MediaLibraryProps {
   onDownloadSound?: (url: string) => Promise<void>;
 }
 
-type Filter = "all" | "video" | "image" | "audio" | "gif" | "sfx" | "saved";
+type Filter = "all" | "video" | "image" | "audio" | "gif" | "sfx" | "saved" | "folders";
+
+/** What an empty tab says (no search typed). */
+const EMPTY_NOTES: Partial<Record<Filter, string>> = {
+  all: "Nothing here yet. Files you import into a project show up here.",
+  video: "No videos yet. Videos you import into a project show up here.",
+  image: "No pictures yet. Pictures you import into a project show up here.",
+  audio: "No audio yet. Music and sounds you import into a project show up here.",
+  saved: "Nothing saved yet. Click the star on a file (or right-click it and pick Save it) to keep it here.",
+};
 
 const COLLECTION_PREFIX = "c:";
-const BUILTIN_TABS: Filter[] = ["all", "video", "image", "audio", "gif", "sfx", "saved"];
+const BUILTIN_TABS: Filter[] = ["all", "video", "image", "audio", "gif", "sfx", "saved", "folders"];
 const TAB_LABELS: Record<Filter, ReactNode> = {
   all: "All",
   video: "Videos",
@@ -74,6 +83,12 @@ const TAB_LABELS: Record<Filter, ReactNode> = {
     <>
       <Icon name="star" size={14} />
       Saved
+    </>
+  ),
+  folders: (
+    <>
+      <Icon name="folder" size={14} />
+      Folders
     </>
   ),
 };
@@ -408,6 +423,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     const matchesTab = collectionPaths
       ? collectionPaths.has(e.path)
       : currentTab === "all" ||
+        currentTab === "folders" ||
         (currentTab === "saved"
           ? e.saved
           : currentTab === "gif"
@@ -445,10 +461,11 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   };
   const inside = holding(entries);
   const matchingInside = holding(shown);
-  const levelFolders = foldersOn ? scopeFolders.filter((f) => f.parent === here && (currentTab === "all" || scope || matchingInside.has(f.id))) : [];
+  const levelFolders = foldersOn ? scopeFolders.filter((f) => f.parent === here && (currentTab === "all" || currentTab === "folders" || scope || matchingInside.has(f.id))) : [];
   const levelFoldersRef = useRef(levelFolders);
   levelFoldersRef.current = levelFolders;
-  const levelFiles = foldersOn ? shown.filter((e) => (placed[e.path] ?? null) === here) : shown;
+  // Folders tab: only folders at the top; inside one, its files as usual.
+  const levelFiles = !foldersOn ? shown : currentTab === "folders" && !here ? [] : shown.filter((e) => (placed[e.path] ?? null) === here);
 
   // A bigger look at a file card when the pointer rests on it (owner): 450 ms the first time, 150 ms to the next card
   // while one is showing. Not for sounds, nor while dragging, renaming or with a menu open.
@@ -822,7 +839,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           <p className="pc-muted">No GIFs yet. Import a GIF and it shows up here and in the editor's GIFs tab.</p>
         ) : currentTab === "sfx" && !entries.some((e) => e.sfx) ? (
           <p className="pc-muted">No sounds yet. Import meme sounds and effects, paste a link to a sound file, or drag them in from File Explorer: they show up here and in the editor's Sound FX tab.</p>
-        ) : entries.length === 0 ? (
+        ) : currentTab === "folders" && !here && !words && levelFolders.length === 0 ? (
+          <p className="pc-muted">No folders yet. Make one with New folder, then drag files onto it.</p>
+        ) : entries.length === 0 && levelFolders.length === 0 ? (
           <p className="pc-muted">Files you import into a project show up here, so you can find them again.</p>
         ) : activeCollection && !words && matching.length === 0 ? (
           <p className="pc-muted">This collection is empty. Drag files onto its tab or right-click a file to add it.</p>
@@ -832,7 +851,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               ? "This folder is empty. Drag files onto a folder card, or onto a name in the path above, to move them."
               : hiddenShown.length
                 ? "Everything here is hidden."
-                : "Nothing matches."}
+                : words
+                  ? `No files called “${search.trim()}” here. Try another name.`
+                  : EMPTY_NOTES[currentTab as Filter] ?? "Nothing here yet."}
           </p>
         ) : (
           <ul
@@ -893,6 +914,11 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                         <GifImage className="media-library__folder-cover" path={folder.cover} />
                       ) : (
                         <Icon name="folder" size={36} />
+                      )}
+                      {folder.cover && (
+                        <span className="media-library__folder-badge" aria-hidden="true">
+                          <Icon name="folder" size={14} />
+                        </span>
                       )}
                     </span>
                   }
