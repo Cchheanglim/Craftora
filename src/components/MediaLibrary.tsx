@@ -1,18 +1,23 @@
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   addCollection,
   addFolder,
+  collectionNameTaken,
   deleteCollection,
   deleteFolder,
   folderPath,
+  freeName,
   forgetPath,
   moveFolder,
   moveTab,
   moveToFolder,
+  placedIn,
   orderedTabs,
   removeFromCollection,
   renameCollection,
   renameFolder,
+  setFolderCover,
   setTitle,
   titleOf,
   toggleInCollection,
@@ -20,12 +25,14 @@ import {
   type Folder,
   type Organize,
 } from "../lib/libraryOrganize";
+import { errorText, fileThumbnail, inDesktopApp, pickPicture } from "../lib/engine";
 import { loadOrganize, saveOrganize, type LibraryEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
 import { Icon } from "./Icon";
 import { FileThumb } from "./Thumb";
 import { useConfirm } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { GifImage } from "./GifPanel";
 import { GifLinkBox } from "./GifLinkBox";
 import { HiddenFold, useHidden } from "./Hidden";
 import { HoverPreview } from "./HoverPreview";
@@ -47,22 +54,41 @@ interface MediaLibraryProps {
   onImportGifs?: () => void;
   /** Downloads a GIF from a URL and adds it to the library / project. */
   onDownloadGif?: (url: string) => Promise<void>;
+  /** The Sound FX tab's Import sounds and Paste a sound link (desktop app only). */
+  onImportSounds?: () => void;
+  onDownloadSound?: (url: string) => Promise<void>;
 }
 
-type Filter = "all" | "video" | "image" | "audio" | "gif" | "saved";
+type Filter = "all" | "video" | "image" | "audio" | "gif" | "sfx" | "saved" | "folders";
+
+/** What an empty tab says (no search typed). */
+const EMPTY_NOTES: Partial<Record<Filter, string>> = {
+  all: "Nothing here yet. Files you import into a project show up here.",
+  video: "No videos yet. Videos you import into a project show up here.",
+  image: "No pictures yet. Pictures you import into a project show up here.",
+  audio: "No audio yet. Music and sounds you import into a project show up here.",
+  saved: "Nothing saved yet. Click the star on a file (or right-click it and pick Save it) to keep it here.",
+};
 
 const COLLECTION_PREFIX = "c:";
-const BUILTIN_TABS: Filter[] = ["all", "video", "image", "audio", "gif", "saved"];
+const BUILTIN_TABS: Filter[] = ["all", "video", "image", "audio", "gif", "sfx", "saved", "folders"];
 const TAB_LABELS: Record<Filter, ReactNode> = {
   all: "All",
   video: "Videos",
   image: "Pictures",
-  audio: "Sound",
+  audio: "Audio",
   gif: "GIFs",
+  sfx: "Sound FX",
   saved: (
     <>
       <Icon name="star" size={14} />
       Saved
+    </>
+  ),
+  folders: (
+    <>
+      <Icon name="folder" size={14} />
+      Folders
     </>
   ),
 };
@@ -70,7 +96,7 @@ const TAB_LABELS: Record<Filter, ReactNode> = {
 const KIND_LABEL: Record<LibraryEntry["kind"], string> = {
   video: "Video",
   image: "Picture",
-  audio: "Sound",
+  audio: "Audio",
 };
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
@@ -105,6 +131,8 @@ type CardDragState = {
   y: number;
   active: boolean;
   hoverCollectionId: string | null;
+  /** The collection whose folders it's among (null = the library's own). */
+  scope: string | null;
   /** Dragging a folder card instead of a file. */
   folderId?: string;
   /** The folder under the pointer (a folder card or a part of the path line); null = the top level; absent = none. */
@@ -158,7 +186,7 @@ function computeTabInsert(
   };
 }
 
-export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, onImportGifs, onDownloadGif }: MediaLibraryProps) {
+export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, onImportGifs, onDownloadGif, onImportSounds, onDownloadSound }: MediaLibraryProps) {
   const { ask, dialog } = useConfirm();
   const [organize, setOrganize] = useState<Organize>(() => loadOrganize());
   const updateOrganize = (fn: (prev: Organize) => Organize) => {
@@ -172,6 +200,11 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<string>("all");
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
+  /** The name typed for a collection that another one already has. */
+  const [tabNameClash, setTabNameClash] = useState<string | null>(null);
+  /** The folder whose cover is being picked from the Media library's pictures. */
+  const [coverFor, setCoverFor] = useState<Folder | null>(null);
+  const [coverError, setCoverError] = useState<string | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   /** The folder being viewed (null = the top level). */
@@ -299,7 +332,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
       if (commit && cur.hoverFolder !== undefined) {
         const to = cur.hoverFolder;
         const folderId = cur.folderId;
-        updateOrganize((o) => (folderId ? moveFolder(o, folderId, to) : moveToFolder(o, cur.path, to)));
+        updateOrganize((o) => (folderId ? moveFolder(o, folderId, to) : moveToFolder(o, cur.path, to, cur.scope)));
       } else if (commit && cur.hoverCollectionId && !cur.folderId) {
         const colId = cur.hoverCollectionId;
         const path = cur.path;
@@ -379,7 +412,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
 
   const createCollection = () => {
     const id = newCollectionId();
-    updateOrganize((o) => addCollection(o, "New collection", id));
+    updateOrganize((o) => addCollection(o, freeName("New collection", o.collections.map((c) => c.name)), id));
     setRenamingTabId(id);
   };
 
@@ -390,7 +423,18 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     const matchesTab = collectionPaths
       ? collectionPaths.has(e.path)
       : currentTab === "all" ||
-        (currentTab === "saved" ? e.saved : currentTab === "gif" ? Boolean(e.animated) : currentTab === "image" ? e.kind === "image" && !e.animated : e.kind === currentTab);
+        currentTab === "folders" ||
+        (currentTab === "saved"
+          ? e.saved
+          : currentTab === "gif"
+            ? Boolean(e.animated)
+            : currentTab === "sfx"
+              ? Boolean(e.sfx)
+              : currentTab === "image"
+                ? e.kind === "image" && !e.animated
+                : currentTab === "audio"
+                  ? e.kind === "audio" && !e.sfx
+                  : e.kind === currentTab);
     if (!matchesTab) return false;
     if (!words) return true;
     const shownName = titleOf(organize, e.path, e.name).toLowerCase();
@@ -399,24 +443,29 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const shown = matching.filter((e) => !hidden.isHidden(e.path));
   const hiddenShown = matching.filter((e) => hidden.isHidden(e.path));
 
-  // Folders show on All and the kind tabs; Saved, collections and a search are flat lists of every match.
-  const foldersOn = !words && !activeCollection && currentTab !== "saved";
-  const here = openFolder && organize.folders.some((f) => f.id === openFolder) ? openFolder : null;
+  // Folders show on All, the kind tabs (the library's own folders) and a collection (its own); Saved and a search are
+  // flat lists of every match.
+  const foldersOn = !words && currentTab !== "saved";
+  const scope = activeCollection?.id ?? null;
+  const placed = placedIn(organize, scope);
+  const scopeFolders = organize.folders.filter((f) => (f.collection ?? null) === scope);
+  const here = openFolder && scopeFolders.some((f) => f.id === openFolder) ? openFolder : null;
   const parentOf = new Map(organize.folders.map((f) => [f.id, f.parent]));
   /** Every folder that holds (at any depth) one of `list`, with how many. */
   const holding = (list: LibraryEntry[]) => {
     const counts = new Map<string, number>();
     for (const e of list) {
-      for (let f: string | null | undefined = organize.placed[e.path]; f; f = parentOf.get(f)) counts.set(f, (counts.get(f) ?? 0) + 1);
+      for (let f: string | null | undefined = placed[e.path]; f; f = parentOf.get(f)) counts.set(f, (counts.get(f) ?? 0) + 1);
     }
     return counts;
   };
   const inside = holding(entries);
   const matchingInside = holding(shown);
-  const levelFolders = foldersOn ? organize.folders.filter((f) => f.parent === here && (currentTab === "all" || matchingInside.has(f.id))) : [];
+  const levelFolders = foldersOn ? scopeFolders.filter((f) => f.parent === here && (currentTab === "all" || currentTab === "folders" || scope || matchingInside.has(f.id))) : [];
   const levelFoldersRef = useRef(levelFolders);
   levelFoldersRef.current = levelFolders;
-  const levelFiles = foldersOn ? shown.filter((e) => (organize.placed[e.path] ?? null) === here) : shown;
+  // Folders tab: only folders at the top; inside one, its files as usual.
+  const levelFiles = !foldersOn ? shown : currentTab === "folders" && !here ? [] : shown.filter((e) => (placed[e.path] ?? null) === here);
 
   // A bigger look at a file card when the pointer rests on it (owner): 450 ms the first time, 150 ms to the next card
   // while one is showing. Not for sounds, nor while dragging, renaming or with a menu open.
@@ -454,14 +503,36 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     const rect = (li as HTMLElement).getBoundingClientRect();
     hoverTimer.current = window.setTimeout(() => setPreview({ entry, rect, leaving: false }), preview && !preview.leaving ? 150 : 450);
   };
+  /** A picture file as a folder's cover: its small thumbnail is kept, so the cover stays if the file moves. */
+  const setCoverFrom = async (folder: Folder, path: string, thumbnail?: string) => {
+    setCoverError(null);
+    // A GIF stays a GIF (it moves on the card), so the cover is its file.
+    if (/\.gif$/i.test(path)) return updateOrganize((o) => setFolderCover(o, folder.id, path));
+    const cover = thumbnail ?? (await fileThumbnail(path, true));
+    if (!cover) return setCoverError("Couldn't read that picture.");
+    updateOrganize((o) => setFolderCover(o, folder.id, cover));
+  };
+  const coverFromPc = async (folder: Folder) => {
+    try {
+      const path = await pickPicture();
+      if (path) await setCoverFrom(folder, path);
+    } catch (err) {
+      setCoverError(errorText(err));
+    }
+  };
+
   const createFolder = () => {
     const id = newCollectionId();
     const parent = foldersOn ? here : null;
     if (!foldersOn) {
-      setActiveTab("all");
+      if (currentTab === "saved") setActiveTab("all");
       setSearch("");
     }
-    updateOrganize((o) => addFolder(o, "New folder", parent, id));
+    const where = currentTab === "saved" ? null : scope;
+    updateOrganize((o) => {
+      const siblings = o.folders.filter((f) => f.parent === parent && (f.collection ?? null) === where).map((f) => f.name);
+      return addFolder(o, freeName("New folder", siblings), parent, id, where);
+    });
     setRenamingFolderId(id);
   };
 
@@ -491,7 +562,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
             play={entry.kind === "video"}
           />
         }
-        tag={entry.animated ? "GIF" : KIND_LABEL[entry.kind]}
+        tag={entry.animated ? "GIF" : entry.sfx ? "Sound FX" : KIND_LABEL[entry.kind]}
         badge={entry.kind !== "image" && entry.duration > 0 ? formatClock(entry.duration) : undefined}
         name={shownName}
         meta={`Imported ${dateFormat.format(entry.addedAt)}`}
@@ -527,6 +598,10 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           { label: "Open", icon: "folder", onClick: () => setOpenFolder(folder.id) },
           { label: "Rename", icon: "pencil", onClick: () => setRenamingFolderId(folder.id) },
           "sep",
+          { label: "Cover from Media library", icon: "image", onClick: () => setCoverFor(folder) },
+          ...(inDesktopApp ? [{ label: "Cover from this PC", icon: "upload" as const, onClick: () => void coverFromPc(folder) }] : []),
+          ...(folder.cover ? [{ label: "Remove cover", icon: "x" as const, onClick: () => updateOrganize((o) => setFolderCover(o, folder.id, null)) }] : []),
+          "sep",
           { label: "Delete folder", icon: "trash", danger: true, onClick: () => void confirmDeleteFolder(folder) },
         ],
       };
@@ -546,7 +621,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                 icon: "plus",
                 onClick: () => {
                   const id = newCollectionId();
-                  updateOrganize((o) => toggleInCollection(addCollection(o, "New collection", id), id, entry.path));
+                  updateOrganize((o) => toggleInCollection(addCollection(o, freeName("New collection", o.collections.map((c) => c.name)), id), id, entry.path));
                   setRenamingTabId(id);
                 },
               },
@@ -584,11 +659,14 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
       {dialog}
       {menu && activeMenu && <ContextMenu x={menu.x} y={menu.y} label={activeMenu.label} items={activeMenu.items} onClose={() => setMenu(null)} />}
       {preview && <HoverPreview entry={preview.entry} anchor={preview.rect} name={titleOf(organize, preview.entry.path, preview.entry.name)} leaving={preview.leaving} />}
-      {cardDrag?.active && (
-        <div className="media-library__drag-ghost" style={{ left: cardDrag.x + 12, top: cardDrag.y + 12 }} aria-hidden="true">
-          {cardDrag.name}
-        </div>
-      )}
+      {/* On the body: in the page, a glass blur or the page's fade-in moves where "fixed" is measured from. */}
+      {cardDrag?.active &&
+        createPortal(
+          <div className="media-library__drag-ghost" style={{ left: cardDrag.x + 12, top: cardDrag.y + 12 }} aria-hidden="true">
+            {cardDrag.name}
+          </div>,
+          document.body,
+        )}
 
       <header className="pc-head">
         <div>
@@ -618,8 +696,10 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                     <input
                       key={tabId}
                       ref={setTabRef}
-                      className="media-library__tab-rename"
+                      className={tabNameClash ? "media-library__tab-rename is-invalid" : "media-library__tab-rename"}
                       defaultValue={col.name}
+                      aria-invalid={Boolean(tabNameClash)}
+                      onChange={(e) => setTabNameClash(collectionNameTaken(organize, e.currentTarget.value, col.id) ? e.currentTarget.value.trim() : null)}
                       aria-label="Collection name"
                       autoFocus
                       onFocus={(e) => e.currentTarget.select()}
@@ -635,6 +715,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                         const cancelled = e.currentTarget.dataset.cancel;
                         const value = e.currentTarget.value;
                         setRenamingTabId(null);
+                        setTabNameClash(null);
                         if (!cancelled) updateOrganize((o) => renameCollection(o, col.id, value));
                       }}
                     />
@@ -692,6 +773,21 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           </div>
         </div>
 
+        {tabNameClash && <p className="media-library__note" role="alert">There's already a collection called “{tabNameClash}”.</p>}
+        {coverError && <p className="media-library__note" role="alert">{coverError}</p>}
+        {coverFor && (
+          <CoverPicker
+            pictures={entries.filter((e) => e.kind === "image")}
+            name={(e) => titleOf(organize, e.path, e.name)}
+            onPick={(e) => {
+              const folder = coverFor;
+              setCoverFor(null);
+              void setCoverFrom(folder, e.path, e.thumbnail);
+            }}
+            onClose={() => setCoverFor(null)}
+          />
+        )}
+
         {currentTab === "gif" && (onDownloadGif || onImportGifs) && (
           <div className="media-library__gif-actions">
             {onDownloadGif && <GifLinkBox onDownload={onDownloadGif} />}
@@ -704,10 +800,22 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           </div>
         )}
 
+        {currentTab === "sfx" && (
+          <div className="media-library__gif-actions" data-sound-fx>
+            {onDownloadSound && <GifLinkBox onDownload={onDownloadSound} label="Paste a sound link" />}
+            {onImportSounds && (
+              <button type="button" className="btn btn--secondary" onClick={onImportSounds}>
+                <Icon name="upload" size={14} />
+                Import sounds
+              </button>
+            )}
+          </div>
+        )}
+
         {foldersOn && here && (
           <nav className="media-library__path" aria-label="Folder">
             {[null, ...folderPath(organize, here).map((f) => f.id)].map((id, i, all) => {
-              const name = id ? organize.folders.find((f) => f.id === id)?.name : "Media library";
+              const name = id ? organize.folders.find((f) => f.id === id)?.name : (activeCollection?.name ?? "Media library");
               const target = cardDrag?.active && cardDrag.hoverFolder !== undefined && cardDrag.hoverFolder === id;
               return (
                 <span key={id ?? "top"} className="media-library__crumb">
@@ -729,7 +837,11 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
 
         {currentTab === "gif" && !entries.some((e) => e.animated) ? (
           <p className="pc-muted">No GIFs yet. Import a GIF and it shows up here and in the editor's GIFs tab.</p>
-        ) : entries.length === 0 ? (
+        ) : currentTab === "sfx" && !entries.some((e) => e.sfx) ? (
+          <p className="pc-muted">No sounds yet. Import meme sounds and effects, paste a link to a sound file, or drag them in from File Explorer: they show up here and in the editor's Sound FX tab.</p>
+        ) : currentTab === "folders" && !here && !words && levelFolders.length === 0 ? (
+          <p className="pc-muted">No folders yet. Make one with New folder, then drag files onto it.</p>
+        ) : entries.length === 0 && levelFolders.length === 0 ? (
           <p className="pc-muted">Files you import into a project show up here, so you can find them again.</p>
         ) : activeCollection && !words && matching.length === 0 ? (
           <p className="pc-muted">This collection is empty. Drag files onto its tab or right-click a file to add it.</p>
@@ -739,7 +851,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               ? "This folder is empty. Drag files onto a folder card, or onto a name in the path above, to move them."
               : hiddenShown.length
                 ? "Everything here is hidden."
-                : "Nothing matches."}
+                : words
+                  ? `No files called “${search.trim()}” here. Try another name.`
+                  : EMPTY_NOTES[currentTab as Filter] ?? "Nothing here yet."}
           </p>
         ) : (
           <ul
@@ -764,7 +878,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               const folder = levelFolders[idx];
               if (folder) {
                 if (renamingFolderId === folder.id) return;
-                const start: CardDragState = { path: "", name: folder.name, folderId: folder.id, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, active: false, hoverCollectionId: null };
+                const start: CardDragState = { path: "", name: folder.name, folderId: folder.id, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, active: false, hoverCollectionId: null, scope };
                 cardDragRef.current = start;
                 setCardDrag(start);
                 return;
@@ -780,6 +894,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                 y: e.clientY,
                 active: false,
                 hoverCollectionId: null,
+                scope,
               };
               cardDragRef.current = initial;
               setCardDrag(initial);
@@ -793,7 +908,18 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                   key={`folder:${folder.id}`}
                   thumb={
                     <span className={target ? "media-library__folder is-drop-target" : "media-library__folder"}>
-                      <Icon name="folder" size={36} />
+                      {folder.cover?.startsWith("data:") ? (
+                        <img className="media-library__folder-cover" src={folder.cover} alt="" draggable={false} />
+                      ) : folder.cover ? (
+                        <GifImage className="media-library__folder-cover" path={folder.cover} />
+                      ) : (
+                        <Icon name="folder" size={36} />
+                      )}
+                      {folder.cover && (
+                        <span className="media-library__folder-badge" aria-hidden="true">
+                          <Icon name="folder" size={14} />
+                        </span>
+                      )}
                     </span>
                   }
                   tag="Folder"
@@ -842,5 +968,51 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         </ul>
       </HiddenFold>
     </section>
+  );
+}
+
+/** Right-click a folder > Cover from Media library: the library's pictures in a window; a click picks one. */
+function CoverPicker({ pictures, name, onPick, onClose }: { pictures: LibraryEntry[]; name: (e: LibraryEntry) => string; onPick: (e: LibraryEntry) => void; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="confirm media-library__cover-pick"
+      aria-labelledby="cover-pick-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="confirm__box">
+        <h2 id="cover-pick-title">Choose a cover</h2>
+        {pictures.length === 0 ? (
+          <p className="confirm__message">There are no pictures in your Media library yet.</p>
+        ) : (
+          <ul className="media-library__cover-grid">
+            {pictures.map((e) => (
+              <li key={e.path}>
+                <button type="button" onClick={() => onPick(e)} title={name(e)}>
+                  <FileThumb path={e.path} src={e.thumbnail} image icon="image" />
+                  <span className="truncate">{name(e)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="confirm__actions">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </dialog>
   );
 }

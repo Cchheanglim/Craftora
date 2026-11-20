@@ -9,6 +9,8 @@ import {
   deleteFolder,
   folderPath,
   forgetPath,
+  freeName,
+  placedIn,
   moveFolder,
   moveTab,
   moveToFolder,
@@ -201,5 +203,46 @@ describe("titles, tab ordering, and forgetting", () => {
     assert.equal(cleaned.placed["/keep.mp4"], "f1");
     assert.equal("/gone.mp4" in cleaned.titles, false);
     assert.equal(cleaned.titles["/keep.mp4"], "Keep");
+  });
+});
+
+describe("collection folders and names", () => {
+  it("keeps a collection's folders and their files apart from the library's", () => {
+    let o = addCollection(structuredClone(EMPTY_ORGANIZE), "Trip", "c1");
+    o = toggleInCollection(o, "c1", "/a.mp4");
+    o = addFolder(o, "Day 1", null, "f1", "c1");
+    o = addFolder(o, "Morning", "f1", "f2");
+    assert.equal(o.folders.find((f) => f.id === "f2")?.collection, "c1");
+    o = moveToFolder(o, "/a.mp4", "f2");
+    assert.deepEqual(placedIn(o, "c1"), { "/a.mp4": "f2" });
+    assert.deepEqual(o.placed, {});
+    // Back to the collection's top level, not the library's.
+    o = moveToFolder(o, "/a.mp4", "f2");
+    o = deleteFolder(o, "f2");
+    assert.deepEqual(placedIn(o, "c1"), { "/a.mp4": "f1" });
+    o = moveToFolder(o, "/a.mp4", null, "c1");
+    assert.deepEqual(placedIn(o, "c1"), {});
+    // A library folder can't go inside a collection's folder.
+    o = addFolder(o, "Mine", null, "f9");
+    assert.equal(moveFolder(o, "f9", "f1"), o);
+    // Taking the file out of the collection, or deleting the collection, leaves nothing behind.
+    o = moveToFolder(o, "/a.mp4", "f1");
+    assert.deepEqual(placedIn(removeFromCollection(o, "c1", "/a.mp4"), "c1"), {});
+    assert.deepEqual(deleteCollection(o, "c1").folders.map((f) => f.id), ["f9"]);
+  });
+
+  it("puts a built-in tab added in an update next to the one before it, not at the end", () => {
+    const old: Organize = { ...structuredClone(EMPTY_ORGANIZE), collections: [{ id: "x", name: "Mine", paths: [] }], tabOrder: ["all", "c:x", "video", "image", "audio", "gif", "saved"] };
+    assert.deepEqual(orderedTabs(old, ["all", "video", "image", "audio", "gif", "sfx", "saved"]), ["all", "c:x", "video", "image", "audio", "gif", "sfx", "saved"]);
+  });
+
+  it("refuses a second collection with the same name and picks free default names", () => {
+    let o = addCollection(structuredClone(EMPTY_ORGANIZE), "Trip", "c1");
+    assert.equal(addCollection(o, " trip ", "c2"), o);
+    o = addCollection(o, "Work", "c2");
+    assert.equal(renameCollection(o, "c2", "TRIP"), o);
+    assert.equal(renameCollection(o, "c1", "trip").collections[0].name, "trip");
+    assert.equal(freeName("New collection", ["New collection", "new collection 2"]), "New collection 3");
+    assert.equal(freeName("New folder", []), "New folder");
   });
 });

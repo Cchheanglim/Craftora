@@ -127,6 +127,8 @@ export interface LibraryEntry {
   duration: number;
   /** An animated GIF: its loop length in seconds. */
   animated?: number;
+  /** In the Sound FX tab (meme sounds and effects), not the Audio one. */
+  sfx?: boolean;
   /** A small JPEG data URL, when one was made. */
   thumbnail?: string;
   addedAt: number;

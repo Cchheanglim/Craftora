@@ -4,6 +4,8 @@ import "./GifLinkBox.css";
 
 export interface GifLinkBoxProps {
   onDownload: (url: string) => Promise<void>;
+  /** The box's placeholder; "Paste a GIF link" when absent. */
+  label?: string;
 }
 
 function isHttpUrl(value: string): boolean {
@@ -15,7 +17,7 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-export function GifLinkBox({ onDownload }: GifLinkBoxProps) {
+export function GifLinkBox({ onDownload, label = "Paste a GIF link" }: GifLinkBoxProps) {
   const [link, setLink] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -48,8 +50,8 @@ export function GifLinkBox({ onDownload }: GifLinkBoxProps) {
         <input
           type="text"
           className="field gif-link-box__input"
-          placeholder="Paste a GIF link"
-          aria-label="Paste a GIF link"
+          placeholder={label}
+          aria-label={label}
           aria-invalid={Boolean(linkError) || undefined}
           value={link}
           disabled={downloading}

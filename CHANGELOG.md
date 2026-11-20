@@ -4,6 +4,8 @@
 
 **New**
 
+- **Export as GIF**: pick GIF as the file type in Export, then Small, Medium or Large (480, 720 or 1080 px wide) and
+  10, 15 or 24 frames a second. It loops forever, has no sound, and the window shows about how big the file will be.
 - **Export** is a button next to Queue (in the editor) that opens the export settings in a pop-up with Back and X,
   instead of a tab in the right panel. Add to queue closes it; Ctrl+Enter still adds the project straight away.
 - **Settings → Assistant**: every AI the assistant can use in one list, Connected and Discover and add. Open a row for
@@ -188,8 +190,53 @@
   Ctrl+Backspace fill it with the foreground / background colour, Ctrl+J / Ctrl+Shift+J copy / cut it to a new layer,
   and Layer → Layer mask → Reveal / Hide selection makes a mask from it (on a mask being edited, Delete and Fill paint
   the mask).
+- **Image editor: layer masks**, like a photo editor's, on every kind of layer (photos, painting, text, shapes): black
+  hides, white shows, grey shows half. Layer → Layer mask (or the layer's right-click menu) adds one; it shows as a
+  second small picture in the layer's row. Click it to paint the mask with Brush, Eraser, Gradient or Paint bucket (the
+  colours turn to white and black while you do), Alt+click to see the mask alone, Shift+click to switch it off. Apply
+  mask makes it part of the layer, Delete mask drops it. A photo's mask stays on the same spot when you mirror, turn,
+  flip or crop it. **Remove background** now makes a mask instead of changing the photo, so you can paint back what
+  it missed; Restore deletes the mask.
+- **Remove background runs inside Craftora**, on the graphics card when it can (else the processor), and is faster:
+  about 4.6 s the first time and half a second after, where it took 7.6 s and 1.4 s.
+- **GIFs**: import your own GIF files and they play as moving layers, see-through parts kept, looping when the block
+  is longer than the GIF (the Image editor uses their first frame). The GIFs tab in the editor's tools panel and in the
+  Media library holds them; drag a GIF in from your browser or File Explorer, press Ctrl+V with a GIF link copied, or
+  paste the link in "Paste a GIF link" (a Giphy page link works too). A small pixel cat keeps you company in the GIFs
+  tab (its eyes follow the pointer); Settings → Preferences can hide it.
+- **15 more transitions**: Fade to white, Dissolve, Blur, Squeeze, Cover left / right, Reveal left / right, Zoom-in
+  blur, Diagonal wipe, Smooth left / right, Circle close, Radial and Wind.
+- **20 more effects**: Zoom blur, Heartbeat, Swing, Spin in, Slide in, Bounce, Lens distort, Pixelate, Kaleidoscope,
+  Glitch, VHS, Light leak, Rainbow, Old film, Bokeh glow, Neon edges, Black & white flash, Blink, Soft glow and Duotone.
+- **Search** on the Filters, Effects and Transitions tabs, like Shapes had.
+- **Stretch from any side**: drag a side of a picked photo, video or shape in the preview to stretch it in that one
+  direction (the corners still keep its shape).
+- **Right-click the picked thing in the preview** for its menu, as on the timeline. Playback keeps going while you drag
+  or resize something in the preview.
+- **New look for every page**: Home (a start box for links with Scan and Fetch, New video, New image, Import files,
+  your projects and recent exports), Projects, Exports, Media library, History, Downloads and Settings are card grids
+  with tabs and search, and a right-click menu on each card (Open, Rename, Duplicate, Hide, Delete). Settings → Look
+  picks the colour (Craftora red, Lively or Light) and Glass on or off. The Image editor stays dark.
+- **Media library**: collections (your own tabs; a file can be in several), folders inside folders, drag any tab to
+  reorder it, rename a card, a bigger preview when you rest the pointer on a card, and a right-click menu. Clicking a
+  card asks before adding it to your project.
+- The track ⋯ menu opens when you point at it.
+- **Sound FX**: a new tab in the editor's tools panel and in the Media library for your own meme sounds and sound
+  effects, kept for every project like your GIFs. Import sounds, paste a link to a sound file (MP3, WAV, OGG, M4A, AAC
+  or FLAC, up to 50 MB; a sound site's page for one sound works too) or drag them in from File Explorer or from a
+  browser (a sound file, or a sound's page from a sound site). Each card has a play button to hear
+  it first; click a card to add it at the playhead on a free audio track, or drag it onto the timeline. The Media
+  library's "Sound" tab is now called "Audio".
+- **Folder covers**: right-click a folder in the Media library for Cover from Media library or Cover from this PC, and
+  Remove cover to bring the folder icon back. A GIF cover moves on the card.
 
 **Fixed**
+
+- Media library: a folder made inside a collection showed up in All instead of the collection. Folders now belong to
+  the collection they're made in, and files dropped into them keep their place everywhere else.
+- Media library: the file name you drag now stays next to the pointer.
+- Media library: two collections can't have the same name any more (a note says so while you type), and new ones are
+  called "New collection 2", "New collection 3"…
 
 - The timeline's zoom slider got an invalid value for a moment when the editor opened (a warning in the developer log).
 - Keys pressed while a window was open (Export, Layer style, Crop…) still acted on the editor behind it: Delete deleted the

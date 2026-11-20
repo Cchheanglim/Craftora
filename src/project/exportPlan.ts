@@ -88,7 +88,8 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
 /** Whether the Fast/Precise choice applies (only the single-cut path can skip re-encoding). */
 export function cutModeApplies(project: Project, settings: ExportSettings): boolean {
   const single = singleUntouched(project);
-  if (!single || project.image) return false;
+  // A GIF is always made from a render.
+  if (!single || project.image || (settings.output === "video" && settings.videoContainer === "gif")) return false;
   return single.media.source.local ? settings.output === "video" : true;
 }
 
@@ -241,7 +242,10 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   const fileName = `${settings.name?.trim() || (still && !used.length ? "Image" : `${slug(title)}_edit`)}.${container}`;
   // Rough: ~8 Mbit/s for 1080p video plus 192 kbit/s sound.
   const pixels = (frame.width * frame.height) / (1920 * 1080);
-  const sizeMb = still ? pixels * (container === "png" ? 3 : 0.6) : isVideo ? duration * (1 + 0.024) * Math.max(0.4, pixels) : duration * (container === "wav" ? 0.18 : container === "flac" ? 0.1 : 0.04);
+  const gif = isVideo && container === "gif" ? { width: Math.min(settings.gifWidth ?? 720, frame.width), fps: settings.gifFps ?? 15 } : null;
+  // Rough: a GIF takes about 0.35 bytes a pixel each frame.
+  const gifMb = gif ? (gif.width * Math.round((gif.width * frame.height) / frame.width) * gif.fps * duration * 0.35) / 1e6 : 0;
+  const sizeMb = still ? pixels * (container === "png" ? 3 : 0.6) : gif ? gifMb : isVideo ? duration * (1 + 0.024) * Math.max(0.4, pixels) : duration * (container === "wav" ? 0.18 : container === "flac" ? 0.1 : 0.04);
 
   const counts = {
     clips: project.clips.filter((c) => c.mediaId).length,
@@ -250,7 +254,7 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
   const summary = [
     formatClock(duration),
     container.toUpperCase(),
-    isVideo || still ? `${frame.width}×${frame.height}` : "Audio only",
+    gif ? `${gif.width} px wide, ${gif.fps} fps, no sound` : isVideo || still ? `${frame.width}×${frame.height}` : "Audio only",
     `${counts.clips} clip${counts.clips === 1 ? "" : "s"}`,
     counts.texts ? `${counts.texts} text` : "",
   ]
@@ -279,8 +283,11 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     ...downloads,
     `ffmpeg ${media.map((m) => `-ss … -t … -i "${m.local ? m.src : "<downloaded>"}"`).join(" ")} -filter_complex "${graph.join(", ")}…"${
       isVideo ? (settings.quality === "fast" ? ` -c:v <graphics card or libx264 veryfast> -r ${FPS}` : ` -c:v libx264 -preset slow -crf 18 -r ${FPS}`) : ""
-    } "${fileName}"`,
-  ].join("\n");
+    } "${gif ? "video.mkv" : fileName}"`,
+    gif ? `ffmpeg -i "video.mkv" -vf "fps=${gif.fps},scale=${gif.width}:-2:flags=lanczos,palettegen…,paletteuse…" -loop 0 -an "${fileName}"` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return {
     kind: "render",
@@ -297,13 +304,16 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       background: still?.background,
       transparent: still && container !== "jpg" && settings.transparent ? true : undefined,
       imageQuality: still && (container === "jpg" || container === "webp") ? settings.imageQuality : undefined,
-      cover: isVideo ? project.cover : undefined,
+      // A GIF has no cover; one inside its in-between video could be taken for the picture.
+      cover: isVideo && !gif ? project.cover : undefined,
+      gifWidth: gif ? settings.gifWidth ?? 720 : undefined,
+      gifFps: gif?.fps,
     },
     sizeMb,
     fileName,
     title,
     summary,
-    quality: isVideo ? `${frame.width} × ${frame.height} · ${FPS} fps` : container.toUpperCase(),
+    quality: gif ? `${gif.width} px wide · ${gif.fps} fps · loops forever` : isVideo ? `${frame.width} × ${frame.height} · ${FPS} fps` : container.toUpperCase(),
     command,
   };
 }

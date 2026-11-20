@@ -234,7 +234,10 @@ export const onPreviewCache = (handler: (id: string, percent: number) => void): 
   listen<{ id: string; percent: number }>("media-cache", (e) => handler(e.payload.id, e.payload.percent));
 
 /** File types offered in the Open dialog; FFmpeg reads many more if dropped. */
-const MEDIA_EXTENSIONS = ["mp4", "mkv", "webm", "mov", "avi", "m4v", "wmv", "flv", "ts", "mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"];
+const SOUND_EXTENSIONS = ["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"];
+const MEDIA_EXTENSIONS = ["mp4", "mkv", "webm", "mov", "avi", "m4v", "wmv", "flv", "ts", ...SOUND_EXTENSIONS];
+/** A sound file by its name (what the Sound FX tab takes). */
+export const isSoundFile = (path: string) => SOUND_EXTENSIONS.includes(path.split(".").pop()?.toLowerCase() ?? "");
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "jfif", "webp", "bmp", "gif", "avif", "tif", "tiff", "ico"];
 
 /**
@@ -388,6 +391,11 @@ export async function pickGifFiles(): Promise<string[]> {
   return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
 }
 
+export async function pickSoundFiles(): Promise<string[]> {
+  const picked = await open({ multiple: true, directory: false, title: "Import sounds", filters: [{ name: "Sounds", extensions: SOUND_EXTENSIONS }] });
+  return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
+}
+
 /** Asks for a picture file (a video's new list picture); null when the user cancels. */
 export async function pickPicture(): Promise<string | null> {
   const picked = await open({ multiple: false, directory: false, title: "Choose a picture", filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }] });
@@ -404,7 +412,8 @@ export async function pickMediaFile(): Promise<string | null> {
   return typeof picked === "string" ? picked : null;
 }
 
-export type DropState = "over" | "left" | { dropped: string[] };
+/** `sounds`: sounds dragged in from a browser, already saved (they go to Sound FX). */
+export type DropState = "over" | "left" | { dropped: string[] } | { sounds: string[] };
 
 /** Shows the folder picker; null when the user cancels. */
 export async function pickFolder(title: string): Promise<string | null> {
@@ -415,6 +424,7 @@ export async function pickFolder(title: string): Promise<string | null> {
 type DropEvent =
   | { kind: "enter" | "over" | "leave" }
   | { kind: "drop"; paths: string[] }
+  | { kind: "sound"; paths: string[] }
   | { kind: "error"; message: string };
 
 /** Files dragged onto the window. */
@@ -427,6 +437,7 @@ export const onFileDrop = (
     if (payload.kind === "enter" || payload.kind === "over") handler("over");
     else if (payload.kind === "leave") handler("left");
     else if (payload.kind === "drop") handler({ dropped: payload.paths });
+    else if (payload.kind === "sound") handler({ sounds: payload.paths });
     else if (payload.kind === "error") {
       handler("left");
       onError?.(payload.message);
@@ -438,6 +449,16 @@ export async function saveGifFrom(source: string): Promise<string> {
   if (!inDesktopApp) throw new Error("Downloading GIFs needs the desktop app.");
   try {
     return await invoke<string>("save_gif_from", { source });
+  } catch (err) {
+    throw new Error(message(err));
+  }
+}
+
+/** Sound FX: downloads a direct link to a sound file into the app's sounds folder and returns its saved path. */
+export async function saveSoundFrom(source: string): Promise<string> {
+  if (!inDesktopApp) throw new Error("Downloading sounds needs the desktop app.");
+  try {
+    return await invoke<string>("save_sound_from", { source });
   } catch (err) {
     throw new Error(message(err));
   }
