@@ -86,6 +86,9 @@ export interface ExportSettings {
   imageQuality?: number;
   imageScale?: number;
   videoContainer: VideoContainer;
+  /** GIF exports: width in pixels (480, 720 or 1080; 720 when absent) and frame rate (10, 15 or 24; 15 when absent). */
+  gifWidth?: number;
+  gifFps?: number;
   audioContainer: AudioContainer;
   /** Only used for a single untouched clip; everything else is re-encoded. */
   cutMode: CutMode;

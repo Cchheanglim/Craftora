@@ -4,6 +4,8 @@
 
 **New**
 
+- **Export as GIF**: pick GIF as the file type in Export, then Small, Medium or Large (480, 720 or 1080 px wide) and
+  10, 15 or 24 frames a second. It loops forever, has no sound, and the window shows about how big the file will be.
 - **Export** is a button next to Queue (in the editor) that opens the export settings in a pop-up with Back and X,
   instead of a tab in the right panel. Add to queue closes it; Ctrl+Enter still adds the project straight away.
 - **Settings → Assistant**: every AI the assistant can use in one list, Connected and Discover and add. Open a row for

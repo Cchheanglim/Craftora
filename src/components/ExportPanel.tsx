@@ -42,7 +42,13 @@ const PRESETS: { label: string; detail: string; frameId: string; fill: boolean; 
   { label: "Instagram post", detail: "1:1", frameId: "square", fill: true, brands: ["instagram"] },
 ];
 
-const VIDEO_CONTAINERS: VideoContainer[] = ["mp4", "mkv"];
+const VIDEO_CONTAINERS: VideoContainer[] = ["mp4", "mkv", "gif"];
+const GIF_SIZES = [
+  { width: 480, label: "Small" },
+  { width: 720, label: "Medium" },
+  { width: 1080, label: "Large" },
+];
+const GIF_FPS = [10, 15, 24];
 const AUDIO_CONTAINERS: AudioContainer[] = ["mp3", "wav", "flac"];
 
 export function ExportPanel({
@@ -65,6 +71,7 @@ export function ExportPanel({
   const bodyRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const isVideo = !still && settings.output === "video";
+  const isGif = isVideo && settings.videoContainer === "gif";
   const ready = plan.kind !== "empty";
 
   // Show the "More settings below" bar while the end of the settings is out of view.
@@ -92,7 +99,9 @@ export function ExportPanel({
             : "Re-made only around the cut, so it starts exactly where you set it."
         : !isVideo
           ? "The timeline's sound, mixed into one file."
-          : settings.quality === "fast"
+          : isGif
+            ? "Made as a video first, then turned into a GIF with its own colours. It loops forever and has no sound."
+            : settings.quality === "fast"
             ? `Re-made quickly${fastEncoder ? ` with ${fastEncoder}` : ""} (Fast).`
             : "Re-made at the best quality, slower and smaller (Best).";
     const rows: [string, string][] = [
@@ -175,6 +184,35 @@ export function ExportPanel({
         </fieldset>
         )}
 
+        {isGif && (
+          <>
+            <fieldset>
+              <legend className="section-label">GIF size</legend>
+              <div className="segmented" role="group" aria-label="GIF size">
+                {GIF_SIZES.map((s) => (
+                  <button key={s.width} type="button" aria-pressed={(settings.gifWidth ?? 720) === s.width} onClick={() => onChange({ gifWidth: s.width })}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              <p className="export__trade">
+                {plan.kind === "render" ? plan.quality.split(" · ")[0] : `${settings.gifWidth ?? 720} px wide`}. Loops forever, no sound.
+              </p>
+            </fieldset>
+            <fieldset>
+              <legend className="section-label">Frames a second</legend>
+              <div className="segmented" role="group" aria-label="GIF frames a second">
+                {GIF_FPS.map((f) => (
+                  <button key={f} type="button" aria-pressed={(settings.gifFps ?? 15) === f} onClick={() => onChange({ gifFps: f })}>
+                    {f} fps
+                  </button>
+                ))}
+              </div>
+              <p className="export__trade">Smoother GIFs make larger files. The size is shown below.</p>
+            </fieldset>
+          </>
+        )}
+
         {isVideo && hasPicture && (
           <fieldset>
             <legend className="section-label">Made for</legend>
@@ -204,7 +242,7 @@ export function ExportPanel({
           </div>
         )}
 
-        {isVideo && plan.kind === "render" && (
+        {isVideo && !isGif && plan.kind === "render" && (
           <fieldset>
             <legend className="section-label">Speed</legend>
             <div className="segmented" role="group" aria-label="Export speed" aria-describedby="speed-detail">
