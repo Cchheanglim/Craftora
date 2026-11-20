@@ -234,8 +234,15 @@
   what's in it.
 - **Sounds you can see and hear** in the Media library and the Sound FX tab: each sound's card shows its own wave
   instead of a music note, and a Play button on the card plays it (press again to stop).
-- **Select** in the Media library: tick several files, then Add to project, Save, Hide or Remove them at once
-  (Select all ticks everything in view).
+- **Selecting in the Media library, like File Explorer**: click a card to select it (double-click adds a file to the
+  project or opens a folder), Ctrl+click adds or drops one, Shift+click picks everything in between, and dragging a box
+  over the empty space selects what it touches. Folders can be selected too. Ctrl+A selects all, Delete removes (it
+  asks first), Esc clears. Right-click a selected card for Add to project, Move to folder ▸, Add to collection ▸, Save,
+  Hide or Remove, and drag one to move them all onto a folder or a collection tab. Each tab shows how many selected
+  cards it holds. Select (Cancel while on) ticks cards with plain clicks, for picking with the mouse only.
+- **Right-click menus can have sub-menus** (▸), opening beside them.
+- **Glass**: tile previews, the Media library's and Home's cards and buttons, the Text tab's buttons, the hover preview
+  and a few small pop-ups are see-through glass now instead of solid boxes.
 - **New folder** always makes the folder at the top level, even from inside a folder (drag it onto another folder to
   put it there).
 - **Friendlier empty tabs** in the Media library: each tab says what goes there ("Nothing saved yet. Click the star on a
