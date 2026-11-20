@@ -835,6 +835,11 @@ export default function App() {
   /** Puts fetched or opened media in the library; with `place`, also on the timeline. */
   const importSource = useCallback(
     (source: MediaSource, place: boolean, format?: string) => {
+      // A picture project holds pictures only (a GIF as its first frame): a video or a sound there was a black layer.
+      if (projectRef.current.image && !source.image) {
+        const kind = source.streams.some((s) => s.kind === "video") ? "a video" : "a sound";
+        throw new Error(`“${source.title}” is ${kind}: the Image editor only takes pictures. Open or start a video project to use it.`);
+      }
       const item = mediaFromSource(source);
       // The quality picked when fetching.
       if (format && item.hasVideo) item.videoFormat = format;
@@ -1361,18 +1366,23 @@ export default function App() {
 
   /** Files from this PC: picked in the dialog, or dropped on the window. */
   const importFiles = async (dropped?: string[]) => {
-    const paths = dropped ?? (await pickMediaFiles());
+    const paths = dropped ?? (await pickMediaFiles(Boolean(projectRef.current.image)));
     if (paths.length === 0) return;
     setBusy(true);
     setError(null);
     const failed: string[] = [];
     // Settings → Preferences: onto the timeline one after another, or waiting under In this project. In the Image editor
     // imported or dropped pictures always become layers (owner: like Photoshop's Place).
-    const place = imageMode || preference("importToTimeline");
+    // A picture project counts even when the file comes from another page (Media library's Add to project).
+    const place = Boolean(projectRef.current.image) || preference("importToTimeline");
     const results = await Promise.allSettled(paths.map((path) => openLocal(path)));
     results.forEach((res, i) => {
       if (res.status === "fulfilled") {
-        importSource(res.value, place);
+        try {
+          importSource(res.value, place);
+        } catch (err) {
+          failed.push(errorText(err));
+        }
       } else {
         failed.push(`${paths[i].split(/[\\/]/).pop()}: ${errorText(res.reason)}`);
       }

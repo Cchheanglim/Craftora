@@ -366,16 +366,18 @@ export async function makePreview(source: MediaSource): Promise<MediaSource> {
   }
 }
 
-/** Shows the Windows Open dialog; empty when the user cancels. */
-export async function pickMediaFiles(): Promise<string[]> {
+/** Shows the Windows Open dialog; empty when the user cancels. `pictures`: the Image editor, pictures only. */
+export async function pickMediaFiles(pictures = false): Promise<string[]> {
   const picked = await open({
     multiple: true,
     directory: false,
-    title: "Import video, audio or image files",
-    filters: [
-      { name: "Video, audio and images", extensions: [...MEDIA_EXTENSIONS, ...IMAGE_EXTENSIONS] },
-      { name: "Images", extensions: IMAGE_EXTENSIONS },
-    ],
+    title: pictures ? "Import pictures" : "Import video, audio or image files",
+    filters: pictures
+      ? [{ name: "Images", extensions: IMAGE_EXTENSIONS }]
+      : [
+          { name: "Video, audio and images", extensions: [...MEDIA_EXTENSIONS, ...IMAGE_EXTENSIONS] },
+          { name: "Images", extensions: IMAGE_EXTENSIONS },
+        ],
   });
   return Array.isArray(picked) ? picked : typeof picked === "string" ? [picked] : [];
 }

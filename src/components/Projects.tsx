@@ -80,7 +80,7 @@ export function Projects({ projects, currentId, onOpenProject, onNewProject, onN
         thumb={<Thumb src={p.thumbnail} icon={p.image ? "image" : "scissors"} play={() => projectVideo(p.id)} />}
         tag={isOpen ? "Open now" : p.image ? "Picture" : "Video"}
         tagOpen={isOpen}
-        badge={p.image ? `${p.clips} layer${p.clips === 1 ? "" : "s"}` : formatClock(p.duration)}
+        badge={p.image ? undefined : formatClock(p.duration)}
         name={p.name}
         meta={`Edited ${ago(p.savedAt)}`}
         onOpen={picking ? undefined : () => onOpenProject(p.id)}

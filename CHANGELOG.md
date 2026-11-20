@@ -254,6 +254,11 @@
   the collection they're made in, and files dropped into them keep their place everywhere else.
 - Media library: the file name you drag now stays next to the pointer.
 - Media library: folders didn't show while the library had no files.
+- A video or a sound added to a picture project (Media library's Add to project, File Explorer, a fetched link) became
+  a black layer. A picture project now takes pictures only and says so; its Import window lists pictures only. A
+  picture added from the Media library while a picture project is open now lands as a layer (it only went into the
+  project's list).
+- Picture project cards no longer show how many layers they have.
 - Media library: two collections can't have the same name any more (a note says so while you type), and new ones are
   called "New collection 2", "New collection 3"…
 
