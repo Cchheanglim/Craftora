@@ -85,6 +85,9 @@ export interface ExportSettings {
   transparent?: boolean;
   imageQuality?: number;
   imageScale?: number;
+  /** Image projects: Enhance colours (the quick colour fix on the whole picture) and AI sharpen (upscale.rs). */
+  imageEnhance?: boolean;
+  imageAi?: boolean;
   videoContainer: VideoContainer;
   /** GIF exports: width in pixels (480, 720 or 1080; 720 when absent) and frame rate (10, 15 or 24; 15 when absent). */
   gifWidth?: number;
@@ -276,7 +279,7 @@ export interface Job {
   /** A live link being recorded into this media item; Stop keeps the recording. */
   record?: { mediaId: string; live: boolean; url: string; title: string; format?: string };
   /** "processing" while yt-dlp merges or converts after downloading. */
-  phase?: "downloading" | "processing" | "cutting" | "smoothing" | "encoding" | "recording";
+  phase?: "downloading" | "processing" | "cutting" | "smoothing" | "encoding" | "recording" | "sharpening";
   downloadedBytes?: number;
   totalBytes?: number;
   speedBps?: number;

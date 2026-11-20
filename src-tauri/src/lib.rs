@@ -20,6 +20,7 @@ mod scan;
 mod signin;
 mod speech;
 mod store;
+mod upscale;
 mod virustotal;
 
 /// WebView2's memory target: low gives back its caches (for a window nobody sees), normal is for use.
@@ -175,6 +176,7 @@ pub fn run() {
             cutout::save_cutout,
             cutout::cutout_source,
             cutout::cutout_run,
+            upscale::upscale_picture,
             speech::cancel_captions,
             store::save_snapshot,
             store::save_image,

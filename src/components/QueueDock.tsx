@@ -358,6 +358,7 @@ function statusText(job: Job): string {
     }
     case "encoding":
       if (job.phase === "smoothing") return "Making smooth slow-mo";
+      if (job.phase === "sharpening") return "Sharpening with AI";
       return job.phase === "processing" ? "Finishing with FFmpeg" : job.phase === "cutting" ? "Cutting with FFmpeg" : "Encoding with FFmpeg";
     case "paused":
       // An export can't go on from the middle of a cut or an encode.

@@ -4,7 +4,7 @@
  * Every layer feature is drawn here and in the preview, nowhere else.
  */
 import { invoke } from "@tauri-apps/api/core";
-import { adjustSteps, blocksStyle, effectStrength, keyLine, vignetteStops } from "../project/effects";
+import { ENHANCE, adjustSteps, blocksStyle, effectStrength, keyLine, stepDefs, stepsFilter, vignetteStops } from "../project/effects";
 import { layerBox } from "../project/layerBox";
 import { clipEnd, isShape, isText, showsPicture, textLines, trackOrder, type Clip, type Project } from "../project/model";
 import { shapeBox, shapeSvg } from "../project/shapes";
@@ -21,6 +21,10 @@ export interface ComposeOptions {
   type: "image/png" | "image/jpeg" | "image/webp";
   /** JPG and WebP: 1–100. */
   quality?: number;
+  /** Enhance colours: the quick colour fix (Adjust's Enhance) on the whole picture. */
+  enhance?: boolean;
+  /** AI sharpen (upscale.rs): its progress shows on this queue job ("" for none). */
+  sharpen?: { job: string };
 }
 
 function load(src: string): Promise<HTMLImageElement> {
@@ -178,10 +182,65 @@ async function drawPicture(out: CanvasRenderingContext2D, clip: Clip, path: stri
 export async function composeImage(project: Project, options: ComposeOptions): Promise<Blob> {
   // A JPG can't be see-through: a see-through picture saves on white (a canvas left clear turns black).
   const onWhite = options.type === "image/jpeg" && project.image && !project.image.background;
-  const canvas = await composeCanvas(onWhite ? { ...project, image: { ...project.image!, background: "#ffffff" } } : project, options);
+  const source = onWhite ? { ...project, image: { ...project.image!, background: "#ffffff" } } : project;
+  let canvas: HTMLCanvasElement;
+  if (options.sharpen) {
+    // The AI makes it 4× bigger: drawn smaller first, so 2× and 4× are the AI's own detail and 1× is its result shrunk back.
+    const factor = sharpenFactor(options.width / (project.image?.width || options.width));
+    const small = await composeCanvas(source, { ...options, width: Math.round(options.width / factor), height: Math.round(options.height / factor) });
+    canvas = fitTo(await aiSharpen(options.enhance ? enhanceColours(small) : small, factor, options.sharpen.job), options.width, options.height);
+  } else {
+    canvas = await composeCanvas(source, options);
+    if (options.enhance) canvas = enhanceColours(canvas);
+  }
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, options.type, options.type === "image/png" ? undefined : (options.quality ?? 95) / 100));
   if (!blob) throw new Error("The picture couldn't be made. Try a smaller size.");
   return blob;
+}
+
+/** AI sharpen's size step for a picture saved at `scale` × its own size: 4 (4×), 2 (2×) or 1 (smaller sizes). */
+export const sharpenFactor = (scale: number) => (scale >= 3 ? 4 : scale >= 1.5 ? 2 : 1);
+
+/** Enhance colours (Adjust's Enhance on the whole picture, through the same filters): a new canvas. */
+export function enhanceColours(picture: HTMLCanvasElement): HTMLCanvasElement {
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  defs.setAttribute("width", "0");
+  defs.setAttribute("height", "0");
+  defs.style.position = "absolute";
+  defs.innerHTML = stepDefs(ENHANCE);
+  document.body.append(defs);
+  try {
+    const [canvas, ctx] = sheet(picture.width, picture.height);
+    ctx.filter = stepsFilter(ENHANCE)!;
+    ctx.drawImage(picture, 0, 0);
+    return canvas;
+  } finally {
+    defs.remove();
+  }
+}
+
+/** AI sharpen (upscale.rs `upscale_picture`): the picture `factor` × bigger with its detail redrawn. */
+export async function aiSharpen(picture: HTMLCanvasElement, factor: number, job = ""): Promise<HTMLCanvasElement> {
+  const { width: w, height: h } = picture;
+  const pixels = picture.getContext("2d")!.getImageData(0, 0, w, h).data;
+  const head = new TextEncoder().encode(JSON.stringify({ id: job, width: w, height: h, factor }));
+  // A little-endian length, the JSON, then the RGBA pixels.
+  const body = new Uint8Array(4 + head.length + pixels.length);
+  new DataView(body.buffer).setUint32(0, head.length, true);
+  body.set(head, 4);
+  body.set(pixels, 4 + head.length);
+  const out = await invoke<ArrayBuffer>("upscale_picture", body);
+  const [canvas, ctx] = sheet(w * factor, h * factor);
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(out), w * factor, h * factor), 0, 0);
+  return canvas;
+}
+
+/** `picture` at exactly `width` × `height` (the AI's result can be a pixel off after rounding). */
+function fitTo(picture: HTMLCanvasElement, width: number, height: number): HTMLCanvasElement {
+  if (picture.width === width && picture.height === height) return picture;
+  const [canvas, ctx] = sheet(width, height);
+  ctx.drawImage(picture, 0, 0, width, height);
+  return canvas;
 }
 
 /** The picture drawn on a canvas (`composeImage` before it's a file; the eyedropper reads it). */

@@ -72,6 +72,35 @@ export type Adjust = Partial<Record<(typeof ADJUSTMENTS)[number]["id"] | "enhanc
  */
 export const ENHANCE: LookStep[] = [["shadows", 0.3], ["highlights", -0.2], ["contrast", 1.08], ["saturate", 1.2], ["sharpen", 0.3]];
 
+/**
+ * The SVG filters colour steps point at (`stepsFilter`'s `url(#op-value)`): tone curves, posterize and sharpen. Markup
+ * for an `<svg>` on the page; the preview (Preview.tsx AdjustFilters) and the export's Enhance colours (compose.ts) both
+ * draw from it.
+ */
+export function stepDefs(steps: LookStep[]): string {
+  const used = new Map<string, LookStep>();
+  for (const step of steps) {
+    if (["exposure", "highlights", "shadows", "posterize", "sharpen"].includes(step[0])) used.set(`${step[0]}-${Math.round(step[1] * 100)}`, step);
+  }
+  return [...used]
+    .map(([id, [op, v]]) => {
+      if (op === "sharpen") {
+        const a = sharpenWeight(v);
+        return `<filter id="${id}" color-interpolation-filters="sRGB"><feConvolveMatrix order="3" kernelMatrix="0 ${-a} 0 ${-a} ${1 + 4 * a} ${-a} 0 ${-a} 0" divisor="1" preserveAlpha="true" edgeMode="duplicate"/></filter>`;
+      }
+      // Posterize: flat steps (the n-th share of the range shows the n-th of `levels` even values).
+      const levels = posterLevels(v);
+      const type = op === "posterize" ? "discrete" : "table";
+      const table =
+        op === "posterize"
+          ? Array.from({ length: levels }, (_, i) => (i / (levels - 1)).toFixed(4)).join(" ")
+          : Array.from({ length: 33 }, (_, i) => toneCurve(op as ToneOp, v, i / 32).toFixed(4)).join(" ");
+      const fn = (c: string) => `<feFunc${c} type="${type}" tableValues="${table}"/>`;
+      return `<filter id="${id}" color-interpolation-filters="sRGB"><feComponentTransfer>${fn("R")}${fn("G")}${fn("B")}</feComponentTransfer></filter>`;
+    })
+    .join("");
+}
+
 /** Where an Adjust slider starts: Sharpen only sharpens. */
 export const adjustMin = (id: keyof Adjust) => (id === "sharpen" || id === "posterize" ? 0 : -100);
 

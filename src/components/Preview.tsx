@@ -10,7 +10,7 @@ import { SHOWN_CAPTIONS, withShownCaptions } from "../project/actions";
 import type { ProjectApi } from "../project/useProject";
 import type { Playback } from "../project/usePlayback";
 import { formatTimecode } from "../lib/timecode";
-import { RGB_SHARE, adjustSteps, blocksStyle, duotoneMatrix, keyLine, posterLevels, sharpenWeight, toneCurve, warmthMatrix, type LookStep, type ToneOp } from "../project/effects";
+import { RGB_SHARE, adjustSteps, blocksStyle, duotoneMatrix, keyLine, stepDefs, warmthMatrix } from "../project/effects";
 import { CRAFTORA_MEDIA, setWindowFullscreen } from "../lib/engine";
 import { textShadowFilter } from "../lib/textPicture";
 import { hasStyle, styleFilter } from "../lib/layerStyle";
@@ -1169,46 +1169,9 @@ const ownFill = (clip: Clip) => (hasStyle(clip.style) ? 1 : (clip.fillOpacity ??
 
 function AdjustFilters({ clips }: { clips: Clip[] }) {
   const adjustKey = clips.map((c) => (c.adjust ? JSON.stringify(c.adjust) : "")).join("|");
-  const used = useMemo(() => {
-    const steps = new Map<string, LookStep>();
-    for (const c of clips) {
-      for (const step of adjustSteps(c.adjust)) {
-        if (["exposure", "highlights", "shadows", "posterize", "sharpen"].includes(step[0])) steps.set(`${step[0]}-${Math.round(step[1] * 100)}`, step);
-      }
-    }
-    return [...steps];
-  }, [adjustKey]);
-  if (!used.length) return null;
-  return (
-    <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
-      {used.map(([id, [op, v]]) => {
-        if (op === "sharpen") {
-          const a = sharpenWeight(v);
-          return (
-            <filter key={id} id={id} colorInterpolationFilters="sRGB">
-              <feConvolveMatrix order={3} kernelMatrix={`0 ${-a} 0 ${-a} ${1 + 4 * a} ${-a} 0 ${-a} 0`} divisor={1} preserveAlpha="true" edgeMode="duplicate" />
-            </filter>
-          );
-        }
-        // Posterize: flat steps (the n-th share of the range shows the n-th of `levels` even values).
-        const levels = posterLevels(v);
-        const type = op === "posterize" ? "discrete" : "table";
-        const table =
-          op === "posterize"
-            ? Array.from({ length: levels }, (_, i) => (i / (levels - 1)).toFixed(4)).join(" ")
-            : Array.from({ length: 33 }, (_, i) => toneCurve(op as ToneOp, v, i / 32).toFixed(4)).join(" ");
-        return (
-          <filter key={id} id={id} colorInterpolationFilters="sRGB">
-            <feComponentTransfer>
-              <feFuncR type={type} tableValues={table} />
-              <feFuncG type={type} tableValues={table} />
-              <feFuncB type={type} tableValues={table} />
-            </feComponentTransfer>
-          </filter>
-        );
-      })}
-    </svg>
-  );
+  const markup = useMemo(() => stepDefs(clips.flatMap((c) => adjustSteps(c.adjust))), [adjustKey]);
+  if (!markup) return null;
+  return <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: markup }} />;
 }
 
 /** A transition's `reveal` string as CSS: a gradient is a mask, anything else is a clip-path. */
