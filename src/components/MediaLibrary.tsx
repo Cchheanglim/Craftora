@@ -1,14 +1,18 @@
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   addCollection,
   addFolder,
+  collectionNameTaken,
   deleteCollection,
   deleteFolder,
   folderPath,
+  freeName,
   forgetPath,
   moveFolder,
   moveTab,
   moveToFolder,
+  placedIn,
   orderedTabs,
   removeFromCollection,
   renameCollection,
@@ -105,6 +109,8 @@ type CardDragState = {
   y: number;
   active: boolean;
   hoverCollectionId: string | null;
+  /** The collection whose folders it's among (null = the library's own). */
+  scope: string | null;
   /** Dragging a folder card instead of a file. */
   folderId?: string;
   /** The folder under the pointer (a folder card or a part of the path line); null = the top level; absent = none. */
@@ -172,6 +178,8 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<string>("all");
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
+  /** The name typed for a collection that another one already has. */
+  const [tabNameClash, setTabNameClash] = useState<string | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   /** The folder being viewed (null = the top level). */
@@ -299,7 +307,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
       if (commit && cur.hoverFolder !== undefined) {
         const to = cur.hoverFolder;
         const folderId = cur.folderId;
-        updateOrganize((o) => (folderId ? moveFolder(o, folderId, to) : moveToFolder(o, cur.path, to)));
+        updateOrganize((o) => (folderId ? moveFolder(o, folderId, to) : moveToFolder(o, cur.path, to, cur.scope)));
       } else if (commit && cur.hoverCollectionId && !cur.folderId) {
         const colId = cur.hoverCollectionId;
         const path = cur.path;
@@ -379,7 +387,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
 
   const createCollection = () => {
     const id = newCollectionId();
-    updateOrganize((o) => addCollection(o, "New collection", id));
+    updateOrganize((o) => addCollection(o, freeName("New collection", o.collections.map((c) => c.name)), id));
     setRenamingTabId(id);
   };
 
@@ -399,24 +407,28 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const shown = matching.filter((e) => !hidden.isHidden(e.path));
   const hiddenShown = matching.filter((e) => hidden.isHidden(e.path));
 
-  // Folders show on All and the kind tabs; Saved, collections and a search are flat lists of every match.
-  const foldersOn = !words && !activeCollection && currentTab !== "saved";
-  const here = openFolder && organize.folders.some((f) => f.id === openFolder) ? openFolder : null;
+  // Folders show on All, the kind tabs (the library's own folders) and a collection (its own); Saved and a search are
+  // flat lists of every match.
+  const foldersOn = !words && currentTab !== "saved";
+  const scope = activeCollection?.id ?? null;
+  const placed = placedIn(organize, scope);
+  const scopeFolders = organize.folders.filter((f) => (f.collection ?? null) === scope);
+  const here = openFolder && scopeFolders.some((f) => f.id === openFolder) ? openFolder : null;
   const parentOf = new Map(organize.folders.map((f) => [f.id, f.parent]));
   /** Every folder that holds (at any depth) one of `list`, with how many. */
   const holding = (list: LibraryEntry[]) => {
     const counts = new Map<string, number>();
     for (const e of list) {
-      for (let f: string | null | undefined = organize.placed[e.path]; f; f = parentOf.get(f)) counts.set(f, (counts.get(f) ?? 0) + 1);
+      for (let f: string | null | undefined = placed[e.path]; f; f = parentOf.get(f)) counts.set(f, (counts.get(f) ?? 0) + 1);
     }
     return counts;
   };
   const inside = holding(entries);
   const matchingInside = holding(shown);
-  const levelFolders = foldersOn ? organize.folders.filter((f) => f.parent === here && (currentTab === "all" || matchingInside.has(f.id))) : [];
+  const levelFolders = foldersOn ? scopeFolders.filter((f) => f.parent === here && (currentTab === "all" || scope || matchingInside.has(f.id))) : [];
   const levelFoldersRef = useRef(levelFolders);
   levelFoldersRef.current = levelFolders;
-  const levelFiles = foldersOn ? shown.filter((e) => (organize.placed[e.path] ?? null) === here) : shown;
+  const levelFiles = foldersOn ? shown.filter((e) => (placed[e.path] ?? null) === here) : shown;
 
   // A bigger look at a file card when the pointer rests on it (owner): 450 ms the first time, 150 ms to the next card
   // while one is showing. Not for sounds, nor while dragging, renaming or with a menu open.
@@ -458,10 +470,14 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     const id = newCollectionId();
     const parent = foldersOn ? here : null;
     if (!foldersOn) {
-      setActiveTab("all");
+      if (currentTab === "saved") setActiveTab("all");
       setSearch("");
     }
-    updateOrganize((o) => addFolder(o, "New folder", parent, id));
+    const where = currentTab === "saved" ? null : scope;
+    updateOrganize((o) => {
+      const siblings = o.folders.filter((f) => f.parent === parent && (f.collection ?? null) === where).map((f) => f.name);
+      return addFolder(o, freeName("New folder", siblings), parent, id, where);
+    });
     setRenamingFolderId(id);
   };
 
@@ -546,7 +562,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                 icon: "plus",
                 onClick: () => {
                   const id = newCollectionId();
-                  updateOrganize((o) => toggleInCollection(addCollection(o, "New collection", id), id, entry.path));
+                  updateOrganize((o) => toggleInCollection(addCollection(o, freeName("New collection", o.collections.map((c) => c.name)), id), id, entry.path));
                   setRenamingTabId(id);
                 },
               },
@@ -584,11 +600,14 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
       {dialog}
       {menu && activeMenu && <ContextMenu x={menu.x} y={menu.y} label={activeMenu.label} items={activeMenu.items} onClose={() => setMenu(null)} />}
       {preview && <HoverPreview entry={preview.entry} anchor={preview.rect} name={titleOf(organize, preview.entry.path, preview.entry.name)} leaving={preview.leaving} />}
-      {cardDrag?.active && (
-        <div className="media-library__drag-ghost" style={{ left: cardDrag.x + 12, top: cardDrag.y + 12 }} aria-hidden="true">
-          {cardDrag.name}
-        </div>
-      )}
+      {/* On the body: in the page, a glass blur or the page's fade-in moves where "fixed" is measured from. */}
+      {cardDrag?.active &&
+        createPortal(
+          <div className="media-library__drag-ghost" style={{ left: cardDrag.x + 12, top: cardDrag.y + 12 }} aria-hidden="true">
+            {cardDrag.name}
+          </div>,
+          document.body,
+        )}
 
       <header className="pc-head">
         <div>
@@ -618,8 +637,10 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                     <input
                       key={tabId}
                       ref={setTabRef}
-                      className="media-library__tab-rename"
+                      className={tabNameClash ? "media-library__tab-rename is-invalid" : "media-library__tab-rename"}
                       defaultValue={col.name}
+                      aria-invalid={Boolean(tabNameClash)}
+                      onChange={(e) => setTabNameClash(collectionNameTaken(organize, e.currentTarget.value, col.id) ? e.currentTarget.value.trim() : null)}
                       aria-label="Collection name"
                       autoFocus
                       onFocus={(e) => e.currentTarget.select()}
@@ -635,6 +656,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                         const cancelled = e.currentTarget.dataset.cancel;
                         const value = e.currentTarget.value;
                         setRenamingTabId(null);
+                        setTabNameClash(null);
                         if (!cancelled) updateOrganize((o) => renameCollection(o, col.id, value));
                       }}
                     />
@@ -692,6 +714,8 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           </div>
         </div>
 
+        {tabNameClash && <p className="media-library__note" role="alert">There's already a collection called “{tabNameClash}”.</p>}
+
         {currentTab === "gif" && (onDownloadGif || onImportGifs) && (
           <div className="media-library__gif-actions">
             {onDownloadGif && <GifLinkBox onDownload={onDownloadGif} />}
@@ -707,7 +731,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         {foldersOn && here && (
           <nav className="media-library__path" aria-label="Folder">
             {[null, ...folderPath(organize, here).map((f) => f.id)].map((id, i, all) => {
-              const name = id ? organize.folders.find((f) => f.id === id)?.name : "Media library";
+              const name = id ? organize.folders.find((f) => f.id === id)?.name : (activeCollection?.name ?? "Media library");
               const target = cardDrag?.active && cardDrag.hoverFolder !== undefined && cardDrag.hoverFolder === id;
               return (
                 <span key={id ?? "top"} className="media-library__crumb">
@@ -764,7 +788,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               const folder = levelFolders[idx];
               if (folder) {
                 if (renamingFolderId === folder.id) return;
-                const start: CardDragState = { path: "", name: folder.name, folderId: folder.id, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, active: false, hoverCollectionId: null };
+                const start: CardDragState = { path: "", name: folder.name, folderId: folder.id, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, active: false, hoverCollectionId: null, scope };
                 cardDragRef.current = start;
                 setCardDrag(start);
                 return;
@@ -780,6 +804,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                 y: e.clientY,
                 active: false,
                 hoverCollectionId: null,
+                scope,
               };
               cardDragRef.current = initial;
               setCardDrag(initial);

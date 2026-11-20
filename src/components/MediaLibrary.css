@@ -48,6 +48,16 @@
   outline: none;
 }
 
+.media-library__tab-rename.is-invalid {
+  border-color: var(--danger);
+}
+
+.media-library__note {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
 .pc-bar__end .btn {
   flex-shrink: 0;
   white-space: nowrap;
