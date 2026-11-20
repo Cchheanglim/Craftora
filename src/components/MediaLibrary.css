@@ -168,7 +168,7 @@
 
 .media-library__folder-badge {
   position: absolute;
-  top: 8px;
+  bottom: 8px;
   left: 8px;
   display: grid;
   place-items: center;
@@ -233,12 +233,47 @@
   padding: 0;
 }
 
-/* Select mode: how many files are ticked, before the bulk buttons. */
+/* How many cards are selected, with X to clear them. */
 .media-library__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   align-self: center;
   color: var(--text-2);
   font-size: var(--text-sm);
   white-space: nowrap;
+}
+
+.media-library__clear {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.media-library__clear:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* Select mode: every card shows its tick box. */
+.pc-page.is-selecting .pcard__tick {
+  opacity: 1;
+}
+
+/* The box dragged over empty space to select cards. */
+.media-library__box {
+  position: fixed;
+  z-index: 60;
+  border: 1px solid var(--accent);
+  background: var(--accent-wash);
+  pointer-events: none;
 }
 
 /* Select mode: how many ticked files a tab holds, after its name. */

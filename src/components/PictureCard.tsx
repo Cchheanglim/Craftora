@@ -99,7 +99,6 @@ export function PictureCard({
   return (
     <li
       className={picked === undefined ? (selected ? "pcard is-picked" : "pcard") : picked ? "pcard is-picking is-picked" : "pcard is-picking"}
-      aria-selected={onTick ? Boolean(selected) : undefined}
       onContextMenu={onMenu}
     >
       {renaming ? (

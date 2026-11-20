@@ -102,6 +102,26 @@ const KIND_LABEL: Record<LibraryEntry["kind"], string> = {
 };
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+
+/** A folder's key among the selected cards (files use their path). */
+const folderKey = (id: string) => `folder:${id}`;
+const folderOf = (key: string) => (key.startsWith("folder:") ? key.slice(7) : null);
+
+/** Selected cards (`keys`) into folder `to` (null = the top level of `scope`'s folders). */
+function moveKeys(o: Organize, keys: string[], to: string | null, scope: string | null): Organize {
+  return keys.reduce((n, key) => {
+    const folder = folderOf(key);
+    return folder ? moveFolder(n, folder, to) : moveToFolder(n, key, to, scope);
+  }, o);
+}
+
+/** The files among `keys` into collection `id` (folders aren't put in collections). */
+function addKeysTo(o: Organize, keys: string[], id: string): Organize {
+  return keys.reduce((n, key) => {
+    const col = n.collections.find((c) => c.id === id);
+    return folderOf(key) || !col || col.paths.includes(key) ? n : toggleInCollection(n, id, key);
+  }, o);
+}
 const DRAG_THRESHOLD = 6;
 
 const newCollectionId = () =>
@@ -113,7 +133,8 @@ type MenuState =
   | { kind: "tab"; x: number; y: number; collection: Collection }
   | { kind: "card"; x: number; y: number; entry: LibraryEntry; hidden: boolean }
   | { kind: "pick-collection"; x: number; y: number; entry: LibraryEntry }
-  | { kind: "folder"; x: number; y: number; folder: Folder };
+  | { kind: "folder"; x: number; y: number; folder: Folder }
+  | { kind: "selection"; x: number; y: number };
 
 type TabDragState = {
   tabId: string;
@@ -137,6 +158,8 @@ type CardDragState = {
   scope: string | null;
   /** Dragging a folder card instead of a file. */
   folderId?: string;
+  /** Every selected card's key when the dragged card is one of several selected: they all move. */
+  group?: string[];
   /** The folder under the pointer (a folder card or a part of the path line); null = the top level; absent = none. */
   hoverFolder?: string | null;
 };
@@ -208,8 +231,14 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const [coverFor, setCoverFor] = useState<Folder | null>(null);
   const [coverError, setCoverError] = useState<string | null>(null);
   const sound = useSoundPreview();
-  /** Ticked files (paths) while picking several; null when not picking. */
-  const [selected, setSelected] = useState<Set<string> | null>(null);
+  /** Selected cards, like File Explorer: file paths, and folders as `folder:<id>` (`folderKey`). */
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  /** Select mode (the Select button, for picking with the mouse only): every click ticks or unticks a card. */
+  const [selectMode, setSelectMode] = useState(false);
+  /** Where Shift+click picks from: the last card clicked. */
+  const anchorRef = useRef<string | null>(null);
+  /** The box dragged over empty space to select cards (window coordinates), while it's being dragged. */
+  const [box, setBox] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   /** The folder being viewed (null = the top level). */
@@ -298,6 +327,12 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
       if (!cur.active) {
         if (Math.hypot(e.clientX - cur.startX, e.clientY - cur.startY) < DRAG_THRESHOLD) return;
         window.getSelection()?.removeAllRanges();
+        // Like File Explorer: dragging a card that isn't selected selects just it.
+        if (!cur.group) {
+          const key = cur.folderId ? folderKey(cur.folderId) : cur.path;
+          setSelected(new Set([key]));
+          anchorRef.current = key;
+        }
       }
       let hoverCollectionId: string | null = null;
       for (const col of collectionsRef.current) {
@@ -320,7 +355,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         const idx = li && ul && li.parentElement === ul ? Array.prototype.indexOf.call(ul.children, li) : -1;
         if (idx >= 0 && idx < levelFoldersRef.current.length) hoverFolder = levelFoldersRef.current[idx].id;
       }
-      if (hoverFolder !== undefined && hoverFolder === cur.folderId) hoverFolder = undefined;
+      if (hoverFolder && (hoverFolder === cur.folderId || cur.group?.includes(folderKey(hoverFolder)))) hoverFolder = undefined;
       const next: CardDragState = { ...cur, active: true, x: e.clientX, y: e.clientY, hoverCollectionId, hoverFolder };
       cardDragRef.current = next;
       setCardDrag(next);
@@ -334,17 +369,13 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
       window.setTimeout(() => {
         suppressCardClickRef.current = false;
       }, 0);
+      const keys = cur.group ?? [cur.folderId ? folderKey(cur.folderId) : cur.path];
       if (commit && cur.hoverFolder !== undefined) {
         const to = cur.hoverFolder;
-        const folderId = cur.folderId;
-        updateOrganize((o) => (folderId ? moveFolder(o, folderId, to) : moveToFolder(o, cur.path, to, cur.scope)));
-      } else if (commit && cur.hoverCollectionId && !cur.folderId) {
+        updateOrganize((o) => moveKeys(o, keys, to, cur.scope));
+      } else if (commit && cur.hoverCollectionId) {
         const colId = cur.hoverCollectionId;
-        const path = cur.path;
-        updateOrganize((o) => {
-          const col = o.collections.find((c) => c.id === colId);
-          return !col || col.paths.includes(path) ? o : toggleInCollection(o, colId, path);
-        });
+        updateOrganize((o) => addKeysTo(o, keys, colId));
       }
     };
     const onUp = () => finish(true);
@@ -378,28 +409,66 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     }
   };
 
-  /** While picking: how many ticked files a tab holds (its number next to its name). */
-  const tickedIn = (tabId: string) => ticked.filter((e) => (tabId === "folders" ? Boolean(organize.placed[e.path]) : inTab(e, tabId))).length;
-  const togglePicked = (path: string) =>
+  /** How many selected cards a tab holds (its number next to its name). */
+  const tickedIn = (tabId: string) =>
+    tabId === "folders" ? tickedFolders.length + ticked.filter((e) => organize.placed[e.path]).length : ticked.filter((e) => inTab(e, tabId)).length;
+  const clearSelection = () => {
+    setSelected(new Set());
+    anchorRef.current = null;
+  };
+  /** Ticks or unticks one card (its tick box, Ctrl+click, or any click in Select mode). */
+  const tickCard = (key: string) => {
+    anchorRef.current = key;
     setSelected((s) => {
       const next = new Set(s);
-      if (!next.delete(path)) next.add(path);
+      if (!next.delete(key)) next.add(key);
       return next;
     });
-  const removeTicked = async (ticked: LibraryEntry[]) => {
-    const n = ticked.length;
+  };
+  /** A click on a card, like File Explorer: just it; Ctrl (or Select mode) adds or drops it; Shift picks a run. */
+  const pickCard = (key: string, e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => {
+    const add = selectMode || e.ctrlKey || e.metaKey;
+    const from = anchorRef.current ? levelKeys.indexOf(anchorRef.current) : -1;
+    if (e.shiftKey && from >= 0) {
+      const to = levelKeys.indexOf(key);
+      const run = levelKeys.slice(Math.min(from, to), Math.max(from, to) + 1);
+      setSelected((s) => new Set(add ? [...s, ...run] : run));
+      return;
+    }
+    if (add) return tickCard(key);
+    anchorRef.current = key;
+    setSelected(new Set([key]));
+  };
+  /** Right-click on a card: one that isn't selected becomes the only one; then the menu for all selected. */
+  const cardMenu = (key: string, e: ReactMouseEvent, single: (x: number, y: number) => MenuState) => {
+    if (!selected.has(key) || selected.size === 1) {
+      setSelected(new Set([key]));
+      anchorRef.current = key;
+      return openMenuAt(e, single);
+    }
+    openMenuAt(e, (x, y) => ({ kind: "selection", x, y }));
+  };
+  const removeSelected = async () => {
+    const [files, folders] = [ticked, tickedFolders];
+    if (files.length + folders.length === 0) return;
+    const fileWords = `${files.length} file${files.length === 1 ? "" : "s"}`;
+    const folderWords = `${folders.length} folder${folders.length === 1 ? "" : "s"}`;
     const ok = await ask({
-      title: `Remove ${n} file${n === 1 ? "" : "s"} from the list?`,
-      message: "They leave the Media library (and Saved, if starred). The files themselves stay on your PC, and come back here if you import them again.",
-      confirmLabel: "Remove",
+      title: files.length && folders.length ? `Remove ${fileWords} and delete ${folderWords}?` : files.length ? `Remove ${fileWords} from the list?` : `Delete ${folderWords}?`,
+      message: [
+        files.length ? "The files leave the Media library (and Saved, if starred); they stay on your PC and come back if you import them again." : "",
+        folders.length ? "What's inside the folders moves up one level." : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      confirmLabel: files.length ? "Remove" : "Delete",
       danger: true,
+      note: "This never deletes any files from your PC.",
     });
     if (!ok) return;
-    for (const e of ticked) {
-      updateOrganize((o) => forgetPath(o, e.path));
-      onForget(e.path);
-    }
-    setSelected(null);
+    updateOrganize((o) => folders.reduce((n, f) => deleteFolder(n, f.id), files.reduce((n, e) => forgetPath(n, e.path), o)));
+    for (const e of files) onForget(e.path);
+    clearSelection();
   };
 
   const confirmAdd = async (entry: LibraryEntry) => {
@@ -513,9 +582,15 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     setPreview((p) => (p && !p.leaving ? { ...p, leaving: true } : p));
     hoverTimer.current = window.setTimeout(() => setPreview(null), 120);
   };
-  const busy = Boolean(cardDrag || tabDrag || menu || renamingPath || renamingFolderId || renamingTabId || selected);
-  // Ticked files on every tab (switching tabs while picking keeps them), not hidden ones.
-  const ticked = selected ? entries.filter((e) => selected.has(e.path) && !hidden.isHidden(e.path)) : [];
+  const busy = Boolean(cardDrag || tabDrag || menu || renamingPath || renamingFolderId || renamingTabId || box);
+  // Selected cards on every tab (switching tabs keeps them), not hidden files.
+  const ticked = entries.filter((e) => selected.has(e.path) && !hidden.isHidden(e.path));
+  const tickedFolders = organize.folders.filter((f) => selected.has(folderKey(f.id)));
+  const selectedCount = ticked.length + tickedFolders.length;
+  /** The cards in view, in grid order (folders first): Shift+click runs, Ctrl+A and the drag box use it. */
+  const levelKeys = [...levelFolders.map((f) => folderKey(f.id)), ...levelFiles.map((e) => e.path)];
+  const levelKeysRef = useRef(levelKeys);
+  levelKeysRef.current = levelKeys;
   useEffect(() => {
     if (!preview) return;
     const hide = () => hidePreview();
@@ -586,14 +661,70 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     setMenu(nextMenu(Math.round(r.left + 12), Math.round(r.top + 12)));
   };
 
+  /** The selected cards to drag together when `key` is one of several selected; undefined drags just it. */
+  const groupFor = (key: string) => (selected.has(key) && selected.size > 1 ? [...selected] : undefined);
+
+  // Drag a box over the empty space to select the cards it touches (Ctrl keeps what's selected); a click there clears.
+  const startBox = (e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    const t = e.target as HTMLElement;
+    if (t.closest("button, input, a, label, .pcard, .pc-bar, .pc-head, dialog, details, [role=menu], .media-library__path, .media-library__gif-actions")) return;
+    // Not on the page's own scrollbar.
+    if (t === e.currentTarget && e.nativeEvent.offsetX >= e.currentTarget.clientWidth) return;
+    const keep = e.ctrlKey || e.metaKey || selectMode ? new Set(selected) : new Set<string>();
+    const [x0, y0] = [e.clientX, e.clientY];
+    let moved = false;
+    const move = (m: PointerEvent) => {
+      if (!moved && Math.hypot(m.clientX - x0, m.clientY - y0) < DRAG_THRESHOLD) return;
+      moved = true;
+      window.getSelection()?.removeAllRanges();
+      setBox({ x0, y0, x1: m.clientX, y1: m.clientY });
+      const [left, right, top, bottom] = [Math.min(x0, m.clientX), Math.max(x0, m.clientX), Math.min(y0, m.clientY), Math.max(y0, m.clientY)];
+      const cards = gridRef.current ? [...gridRef.current.children] : [];
+      const hits = levelKeysRef.current.filter((_, i) => {
+        const r = cards[i]?.querySelector(".pcard__main")?.getBoundingClientRect();
+        return r && r.left < right && r.right > left && r.top < bottom && r.bottom > top;
+      });
+      setSelected(new Set([...keep, ...hits]));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setBox(null);
+      if (!moved && !selectMode) clearSelection();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  // Ctrl+A selects every card in view, Delete removes the selected (asks first), Escape clears, like File Explorer.
+  const keysRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keysRef.current = (e) => {
+    if ((e.target as HTMLElement).closest?.("input, textarea, select, [contenteditable=true]") || document.querySelector("dialog[open]") || menu) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      setSelected(new Set(levelKeys));
+    } else if (e.key === "Delete" && selectedCount > 0) {
+      e.preventDefault();
+      void removeSelected();
+    } else if (e.key === "Escape" && (selectedCount > 0 || selectMode)) {
+      clearSelection();
+      setSelectMode(false);
+    }
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => keysRef.current(e);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const renderCard = (entry: LibraryEntry, actions: ReactNode, isHidden = false) => {
     const shownName = titleOf(organize, entry.path, entry.name);
-    const picking = selected !== null && !isHidden;
     return (
       <PictureCard
         key={entry.path}
-        picked={picking ? selected.has(entry.path) : undefined}
-        onPick={picking ? () => togglePicked(entry.path) : undefined}
+        selected={!isHidden && selected.has(entry.path)}
+        onTick={isHidden ? undefined : () => tickCard(entry.path)}
         thumb={
           entry.kind === "audio" ? (
             <SoundWave path={entry.path} />
@@ -624,8 +755,13 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         badge={entry.kind !== "image" && entry.duration > 0 ? formatClock(entry.duration) : undefined}
         name={shownName}
         meta={`Imported ${dateFormat.format(entry.addedAt)}`}
-        onOpen={picking ? undefined : () => void confirmAdd(entry)}
-        onMenu={(e) => openMenuAt(e, (x, y) => ({ kind: "card", x, y, entry, hidden: isHidden }))}
+        onOpen={isHidden ? () => void confirmAdd(entry) : (e) => pickCard(entry.path, e)}
+        onDoubleOpen={isHidden ? undefined : () => void confirmAdd(entry)}
+        onMenu={(e) =>
+          isHidden
+            ? openMenuAt(e, (x, y) => ({ kind: "card", x, y, entry, hidden: true }))
+            : cardMenu(entry.path, e, (x, y) => ({ kind: "card", x, y, entry, hidden: false }))
+        }
         renaming={renamingPath === entry.path}
         onRename={(next) => {
           setRenamingPath(null);
@@ -661,6 +797,69 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           ...(folder.cover ? [{ label: "Remove cover", icon: "x" as const, onClick: () => updateOrganize((o) => setFolderCover(o, folder.id, null)) }] : []),
           "sep",
           { label: "Delete folder", icon: "trash", danger: true, onClick: () => void confirmDeleteFolder(folder) },
+        ],
+      };
+    }
+    if (menu.kind === "selection") {
+      const files = ticked;
+      const moveTo = (to: string | null) => updateOrganize((o) => moveKeys(o, [...selected], to, scope));
+      const folderItems: MenuItem[] = scopeFolders
+        .filter((f) => !selected.has(folderKey(f.id)))
+        .map((f) => ({ label: folderPath(organize, f.id).map((x) => x.name).join(" / "), icon: "folder", onClick: () => moveTo(f.id) }));
+      const newFolderFor = () => {
+        const id = newCollectionId();
+        updateOrganize((o) => {
+          const top = o.folders.filter((f) => f.parent === null && (f.collection ?? null) === scope).map((f) => f.name);
+          return moveKeys(addFolder(o, freeName("New folder", top), null, id, scope), [...selected], id, scope);
+        });
+        setOpenFolder(null);
+        setRenamingFolderId(id);
+      };
+      return {
+        label: `${selectedCount} selected`,
+        items: [
+          ...(files.length ? [{ label: "Add to project", icon: "plus" as const, onClick: () => files.forEach((e) => onAdd(e.path)) }, "sep" as const] : []),
+          {
+            label: "Move to folder",
+            icon: "folder",
+            items: [{ label: "Top level", icon: "chevronUp", onClick: () => moveTo(null) }, ...folderItems, "sep", { label: "New folder", icon: "plus", onClick: newFolderFor }],
+          },
+          ...(files.length
+            ? [
+                {
+                  label: "Add to collection",
+                  icon: "grid" as const,
+                  items: [
+                    ...organize.collections.map((c): MenuItem => ({ label: c.name, icon: files.every((e) => c.paths.includes(e.path)) ? "check" : undefined, onClick: () => updateOrganize((o) => addKeysTo(o, [...selected], c.id)) })),
+                    ...(organize.collections.length ? ["sep" as const] : []),
+                    {
+                      label: "New collection",
+                      icon: "plus" as const,
+                      onClick: () => {
+                        const id = newCollectionId();
+                        updateOrganize((o) => addKeysTo(addCollection(o, freeName("New collection", o.collections.map((c) => c.name)), id), [...selected], id));
+                        setRenamingTabId(id);
+                      },
+                    },
+                  ],
+                },
+                "sep" as const,
+                { label: "Save", icon: "star" as const, onClick: () => files.forEach((e) => !e.saved && onSave(e.path, true)) },
+                {
+                  label: "Hide from list",
+                  icon: "eyeOff" as const,
+                  onClick: () => {
+                    hidden.setHidden(
+                      files.map((e) => e.path),
+                      true,
+                    );
+                    clearSelection();
+                  },
+                },
+              ]
+            : []),
+          "sep",
+          { label: files.length ? "Remove" : "Delete", icon: "trash", danger: true, onClick: () => void removeSelected() },
         ],
       };
     }
@@ -713,7 +912,20 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const activeMenu = menuItems();
 
   return (
-    <section className={tabDrag?.active || cardDrag?.active ? "pc-page is-dragging-org" : "pc-page"} aria-labelledby="media-library-title">
+    <section
+      className={`pc-page${tabDrag?.active || cardDrag?.active ? " is-dragging-org" : ""}${selectMode ? " is-selecting" : ""}`}
+      aria-labelledby="media-library-title"
+      onPointerDown={startBox}
+    >
+      {box &&
+        createPortal(
+          <div
+            className="media-library__box"
+            style={{ left: Math.min(box.x0, box.x1), top: Math.min(box.y0, box.y1), width: Math.abs(box.x1 - box.x0), height: Math.abs(box.y1 - box.y0) }}
+            aria-hidden="true"
+          />,
+          document.body,
+        )}
       {dialog}
       {menu && activeMenu && <ContextMenu x={menu.x} y={menu.y} label={activeMenu.label} items={activeMenu.items} onClose={() => setMenu(null)} />}
       {preview && <HoverPreview entry={preview.entry} anchor={preview.rect} name={titleOf(organize, preview.entry.path, preview.entry.name)} leaving={preview.leaving} />}
@@ -806,7 +1018,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                     }
                   >
                     {label}
-                    {selected && tickedIn(tabId) > 0 && <span className="media-library__tab-count">{tickedIn(tabId)}</span>}
+                    {selectedCount > 0 && tickedIn(tabId) > 0 && <span className="media-library__tab-count">{tickedIn(tabId)}</span>}
                   </button>
                 );
               })}
@@ -821,77 +1033,47 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           </div>
           <div className="pc-bar__end">
             <PageSearch id="media-search" value={search} onChange={setSearch} placeholder="Search by file name" />
-            {selected ? (
-              <>
-                <span className="media-library__count">{ticked.length} selected</span>
-                <button type="button" className="btn btn--ghost" onClick={() => setSelected((s) => new Set([...(s ?? []), ...levelFiles.map((e) => e.path)]))}>
-                  Select all
+            {selectedCount > 0 && (
+              <span className="media-library__count">
+                {selectedCount} selected
+                <button type="button" className="media-library__clear" aria-label="Clear the selection" onClick={clearSelection}>
+                  <Icon name="x" size={12} />
                 </button>
-                <button
-                  type="button"
-                  className="btn btn--secondary"
-                  disabled={ticked.length === 0}
-                  onClick={() => {
-                    for (const e of ticked) onAdd(e.path);
-                    setSelected(null);
-                  }}
-                >
-                  <Icon name="plus" size={14} />
-                  Add to project
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--ghost"
-                  disabled={ticked.length === 0}
-                  onClick={() => {
-                    for (const e of ticked) if (!e.saved) onSave(e.path, true);
-                    setSelected(null);
-                  }}
-                >
-                  <Icon name="star" size={14} />
-                  Save
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--ghost"
-                  disabled={ticked.length === 0}
-                  onClick={() => {
-                    hidden.setHidden(
-                      ticked.map((e) => e.path),
-                      true,
-                    );
-                    setSelected(null);
-                  }}
-                >
-                  <Icon name="eyeOff" size={14} />
-                  Hide
-                </button>
-                <button type="button" className="btn btn--ghost" disabled={ticked.length === 0} onClick={() => void removeTicked(ticked)}>
-                  <Icon name="trash" size={14} />
-                  Remove
-                </button>
-                <button type="button" className="btn btn--secondary" onClick={() => setSelected(null)}>
-                  Done
-                </button>
-              </>
-            ) : (
-              <>
-                {entries.length > 0 && (
-                  <button type="button" className="btn btn--secondary" onClick={() => setSelected(new Set())}>
+              </span>
+            )}
+            {selectMode && (
+              <button type="button" className="btn btn--ghost" onClick={() => setSelected((s) => new Set([...s, ...levelKeys]))}>
+                Select all
+              </button>
+            )}
+            {(entries.length > 0 || organize.folders.length > 0) && (
+              <button
+                type="button"
+                className="btn btn--secondary"
+                aria-pressed={selectMode}
+                onClick={() => {
+                  if (selectMode) clearSelection();
+                  setSelectMode(!selectMode);
+                }}
+              >
+                {selectMode ? (
+                  "Cancel"
+                ) : (
+                  <>
                     <Icon name="check" size={14} />
                     Select
-                  </button>
+                  </>
                 )}
-                <button type="button" className="btn btn--secondary" onClick={createCollection}>
-                  <Icon name="plus" size={14} />
-                  New Collection
-                </button>
-                <button type="button" className="btn btn--secondary" onClick={createFolder}>
-                  <Icon name="folder" size={14} />
-                  New folder
-                </button>
-              </>
+              </button>
             )}
+            <button type="button" className="btn btn--secondary" onClick={createCollection}>
+              <Icon name="plus" size={14} />
+              New Collection
+            </button>
+            <button type="button" className="btn btn--secondary" onClick={createFolder}>
+              <Icon name="folder" size={14} />
+              New folder
+            </button>
           </div>
         </div>
 
@@ -992,7 +1174,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
             onPointerLeave={hidePreview}
             onPointerDown={(e) => {
               hidePreview();
-              if (e.button !== 0 || selected) return;
+              if (e.button !== 0 || e.shiftKey || e.ctrlKey || e.metaKey) return;
               if ((e.target as HTMLElement).closest("input, .pcard__actions, .pcard__overlay")) return;
               const ul = gridRef.current;
               const li = (e.target as HTMLElement).closest(".pcard");
@@ -1001,16 +1183,19 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               const folder = levelFolders[idx];
               if (folder) {
                 if (renamingFolderId === folder.id) return;
-                const start: CardDragState = { path: "", name: folder.name, folderId: folder.id, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, active: false, hoverCollectionId: null, scope };
+                const group = groupFor(folderKey(folder.id));
+                const start: CardDragState = { path: "", name: group ? `${group.length} items` : folder.name, folderId: folder.id, group, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, active: false, hoverCollectionId: null, scope };
                 cardDragRef.current = start;
                 setCardDrag(start);
                 return;
               }
               const entry = levelFiles[idx - levelFolders.length];
               if (!entry) return;
+              const group = groupFor(entry.path);
               const initial: CardDragState = {
                 path: entry.path,
-                name: titleOf(organize, entry.path, entry.name),
+                name: group ? `${group.length} items` : titleOf(organize, entry.path, entry.name),
+                group,
                 startX: e.clientX,
                 startY: e.clientY,
                 x: e.clientX,
@@ -1048,8 +1233,11 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                   tag="Folder"
                   name={folder.name}
                   meta={n === 1 ? "1 file" : `${n} files`}
-                  onOpen={() => setOpenFolder(folder.id)}
-                  onMenu={(e) => openMenuAt(e, (x, y) => ({ kind: "folder", x, y, folder }))}
+                  selected={selected.has(folderKey(folder.id))}
+                  onTick={() => tickCard(folderKey(folder.id))}
+                  onOpen={(e) => pickCard(folderKey(folder.id), e)}
+                  onDoubleOpen={() => setOpenFolder(folder.id)}
+                  onMenu={(e) => cardMenu(folderKey(folder.id), e, (x, y) => ({ kind: "folder", x, y, folder }))}
                   renaming={renamingFolderId === folder.id}
                   onRename={(next) => {
                     setRenamingFolderId(null);
