@@ -221,8 +221,21 @@
   reorder it, rename a card, a bigger preview when you rest the pointer on a card, and a right-click menu. Clicking a
   card asks before adding it to your project.
 - The track ⋯ menu opens when you point at it.
+- **Sound FX**: a new tab in the editor's tools panel and in the Media library for your own meme sounds and sound
+  effects, kept for every project like your GIFs. Import sounds, paste a link to a sound file (MP3, WAV, OGG, M4A, AAC
+  or FLAC, up to 50 MB) or drag them in from File Explorer while the tab is open. Each card has a play button to hear
+  it first; click a card to add it at the playhead on a free audio track, or drag it onto the timeline. The Media
+  library's "Sound" tab is now called "Audio".
+- **Folder covers**: right-click a folder in the Media library for Cover from Media library or Cover from this PC, and
+  Remove cover to bring the folder icon back.
 
 **Fixed**
+
+- Media library: a folder made inside a collection showed up in All instead of the collection. Folders now belong to
+  the collection they're made in, and files dropped into them keep their place everywhere else.
+- Media library: the file name you drag now stays next to the pointer.
+- Media library: two collections can't have the same name any more (a note says so while you type), and new ones are
+  called "New collection 2", "New collection 3"…
 
 - The timeline's zoom slider got an invalid value for a moment when the editor opened (a warning in the developer log).
 - Keys pressed while a window was open (Export, Layer style, Crop…) still acted on the editor behind it: Delete deleted the

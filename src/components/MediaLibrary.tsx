@@ -80,7 +80,7 @@ const TAB_LABELS: Record<Filter, ReactNode> = {
 const KIND_LABEL: Record<LibraryEntry["kind"], string> = {
   video: "Video",
   image: "Picture",
-  audio: "Sound",
+  audio: "Audio",
 };
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
@@ -542,7 +542,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
             play={entry.kind === "video"}
           />
         }
-        tag={entry.animated ? "GIF" : KIND_LABEL[entry.kind]}
+        tag={entry.animated ? "GIF" : entry.sfx ? "Sound FX" : KIND_LABEL[entry.kind]}
         badge={entry.kind !== "image" && entry.duration > 0 ? formatClock(entry.duration) : undefined}
         name={shownName}
         meta={`Imported ${dateFormat.format(entry.addedAt)}`}
