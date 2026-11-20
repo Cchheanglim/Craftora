@@ -35,13 +35,15 @@ export interface MediaPanelProps {
   fx: (tab: FxTab) => ReactNode;
   /** The user's animated GIFs tab (GifPanel), drawn in the video editor's tools panel. */
   gifs?: ReactNode;
+  /** The user's Sound FX tab (SoundFxPanel), next to GIFs. */
+  soundFx?: ReactNode;
   /** The Image editor: its own Text and Size tabs instead of Audio and Transitions. */
   still?: { text: ReactNode; size: ReactNode };
   /** The Image editor's tool strip picked this tab: shown alone, without the panel's own tab row. */
   only?: Tab;
 }
 
-export type Tab = "media" | "audio" | "text" | "size" | "gifs" | FxTab;
+export type Tab = "media" | "audio" | "text" | "size" | "gifs" | "sfx" | FxTab;
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: "media", label: "Media", icon: "film" },
   { id: "audio", label: "Audio", icon: "music" },
@@ -49,6 +51,7 @@ const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: "effects", label: "Effects", icon: "sparkle" },
   { id: "transitions", label: "Transitions", icon: "transition" },
   { id: "gifs", label: "GIFs", icon: "gif" },
+  { id: "sfx", label: "Sound FX", icon: "waveform" },
   { id: "shapes", label: "Shapes", icon: "star" },
 ];
 const STILL_TABS: { id: Tab; label: string; icon: IconName }[] = [
@@ -75,6 +78,7 @@ export function MediaPanel({
   onRecordVoice,
   fx,
   gifs,
+  soundFx,
   still,
   only,
 }: MediaPanelProps) {
@@ -168,13 +172,13 @@ export function MediaPanel({
         </div>
       )}
 
-      {tab === "gifs" && (
-        <div className="media-panel__fx" id="media-panel-body" role="tabpanel" aria-labelledby="media-panel-tab-gifs">
-          {gifs}
+      {(tab === "gifs" || tab === "sfx") && (
+        <div className="media-panel__fx" id="media-panel-body" role="tabpanel" aria-labelledby={`media-panel-tab-${tab}`}>
+          {tab === "gifs" ? gifs : soundFx}
         </div>
       )}
 
-      {tab !== "media" && tab !== "audio" && tab !== "text" && tab !== "size" && tab !== "gifs" && (
+      {tab !== "media" && tab !== "audio" && tab !== "text" && tab !== "size" && tab !== "gifs" && tab !== "sfx" && (
         <div className="media-panel__fx" id="media-panel-body" role="tabpanel" aria-labelledby={`media-panel-tab-${tab}`}>
           {fx(tab)}
         </div>

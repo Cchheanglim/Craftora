@@ -51,18 +51,22 @@ interface MediaLibraryProps {
   onImportGifs?: () => void;
   /** Downloads a GIF from a URL and adds it to the library / project. */
   onDownloadGif?: (url: string) => Promise<void>;
+  /** The Sound FX tab's Import sounds and Paste a sound link (desktop app only). */
+  onImportSounds?: () => void;
+  onDownloadSound?: (url: string) => Promise<void>;
 }
 
-type Filter = "all" | "video" | "image" | "audio" | "gif" | "saved";
+type Filter = "all" | "video" | "image" | "audio" | "gif" | "sfx" | "saved";
 
 const COLLECTION_PREFIX = "c:";
-const BUILTIN_TABS: Filter[] = ["all", "video", "image", "audio", "gif", "saved"];
+const BUILTIN_TABS: Filter[] = ["all", "video", "image", "audio", "gif", "sfx", "saved"];
 const TAB_LABELS: Record<Filter, ReactNode> = {
   all: "All",
   video: "Videos",
   image: "Pictures",
-  audio: "Sound",
+  audio: "Audio",
   gif: "GIFs",
+  sfx: "Sound FX",
   saved: (
     <>
       <Icon name="star" size={14} />
@@ -164,7 +168,7 @@ function computeTabInsert(
   };
 }
 
-export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, onImportGifs, onDownloadGif }: MediaLibraryProps) {
+export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, onImportGifs, onDownloadGif, onImportSounds, onDownloadSound }: MediaLibraryProps) {
   const { ask, dialog } = useConfirm();
   const [organize, setOrganize] = useState<Organize>(() => loadOrganize());
   const updateOrganize = (fn: (prev: Organize) => Organize) => {
@@ -398,7 +402,17 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     const matchesTab = collectionPaths
       ? collectionPaths.has(e.path)
       : currentTab === "all" ||
-        (currentTab === "saved" ? e.saved : currentTab === "gif" ? Boolean(e.animated) : currentTab === "image" ? e.kind === "image" && !e.animated : e.kind === currentTab);
+        (currentTab === "saved"
+          ? e.saved
+          : currentTab === "gif"
+            ? Boolean(e.animated)
+            : currentTab === "sfx"
+              ? Boolean(e.sfx)
+              : currentTab === "image"
+                ? e.kind === "image" && !e.animated
+                : currentTab === "audio"
+                  ? e.kind === "audio" && !e.sfx
+                  : e.kind === currentTab);
     if (!matchesTab) return false;
     if (!words) return true;
     const shownName = titleOf(organize, e.path, e.name).toLowerCase();
@@ -728,6 +742,18 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           </div>
         )}
 
+        {currentTab === "sfx" && (
+          <div className="media-library__gif-actions" data-sound-fx>
+            {onDownloadSound && <GifLinkBox onDownload={onDownloadSound} label="Paste a sound link" />}
+            {onImportSounds && (
+              <button type="button" className="btn btn--secondary" onClick={onImportSounds}>
+                <Icon name="upload" size={14} />
+                Import sounds
+              </button>
+            )}
+          </div>
+        )}
+
         {foldersOn && here && (
           <nav className="media-library__path" aria-label="Folder">
             {[null, ...folderPath(organize, here).map((f) => f.id)].map((id, i, all) => {
@@ -753,6 +779,8 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
 
         {currentTab === "gif" && !entries.some((e) => e.animated) ? (
           <p className="pc-muted">No GIFs yet. Import a GIF and it shows up here and in the editor's GIFs tab.</p>
+        ) : currentTab === "sfx" && !entries.some((e) => e.sfx) ? (
+          <p className="pc-muted">No sounds yet. Import meme sounds and effects, paste a link to a sound file, or drag them in from File Explorer: they show up here and in the editor's Sound FX tab.</p>
         ) : entries.length === 0 ? (
           <p className="pc-muted">Files you import into a project show up here, so you can find them again.</p>
         ) : activeCollection && !words && matching.length === 0 ? (

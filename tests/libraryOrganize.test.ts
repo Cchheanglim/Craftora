@@ -231,6 +231,11 @@ describe("collection folders and names", () => {
     assert.deepEqual(deleteCollection(o, "c1").folders.map((f) => f.id), ["f9"]);
   });
 
+  it("puts a built-in tab added in an update next to the one before it, not at the end", () => {
+    const old: Organize = { ...structuredClone(EMPTY_ORGANIZE), collections: [{ id: "x", name: "Mine", paths: [] }], tabOrder: ["all", "c:x", "video", "image", "audio", "gif", "saved"] };
+    assert.deepEqual(orderedTabs(old, ["all", "video", "image", "audio", "gif", "sfx", "saved"]), ["all", "c:x", "video", "image", "audio", "gif", "sfx", "saved"]);
+  });
+
   it("refuses a second collection with the same name and picks free default names", () => {
     let o = addCollection(structuredClone(EMPTY_ORGANIZE), "Trip", "c1");
     assert.equal(addCollection(o, " trip ", "c2"), o);

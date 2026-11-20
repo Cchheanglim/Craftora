@@ -40,6 +40,9 @@ import {
   openCaptionsFile,
   pickMediaFiles,
   pickGifFiles,
+  pickSoundFiles,
+  isSoundFile,
+  saveSoundFrom,
   pickMediaFile,
   revealFile,
   pickPicture,
@@ -164,6 +167,7 @@ import { EdgeResizer, PANEL_WIDTH, SIDE_WIDTH, roomFor } from "./components/Edge
 import { EFFECT_SETTINGS, LOOKS, PICTURE_EFFECTS, dropEdits, type FxItem } from "./project/effects";
 import { FxPanel, STILL_EFFECTS, type FxTab } from "./components/FxPanel";
 import { GifPanel } from "./components/GifPanel";
+import { SoundFxPanel } from "./components/SoundFxPanel";
 import { CropDialog } from "./components/CropDialog";
 import { IconTabs } from "./components/IconTabs";
 import { loadFont } from "./lib/fonts";
@@ -1387,7 +1391,11 @@ export default function App() {
         else if (state === "left") setDragging(false);
         else {
           setDragging(false);
-          if (state.dropped.length) void importRef.current(state.dropped);
+          // Sounds dropped while a Sound FX tab shows go in Sound FX; everything else is imported as before.
+          const sfx = document.querySelector("[data-sound-fx]") ? state.dropped.filter(isSoundFile) : [];
+          const rest = state.dropped.filter((p) => !sfx.includes(p));
+          if (sfx.length) void soundFxRef.current(sfx);
+          if (rest.length) void importRef.current(rest);
         }
       },
       (msg) => setError(msg),
@@ -1595,6 +1603,7 @@ export default function App() {
     setView("editor");
   };
 
+  // A GIF or a Sound FX sound from the library: brought into the project the first time it's added.
   const importingGif = useRef(new Map<string, Promise<string>>());
   const ensureGifMedia = (path: string): Promise<string> => {
     const existing = projectRef.current.media.find((m) => m.source.url === path);
@@ -1638,6 +1647,44 @@ export default function App() {
     const path = await saveGifFrom(link);
     await importFiles([path]);
   };
+  /** Sound FX: sounds on this PC go in the Sound FX library (marked `sfx`), not the project until one is added. */
+  const addSoundFx = async (paths: string[]) => {
+    const failed: string[] = [];
+    const found: { path: string; duration: number }[] = [];
+    for (const path of paths) {
+      const name = path.split(/[\\/]/).pop() ?? path;
+      try {
+        const source = await openLocal(path);
+        if (source.image || source.streams.some((s) => s.kind === "video")) failed.push(`${name}: not a sound file`);
+        else found.push({ path: source.url, duration: source.duration });
+      } catch (err) {
+        failed.push(`${name}: ${errorText(err)}`);
+      }
+    }
+    if (found.length) {
+      const now = Date.now();
+      changeLibrary((entries) => {
+        const old = new Map(entries.map((e) => [e.path, e]));
+        const added: LibraryEntry[] = found.map(({ path, duration }) => ({
+          ...(old.get(path) ?? { path, name: path.split(/[\\/]/).pop() ?? path, kind: "audio" as const, duration, addedAt: now }),
+          sfx: true,
+        }));
+        return [...added, ...entries.filter((e) => !found.some((f) => f.path === e.path))];
+      });
+    }
+    if (failed.length) setError(failed.join("  "));
+  };
+  const soundFxRef = useRef(addSoundFx);
+  soundFxRef.current = addSoundFx;
+  const importSoundFx = async () => {
+    try {
+      const paths = await pickSoundFiles();
+      if (paths.length) await addSoundFx(paths);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  const downloadSound = async (link: string) => addSoundFx([await saveSoundFrom(link)]);
 
   /** The selected clip, or else the clip under the playhead on the lowest track that has one. */
   const splitTarget = () => {
@@ -2724,6 +2771,16 @@ export default function App() {
           onForget={(path) => changeLibrary((entries) => entries.filter((e) => e.path !== path))}
         />
       }
+      soundFx={
+        <SoundFxPanel
+          entries={library.filter((e) => e.sfx)}
+          onAdd={(path) => void addGif(path)}
+          onDrag={(path, e) => void dragGif(path, e)}
+          onImport={() => void importSoundFx()}
+          onDownload={downloadSound}
+          onForget={(path) => changeLibrary((entries) => entries.map((e) => (e.path === path ? { ...e, sfx: undefined } : e)))}
+        />
+      }
       only={only}
     />
   );
@@ -3523,6 +3580,8 @@ export default function App() {
             entries={library}
             onImportGifs={inDesktopApp ? () => void importGifs() : undefined}
             onDownloadGif={inDesktopApp ? downloadGif : undefined}
+            onImportSounds={inDesktopApp ? () => void importSoundFx() : undefined}
+            onDownloadSound={inDesktopApp ? downloadSound : undefined}
             onAdd={(path) => void importFiles([path])}
             onSave={(path, saved) => changeLibrary((entries) => entries.map((e) => (e.path === path ? { ...e, saved } : e)))}
             onThumbnail={(path, thumbnail) => changeLibrary((entries) => entries.map((e) => (e.path === path ? { ...e, thumbnail } : e)))}

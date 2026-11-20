@@ -233,12 +233,14 @@ export function orderedTabs(o: Organize, builtIns: string[]): string[] {
       result.push(id);
     }
   }
-  for (const id of natural) {
-    if (!seen.has(id)) {
-      seen.add(id);
-      result.push(id);
-    }
-  }
+  // A built-in tab missing from a saved order (one added in an update) goes right after the tab before it; a new
+  // collection goes at the end.
+  natural.forEach((id, i) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    const before = !id.startsWith(COLLECTION_TAB_PREFIX) && i > 0 ? result.indexOf(natural[i - 1]) : -1;
+    result.splice(before >= 0 ? before + 1 : result.length, 0, id);
+  });
   return result;
 }
 
