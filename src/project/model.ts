@@ -927,6 +927,18 @@ export function clipPeaks(clip: Clip, media: MediaItem | undefined, bars: number
 }
 
 /** Finds quiet stretches `[start, end]` (in media seconds) from a media item's loudness bars. */
+/** `peaks` squeezed into `count` bars (the loudest of each stretch), scaled so the loudest bar is 1. */
+export function waveBars(peaks: number[], count: number): number[] {
+  if (peaks.length === 0) return [];
+  const bars = Array.from({ length: count }, (_, i) => {
+    const from = Math.floor((i * peaks.length) / count);
+    const to = Math.max(from + 1, Math.floor(((i + 1) * peaks.length) / count));
+    return Math.max(...peaks.slice(from, to));
+  });
+  const top = Math.max(...bars) || 1;
+  return bars.map((b) => b / top);
+}
+
 export function silencesFromPeaks(media: MediaItem, start: number, end: number): [number, number][] {
   const full = peaksFor(media);
   const total = media.source.duration;

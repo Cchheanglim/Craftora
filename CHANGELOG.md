@@ -229,12 +229,24 @@
   library's "Sound" tab is now called "Audio".
 - **Folder covers**: right-click a folder in the Media library for Cover from Media library or Cover from this PC, and
   Remove cover to bring the folder icon back. A GIF cover moves on the card.
+  A small folder mark sits in the corner of a covered folder so it still reads as a folder.
+- **Folders tab** in the Media library (after Saved): only your folders, no loose files around them; open one to see
+  what's in it.
+- **Sounds you can see and hear** in the Media library and the Sound FX tab: each sound's card shows its own wave
+  instead of a music note, and a Play button on the card plays it (press again to stop).
+- **Select** in the Media library: tick several files, then Add to project, Save, Hide or Remove them at once
+  (Select all ticks everything in view).
+- **New folder** always makes the folder at the top level, even from inside a folder (drag it onto another folder to
+  put it there).
+- **Friendlier empty tabs** in the Media library: each tab says what goes there ("Nothing saved yet. Click the star on a
+  file…") instead of "Nothing matches.", and a search that finds nothing says so by name.
 
 **Fixed**
 
 - Media library: a folder made inside a collection showed up in All instead of the collection. Folders now belong to
   the collection they're made in, and files dropped into them keep their place everywhere else.
 - Media library: the file name you drag now stays next to the pointer.
+- Media library: folders didn't show while the library had no files.
 - Media library: two collections can't have the same name any more (a note says so while you type), and new ones are
   called "New collection 2", "New collection 3"…
 

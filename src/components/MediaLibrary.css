@@ -224,3 +224,36 @@
   aspect-ratio: 16 / 10;
   object-fit: cover;
 }
+
+/* A sound card's Play / Stop, bottom-left on its picture. */
+.media-library__play.btn--icon {
+  width: 30px;
+  height: 30px;
+  min-width: 0;
+  padding: 0;
+}
+
+/* Select mode: how many files are ticked, before the bulk buttons. */
+.media-library__count {
+  align-self: center;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+/* Select mode: how many ticked files a tab holds, after its name. */
+.media-library__tab-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: var(--radius-sm);
+  background: var(--accent-fill);
+  color: var(--text-on-accent);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

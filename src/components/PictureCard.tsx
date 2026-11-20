@@ -14,7 +14,11 @@ export function PictureCard({
   name,
   meta,
   onOpen,
+  onDoubleOpen,
+  selected,
+  onTick,
   actions,
+  overlay,
   picked,
   onPick,
   onMenu,
@@ -31,9 +35,17 @@ export function PictureCard({
   badge?: string;
   name: string;
   meta?: ReactNode;
-  onOpen?: () => void;
+  /** A click (its event has Ctrl/Shift for picking several). */
+  onOpen?: (e: MouseEvent) => void;
+  /** A double-click (when a click only selects). */
+  onDoubleOpen?: () => void;
+  /** Selected (Media library): the red outline and a ticked box; `onTick` adds or drops it (the box shows on hover). */
+  selected?: boolean;
+  onTick?: () => void;
   /** Small buttons over the picture's top-right corner, shown on hover (`PictureAction`s). */
   actions?: ReactNode;
+  /** A button always shown over the picture's bottom-left corner (a sound's Play). */
+  overlay?: ReactNode;
   /** Picking several: whether this one is ticked (the card ticks instead of opening). Leave out otherwise. */
   picked?: boolean;
   onPick?: () => void;
@@ -85,12 +97,16 @@ export function PictureCard({
     </>
   );
   return (
-    <li className={picked === undefined ? "pcard" : picked ? "pcard is-picking is-picked" : "pcard is-picking"} onContextMenu={onMenu}>
+    <li
+      className={picked === undefined ? (selected ? "pcard is-picked" : "pcard") : picked ? "pcard is-picking is-picked" : "pcard is-picking"}
+      aria-selected={onTick ? Boolean(selected) : undefined}
+      onContextMenu={onMenu}
+    >
       {renaming ? (
         // Not a button while its name is being typed (a box inside a button can't be typed in properly).
         <div className="pcard__main">{body}</div>
       ) : picked === undefined ? (
-        <button type="button" className="pcard__main" onClick={onOpen}>
+        <button type="button" className="pcard__main" onClick={onOpen} onDoubleClick={onDoubleOpen}>
           {body}
         </button>
       ) : (
@@ -100,6 +116,12 @@ export function PictureCard({
         </label>
       )}
       {actions && picked === undefined && <span className="pcard__actions">{actions}</span>}
+      {overlay && picked === undefined && <span className="pcard__overlay">{overlay}</span>}
+      {onTick && picked === undefined && (
+        <button type="button" className="pcard__box pcard__tick" role="checkbox" aria-checked={Boolean(selected)} aria-label={`Select ${name}`} onClick={onTick}>
+          {selected && <Icon name="check" size={14} />}
+        </button>
+      )}
     </li>
   );
 }

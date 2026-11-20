@@ -36,6 +36,8 @@ import { GifImage } from "./GifPanel";
 import { GifLinkBox } from "./GifLinkBox";
 import { HiddenFold, useHidden } from "./Hidden";
 import { HoverPreview } from "./HoverPreview";
+import { SoundWave } from "./SoundWave";
+import { useSoundPreview } from "../lib/soundPreview";
 import { PageSearch, PictureAction, PictureCard } from "./PictureCard";
 import "./Library.css";
 import "./MediaLibrary.css";
@@ -205,6 +207,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   /** The folder whose cover is being picked from the Media library's pictures. */
   const [coverFor, setCoverFor] = useState<Folder | null>(null);
   const [coverError, setCoverError] = useState<string | null>(null);
+  const sound = useSoundPreview();
+  /** Ticked files (paths) while picking several; null when not picking. */
+  const [selected, setSelected] = useState<Set<string> | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   /** The folder being viewed (null = the top level). */
@@ -373,6 +378,30 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     }
   };
 
+  /** While picking: how many ticked files a tab holds (its number next to its name). */
+  const tickedIn = (tabId: string) => ticked.filter((e) => (tabId === "folders" ? Boolean(organize.placed[e.path]) : inTab(e, tabId))).length;
+  const togglePicked = (path: string) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      if (!next.delete(path)) next.add(path);
+      return next;
+    });
+  const removeTicked = async (ticked: LibraryEntry[]) => {
+    const n = ticked.length;
+    const ok = await ask({
+      title: `Remove ${n} file${n === 1 ? "" : "s"} from the list?`,
+      message: "They leave the Media library (and Saved, if starred). The files themselves stay on your PC, and come back here if you import them again.",
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
+    for (const e of ticked) {
+      updateOrganize((o) => forgetPath(o, e.path));
+      onForget(e.path);
+    }
+    setSelected(null);
+  };
+
   const confirmAdd = async (entry: LibraryEntry) => {
     const shownName = titleOf(organize, entry.path, entry.name);
     const ok = await ask({
@@ -419,23 +448,29 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const words = search.trim().toLowerCase();
   const hidden = useHidden("media");
   const collectionPaths = activeCollection ? new Set(activeCollection.paths) : null;
+  /** Whether a file belongs on tab `tabId` (a kind, Saved, or a collection's `c:` tab). */
+  const inTab = (e: LibraryEntry, tabId: string): boolean => {
+    if (tabId.startsWith(COLLECTION_PREFIX)) return Boolean(collectionsById.get(tabId.slice(COLLECTION_PREFIX.length))?.paths.includes(e.path));
+    switch (tabId as Filter) {
+      case "all":
+      case "folders":
+        return true;
+      case "saved":
+        return Boolean(e.saved);
+      case "gif":
+        return Boolean(e.animated);
+      case "sfx":
+        return Boolean(e.sfx);
+      case "image":
+        return e.kind === "image" && !e.animated;
+      case "audio":
+        return e.kind === "audio" && !e.sfx;
+      default:
+        return e.kind === tabId;
+    }
+  };
   const matching = entries.filter((e) => {
-    const matchesTab = collectionPaths
-      ? collectionPaths.has(e.path)
-      : currentTab === "all" ||
-        currentTab === "folders" ||
-        (currentTab === "saved"
-          ? e.saved
-          : currentTab === "gif"
-            ? Boolean(e.animated)
-            : currentTab === "sfx"
-              ? Boolean(e.sfx)
-              : currentTab === "image"
-                ? e.kind === "image" && !e.animated
-                : currentTab === "audio"
-                  ? e.kind === "audio" && !e.sfx
-                  : e.kind === currentTab);
-    if (!matchesTab) return false;
+    if (!(collectionPaths ? collectionPaths.has(e.path) : inTab(e, currentTab))) return false;
     if (!words) return true;
     const shownName = titleOf(organize, e.path, e.name).toLowerCase();
     return shownName.includes(words) || e.name.toLowerCase().includes(words);
@@ -478,7 +513,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     setPreview((p) => (p && !p.leaving ? { ...p, leaving: true } : p));
     hoverTimer.current = window.setTimeout(() => setPreview(null), 120);
   };
-  const busy = Boolean(cardDrag || tabDrag || menu || renamingPath || renamingFolderId || renamingTabId);
+  const busy = Boolean(cardDrag || tabDrag || menu || renamingPath || renamingFolderId || renamingTabId || selected);
+  // Ticked files on every tab (switching tabs while picking keeps them), not hidden ones.
+  const ticked = selected ? entries.filter((e) => selected.has(e.path) && !hidden.isHidden(e.path)) : [];
   useEffect(() => {
     if (!preview) return;
     const hide = () => hidePreview();
@@ -523,7 +560,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
 
   const createFolder = () => {
     const id = newCollectionId();
-    const parent = foldersOn ? here : null;
+    // Always at the top level, never inside the folder being looked at (drag it onto a folder to put it there).
+    const parent = null;
+    setOpenFolder(null);
     if (!foldersOn) {
       if (currentTab === "saved") setActiveTab("all");
       setSearch("");
@@ -549,24 +588,43 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
 
   const renderCard = (entry: LibraryEntry, actions: ReactNode, isHidden = false) => {
     const shownName = titleOf(organize, entry.path, entry.name);
+    const picking = selected !== null && !isHidden;
     return (
       <PictureCard
         key={entry.path}
+        picked={picking ? selected.has(entry.path) : undefined}
+        onPick={picking ? () => togglePicked(entry.path) : undefined}
         thumb={
-          <FileThumb
-            path={entry.path}
-            src={entry.thumbnail}
-            image={entry.kind === "image"}
-            icon={entry.kind === "image" ? "image" : entry.kind === "audio" ? "music" : "film"}
-            onMade={(thumbnail) => onThumbnail(entry.path, thumbnail)}
-            play={entry.kind === "video"}
-          />
+          entry.kind === "audio" ? (
+            <SoundWave path={entry.path} />
+          ) : (
+            <FileThumb
+              path={entry.path}
+              src={entry.thumbnail}
+              image={entry.kind === "image"}
+              icon={entry.kind === "image" ? "image" : "film"}
+              onMade={(thumbnail) => onThumbnail(entry.path, thumbnail)}
+              play={entry.kind === "video"}
+            />
+          )
+        }
+        overlay={
+          entry.kind === "audio" && inDesktopApp ? (
+            <button
+              type="button"
+              className="btn btn--icon media-library__play"
+              aria-label={sound.playing === entry.path ? `Stop ${shownName}` : `Play ${shownName}`}
+              onClick={() => void sound.toggle(entry.path)}
+            >
+              <Icon name={sound.playing === entry.path ? "stop" : "play"} size={13} />
+            </button>
+          ) : undefined
         }
         tag={entry.animated ? "GIF" : entry.sfx ? "Sound FX" : KIND_LABEL[entry.kind]}
         badge={entry.kind !== "image" && entry.duration > 0 ? formatClock(entry.duration) : undefined}
         name={shownName}
         meta={`Imported ${dateFormat.format(entry.addedAt)}`}
-        onOpen={() => void confirmAdd(entry)}
+        onOpen={picking ? undefined : () => void confirmAdd(entry)}
         onMenu={(e) => openMenuAt(e, (x, y) => ({ kind: "card", x, y, entry, hidden: isHidden }))}
         renaming={renamingPath === entry.path}
         onRename={(next) => {
@@ -748,6 +806,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                     }
                   >
                     {label}
+                    {selected && tickedIn(tabId) > 0 && <span className="media-library__tab-count">{tickedIn(tabId)}</span>}
                   </button>
                 );
               })}
@@ -762,19 +821,83 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           </div>
           <div className="pc-bar__end">
             <PageSearch id="media-search" value={search} onChange={setSearch} placeholder="Search by file name" />
-            <button type="button" className="btn btn--secondary" onClick={createCollection}>
-              <Icon name="plus" size={14} />
-              New Collection
-            </button>
-            <button type="button" className="btn btn--secondary" onClick={createFolder}>
-              <Icon name="folder" size={14} />
-              New folder
-            </button>
+            {selected ? (
+              <>
+                <span className="media-library__count">{ticked.length} selected</span>
+                <button type="button" className="btn btn--ghost" onClick={() => setSelected((s) => new Set([...(s ?? []), ...levelFiles.map((e) => e.path)]))}>
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  disabled={ticked.length === 0}
+                  onClick={() => {
+                    for (const e of ticked) onAdd(e.path);
+                    setSelected(null);
+                  }}
+                >
+                  <Icon name="plus" size={14} />
+                  Add to project
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  disabled={ticked.length === 0}
+                  onClick={() => {
+                    for (const e of ticked) if (!e.saved) onSave(e.path, true);
+                    setSelected(null);
+                  }}
+                >
+                  <Icon name="star" size={14} />
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  disabled={ticked.length === 0}
+                  onClick={() => {
+                    hidden.setHidden(
+                      ticked.map((e) => e.path),
+                      true,
+                    );
+                    setSelected(null);
+                  }}
+                >
+                  <Icon name="eyeOff" size={14} />
+                  Hide
+                </button>
+                <button type="button" className="btn btn--ghost" disabled={ticked.length === 0} onClick={() => void removeTicked(ticked)}>
+                  <Icon name="trash" size={14} />
+                  Remove
+                </button>
+                <button type="button" className="btn btn--secondary" onClick={() => setSelected(null)}>
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                {entries.length > 0 && (
+                  <button type="button" className="btn btn--secondary" onClick={() => setSelected(new Set())}>
+                    <Icon name="check" size={14} />
+                    Select
+                  </button>
+                )}
+                <button type="button" className="btn btn--secondary" onClick={createCollection}>
+                  <Icon name="plus" size={14} />
+                  New Collection
+                </button>
+                <button type="button" className="btn btn--secondary" onClick={createFolder}>
+                  <Icon name="folder" size={14} />
+                  New folder
+                </button>
+              </>
+            )}
           </div>
         </div>
 
         {tabNameClash && <p className="media-library__note" role="alert">There's already a collection called “{tabNameClash}”.</p>}
         {coverError && <p className="media-library__note" role="alert">{coverError}</p>}
+        {sound.error && <p className="media-library__note" role="alert">{sound.error}</p>}
         {coverFor && (
           <CoverPicker
             pictures={entries.filter((e) => e.kind === "image")}
@@ -869,8 +992,8 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
             onPointerLeave={hidePreview}
             onPointerDown={(e) => {
               hidePreview();
-              if (e.button !== 0) return;
-              if ((e.target as HTMLElement).closest("input, .pcard__actions")) return;
+              if (e.button !== 0 || selected) return;
+              if ((e.target as HTMLElement).closest("input, .pcard__actions, .pcard__overlay")) return;
               const ul = gridRef.current;
               const li = (e.target as HTMLElement).closest(".pcard");
               if (!ul || !li || li.parentElement !== ul) return;

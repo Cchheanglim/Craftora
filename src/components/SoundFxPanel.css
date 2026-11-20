@@ -4,14 +4,22 @@
   cursor: pointer;
 }
 
-.sound-fx__tile .fx-tile__stage svg {
-  width: auto;
-  height: auto;
-  color: var(--text-3);
+.sound-fx__tile .fx-tile__stage .sound-wave {
+  grid-area: 1 / 1;
 }
 
-.sound-fx__tile:hover .fx-tile__stage > svg,
-.sound-fx__tile.is-playing .fx-tile__stage > svg {
+.sound-fx__tile .fx-tile__stage .sound-wave svg {
+  width: auto;
+  height: auto;
+}
+
+.sound-fx__tile .fx-tile__stage .sound-wave .sound-wave__bars {
+  width: 78%;
+  height: 34%;
+}
+
+.sound-fx__tile:hover .sound-wave,
+.sound-fx__tile.is-playing .sound-wave {
   color: var(--text);
 }
 
