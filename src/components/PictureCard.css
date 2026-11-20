@@ -318,6 +318,24 @@
   transition: opacity var(--dur-fast) linear;
 }
 
+/* Over the picture (same box as .pcard__pic), letting clicks through except on its own button. */
+.pcard__overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  pointer-events: none;
+}
+
+.pcard__overlay > * {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  pointer-events: auto;
+}
+
 .pcard:hover .pcard__actions,
 .pcard:focus-within .pcard__actions,
 .pcard__actions:has(.is-on) {
@@ -374,4 +392,22 @@
   font-size: 13px;
   font-weight: 600;
   outline: none;
+}
+
+/* Media library: the tick box is its own button over the picture's top-left; shown on hover, or ticked when selected. */
+.pcard__tick {
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-fast) linear;
+}
+
+.pcard:hover .pcard__tick,
+.pcard__tick:focus-visible,
+.pcard.is-picked .pcard__tick {
+  opacity: 1;
+}
+
+.pcard.is-picked .pcard__tick {
+  color: var(--text-on-accent);
 }

@@ -1,0 +1,14 @@
+/* A sound card's picture: its wave across the middle (SoundWave.tsx). */
+.sound-wave {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-3);
+}
+
+.sound-wave .sound-wave__bars {
+  width: 78%;
+  height: 46%;
+  fill: currentColor;
+}

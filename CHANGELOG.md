@@ -229,12 +229,36 @@
   library's "Sound" tab is now called "Audio".
 - **Folder covers**: right-click a folder in the Media library for Cover from Media library or Cover from this PC, and
   Remove cover to bring the folder icon back. A GIF cover moves on the card.
+  A small folder mark sits in the corner of a covered folder so it still reads as a folder.
+- **Folders tab** in the Media library (after Saved): only your folders, no loose files around them; open one to see
+  what's in it.
+- **Sounds you can see and hear** in the Media library and the Sound FX tab: each sound's card shows its own wave
+  instead of a music note, and a Play button on the card plays it (press again to stop).
+- **Selecting in the Media library, like File Explorer**: click a card to select it (double-click adds a file to the
+  project or opens a folder), Ctrl+click adds or drops one, Shift+click picks everything in between, and dragging a box
+  over the empty space selects what it touches. Folders can be selected too. Ctrl+A selects all, Delete removes (it
+  asks first), Esc clears. Right-click a selected card for Add to project, Move to folder ▸, Add to collection ▸, Save,
+  Hide or Remove, and drag one to move them all onto a folder or a collection tab. Each tab shows how many selected
+  cards it holds. Select (Cancel while on) ticks cards with plain clicks, for picking with the mouse only.
+- **Right-click menus can have sub-menus** (▸), opening beside them.
+- **Glass**: tile previews, the Media library's and Home's cards and buttons, the Text tab's buttons, the hover preview
+  and a few small pop-ups are see-through glass now instead of solid boxes.
+- **New folder** always makes the folder at the top level, even from inside a folder (drag it onto another folder to
+  put it there).
+- **Friendlier empty tabs** in the Media library: each tab says what goes there ("Nothing saved yet. Click the star on a
+  file…") instead of "Nothing matches.", and a search that finds nothing says so by name.
 
 **Fixed**
 
 - Media library: a folder made inside a collection showed up in All instead of the collection. Folders now belong to
   the collection they're made in, and files dropped into them keep their place everywhere else.
 - Media library: the file name you drag now stays next to the pointer.
+- Media library: folders didn't show while the library had no files.
+- A video or a sound added to a picture project (Media library's Add to project, File Explorer, a fetched link) became
+  a black layer. A picture project now takes pictures only and says so; its Import window lists pictures only. A
+  picture added from the Media library while a picture project is open now lands as a layer (it only went into the
+  project's list).
+- Picture project cards no longer show how many layers they have.
 - Media library: two collections can't have the same name any more (a note says so while you type), and new ones are
   called "New collection 2", "New collection 3"…
 

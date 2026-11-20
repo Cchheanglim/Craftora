@@ -194,7 +194,7 @@ export function ProjectList({
                 <span className="home__project-text">
                   <span className="truncate">{p.name}</span>
                   <span className="home__project-meta">
-                    {p.image ? `Image · ${p.clips} layer${p.clips === 1 ? "" : "s"}` : <>{p.clips} clip{p.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(p.duration)}</span></>} · {ago(p.savedAt)}
+                    {p.image ? "Image" : <>{p.clips} clip{p.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(p.duration)}</span></>} · {ago(p.savedAt)}
                   </span>
                 </span>
               </label>
@@ -205,7 +205,7 @@ export function ProjectList({
               <span className="home__project-text">
                 <span className="truncate">{p.name}</span>
                 <span className="home__project-meta">
-                  {p.image ? `Image · ${p.clips} layer${p.clips === 1 ? "" : "s"}` : <>{p.clips} clip{p.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(p.duration)}</span></>} · {ago(p.savedAt)}
+                  {p.image ? "Image" : <>{p.clips} clip{p.clips === 1 ? "" : "s"} · <span className="mono">{formatClock(p.duration)}</span></>} · {ago(p.savedAt)}
                 </span>
               </span>
               {p.id === currentId && <span className="home__open">Open now</span>}
@@ -460,7 +460,7 @@ export function Home({
                     thumb={<Thumb src={p.thumbnail} icon={p.image ? "image" : "scissors"} play={() => projectVideo(p.id)} />}
                     tag={isOpen ? "Open now" : p.image ? "Picture" : "Video"}
                     tagOpen={isOpen}
-                    badge={p.image ? `${p.clips} layer${p.clips === 1 ? "" : "s"}` : formatClock(p.duration)}
+                    badge={p.image ? undefined : formatClock(p.duration)}
                     name={p.name}
                     meta={`Edited ${ago(p.savedAt)}`}
                     onOpen={() => onOpenProject(p.id)}

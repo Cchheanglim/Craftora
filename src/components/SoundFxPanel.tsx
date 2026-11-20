@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { errorText, playableFile } from "../lib/engine";
+import { useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useSoundPreview } from "../lib/soundPreview";
 import type { LibraryEntry } from "../lib/storage";
 import { formatClock } from "../lib/timecode";
 import { ContextMenu } from "./ContextMenu";
 import { GifLinkBox } from "./GifLinkBox";
 import { Icon } from "./Icon";
+import { SoundWave } from "./SoundWave";
 import "./FxPanel.css";
 import "./GifPanel.css";
 import "./SoundFxPanel.css";
@@ -22,34 +23,9 @@ export interface SoundFxPanelProps {
 export function SoundFxPanel({ entries, onAdd, onDrag, onImport, onDownload, onForget }: SoundFxPanelProps) {
   const [rawQuery, setQuery] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; entry: LibraryEntry } | null>(null);
-  const [playing, setPlaying] = useState<string | null>(null);
-  const [playError, setPlayError] = useState<string | null>(null);
-  const audio = useRef<HTMLAudioElement | null>(null);
+  const { playing, error: playError, toggle: play } = useSoundPreview();
   const query = rawQuery.trim().toLowerCase();
   const matching = entries.filter((e) => !query || e.name.toLowerCase().includes(query));
-
-  const stop = () => {
-    audio.current?.pause();
-    audio.current = null;
-    setPlaying(null);
-  };
-  useEffect(() => () => audio.current?.pause(), []);
-  const play = async (path: string) => {
-    const was = playing;
-    stop();
-    if (was === path) return;
-    setPlayError(null);
-    try {
-      const el = new Audio(await playableFile(path));
-      audio.current = el;
-      el.onended = () => audio.current === el && stop();
-      setPlaying(path);
-      await el.play();
-    } catch (err) {
-      stop();
-      setPlayError(errorText(err));
-    }
-  };
 
   const addRow = (
     <>
@@ -129,7 +105,7 @@ export function SoundFxPanel({ entries, onAdd, onDrag, onImport, onDownload, onF
               }}
             >
               <span className="fx-tile__stage">
-                <Icon name="waveform" size={26} />
+                <SoundWave path={entry.path} />
                 <span className="sound-fx__length mono">{formatClock(entry.duration)}</span>
                 <button
                   type="button"
