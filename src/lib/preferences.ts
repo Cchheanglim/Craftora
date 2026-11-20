@@ -1,5 +1,5 @@
 /** Settings → Preferences: small on/off choices, remembered on this PC. */
-export type Preference = "finishSound" | "importToTimeline" | "captionsOnGpu" | "showCat";
+export type Preference = "finishSound" | "importToTimeline" | "captionsOnGpu" | "showCat" | "imageEnhance" | "imageAi";
 
 const DEFAULTS: Record<Preference, boolean> = {
   // Craftora's sound when a download or export finishes.
@@ -10,6 +10,9 @@ const DEFAULTS: Record<Preference, boolean> = {
   captionsOnGpu: true,
   // Craftora's pixel cat in the GIFs tab (Mascot.tsx).
   showCat: true,
+  // Export picture: Enhance colours and AI sharpen, the last choice kept.
+  imageEnhance: false,
+  imageAi: false,
 };
 
 export function preference(name: Preference): boolean {

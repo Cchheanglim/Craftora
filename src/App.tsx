@@ -517,7 +517,7 @@ export default function App() {
     saveTheme(next);
   };
   useGlideScroll();
-  const [settings, setSettings] = useState<ExportSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<ExportSettings>(() => ({ ...DEFAULT_SETTINGS, imageEnhance: preference("imageEnhance"), imageAi: preference("imageAi") }));
   const [freshId, setFreshId] = useState<string | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -2243,7 +2243,15 @@ export default function App() {
       // The Image editor draws its picture now, as the preview shows it (lib/compose.ts); Rust only saves it.
       picture:
         inDesktopApp && plan.kind === "render" && source.image
-          ? composeImage(source, { width: plan.spec.width, height: plan.spec.height, transparent: plan.spec.transparent, type: plan.spec.container === "jpg" ? "image/jpeg" : plan.spec.container === "webp" ? "image/webp" : "image/png", quality: plan.spec.imageQuality })
+          ? composeImage(source, {
+              width: plan.spec.width,
+              height: plan.spec.height,
+              transparent: plan.spec.transparent,
+              type: plan.spec.container === "jpg" ? "image/jpeg" : plan.spec.container === "webp" ? "image/webp" : "image/png",
+              quality: plan.spec.imageQuality,
+              enhance: effective.imageEnhance,
+              sharpen: effective.imageAi ? { job: id } : undefined,
+            })
           : undefined,
       after: after.length ? after : undefined,
       thumbnail,
@@ -3470,6 +3478,7 @@ export default function App() {
             cutModeApplies={cutModeApplies(toExport, effective)}
             hasPicture={hasPicture}
             still={imageMode ? project.image : undefined}
+            stillPicture={imageMode && project.image ? () => composeCanvas(project, { width: project.image!.width, height: project.image!.height }) : undefined}
             onAddToQueue={() => {
               addToQueue();
               // Queued: the Queue button next to Export shows it, so the pop-up's job is done.

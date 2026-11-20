@@ -161,7 +161,9 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
 
   // Everything else: one render of the whole timeline.
   // An image at 0.5×, 1× or 2× its size: every layer is placed in shares of the frame, so it just scales.
-  const scale = still ? Math.min(settings.imageScale ?? 1, MAX_IMAGE_SIDE / Math.max(still.width, still.height)) : 1;
+  // 4× only with AI sharpen (else the most is 2×).
+  const asked = settings.imageScale === 4 && !settings.imageAi ? 2 : (settings.imageScale ?? 1);
+  const scale = still ? Math.min(asked, MAX_IMAGE_SIDE / Math.max(still.width, still.height)) : 1;
   const frame = still ? { width: Math.round(still.width * scale), height: Math.round(still.height * scale) } : frameOf(settings);
   const used = project.media.filter((m) => project.clips.some((c) => c.mediaId === m.id));
   const hidden = new Set(project.tracks.filter((t) => t.hidden).map((t) => t.id));
@@ -313,7 +315,11 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
     fileName,
     title,
     summary,
-    quality: gif ? `${gif.width} px wide · ${gif.fps} fps · loops forever` : isVideo ? `${frame.width} × ${frame.height} · ${FPS} fps` : container.toUpperCase(),
+    quality: gif
+      ? `${gif.width} px wide · ${gif.fps} fps · loops forever`
+      : isVideo
+        ? `${frame.width} × ${frame.height} · ${FPS} fps`
+        : [container.toUpperCase(), still && settings.imageEnhance && "Enhanced colours", still && settings.imageAi && "AI sharpen"].filter(Boolean).join(" · "),
     command,
   };
 }

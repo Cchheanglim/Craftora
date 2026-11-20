@@ -85,6 +85,9 @@ export interface ExportSettings {
   transparent?: boolean;
   imageQuality?: number;
   imageScale?: number;
+  /** Image projects: Enhance colours (the quick colour fix on the whole picture) and AI sharpen (upscale.rs). */
+  imageEnhance?: boolean;
+  imageAi?: boolean;
   videoContainer: VideoContainer;
   /** GIF exports: width in pixels (480, 720 or 1080; 720 when absent) and frame rate (10, 15 or 24; 15 when absent). */
   gifWidth?: number;

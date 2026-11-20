@@ -31,6 +31,8 @@ interface ExportPanelProps {
   onPreset: (frameId: string, fill: boolean) => void;
   /** An image (Image editor), its size: PNG or JPG options, nothing about video or cutting. */
   still?: { width: number; height: number };
+  /** An image: the picture as it is now, for Enhance's before/after. */
+  stillPicture?: () => Promise<HTMLCanvasElement>;
   /** The selected clip's settings, shown above the export settings. */
 }
 
@@ -65,6 +67,7 @@ export function ExportPanel({
   fastEncoder,
   onPreset,
   still,
+  stillPicture,
 }: ExportPanelProps) {
   const [copied, setCopied] = useState(false);
   const [moreBelow, setMoreBelow] = useState(false);
@@ -147,7 +150,7 @@ export function ExportPanel({
         <h2 className="export__title">Export</h2>
 
         {still ? (
-          <ImageExportOptions settings={settings} onChange={onChange} image={still} />
+          <ImageExportOptions settings={settings} onChange={onChange} image={still} picture={stillPicture} />
         ) : (
         <fieldset>
           <legend className="section-label">Output</legend>

@@ -36,7 +36,7 @@ struct CachedSession {
     directml: bool,
 }
 
-static ORT_ENV: OnceLock<Environment> = OnceLock::new();
+pub(crate) static ORT_ENV: OnceLock<Environment> = OnceLock::new();
 static SESSION: Mutex<Option<CachedSession>> = Mutex::new(None);
 
 #[derive(Serialize, Clone)]
@@ -156,7 +156,7 @@ pub fn save_cutout(app: AppHandle, request: Request<'_>) -> Result<String, Strin
     save_png_bytes(&app, png)
 }
 
-fn ensure_ort_loaded(app: &AppHandle) -> Result<(), String> {
+pub(crate) fn ensure_ort_loaded(app: &AppHandle) -> Result<(), String> {
     if ORT_ENV.get().is_some() {
         return Ok(());
     }
@@ -177,7 +177,7 @@ fn ensure_ort_loaded(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn build_cpu_session(env: &Environment, model: &std::path::Path) -> Result<Session, String> {
+pub(crate) fn build_cpu_session(env: &Environment, model: &std::path::Path) -> Result<Session, String> {
     Session::builder(env)
         .map_err(|e| e.to_string())
         .and_then(|b| b.with_execution_providers([CPU::default().build()]).map_err(|e| e.to_string()))

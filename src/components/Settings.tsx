@@ -184,7 +184,8 @@ function Preferences() {
     setPreference(name, on);
     setChosen((c) => ({ ...c, [name]: on }));
   };
-  const rows: [Preference, string, string, [string, string]][] = [
+  // The Export picture window keeps its own two (imageEnhance, imageAi).
+  const rows: [Exclude<Preference, "imageEnhance" | "imageAi">, string, string, [string, string]][] = [
     ["finishSound", "Sound when a download or export finishes", "Plays whether Craftora is in front or not.", ["On", "Off"]],
     ["importToTimeline", "Files imported from this PC", "Just import: they wait under In this project. Links you fetch always go onto the timeline.", ["Add to timeline", "Just import"]],
     ["captionsOnGpu", "Make captions with", "Graphics card: faster, with a more accurate speech model (190 MB, downloaded once). A PC without a graphics card of its own uses the processor.", ["Graphics card", "Processor"]],
