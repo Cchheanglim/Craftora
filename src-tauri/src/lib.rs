@@ -199,6 +199,7 @@ pub fn run() {
             agents::local_models,
             agents::local_generate,
             drop::save_gif_from,
+            drop::save_sound_from,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

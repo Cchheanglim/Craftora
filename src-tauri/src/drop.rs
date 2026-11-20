@@ -153,27 +153,74 @@ fn save_gif_bytes(dir: &Path, raw_name: &str, bytes: &[u8]) -> Result<PathBuf, S
     if !is_gif_magic(bytes) {
         return Err(NOT_GIF_ERROR.to_string());
     }
-    std::fs::create_dir_all(dir).map_err(|e| format!("Failed to create gifs folder: {e}"))?;
+    save_unique(dir, raw_name, "gif", bytes)
+}
+
+/// Saves `bytes` in `dir` (made if needed) as `<cleaned name>.<ext>`, adding `-2`, `-3`… instead of overwriting.
+fn save_unique(dir: &Path, raw_name: &str, ext: &str, bytes: &[u8]) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("Failed to create the folder: {e}"))?;
     let stem = safe_gif_stem(raw_name);
 
     for attempt in 1u32..10_000 {
         let filename = if attempt == 1 {
-            format!("{stem}.gif")
+            format!("{stem}.{ext}")
         } else {
-            format!("{stem}-{attempt}.gif")
+            format!("{stem}-{attempt}.{ext}")
         };
         let path = dir.join(filename);
         match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(mut file) => {
                 file.write_all(bytes)
-                    .map_err(|e| format!("Failed to write GIF: {e}"))?;
+                    .map_err(|e| format!("Failed to write the file: {e}"))?;
                 return Ok(path);
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(format!("Failed to create GIF file: {e}")),
+            Err(e) => return Err(format!("Failed to create the file: {e}")),
         }
     }
-    Err("Too many GIF files with the same name.".to_string())
+    Err("Too many files with the same name.".to_string())
+}
+
+/// The file type of a sound file from its first bytes (MP3, AAC, WAV, OGG, FLAC, M4A), or None.
+pub fn sound_ext(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"ID3") {
+        return Some("mp3");
+    }
+    if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] & 0xE0 == 0xE0 {
+        // MPEG frame sync: layer bits 00 = AAC (ADTS), else MP3.
+        return Some(if bytes[1] & 0x06 == 0 { "aac" } else { "mp3" });
+    }
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WAVE" {
+        return Some("wav");
+    }
+    if bytes.starts_with(b"OggS") {
+        return Some("ogg");
+    }
+    if bytes.starts_with(b"fLaC") {
+        return Some("flac");
+    }
+    if bytes.len() >= 8 && &bytes[4..8] == b"ftyp" {
+        return Some("m4a");
+    }
+    None
+}
+
+fn sounds_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|d| d.join("sounds"))
+        .map_err(|e| format!("Failed to resolve app data dir: {e}"))
+}
+
+/// Sound FX: downloads a direct link to a sound file (50 MB at most) into the app's sounds folder; returns its path.
+#[tauri::command]
+pub async fn save_sound_from(app: tauri::AppHandle, source: String) -> Result<String, String> {
+    let url = source.trim();
+    let bytes = download_capped(url, "sound").await?;
+    let ext = sound_ext(&bytes).ok_or("That link isn't a sound file (MP3, WAV, OGG, M4A, AAC or FLAC).")?;
+    let raw_name = url.split(['?', '#']).next().unwrap_or("").rsplit('/').next().unwrap_or("sound");
+    let path = save_unique(&sounds_dir(&app)?, raw_name, ext, &bytes)?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 fn gifs_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -184,6 +231,15 @@ fn gifs_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 }
 
 async fn download_gif_bytes(url: &str) -> Result<Vec<u8>, String> {
+    let buf = download_capped(url, "GIF").await?;
+    if !is_gif_magic(&buf) {
+        return Err(NOT_GIF_ERROR.to_string());
+    }
+    Ok(buf)
+}
+
+/// Downloads an http(s) link, refusing anything over 50 MB; `what` names it in errors ("GIF", "sound").
+async fn download_capped(url: &str, what: &str) -> Result<Vec<u8>, String> {
     let lower = url.to_ascii_lowercase();
     if !lower.starts_with("http://") && !lower.starts_with("https://") {
         return Err("Only http(s) links are supported.".to_string());
@@ -199,31 +255,25 @@ async fn download_gif_bytes(url: &str) -> Result<Vec<u8>, String> {
         .get(url)
         .send()
         .await
-        .map_err(|e| format!("Failed to download GIF: {e}"))?;
+        .map_err(|e| format!("Failed to download the {what}: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!("Download failed with status {}.", resp.status()));
     }
-    if let Some(len) = resp.content_length() {
-        if len > MAX_GIF_BYTES as u64 {
-            return Err("GIF exceeds the 50 MB size limit.".to_string());
-        }
+    if resp.content_length().is_some_and(|len| len > MAX_GIF_BYTES as u64) {
+        return Err(format!("The {what} is over the 50 MB limit."));
     }
 
     let mut buf = Vec::new();
     while let Some(chunk) = resp
         .chunk()
         .await
-        .map_err(|e| format!("Failed while reading GIF: {e}"))?
+        .map_err(|e| format!("Failed while reading the {what}: {e}"))?
     {
         if buf.len().saturating_add(chunk.len()) > MAX_GIF_BYTES {
-            return Err("GIF exceeds the 50 MB size limit.".to_string());
+            return Err(format!("The {what} is over the 50 MB limit."));
         }
         buf.extend_from_slice(&chunk);
-    }
-
-    if !is_gif_magic(&buf) {
-        return Err(NOT_GIF_ERROR.to_string());
     }
     Ok(buf)
 }
@@ -860,6 +910,20 @@ pub use win::register;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sound_files_are_told_apart_by_their_first_bytes() {
+        assert_eq!(sound_ext(b"ID3\x04\x00"), Some("mp3"));
+        assert_eq!(sound_ext(&[0xFF, 0xFB, 0x90, 0x00]), Some("mp3"));
+        assert_eq!(sound_ext(&[0xFF, 0xF1, 0x50, 0x80]), Some("aac"));
+        assert_eq!(sound_ext(b"RIFF\x24\x00\x00\x00WAVEfmt "), Some("wav"));
+        assert_eq!(sound_ext(b"OggS\x00\x02"), Some("ogg"));
+        assert_eq!(sound_ext(b"fLaC\x00"), Some("flac"));
+        assert_eq!(sound_ext(b"\x00\x00\x00\x20ftypM4A "), Some("m4a"));
+        assert_eq!(sound_ext(b"GIF89a"), None);
+        assert_eq!(sound_ext(b"<html>"), None);
+        assert_eq!(sound_ext(b""), None);
+    }
 
     #[test]
     fn giphy_page_link_rewrites_to_direct_gif() {
