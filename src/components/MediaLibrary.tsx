@@ -32,6 +32,7 @@ import { Icon } from "./Icon";
 import { FileThumb } from "./Thumb";
 import { useConfirm } from "./ConfirmDialog";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { GifImage } from "./GifPanel";
 import { GifLinkBox } from "./GifLinkBox";
 import { HiddenFold, useHidden } from "./Hidden";
 import { HoverPreview } from "./HoverPreview";
@@ -488,6 +489,8 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   /** A picture file as a folder's cover: its small thumbnail is kept, so the cover stays if the file moves. */
   const setCoverFrom = async (folder: Folder, path: string, thumbnail?: string) => {
     setCoverError(null);
+    // A GIF stays a GIF (it moves on the card), so the cover is its file.
+    if (/\.gif$/i.test(path)) return updateOrganize((o) => setFolderCover(o, folder.id, path));
     const cover = thumbnail ?? (await fileThumbnail(path, true));
     if (!cover) return setCoverError("Couldn't read that picture.");
     updateOrganize((o) => setFolderCover(o, folder.id, cover));
@@ -884,7 +887,13 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                   key={`folder:${folder.id}`}
                   thumb={
                     <span className={target ? "media-library__folder is-drop-target" : "media-library__folder"}>
-                      {folder.cover ? <img className="media-library__folder-cover" src={folder.cover} alt="" draggable={false} /> : <Icon name="folder" size={36} />}
+                      {folder.cover?.startsWith("data:") ? (
+                        <img className="media-library__folder-cover" src={folder.cover} alt="" draggable={false} />
+                      ) : folder.cover ? (
+                        <GifImage className="media-library__folder-cover" path={folder.cover} />
+                      ) : (
+                        <Icon name="folder" size={36} />
+                      )}
                     </span>
                   }
                   tag="Folder"

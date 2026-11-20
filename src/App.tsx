@@ -1389,7 +1389,10 @@ export default function App() {
       (state) => {
         if (state === "over") setDragging(true);
         else if (state === "left") setDragging(false);
-        else {
+        else if ("sounds" in state) {
+          setDragging(false);
+          void soundFxRef.current(state.sounds);
+        } else {
           setDragging(false);
           // Sounds dropped while a Sound FX tab shows go in Sound FX; everything else is imported as before.
           const sfx = document.querySelector("[data-sound-fx]") ? state.dropped.filter(isSoundFile) : [];

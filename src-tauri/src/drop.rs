@@ -9,6 +9,8 @@ use tauri::Manager;
 const MAX_GIF_BYTES: usize = 50 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30);
 const NOT_GIF_ERROR: &str = "Only GIF images can be dropped from a browser.";
+const NOT_GIF_OR_SOUND_ERROR: &str = "Only GIFs and sounds can be dropped from a browser.";
+const SOUND_EXTENSIONS: [&str; 6] = [".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac"];
 
 /// Check whether a byte buffer starts with the GIF87a/GIF89a magic prefix (`GIF8`).
 pub fn is_gif_magic(bytes: &[u8]) -> bool {
@@ -212,15 +214,109 @@ fn sounds_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to resolve app data dir: {e}"))
 }
 
-/// Sound FX: downloads a direct link to a sound file (50 MB at most) into the app's sounds folder; returns its path.
+/// Sound FX: downloads a link to a sound file or a sound page (50 MB at most) into the app's sounds folder; returns its path.
 #[tauri::command]
 pub async fn save_sound_from(app: tauri::AppHandle, source: String) -> Result<String, String> {
     let url = source.trim();
     let bytes = download_capped(url, "sound").await?;
-    let ext = sound_ext(&bytes).ok_or("That link isn't a sound file (MP3, WAV, OGG, M4A, AAC or FLAC).")?;
+    // A sound page (not the file itself): its sound, as when it's dragged in.
+    if sound_ext(&bytes).is_none()
+        && let Some(sound) = find_sound_in_html(&String::from_utf8_lossy(&bytes), url)
+    {
+        let bytes = download_capped(&sound, "sound").await?;
+        return save_sound_bytes(&app, &sound, &bytes);
+    }
+    save_sound_bytes(&app, url, &bytes)
+}
+
+/// Saves downloaded sound bytes in the sounds folder, named after the link's last part.
+fn save_sound_bytes(app: &tauri::AppHandle, url: &str, bytes: &[u8]) -> Result<String, String> {
+    let ext = sound_ext(bytes).ok_or("That link isn't a sound file (MP3, WAV, OGG, M4A, AAC or FLAC) or a page with one.")?;
     let raw_name = url.split(['?', '#']).next().unwrap_or("").rsplit('/').next().unwrap_or("sound");
-    let path = save_unique(&sounds_dir(&app)?, raw_name, ext, &bytes)?;
+    let path = save_unique(&sounds_dir(app)?, raw_name, ext, bytes)?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// What a link dragged in from a browser turned out to be, saved.
+pub enum Dropped {
+    Gif(String),
+    Sound(String),
+}
+
+/// A link dragged in from a browser: a GIF (Giphy links too), a sound file, or a web page whose sound is found with
+/// `find_sound_in_html` (sound sites' pages, where dragging the title gives the page, not the file).
+pub async fn save_dropped_link(app: &tauri::AppHandle, source: &str) -> Result<Dropped, String> {
+    let url = rewrite_giphy_url(source);
+    let bytes = download_capped(&url, "file").await?;
+    if is_gif_magic(&bytes) {
+        let raw_name = url.split(['?', '#']).next().unwrap_or("").rsplit('/').next().unwrap_or("gif");
+        let path = save_gif_bytes(&gifs_dir(app)?, raw_name, &bytes)?;
+        return Ok(Dropped::Gif(path.to_string_lossy().into_owned()));
+    }
+    if sound_ext(&bytes).is_some() {
+        return save_sound_bytes(app, &url, &bytes).map(Dropped::Sound);
+    }
+    let Some(sound) = find_sound_in_html(&String::from_utf8_lossy(&bytes), &url) else {
+        return Err(NOT_GIF_OR_SOUND_ERROR.to_string());
+    };
+    let bytes = download_capped(&sound, "sound").await?;
+    save_sound_bytes(app, &sound, &bytes).map(Dropped::Sound)
+}
+
+/// The value of attribute `name` in one HTML tag (`<meta property="og:audio" content="…">`).
+fn attr_value<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let lower = tag.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(i) = lower[from..].find(name) {
+        let at = from + i + name.len();
+        let rest = lower[at..].trim_start();
+        if let Some(after_eq) = rest.strip_prefix('=') {
+            let value_start = tag.len() - after_eq.trim_start().len();
+            let quote = tag[value_start..].chars().next()?;
+            if quote == '"' || quote == '\'' {
+                let body = &tag[value_start + 1..];
+                return body.find(quote).map(|end| &body[..end]);
+            }
+        }
+        from = at;
+    }
+    None
+}
+
+/// A web page's sound file: its `og:audio`, else the first link in it to a sound file; made absolute against `page`.
+pub fn find_sound_in_html(html: &str, page: &str) -> Option<String> {
+    let base = reqwest::Url::parse(page).ok()?;
+    let lower = html.to_ascii_lowercase();
+    let absolute = |found: &str| {
+        let url = base.join(found.trim()).ok()?;
+        matches!(url.scheme(), "http" | "https").then(|| url.to_string())
+    };
+
+    let mut from = 0;
+    while let Some(i) = lower[from..].find("og:audio") {
+        let at = from + i;
+        from = at + 8;
+        // `og:audio` itself, not `og:audio:type` or `og:audio:secure_url`.
+        if !matches!(lower.as_bytes().get(at + 8), Some(b'"' | b'\'')) {
+            continue;
+        }
+        let start = lower[..at].rfind('<').unwrap_or(0);
+        let end = at + lower[at..].find('>').unwrap_or(lower.len() - at);
+        if let Some(url) = attr_value(&html[start..end], "content").and_then(absolute) {
+            return Some(url);
+        }
+    }
+
+    let ends = |b: u8| matches!(b, b'"' | b'\'' | b'?' | b'#' | b')' | b'<' | b'&' | b',') || b.is_ascii_whitespace();
+    let starts = |b: u8| matches!(b, b'"' | b'\'' | b'(' | b'=' | b'>' | b',') || b.is_ascii_whitespace();
+    let bytes = lower.as_bytes();
+    let first = SOUND_EXTENSIONS
+        .iter()
+        .flat_map(|ext| lower.match_indices(ext).map(move |(i, _)| i + ext.len()))
+        .filter(|&end| bytes.get(end).is_none_or(|&b| ends(b)))
+        .min()?;
+    let start = bytes[..first].iter().rposition(|&b| starts(b)).map_or(0, |i| i + 1);
+    absolute(&html[start..first])
 }
 
 fn gifs_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -448,6 +544,8 @@ mod win {
         Over,
         Leave,
         Drop { paths: Vec<String> },
+        /// Sounds dragged in from a browser, saved: they go to Sound FX.
+        Sound { paths: Vec<String> },
         Error { message: String },
     }
 
@@ -638,7 +736,7 @@ mod win {
 
     async fn handle_browser_drop(window: tauri::WebviewWindow, data: BrowserDropData) {
         let app = window.app_handle().clone();
-        let result: Result<String, String> = match data {
+        let result: Result<Dropped, String> = match data {
             BrowserDropData::Error(msg) => Err(msg),
             BrowserDropData::File {
                 name,
@@ -646,22 +744,26 @@ mod win {
                 fallback_url,
             } => {
                 if is_gif_magic(&bytes) {
-                    match gifs_dir(&app).and_then(|dir| save_gif_bytes(&dir, &name, &bytes)) {
-                        Ok(path) => Ok(path.to_string_lossy().into_owned()),
-                        Err(err) => Err(err),
-                    }
-                } else if let Some(url) = fallback_url.filter(|u| rewrite_giphy_url(u) != *u) {
-                    // Browser cached preview was non-GIF (e.g. Giphy WebP), fetch the rewritten GIF URL.
-                    save_gif_from_url(&app, &url).await
+                    gifs_dir(&app)
+                        .and_then(|dir| save_gif_bytes(&dir, &name, &bytes))
+                        .map(|path| Dropped::Gif(path.to_string_lossy().into_owned()))
+                } else if let Some(ext) = sound_ext(&bytes) {
+                    sounds_dir(&app)
+                        .and_then(|dir| save_unique(&dir, &name, ext, &bytes))
+                        .map(|path| Dropped::Sound(path.to_string_lossy().into_owned()))
+                } else if let Some(url) = fallback_url {
+                    // Browser cached preview was non-GIF (e.g. Giphy WebP) or the page behind a link: fetch the link.
+                    save_dropped_link(&app, &url).await
                 } else {
-                    Err(NOT_GIF_ERROR.to_string())
+                    Err(NOT_GIF_OR_SOUND_ERROR.to_string())
                 }
             }
-            BrowserDropData::Url(url) => save_gif_from_url(&app, &url).await,
+            BrowserDropData::Url(url) => save_dropped_link(&app, &url).await,
         };
 
         let payload = match result {
-            Ok(path) => DropPayload::Drop { paths: vec![path] },
+            Ok(Dropped::Gif(path)) => DropPayload::Drop { paths: vec![path] },
+            Ok(Dropped::Sound(path)) => DropPayload::Sound { paths: vec![path] },
             Err(message) => DropPayload::Error { message },
         };
         let _ = window.emit("craftora-drop", payload);
@@ -910,6 +1012,24 @@ pub use win::register;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_sound_page_gives_its_sound_file() {
+        let page = "https://sounds.example/en/instant/faaah-63455/";
+        // og:audio wins over the other sounds on the page, and og:audio:type is skipped.
+        let html = r#"<meta property="og:audio:type" content="audio/mpeg"/><a href="/media/sounds/other.mp3">x</a>
+            <meta content='https://cdn.example/faaah.mp3' property="og:audio">"#;
+        assert_eq!(find_sound_in_html(html, page).as_deref(), Some("https://cdn.example/faaah.mp3"));
+        // Without og:audio: the first sound link, made absolute.
+        let html = r#"<button onclick="play('/media/sounds/faaah.mp3', 'x')"></button><a href="b.wav?dl=1">"#;
+        assert_eq!(find_sound_in_html(html, page).as_deref(), Some("https://sounds.example/media/sounds/faaah.mp3"));
+        let html = r#"<a href="clip.WAV">"#;
+        assert_eq!(find_sound_in_html(html, page).as_deref(), Some("https://sounds.example/en/instant/faaah-63455/clip.WAV"));
+        // No sound, a sound-looking word, or a non-web link: nothing.
+        assert_eq!(find_sound_in_html("<p>nothing here</p>", page), None);
+        assert_eq!(find_sound_in_html("<p>file.mp3x</p>", page), None);
+        assert_eq!(find_sound_in_html(r#"<a href="javascript:a.mp3">"#, page), None);
+    }
 
     #[test]
     fn sound_files_are_told_apart_by_their_first_bytes() {

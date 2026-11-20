@@ -17,7 +17,7 @@ export interface Folder {
   parent: string | null;
   /** The collection it was made in; absent = the library's own folders (All and the kind tabs). */
   collection?: string;
-  /** The picture on its card (a small JPEG data URL), instead of the folder icon. */
+  /** The picture on its card instead of the folder icon: a small JPEG data URL, or a GIF file's path (so it moves). */
   cover?: string;
 }
 

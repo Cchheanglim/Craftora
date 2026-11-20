@@ -18,7 +18,8 @@ export interface GifPanelProps {
   onForget: (path: string) => void;
 }
 
-function GifImage({ path, fallback }: { path: string; fallback?: string }) {
+/** A GIF file on this PC, moving (the `fallback` picture until it loads, or if it can't). */
+export function GifImage({ path, fallback, className }: { path: string; fallback?: string; className?: string }) {
   const [src, setSrc] = useState<string | undefined>(fallback);
   useEffect(() => {
     setSrc(fallback);
@@ -35,7 +36,7 @@ function GifImage({ path, fallback }: { path: string; fallback?: string }) {
   }, [path, fallback]);
 
   return src ? (
-    <img src={src} alt="" draggable={false} onError={() => fallback && src !== fallback && setSrc(fallback)} />
+    <img className={className} src={src} alt="" draggable={false} onError={() => fallback && src !== fallback && setSrc(fallback)} />
   ) : (
     <Icon name="gif" size={20} />
   );

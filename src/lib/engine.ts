@@ -412,7 +412,8 @@ export async function pickMediaFile(): Promise<string | null> {
   return typeof picked === "string" ? picked : null;
 }
 
-export type DropState = "over" | "left" | { dropped: string[] };
+/** `sounds`: sounds dragged in from a browser, already saved (they go to Sound FX). */
+export type DropState = "over" | "left" | { dropped: string[] } | { sounds: string[] };
 
 /** Shows the folder picker; null when the user cancels. */
 export async function pickFolder(title: string): Promise<string | null> {
@@ -423,6 +424,7 @@ export async function pickFolder(title: string): Promise<string | null> {
 type DropEvent =
   | { kind: "enter" | "over" | "leave" }
   | { kind: "drop"; paths: string[] }
+  | { kind: "sound"; paths: string[] }
   | { kind: "error"; message: string };
 
 /** Files dragged onto the window. */
@@ -435,6 +437,7 @@ export const onFileDrop = (
     if (payload.kind === "enter" || payload.kind === "over") handler("over");
     else if (payload.kind === "leave") handler("left");
     else if (payload.kind === "drop") handler({ dropped: payload.paths });
+    else if (payload.kind === "sound") handler({ sounds: payload.paths });
     else if (payload.kind === "error") {
       handler("left");
       onError?.(payload.message);
