@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   addCollection,
   addFolder,
@@ -21,6 +21,9 @@ import {
   setTitle,
   titleOf,
   toggleInCollection,
+  folderFits,
+  SAVED_SCOPE,
+  type FolderTab,
   type Collection,
   type Folder,
   type Organize,
@@ -95,6 +98,16 @@ const TAB_LABELS: Record<Filter, ReactNode> = {
   ),
 };
 
+/** A kind tab's folder: its card line ("Audio folder") and what it takes, for the note when something else is dropped. */
+const FOLDER_TABS: Record<FolderTab, { name: string; takes: string }> = {
+  video: { name: "Video", takes: "videos" },
+  image: { name: "Picture", takes: "pictures" },
+  audio: { name: "Audio", takes: "sounds" },
+  gif: { name: "GIF", takes: "GIFs" },
+  sfx: { name: "Sound FX", takes: "Sound FX sounds" },
+};
+const isFolderTab = (tab: string): tab is FolderTab => tab in FOLDER_TABS;
+
 const KIND_LABEL: Record<LibraryEntry["kind"], string> = {
   video: "Video",
   image: "Picture",
@@ -141,8 +154,9 @@ type TabDragState = {
   startX: number;
   startY: number;
   active: boolean;
-  insertIndex: number;
-  line: { left: number; top: number; height: number } | null;
+  /** Where in the tab it was picked up, so it stays under the pointer at that spot. */
+  grabX: number;
+  grabY: number;
 };
 
 type CardDragState = {
@@ -162,53 +176,23 @@ type CardDragState = {
   group?: string[];
   /** The folder under the pointer (a folder card or a part of the path line); null = the top level; absent = none. */
   hoverFolder?: string | null;
+  /** Why the folder under the pointer won't take what's dragged (it doesn't light up; the note shows on drop). */
+  refused?: string | null;
 };
 
-function computeTabInsert(
-  clientX: number,
-  clientY: number,
-  tabs: string[],
-  tabId: string,
-  tabBarEl: HTMLElement | null,
-  tabEls: Map<string, HTMLElement>,
-) {
-  if (!tabBarEl) return { insertIndex: -1, line: null };
-  const barRect = tabBarEl.getBoundingClientRect();
-  const items = tabs
-    .map((id, index) => {
-      const el = tabEls.get(id);
-      return el ? { id, index, rect: el.getBoundingClientRect() } : null;
-    })
-    .filter((x): x is { id: string; index: number; rect: DOMRect } => x !== null);
-  if (items.length === 0) return { insertIndex: -1, line: null };
-
-  const distY = (r: DOMRect) => (clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0);
-  let minDy = Infinity;
-  for (const item of items) minDy = Math.min(minDy, distY(item.rect));
-  const rowItems = items.filter((item) => distY(item.rect) <= minDy + 2);
-
-  let insertIndex = rowItems[rowItems.length - 1].index + 1;
-  let lineX = rowItems[rowItems.length - 1].rect.right - barRect.left - 1;
-  let lineTop = rowItems[0].rect.top - barRect.top;
-  let lineHeight = rowItems[0].rect.height;
-
-  for (let i = 0; i < rowItems.length; i++) {
-    const item = rowItems[i];
-    if (clientX < item.rect.left + item.rect.width / 2) {
-      insertIndex = item.index;
-      lineTop = item.rect.top - barRect.top;
-      lineHeight = item.rect.height;
-      lineX = i > 0 ? (rowItems[i - 1].rect.right + item.rect.left) / 2 - barRect.left - 1 : item.rect.left - barRect.left - 1;
-      break;
-    }
-  }
-
-  const fromIndex = tabs.indexOf(tabId);
-  const isNoop = insertIndex === fromIndex || insertIndex === fromIndex + 1;
-  return {
-    insertIndex,
-    line: isNoop ? null : { left: Math.round(lineX), top: Math.round(lineTop), height: Math.round(lineHeight) },
-  };
+/** Where a dragged tab goes among `others` (in order) for its centre (`cx`, `cy`, in the tab bar): the nearest row,
+ * before the first tab whose centre is to the right. Uses the tabs' laid-out places, not where they're animating. */
+function dropIndex(others: string[], els: Map<string, HTMLElement>, cx: number, cy: number): number {
+  const placed = others.flatMap((id, i) => {
+    const el = els.get(id);
+    return el ? [{ i, x: el.offsetLeft + el.offsetWidth / 2, top: el.offsetTop, bottom: el.offsetTop + el.offsetHeight }] : [];
+  });
+  if (placed.length === 0) return 0;
+  const away = (t: (typeof placed)[number]) => (cy < t.top ? t.top - cy : cy > t.bottom ? cy - t.bottom : 0);
+  const nearest = Math.min(...placed.map(away));
+  const row = placed.filter((t) => away(t) <= nearest + 2);
+  const before = row.find((t) => cx < t.x);
+  return before ? before.i : row[row.length - 1].i + 1;
 }
 
 export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, onImportGifs, onDownloadGif, onImportSounds, onDownloadSound }: MediaLibraryProps) {
@@ -229,7 +213,17 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const [tabNameClash, setTabNameClash] = useState<string | null>(null);
   /** The folder whose cover is being picked from the Media library's pictures. */
   const [coverFor, setCoverFor] = useState<Folder | null>(null);
+  /** New folder's pop-up is open, with this name to start from. */
+  const [newFolderName, setNewFolderName] = useState<string | null>(null);
+  /** New Collection's pop-up is open, with this name to start from. */
+  const [newCollectionName, setNewCollectionName] = useState<string | null>(null);
   const [coverError, setCoverError] = useState<string | null>(null);
+  const [dropNote, setDropNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!dropNote) return;
+    const timer = window.setTimeout(() => setDropNote(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [dropNote]);
   const sound = useSoundPreview();
   /** Selected cards, like File Explorer: file paths, and folders as `folder:<id>` (`folderKey`). */
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -270,36 +264,94 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   collectionsRef.current = organize.collections;
 
   const isTabDragging = Boolean(tabDrag);
+  /** The tabs' order while one is dragged: they make room as it moves; saved on drop. */
+  const [tabPreview, setTabPreview] = useState<string[] | null>(null);
+  const shownTabs = tabPreview ?? tabs;
+  const shownTabsRef = useRef(shownTabs);
+  shownTabsRef.current = shownTabs;
+  const tabPointRef = useRef({ x: 0, y: 0 });
+  /** Every tab's place on screen just before the order changes, so each one slides from there (FLIP). */
+  const tabsFromRef = useRef<Map<string, DOMRect> | null>(null);
+  const rememberTabPlaces = () => {
+    const from = new Map<string, DOMRect>();
+    tabElsRef.current.forEach((el, id) => from.set(id, el.getBoundingClientRect()));
+    tabsFromRef.current = from;
+  };
+  /** The lifted tab under the pointer, kept inside the tab bar. */
+  const placeLiftedTab = () => {
+    const cur = tabDragRef.current;
+    const el = cur?.active ? tabElsRef.current.get(cur.tabId) : undefined;
+    const bar = tabBarRef.current;
+    if (!cur || !el || !bar) return null;
+    const b = bar.getBoundingClientRect();
+    const left = Math.max(0, Math.min(b.width - el.offsetWidth, tabPointRef.current.x - cur.grabX - b.left));
+    const top = Math.max(0, Math.min(b.height - el.offsetHeight, tabPointRef.current.y - cur.grabY - b.top));
+    el.style.transform = `translate(${left - el.offsetLeft}px, ${top - el.offsetTop}px)`;
+    return { left, top, el };
+  };
+  useLayoutEffect(() => {
+    const from = tabsFromRef.current;
+    if (!from) return;
+    tabsFromRef.current = null;
+    const lifted = tabDragRef.current?.active ? tabDragRef.current.tabId : null;
+    tabElsRef.current.forEach((el, id) => {
+      const was = from.get(id);
+      if (id === lifted || !was) return;
+      el.style.transition = "none";
+      el.style.transform = "";
+      const now = el.getBoundingClientRect();
+      if (Math.abs(was.left - now.left) < 0.5 && Math.abs(was.top - now.top) < 0.5) return;
+      el.style.transform = `translate(${was.left - now.left}px, ${was.top - now.top}px)`;
+      void el.offsetWidth;
+      el.style.transition = "transform var(--dur) var(--ease-out)";
+      el.style.transform = "";
+    });
+    placeLiftedTab();
+  });
   useEffect(() => {
     if (!isTabDragging) return;
     const onMove = (e: PointerEvent) => {
       const cur = tabDragRef.current;
       if (!cur) return;
+      tabPointRef.current = { x: e.clientX, y: e.clientY };
       if (!cur.active) {
         if (Math.hypot(e.clientX - cur.startX, e.clientY - cur.startY) < DRAG_THRESHOLD) return;
         window.getSelection()?.removeAllRanges();
+        const lifting: TabDragState = { ...cur, active: true };
+        tabDragRef.current = lifting;
+        setTabDrag(lifting);
+        const el = tabElsRef.current.get(cur.tabId);
+        if (el) el.style.transition = "none";
       }
-      const { insertIndex, line } = computeTabInsert(e.clientX, e.clientY, tabsRef.current, cur.tabId, tabBarRef.current, tabElsRef.current);
-      const next: TabDragState = { ...cur, active: true, insertIndex, line };
-      tabDragRef.current = next;
-      setTabDrag(next);
+      const placed = placeLiftedTab();
+      if (!placed) return;
+      const order = shownTabsRef.current;
+      const others = order.filter((id) => id !== cur.tabId);
+      const at = dropIndex(others, tabElsRef.current, placed.left + placed.el.offsetWidth / 2, placed.top + placed.el.offsetHeight / 2);
+      const next = [...others.slice(0, at), cur.tabId, ...others.slice(at)];
+      if (next.some((id, i) => id !== order[i])) {
+        rememberTabPlaces();
+        setTabPreview(next);
+      }
     };
     const finish = (commit: boolean) => {
       const cur = tabDragRef.current;
       tabDragRef.current = null;
-      setTabDrag(null);
-      if (!cur?.active) return;
+      if (!cur?.active) {
+        setTabDrag(null);
+        return;
+      }
       suppressTabClickRef.current = true;
       window.setTimeout(() => {
         suppressTabClickRef.current = false;
       }, 0);
-      if (!commit) return;
-      const curTabs = tabsRef.current;
-      const fromIndex = curTabs.indexOf(cur.tabId);
-      if (fromIndex !== -1 && cur.insertIndex >= 0 && cur.insertIndex !== fromIndex && cur.insertIndex !== fromIndex + 1) {
-        const toIndex = cur.insertIndex > fromIndex ? cur.insertIndex - 1 : cur.insertIndex;
-        updateOrganize((o) => moveTab(o, cur.tabId, toIndex, BUILTIN_TABS));
-      }
+      // It glides from under the pointer into its place (or back to where it was, on Esc).
+      rememberTabPlaces();
+      const order = shownTabsRef.current;
+      setTabDrag(null);
+      setTabPreview(null);
+      const toIndex = order.indexOf(cur.tabId);
+      if (commit && toIndex !== tabsRef.current.indexOf(cur.tabId)) updateOrganize((o) => moveTab(o, cur.tabId, toIndex, BUILTIN_TABS));
     };
     const onUp = () => finish(true);
     const onCancel = () => finish(false);
@@ -356,7 +408,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         if (idx >= 0 && idx < levelFoldersRef.current.length) hoverFolder = levelFoldersRef.current[idx].id;
       }
       if (hoverFolder && (hoverFolder === cur.folderId || cur.group?.includes(folderKey(hoverFolder)))) hoverFolder = undefined;
-      const next: CardDragState = { ...cur, active: true, x: e.clientX, y: e.clientY, hoverCollectionId, hoverFolder };
+      const refused = hoverFolder ? refusalRef.current(cur.group ?? [cur.folderId ? folderKey(cur.folderId) : cur.path], hoverFolder) : null;
+      if (refused) hoverFolder = undefined;
+      const next: CardDragState = { ...cur, active: true, x: e.clientX, y: e.clientY, hoverCollectionId, hoverFolder, refused };
       cardDragRef.current = next;
       setCardDrag(next);
     };
@@ -370,7 +424,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         suppressCardClickRef.current = false;
       }, 0);
       const keys = cur.group ?? [cur.folderId ? folderKey(cur.folderId) : cur.path];
-      if (commit && cur.hoverFolder !== undefined) {
+      if (commit && cur.refused) {
+        setDropNote(cur.refused);
+      } else if (commit && cur.hoverFolder !== undefined) {
         const to = cur.hoverFolder;
         updateOrganize((o) => moveKeys(o, keys, to, cur.scope));
       } else if (commit && cur.hoverCollectionId) {
@@ -508,10 +564,14 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     if (openFolder && folderPath(organize, openFolder).some((f) => f.id === folder.id)) setOpenFolder(folder.parent);
   };
 
-  const createCollection = () => {
+  /** From New Collection's pop-up: made, then opened. */
+  const createCollection = (name: string) => {
+    setNewCollectionName(null);
     const id = newCollectionId();
-    updateOrganize((o) => addCollection(o, freeName("New collection", o.collections.map((c) => c.name)), id));
-    setRenamingTabId(id);
+    updateOrganize((o) => addCollection(o, name, id));
+    setOpenFolder(null);
+    setSearch("");
+    setActiveTab(COLLECTION_PREFIX + id);
   };
 
   const words = search.trim().toLowerCase();
@@ -547,10 +607,11 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const shown = matching.filter((e) => !hidden.isHidden(e.path));
   const hiddenShown = matching.filter((e) => hidden.isHidden(e.path));
 
-  // Folders show on All, the kind tabs (the library's own folders) and a collection (its own); Saved and a search are
-  // flat lists of every match.
-  const foldersOn = !words && currentTab !== "saved";
-  const scope = activeCollection?.id ?? null;
+  // Folders show on every tab: the library's own on All, Folders and the kind tabs, Saved's and a collection's their
+  // own. A search is a flat list of every match.
+  const foldersOn = !words;
+  const scope = activeCollection?.id ?? (currentTab === "saved" ? SAVED_SCOPE : null);
+  const kindTab = isFolderTab(currentTab) ? currentTab : undefined;
   const placed = placedIn(organize, scope);
   const scopeFolders = organize.folders.filter((f) => (f.collection ?? null) === scope);
   const here = openFolder && scopeFolders.some((f) => f.id === openFolder) ? openFolder : null;
@@ -565,7 +626,25 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   };
   const inside = holding(entries);
   const matchingInside = holding(shown);
-  const levelFolders = foldersOn ? scopeFolders.filter((f) => f.parent === here && (currentTab === "all" || currentTab === "folders" || scope || matchingInside.has(f.id))) : [];
+  // A kind tab shows its own folders, and the others (made on All) when they hold its files.
+  const levelFolders = foldersOn
+    ? scopeFolders.filter((f) => f.parent === here && (currentTab === "all" || currentTab === "folders" || scope || f.tab === kindTab || (!f.tab && matchingInside.has(f.id))))
+    : [];
+  const entryAt = new Map(entries.map((e) => [e.path, e]));
+  /** Why folder `to` won't take `keys`, or null when it will: a kind tab's folder takes only that tab's files and folders. */
+  const refusal = (keys: string[], to: string | null): string | null => {
+    const tab = to ? organize.folders.find((f) => f.id === to)?.tab : undefined;
+    if (!tab) return null;
+    const fits = keys.every((key) => {
+      const folder = folderOf(key);
+      if (folder) return folderFits(organize, folder, to);
+      const entry = entryAt.get(key);
+      return !entry || inTab(entry, tab);
+    });
+    return fits ? null : `${FOLDER_TABS[tab].name} folders only take ${FOLDER_TABS[tab].takes}.`;
+  };
+  const refusalRef = useRef(refusal);
+  refusalRef.current = refusal;
   const levelFoldersRef = useRef(levelFolders);
   levelFoldersRef.current = levelFolders;
   // Folders tab: only folders at the top; inside one, its files as usual.
@@ -618,9 +697,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   /** A picture file as a folder's cover: its small thumbnail is kept, so the cover stays if the file moves. */
   const setCoverFrom = async (folder: Folder, path: string, thumbnail?: string) => {
     setCoverError(null);
-    // A GIF stays a GIF (it moves on the card), so the cover is its file.
-    if (/\.gif$/i.test(path)) return updateOrganize((o) => setFolderCover(o, folder.id, path));
-    const cover = thumbnail ?? (await fileThumbnail(path, true));
+    const cover = await coverOf(path, thumbnail);
     if (!cover) return setCoverError("Couldn't read that picture.");
     updateOrganize((o) => setFolderCover(o, folder.id, cover));
   };
@@ -633,21 +710,23 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     }
   };
 
-  const createFolder = () => {
+  // Made where you are: on this tab, inside the open folder if there is one.
+  const openNewFolder = () => setNewFolderName(freeName("New folder", scopeFolders.filter((f) => f.parent === here).map((f) => f.name)));
+  const createFolder = (name: string, cover: string | null) => {
+    setNewFolderName(null);
     const id = newCollectionId();
-    // Always at the top level, never inside the folder being looked at (drag it onto a folder to put it there).
-    const parent = null;
-    setOpenFolder(null);
-    if (!foldersOn) {
-      if (currentTab === "saved") setActiveTab("all");
-      setSearch("");
-    }
-    const where = currentTab === "saved" ? null : scope;
     updateOrganize((o) => {
-      const siblings = o.folders.filter((f) => f.parent === parent && (f.collection ?? null) === where).map((f) => f.name);
-      return addFolder(o, freeName("New folder", siblings), parent, id, where);
+      const made = addFolder(o, name, here, id, scope, kindTab);
+      return cover ? setFolderCover(made, id, cover) : made;
     });
-    setRenamingFolderId(id);
+    setSearch("");
+    setSelected(new Set([folderKey(id)]));
+  };
+
+  /** Star or un-star; un-starred, it leaves Saved's folders too (starred again, it's back loose at the top). */
+  const save = (path: string, on: boolean) => {
+    onSave(path, on);
+    if (!on) updateOrganize((o) => moveToFolder(o, path, null, SAVED_SCOPE));
   };
 
   const openMenuAt = (e: ReactMouseEvent, nextMenu: (x: number, y: number) => MenuState) => {
@@ -724,7 +803,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
       <PictureCard
         key={entry.path}
         selected={!isHidden && selected.has(entry.path)}
-        onTick={isHidden ? undefined : () => tickCard(entry.path)}
+        onTick={selectMode && !isHidden ? () => tickCard(entry.path) : undefined}
         thumb={
           entry.kind === "audio" ? (
             <SoundWave path={entry.path} />
@@ -804,13 +883,13 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
       const files = ticked;
       const moveTo = (to: string | null) => updateOrganize((o) => moveKeys(o, [...selected], to, scope));
       const folderItems: MenuItem[] = scopeFolders
-        .filter((f) => !selected.has(folderKey(f.id)))
+        .filter((f) => !selected.has(folderKey(f.id)) && !refusal([...selected], f.id))
         .map((f) => ({ label: folderPath(organize, f.id).map((x) => x.name).join(" / "), icon: "folder", onClick: () => moveTo(f.id) }));
       const newFolderFor = () => {
         const id = newCollectionId();
         updateOrganize((o) => {
           const top = o.folders.filter((f) => f.parent === null && (f.collection ?? null) === scope).map((f) => f.name);
-          return moveKeys(addFolder(o, freeName("New folder", top), null, id, scope), [...selected], id, scope);
+          return moveKeys(addFolder(o, freeName("New folder", top), null, id, scope, kindTab), [...selected], id, scope);
         });
         setOpenFolder(null);
         setRenamingFolderId(id);
@@ -844,7 +923,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                   ],
                 },
                 "sep" as const,
-                { label: "Save", icon: "star" as const, onClick: () => files.forEach((e) => !e.saved && onSave(e.path, true)) },
+                { label: "Save", icon: "star" as const, onClick: () => files.forEach((e) => !e.saved && save(e.path, true)) },
                 {
                   label: "Hide from list",
                   icon: "eyeOff" as const,
@@ -902,7 +981,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         : []),
       { label: "Rename", icon: "pencil", onClick: () => setRenamingPath(entry.path) },
       "sep",
-      { label: entry.saved ? "Remove from Saved" : "Save it", icon: "star", onClick: () => onSave(entry.path, !entry.saved) },
+      { label: entry.saved ? "Remove from Saved" : "Save it", icon: "star", onClick: () => save(entry.path, !entry.saved) },
       { label: isHidden ? "Unhide" : "Hide from list", icon: isHidden ? "eye" : "eyeOff", onClick: () => hidden.setHidden([entry.path], !isHidden) },
       { label: "Remove from list", icon: "trash", danger: true, onClick: () => void forget(entry) },
     ];
@@ -949,7 +1028,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         <div className="pc-bar">
           <div className="pc-bar__start">
             <div className="pc-tabs media-library__tabs" role="tablist" aria-label="Show" ref={tabBarRef}>
-              {tabs.map((tabId) => {
+              {shownTabs.map((tabId) => {
                 const isCollection = tabId.startsWith(COLLECTION_PREFIX);
                 const col = isCollection ? collectionsById.get(tabId.slice(COLLECTION_PREFIX.length)) : undefined;
                 if (isCollection && !col) return null;
@@ -999,7 +1078,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                     ref={setTabRef}
                     type="button"
                     role="tab"
-                    className={`pc-tab${isDraggingThis ? " is-dragging" : ""}${isDropTarget ? " is-drop-target" : ""}`}
+                    className={`pc-tab${isDraggingThis ? " is-lifted" : ""}${isDropTarget ? " is-drop-target" : ""}`}
                     aria-selected={currentTab === tabId}
                     onClick={() => {
                       if (suppressTabClickRef.current) return;
@@ -1007,7 +1086,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                     }}
                     onPointerDown={(e) => {
                       if (e.button !== 0 || renamingTabId) return;
-                      const initial: TabDragState = { tabId, startX: e.clientX, startY: e.clientY, active: false, insertIndex: -1, line: null };
+                      const r = e.currentTarget.getBoundingClientRect();
+                      const initial: TabDragState = { tabId, startX: e.clientX, startY: e.clientY, active: false, grabX: e.clientX - r.left, grabY: e.clientY - r.top };
+                      tabPointRef.current = { x: e.clientX, y: e.clientY };
                       tabDragRef.current = initial;
                       setTabDrag(initial);
                     }}
@@ -1022,13 +1103,6 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                   </button>
                 );
               })}
-              {tabDrag?.active && tabDrag.line && (
-                <span
-                  className="media-library__tab-insert"
-                  style={{ left: tabDrag.line.left, top: tabDrag.line.top, height: tabDrag.line.height }}
-                  aria-hidden="true"
-                />
-              )}
             </div>
           </div>
           <div className="pc-bar__end">
@@ -1066,11 +1140,11 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                 )}
               </button>
             )}
-            <button type="button" className="btn btn--secondary" onClick={createCollection}>
+            <button type="button" className="btn btn--secondary" onClick={() => setNewCollectionName(freeName("New collection", organize.collections.map((c) => c.name)))}>
               <Icon name="plus" size={14} />
               New Collection
             </button>
-            <button type="button" className="btn btn--secondary" onClick={createFolder}>
+            <button type="button" className="btn btn--secondary" onClick={openNewFolder}>
               <Icon name="folder" size={14} />
               New folder
             </button>
@@ -1079,6 +1153,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
 
         {tabNameClash && <p className="media-library__note" role="alert">There's already a collection called “{tabNameClash}”.</p>}
         {coverError && <p className="media-library__note" role="alert">{coverError}</p>}
+        {dropNote && <p className="media-library__note" role="alert">{dropNote}</p>}
         {sound.error && <p className="media-library__note" role="alert">{sound.error}</p>}
         {coverFor && (
           <CoverPicker
@@ -1090,6 +1165,23 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               void setCoverFrom(folder, e.path, e.thumbnail);
             }}
             onClose={() => setCoverFor(null)}
+          />
+        )}
+        {newCollectionName !== null && (
+          <NewCollectionDialog
+            name={newCollectionName}
+            taken={(name) => collectionNameTaken(organize, name)}
+            onCreate={createCollection}
+            onClose={() => setNewCollectionName(null)}
+          />
+        )}
+        {newFolderName !== null && (
+          <NewFolderDialog
+            name={newFolderName}
+            pictures={entries.filter((e) => e.kind === "image")}
+            nameOf={(e) => titleOf(organize, e.path, e.name)}
+            onCreate={createFolder}
+            onClose={() => setNewFolderName(null)}
           />
         )}
 
@@ -1140,15 +1232,15 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           </nav>
         )}
 
-        {currentTab === "gif" && !entries.some((e) => e.animated) ? (
+        {currentTab === "gif" && !entries.some((e) => e.animated) && levelFolders.length === 0 ? (
           <p className="pc-muted">No GIFs yet. Import a GIF and it shows up here and in the editor's GIFs tab.</p>
-        ) : currentTab === "sfx" && !entries.some((e) => e.sfx) ? (
+        ) : currentTab === "sfx" && !entries.some((e) => e.sfx) && levelFolders.length === 0 ? (
           <p className="pc-muted">No sounds yet. Import meme sounds and effects, paste a link to a sound file, or drag them in from File Explorer: they show up here and in the editor's Sound FX tab.</p>
         ) : currentTab === "folders" && !here && !words && levelFolders.length === 0 ? (
           <p className="pc-muted">No folders yet. Make one with New folder, then drag files onto it.</p>
         ) : entries.length === 0 && levelFolders.length === 0 ? (
           <p className="pc-muted">Files you import into a project show up here, so you can find them again.</p>
-        ) : activeCollection && !words && matching.length === 0 ? (
+        ) : activeCollection && !here && !words && matching.length === 0 && levelFolders.length === 0 ? (
           <p className="pc-muted">This collection is empty. Drag files onto its tab or right-click a file to add it.</p>
         ) : levelFiles.length + levelFolders.length === 0 ? (
           <p className="pc-muted">
@@ -1214,27 +1306,12 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               return (
                 <PictureCard
                   key={`folder:${folder.id}`}
-                  thumb={
-                    <span className={target ? "media-library__folder is-drop-target" : "media-library__folder"}>
-                      {folder.cover?.startsWith("data:") ? (
-                        <img className="media-library__folder-cover" src={folder.cover} alt="" draggable={false} />
-                      ) : folder.cover ? (
-                        <GifImage className="media-library__folder-cover" path={folder.cover} />
-                      ) : (
-                        <Icon name="folder" size={36} />
-                      )}
-                      {folder.cover && (
-                        <span className="media-library__folder-badge" aria-hidden="true">
-                          <Icon name="folder" size={14} />
-                        </span>
-                      )}
-                    </span>
-                  }
-                  tag="Folder"
+                  thumb={<FolderThumb cover={folder.cover} target={target} />}
+                  tag={folder.tab && folder.tab !== currentTab ? `${FOLDER_TABS[folder.tab].name} folder` : "Folder"}
                   name={folder.name}
                   meta={n === 1 ? "1 file" : `${n} files`}
                   selected={selected.has(folderKey(folder.id))}
-                  onTick={() => tickCard(folderKey(folder.id))}
+                  onTick={selectMode ? () => tickCard(folderKey(folder.id)) : undefined}
                   onOpen={(e) => pickCard(folderKey(folder.id), e)}
                   onDoubleOpen={() => setOpenFolder(folder.id)}
                   onMenu={(e) => cardMenu(folderKey(folder.id), e, (x, y) => ({ kind: "folder", x, y, folder }))}
@@ -1255,7 +1332,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                     icon="star"
                     label={entry.saved ? "Remove from Saved" : "Save it"}
                     on={Boolean(entry.saved)}
-                    onClick={() => onSave(entry.path, !entry.saved)}
+                    onClick={() => save(entry.path, !entry.saved)}
                   />
                   <PictureAction icon="eyeOff" label={`Hide ${shownName}`} onClick={() => hidden.setHidden([entry.path], true)} />
                   <PictureAction icon="trash" label={`Remove ${shownName} from the library`} onClick={() => void forget(entry)} />
@@ -1324,6 +1401,221 @@ function CoverPicker({ pictures, name, onPick, onClose }: { pictures: LibraryEnt
           </button>
         </div>
       </div>
+    </dialog>
+  );
+}
+
+/** A picture file as a folder's cover: a GIF stays its file (it moves on the card); others keep a small thumbnail, so
+ * the cover stays if the file moves. `null` when it can't be read. */
+async function coverOf(path: string, thumbnail?: string): Promise<string | null> {
+  if (/\.gif$/i.test(path)) return path;
+  return thumbnail ?? (await fileThumbnail(path, true)) ?? null;
+}
+
+/** A folder card's picture: its cover with a small folder badge, else the folder icon. */
+function FolderThumb({ cover, target }: { cover?: string; target?: boolean }) {
+  return (
+    <span className={target ? "media-library__folder is-drop-target" : "media-library__folder"}>
+      {cover?.startsWith("data:") ? (
+        <img className="media-library__folder-cover" src={cover} alt="" draggable={false} />
+      ) : cover ? (
+        <GifImage className="media-library__folder-cover" path={cover} />
+      ) : (
+        <Icon name="folder" size={36} />
+      )}
+      {cover && (
+        <span className="media-library__folder-badge" aria-hidden="true">
+          <Icon name="folder" size={14} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** New folder: a pop-up for its name and cover, with the card as it will look; the folder is made on Create. */
+function NewFolderDialog({
+  name: startName,
+  pictures,
+  nameOf,
+  onCreate,
+  onClose,
+}: {
+  name: string;
+  pictures: LibraryEntry[];
+  nameOf: (e: LibraryEntry) => string;
+  onCreate: (name: string, cover: string | null) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [name, setName] = useState(startName);
+  const [cover, setCover] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+  const take = async (path: string, thumbnail?: string) => {
+    setError(null);
+    try {
+      const picked = await coverOf(path, thumbnail);
+      if (picked) setCover(picked);
+      else setError("Couldn't read that picture.");
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  const fromPc = async () => {
+    try {
+      const path = await pickPicture();
+      if (path) await take(path);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  const trimmed = name.trim();
+  return (
+    <>
+      <dialog
+        ref={ref}
+        className="confirm media-library__new-folder"
+        aria-labelledby="new-folder-title"
+        onCancel={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+      >
+        <form
+          className="confirm__box"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (trimmed) onCreate(trimmed, cover);
+          }}
+        >
+          <h2 id="new-folder-title">New folder</h2>
+          <div className="media-library__new-folder-body">
+            <div className="media-library__new-folder-card">
+              <FolderThumb cover={cover ?? undefined} />
+            </div>
+            <div className="media-library__new-folder-fields">
+              <label className="section-label" htmlFor="new-folder-name">
+                Name
+              </label>
+              <input id="new-folder-name" className="field" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} onFocus={(e) => e.currentTarget.select()} />
+              <span className="section-label">Cover</span>
+              <div className="media-library__new-folder-cover">
+                <button type="button" className="btn btn--secondary" onClick={() => setPicking(true)}>
+                  <Icon name="image" size={14} />
+                  Media library
+                </button>
+                {inDesktopApp && (
+                  <button type="button" className="btn btn--secondary" onClick={() => void fromPc()}>
+                    <Icon name="upload" size={14} />
+                    This PC
+                  </button>
+                )}
+                {cover && (
+                  <button type="button" className="btn btn--ghost" onClick={() => setCover(null)}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          {error && (
+            <p className="confirm__note" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="confirm__actions">
+            <button type="button" className="btn btn--ghost" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn--primary" disabled={!trimmed}>
+              Create folder
+            </button>
+          </div>
+        </form>
+      </dialog>
+      {/* Beside the pop-up, not in it: its Esc and outside clicks close only the picker. */}
+      {picking && (
+        <CoverPicker
+          pictures={pictures}
+          name={nameOf}
+          onPick={(e) => {
+            setPicking(false);
+            void take(e.path, e.thumbnail);
+          }}
+          onClose={() => setPicking(false)}
+        />
+      )}
+    </>
+  );
+}
+
+/** New Collection: a pop-up for its name (no two collections share one); the collection is made on Create. */
+function NewCollectionDialog({ name: startName, taken, onCreate, onClose }: { name: string; taken: (name: string) => boolean; onCreate: (name: string) => void; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [name, setName] = useState(startName);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+  const trimmed = name.trim();
+  const clash = Boolean(trimmed) && taken(trimmed);
+  return (
+    <dialog
+      ref={ref}
+      className="confirm media-library__new-collection"
+      aria-labelledby="new-collection-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <form
+        className="confirm__box"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (trimmed && !clash) onCreate(trimmed);
+        }}
+      >
+        <h2 id="new-collection-title">New collection</h2>
+        <p className="confirm__message">A tab of its own for files you pick. Drag files onto its tab, or right-click a file to add it.</p>
+        <div className="media-library__new-folder-fields">
+          <label className="section-label" htmlFor="new-collection-name">
+            Name
+          </label>
+          <input
+            id="new-collection-name"
+            className="field"
+            value={name}
+            maxLength={60}
+            aria-invalid={clash}
+            onChange={(e) => setName(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          {clash && (
+            <p className="media-library__note" role="alert">
+              There's already a collection called “{trimmed}”.
+            </p>
+          )}
+        </div>
+        <div className="confirm__actions">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn--primary" disabled={!trimmed || clash}>
+            Create collection
+          </button>
+        </div>
+      </form>
     </dialog>
   );
 }

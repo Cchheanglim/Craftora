@@ -86,6 +86,10 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 encoders::hardware(&handle).await;
             });
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                engine::warm_up(&handle).await;
+            });
             // Everything a little larger than 100%: text, pictures and controls alike.
             if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
                 let _ = main.set_zoom(1.1);

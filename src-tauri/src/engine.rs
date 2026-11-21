@@ -83,6 +83,19 @@ pub async fn run_to_end(app: &AppHandle, name: &str, args: &[&str]) -> Result<Ou
     output.await.map_err(|e| e.to_string())?.map_err(|e| format!("Could not start {name}: {e}"))
 }
 
+/// Runs yt-dlp and Deno once, a moment after start-up, so the virus scanner checks their files then and not on
+/// the first fetch after an install or update (fresh files: first fetch 5.4 s without this, 4.0 s with it).
+pub async fn warm_up(app: &AppHandle) {
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    let _ = run_to_end(app, YT_DLP, &["--version"]).await;
+    let Ok(deno) = app.path().resource_dir().map(|dir| dir.join("deno").join("deno.exe")) else { return };
+    if deno.is_file() {
+        let mut command: std::process::Command = app.shell().command(deno).args(["--version"]).into();
+        command.stdin(std::process::Stdio::null());
+        let _ = tauri::async_runtime::spawn_blocking(move || command.output()).await;
+    }
+}
+
 /// Keeps a started engine, and whatever it starts (yt-dlp runs FFmpeg), from outliving Craftora:
 /// Windows ends them when this is dropped or when Craftora closes, even by a crash. Without it
 /// they kept downloading and encoding in the background after the window was closed.

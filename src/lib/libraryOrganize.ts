@@ -11,12 +11,20 @@ export interface Collection {
   placed?: Record<string, string>;
 }
 
+/** The kind tabs a folder can be made on: it shows there even when empty and takes only that tab's files and folders. */
+export type FolderTab = "video" | "image" | "audio" | "gif" | "sfx";
+
+/** Saved's own folders and places, kept apart like a collection's (Saved isn't a collection). */
+export const SAVED_SCOPE = "saved";
+
 export interface Folder {
   id: string;
   name: string;
   parent: string | null;
-  /** The collection it was made in; absent = the library's own folders (All and the kind tabs). */
+  /** The collection it was made in (or `SAVED_SCOPE`); absent = the library's own folders (All and the kind tabs). */
   collection?: string;
+  /** The kind tab it was made on; absent = made on All or Folders (or before tabs had folders). */
+  tab?: FolderTab;
   /** The picture on its card instead of the folder icon: a small JPEG data URL, or a GIF file's path (so it moves). */
   cover?: string;
 }
@@ -25,6 +33,8 @@ export interface Organize {
   collections: Collection[];
   folders: Folder[];
   placed: Record<string, string>;
+  /** Files put in Saved's folders (path -> folder id). */
+  savedPlaced?: Record<string, string>;
   titles: Record<string, string>;
   tabOrder: string[];
 }
@@ -69,12 +79,13 @@ export function freeName(base: string, taken: string[]): string {
 export const collectionNameTaken = (o: Organize, name: string, id?: string) =>
   o.collections.some((c) => c.id !== id && sameName(c.name, name));
 
-/** The files' folder places for the library (`collection` absent) or one collection. */
+/** The files' folder places for the library (`collection` absent), Saved or one collection. */
 export const placedIn = (o: Organize, collection?: string | null): Record<string, string> =>
-  collection ? (o.collections.find((c) => c.id === collection)?.placed ?? {}) : o.placed;
+  collection === SAVED_SCOPE ? (o.savedPlaced ?? {}) : collection ? (o.collections.find((c) => c.id === collection)?.placed ?? {}) : o.placed;
 
 function withPlaced(o: Organize, collection: string | null | undefined, placed: Record<string, string>): Organize {
   if (placed === placedIn(o, collection)) return o;
+  if (collection === SAVED_SCOPE) return { ...o, savedPlaced: placed };
   return collection ? mapCollection(o, collection, (c) => ({ ...c, placed })) : { ...o, placed };
 }
 
@@ -117,12 +128,21 @@ export function removeFromCollection(o: Organize, id: string, path: string): Org
   );
 }
 
-/** `collection`: made inside that collection (a sub-folder always goes where its parent is). */
-export function addFolder(o: Organize, name: string, parent: string | null, id: string, collection?: string | null): Organize {
+/** `collection`: made inside that collection; `tab`: made on that kind tab (a sub-folder always goes where its parent
+ * is and belongs to its tab). */
+export function addFolder(o: Organize, name: string, parent: string | null, id: string, collection?: string | null, tab?: FolderTab): Organize {
   const trimmed = name.trim();
   if (!trimmed || o.folders.some((f) => f.id === id)) return o;
-  const where = parent ? o.folders.find((f) => f.id === parent)?.collection : collection ?? undefined;
-  return { ...o, folders: [...o.folders, { id, name: trimmed, parent, ...(where && { collection: where }) }] };
+  const up = parent ? o.folders.find((f) => f.id === parent) : undefined;
+  const where = parent ? up?.collection : collection ?? undefined;
+  const kind = parent ? up?.tab : tab;
+  return { ...o, folders: [...o.folders, { id, name: trimmed, parent, ...(where && { collection: where }), ...(kind && { tab: kind }) }] };
+}
+
+/** Whether folder `id` may go into folder `to`: a kind tab's folder only takes that tab's folders. */
+export function folderFits(o: Organize, id: string, to: string | null): boolean {
+  const target = to === null ? undefined : o.folders.find((f) => f.id === to);
+  return !target?.tab || o.folders.find((f) => f.id === id)?.tab === target.tab;
 }
 
 export function renameFolder(o: Organize, id: string, name: string): Organize {
@@ -171,7 +191,7 @@ export function moveFolder(o: Organize, id: string, newParent: string | null): O
   const target = o.folders.find((f) => f.id === id);
   if (!target || target.parent === newParent || id === newParent) return o;
   const parent = newParent === null ? null : o.folders.find((f) => f.id === newParent);
-  if (parent === undefined || (parent && parent.collection !== target.collection)) return o;
+  if (parent === undefined || (parent && parent.collection !== target.collection) || !folderFits(o, id, newParent)) return o;
 
   // Walk up from newParent to refuse moving a folder into its own descendant subtree.
   let cur: string | null = newParent;
@@ -268,10 +288,12 @@ export function moveTab(o: Organize, tabId: string, toIndex: number, builtIns: s
 export function forgetPath(o: Organize, path: string): Organize {
   const inAnyCollection = o.collections.some((c) => c.paths.includes(path) || (c.placed && hasKey(c.placed, path)));
   const placed = omitKey(o.placed, path);
+  const savedPlaced = o.savedPlaced && omitKey(o.savedPlaced, path);
   const titles = omitKey(o.titles, path);
-  if (!inAnyCollection && placed === o.placed && titles === o.titles) return o;
+  if (!inAnyCollection && placed === o.placed && savedPlaced === o.savedPlaced && titles === o.titles) return o;
   return {
     ...o,
+    ...(savedPlaced && { savedPlaced }),
     collections: inAnyCollection
       ? o.collections.map((c) => (c.paths.includes(path) || (c.placed && hasKey(c.placed, path)) ? { ...c, paths: c.paths.filter((p) => p !== path), ...(c.placed && { placed: omitKey(c.placed, path) }) } : c))
       : o.collections,

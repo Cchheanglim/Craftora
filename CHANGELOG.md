@@ -1,9 +1,24 @@
 # What's new in Craftora
 
-## Next version
+## 0.7.0 (November 2026)
 
 **New**
 
+- **Folders on every Media library tab**: New folder opens a pop-up for the name and a cover (from the Media library
+  or this PC) with a preview of the card, and the folder is made on the tab you're on (inside the open folder, if
+  there is one). A folder made on Videos, Pictures, Audio, GIFs or Sound FX shows there even when empty, takes only that
+  kind of file, and shows on All and Folders as "Audio folder" and so on; drop something else on it and a note says
+  why. Saved has folders of its own (un-starring a file takes it out). A collection with only folders shows them.
+- **Moving Media library tabs looks like moving browser tabs**: the tab you drag lifts and follows the pointer, the
+  others slide aside to make room, and it glides into its place when you let go (Esc puts it back).
+- **New Collection opens a pop-up** to name it (it says so if that name is taken), then opens the new collection.
+- **Settings → Preferences → The editor's GIFs and Sound FX tabs**: From anywhere also lists every other sound in your
+  Media library in the editor's Sound FX tab (the Audio tab and any folder), not just Sound FX ones.
+- **Media library tick boxes** show only after you press Select.
+- **Enhance colours and AI sharpen when you export a picture**: Enhance colours gives the whole picture the same lift
+  as a clip's Enhance tab. AI sharpen redraws fine detail with a model that runs on this PC (graphics card when it can,
+  no internet), sharper at every size, and adds a 4× size. A before/after piece of the picture shows the difference; drag
+  it to look at another part. Both choices are remembered, and the Queue shows "Sharpening with AI" while it works.
 - **Export as GIF**: pick GIF as the file type in Export, then Small, Medium or Large (480, 720 or 1080 px wide) and
   10, 15 or 24 frames a second. It loops forever, has no sound, and the window shows about how big the file will be.
 - **Export** is a button next to Queue (in the editor) that opens the export settings in a pop-up with Back and X,
@@ -243,13 +258,19 @@
 - **Right-click menus can have sub-menus** (▸), opening beside them.
 - **Glass**: tile previews, the Media library's and Home's cards and buttons, the Text tab's buttons, the hover preview
   and a few small pop-ups are see-through glass now instead of solid boxes.
-- **New folder** always makes the folder at the top level, even from inside a folder (drag it onto another folder to
-  put it there).
 - **Friendlier empty tabs** in the Media library: each tab says what goes there ("Nothing saved yet. Click the star on a
   file…") instead of "Nothing matches.", and a search that finds nothing says so by name.
 
+**Better**
+
+- **The first fetch after installing or updating Craftora is about 1.5 seconds quicker**: Craftora runs its link
+  reader once in the background a few seconds after it opens, so Windows' virus check of the new files happens then.
+
 **Fixed**
 
+- **Saving a voice-over could be blocked by Windows' Controlled folder access** (ransomware protection), because
+  FFmpeg made the .m4a right in your Videos folder. It's made in Craftora's own folder now and Craftora moves it in,
+  like exports, so only Craftora needs to be allowed.
 - Media library: a folder made inside a collection showed up in All instead of the collection. Folders now belong to
   the collection they're made in, and files dropped into them keep their place everywhere else.
 - Media library: the file name you drag now stays next to the pointer.

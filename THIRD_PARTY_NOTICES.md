@@ -64,6 +64,14 @@ High-Resolution Dichotomous Image Segmentation", [ZhengPeng7/BiRefNet](https://g
 the ONNX conversion is published by [onnx-community](https://huggingface.co/onnx-community/BiRefNet_lite-ONNX)
 on Hugging Face.
 
+## Real-ESRGAN x4plus model (BSD-3-Clause)
+
+The AI sharpen model in Export picture ships with Craftora as `models/real_esrgan_x4plus.onnx` and
+`models/real_esrgan_x4plus.data`. Real-ESRGAN is by Xintao Wang et al. ("Real-ESRGAN: Training Real-World Blind
+Super-Resolution with Pure Synthetic Data", [xinntao/Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)), BSD-3-Clause
+licence, Copyright (c) 2021, Xintao Wang. The ONNX conversion is published by
+[Qualcomm AI Hub](https://github.com/quic/ai-hub-models) (release v0.67.0).
+
 ## Libraries built into Craftora
 
 The app is built with [Tauri](https://tauri.app) (MIT or Apache-2.0), [React](https://react.dev)

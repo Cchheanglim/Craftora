@@ -430,8 +430,10 @@ pub async fn save_voice(
     }
     let dir = crate::jobs::output_dir(&app)?;
     let id = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let raw = dir.join(format!(".craftora-voice-{id}.webm"));
-    let made = dir.join(format!(".craftora-voice-{id}.m4a"));
+    // FFmpeg works in Craftora's own folder (Controlled folder access blocks it in Videos); Craftora moves the take in.
+    let work = crate::jobs::work_root(&app)?;
+    let raw = work.join(format!(".craftora-voice-{id}.webm"));
+    let made = work.join(format!(".craftora-voice-{id}.m4a"));
     std::fs::write(&raw, take).map_err(|e| format!("Couldn't save the recording: {e}"))?;
     let (input, output) = (raw.to_string_lossy().into_owned(), made.to_string_lossy().into_owned());
     let args = ["-hide_banner", "-loglevel", "error", "-y", "-i", &input, "-vn", "-c:a", "aac", "-b:a", "192k", &output];
@@ -441,9 +443,10 @@ pub async fn save_voice(
         let _ = std::fs::remove_file(&made);
         return Err("Couldn't save the recording.".into());
     }
-    let saved = crate::jobs::deliver(&made, &dir, "Voice-over", "m4a").inspect_err(|_| {
-        let _ = std::fs::remove_file(&made);
-    })?;
+    let saved = crate::jobs::deliver(&made, &dir, "Voice-over", "m4a");
+    // Gone already when it was moved; left behind when it was copied to another drive.
+    let _ = std::fs::remove_file(&made);
+    let saved = saved?;
     let normalized = crate::local::normalize(&saved)?;
     crate::local::allow_preview(&app, &normalized)?;
     opened.allow(normalized.clone());

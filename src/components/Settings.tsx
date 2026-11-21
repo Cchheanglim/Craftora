@@ -179,6 +179,7 @@ function Preferences() {
     importToTimeline: preference("importToTimeline"),
     captionsOnGpu: preference("captionsOnGpu"),
     showCat: preference("showCat"),
+    fxFromAnywhere: preference("fxFromAnywhere"),
   }));
   const choose = (name: Preference, on: boolean) => {
     setPreference(name, on);
@@ -190,6 +191,7 @@ function Preferences() {
     ["importToTimeline", "Files imported from this PC", "Just import: they wait under In this project. Links you fetch always go onto the timeline.", ["Add to timeline", "Just import"]],
     ["captionsOnGpu", "Make captions with", "Graphics card: faster, with a more accurate speech model (190 MB, downloaded once). A PC without a graphics card of its own uses the processor.", ["Graphics card", "Processor"]],
     ["showCat", "The cat in the GIFs tab", "Off: no cat and no speech bubble; an empty GIFs tab just says so.", ["Show", "Hide"]],
+    ["fxFromAnywhere", "The editor's GIFs and Sound FX tabs", "From anywhere: every GIF and sound in your Media library, the Audio tab and any folder too. Off: only what's in the Media library's GIFs and Sound FX tabs.", ["From anywhere", "Only those tabs"]],
   ];
   return (
     <Group title="Preferences">
