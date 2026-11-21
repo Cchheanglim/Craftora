@@ -56,7 +56,8 @@
   --danger: #cc2929;
 }
 
-:root[data-theme="dark"] {
+/* The same :not() as the Light colour's block, so glass (later in this file) wins over it: Light + Glass is see-through. */
+:root[data-theme="dark"]:not(:is(.app--image, .layer-style-dialog) *) {
   --bg-input: rgb(0 0 0 / 0.28);
   --bg-canvas: #08080a;
   --bg-rail: rgb(26 26 31 / 0.6);
@@ -92,7 +93,7 @@
   --glow-c: 0.28;
 }
 
-:root[data-theme="light"] {
+:root[data-theme="light"]:not(:is(.app--image, .layer-style-dialog) *) {
   color-scheme: light;
   --bg-input: rgb(255 255 255 / 0.72);
   --bg-canvas: #e8eaef;

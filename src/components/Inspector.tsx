@@ -33,7 +33,7 @@ import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustMin, blockLabel, keyLine } f
 import { SHAPES, shapeLabel } from "../project/shapes";
 import { TEXT_IN, TEXT_OUT, TEXT_LOOP } from "../project/textMotion";
 import { LayerPlace } from "./LayerPlace";
-import { VOICES } from "../lib/voiceFx";
+import { VOICES, useVoiceTracks } from "../lib/voiceFx";
 import "./Inspector.css";
 
 export const TEXT_COLORS = [
@@ -146,6 +146,10 @@ export function Inspector({
   const isImage = Boolean(media?.source.image);
   const isPicture = Boolean(media?.hasVideo);
   const hasSound = Boolean(media?.hasAudio);
+  // The Voice tab says while a voice is being made for the preview, or why it couldn't be (lib/voiceFx.ts).
+  const voiceTrack = useVoiceTracks(
+    hasSound && media?.source.local && (clip.voice || clip.pitch) ? [{ id: clip.id, path: media.source.url, voice: clip.voice, pitch: clip.pitch }] : [],
+  ).get(clip.id);
   const streams = media && !media.source.local ? media.source.streams.filter((s) => s.kind === (isPicture ? "video" : "audio")) : [];
   const length = clipLength(clip);
   const maxSoundFade = Math.floor(length * 10) / 10;
@@ -290,6 +294,16 @@ export function Inspector({
           onCheckpoint={onCheckpoint}
           onChange={(v) => onChange({ pitch: v || undefined }, true)}
         />
+        {media?.source.local && (clip.voice || clip.pitch) ? (
+          voiceTrack?.error ? (
+            <p className="insp__warn">
+              <Icon name="alert" size={13} />
+              Couldn't make this voice: {voiceTrack.error}
+            </p>
+          ) : (
+            !voiceTrack && <p className="insp__hint">Getting the voice ready…</p>
+          )
+        ) : null}
       </>
     ),
   }[section as Exclude<ClipSection, "edit">];
