@@ -72,7 +72,8 @@ Write-Host "Laying out the package..."
 if (Test-Path $layout) { Remove-Item -Recurse -Force $layout }
 New-Item -ItemType Directory -Force $layout, (Join-Path $layout "Assets"), (Join-Path $layout "licenses") | Out-Null
 
-foreach ($item in "craftora.exe", "ffmpeg", "yt-dlp", "deno", "whisper", "craftora-observer") {
+# The same folders tauri.conf.json bundles for the installer: models + onnxruntime are Remove background and AI sharpen.
+foreach ($item in "craftora.exe", "ffmpeg", "yt-dlp", "deno", "whisper", "craftora-observer", "models", "onnxruntime") {
   # The engines come from src-tauri/bin itself: target/release keeps files an older version had.
   $source = if ($item -eq "craftora.exe") { Join-Path $release $item } else { Join-Path $tauri "bin\$item" }
   if (-not (Test-Path $source)) { throw "Missing $source. Run without -SkipBuild (and scripts/fetch-sidecars.ps1 first)." }
