@@ -209,7 +209,7 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
       const run = job.prefetch
         ? downloadMedia({ id: job.id, ...job.prefetch })
         : job.picture
-          ? job.picture.then((blob) => saveImage(job.id, job.fileName, blob))
+          ? job.picture().then((blob) => saveImage(job.id, job.fileName, blob))
           : job.render
             ? startRender(job.render)
             : startJob(job.spec!);

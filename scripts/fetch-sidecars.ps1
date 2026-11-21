@@ -6,7 +6,7 @@
   Fetches official release builds, verifies their SHA-256 checksums, and places them in
   src-tauri/bin/ as folders bundled as resources: FFmpeg and FFprobe with the libraries they
   share as bin/ffmpeg, yt-dlp's unpacked build as bin/yt-dlp, Deno, whisper.cpp, the BiRefNet
-  background-removal model in bin/models, and ONNX Runtime + DirectML in bin/onnxruntime. The
+  background-removal and Real-ESRGAN AI sharpen models in bin/models, and ONNX Runtime + DirectML in bin/onnxruntime. The
   binaries are gitignored; run this once per machine:
 
     powershell -ExecutionPolicy Bypass -File scripts/fetch-sidecars.ps1
@@ -218,6 +218,37 @@ if ($Force -or -not (Test-Path $modelTarget)) {
   Remove-Item -Recurse -Force $modelTmpDir -ErrorAction SilentlyContinue
 } else {
   Write-Host "BiRefNet model already present (use -Force to replace)"
+}
+
+# --- AI sharpen (Real-ESRGAN x4plus, Export picture) --------------------------
+# Qualcomm AI Hub's ONNX build: the graph and its weights (.data) must sit side by side, the graph loads them by name.
+$esrganSha256 = "2ac78e1073a67a7577116ac5c44af78f6cce9642efca3c8e62675d68255fa91c"
+$esrganFiles = @(
+  @("real_esrgan_x4plus.onnx", 3060406, "31188dbf6464f7b82a38df0359df25ad0c3a55e5d075d1d9cbfb61ee635bfd5d"),
+  @("real_esrgan_x4plus.data", 66737664, "28fada125730d3c87d504d48dd8332837f65811ec431a570ea4919ba3eee3287")
+)
+if ($Force -or ($esrganFiles | Where-Object { -not (Test-Path (Join-Path $modelsDir $_[0])) })) {
+  Write-Host "Real-ESRGAN x4plus model (AI sharpen)"
+  $esrganTmp = Join-Path $tmp "esrgan"
+  if (Test-Path $esrganTmp) { Remove-Item -Recurse -Force $esrganTmp }
+  New-Item -ItemType Directory -Force -Path $esrganTmp | Out-Null
+  $zip = Join-Path $esrganTmp "real_esrgan_x4plus-onnx-float.zip"
+  Get-File "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/real_esrgan_x4plus/releases/v0.67.0/real_esrgan_x4plus-onnx-float.zip" $zip
+  Assert-Sha256 $zip $esrganSha256 "real_esrgan_x4plus-onnx-float.zip"
+  Expand-Archive -Path $zip -DestinationPath $esrganTmp
+  $inner = Join-Path $esrganTmp "real_esrgan_x4plus-onnx-float\real_esrgan_x4plus_onnx"
+  foreach ($file in $esrganFiles) {
+    $path = Join-Path $inner $file[0]
+    if (-not (Test-Path $path)) { throw "Missing expected file in package: $($file[0])" }
+    $size = (Get-Item $path).Length
+    if ($size -ne $file[1]) { throw "Size mismatch for $($file[0]) (expected $($file[1]) bytes, got $size)" }
+    Assert-Sha256 $path $file[2] $file[0]
+  }
+  New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
+  foreach ($file in $esrganFiles) { Move-Item (Join-Path $inner $file[0]) (Join-Path $modelsDir $file[0]) -Force }
+  Remove-Item -Recurse -Force $esrganTmp -ErrorAction SilentlyContinue
+} else {
+  Write-Host "Real-ESRGAN model already present (use -Force to replace)"
 }
 
 $ortVersion = "1.24.4"

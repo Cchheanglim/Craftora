@@ -2240,10 +2240,11 @@ export default function App() {
       command: plan.command,
       spec: inDesktopApp && plan.kind === "simple" ? { ...plan.spec, id } : undefined,
       render: inDesktopApp && plan.kind === "render" ? { ...plan.spec, id } : undefined,
-      // The Image editor draws its picture now, as the preview shows it (lib/compose.ts); Rust only saves it.
+      // The Image editor draws its picture as the preview shows it (lib/compose.ts) once the job starts, so AI sharpen
+      // waits for a free slot like any export; Rust only saves it.
       picture:
         inDesktopApp && plan.kind === "render" && source.image
-          ? composeImage(source, {
+          ? () => composeImage(source, {
               width: plan.spec.width,
               height: plan.spec.height,
               transparent: plan.spec.transparent,
