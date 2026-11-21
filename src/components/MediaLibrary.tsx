@@ -21,6 +21,9 @@ import {
   setTitle,
   titleOf,
   toggleInCollection,
+  folderFits,
+  SAVED_SCOPE,
+  type FolderTab,
   type Collection,
   type Folder,
   type Organize,
@@ -95,6 +98,16 @@ const TAB_LABELS: Record<Filter, ReactNode> = {
   ),
 };
 
+/** A kind tab's folder: its card line ("Audio folder") and what it takes, for the note when something else is dropped. */
+const FOLDER_TABS: Record<FolderTab, { name: string; takes: string }> = {
+  video: { name: "Video", takes: "videos" },
+  image: { name: "Picture", takes: "pictures" },
+  audio: { name: "Audio", takes: "sounds" },
+  gif: { name: "GIF", takes: "GIFs" },
+  sfx: { name: "Sound FX", takes: "Sound FX sounds" },
+};
+const isFolderTab = (tab: string): tab is FolderTab => tab in FOLDER_TABS;
+
 const KIND_LABEL: Record<LibraryEntry["kind"], string> = {
   video: "Video",
   image: "Picture",
@@ -162,6 +175,8 @@ type CardDragState = {
   group?: string[];
   /** The folder under the pointer (a folder card or a part of the path line); null = the top level; absent = none. */
   hoverFolder?: string | null;
+  /** Why the folder under the pointer won't take what's dragged (it doesn't light up; the note shows on drop). */
+  refused?: string | null;
 };
 
 function computeTabInsert(
@@ -232,6 +247,12 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   /** New folder's pop-up is open, with this name to start from. */
   const [newFolderName, setNewFolderName] = useState<string | null>(null);
   const [coverError, setCoverError] = useState<string | null>(null);
+  const [dropNote, setDropNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!dropNote) return;
+    const timer = window.setTimeout(() => setDropNote(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [dropNote]);
   const sound = useSoundPreview();
   /** Selected cards, like File Explorer: file paths, and folders as `folder:<id>` (`folderKey`). */
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -358,7 +379,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         if (idx >= 0 && idx < levelFoldersRef.current.length) hoverFolder = levelFoldersRef.current[idx].id;
       }
       if (hoverFolder && (hoverFolder === cur.folderId || cur.group?.includes(folderKey(hoverFolder)))) hoverFolder = undefined;
-      const next: CardDragState = { ...cur, active: true, x: e.clientX, y: e.clientY, hoverCollectionId, hoverFolder };
+      const refused = hoverFolder ? refusalRef.current(cur.group ?? [cur.folderId ? folderKey(cur.folderId) : cur.path], hoverFolder) : null;
+      if (refused) hoverFolder = undefined;
+      const next: CardDragState = { ...cur, active: true, x: e.clientX, y: e.clientY, hoverCollectionId, hoverFolder, refused };
       cardDragRef.current = next;
       setCardDrag(next);
     };
@@ -372,7 +395,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         suppressCardClickRef.current = false;
       }, 0);
       const keys = cur.group ?? [cur.folderId ? folderKey(cur.folderId) : cur.path];
-      if (commit && cur.hoverFolder !== undefined) {
+      if (commit && cur.refused) {
+        setDropNote(cur.refused);
+      } else if (commit && cur.hoverFolder !== undefined) {
         const to = cur.hoverFolder;
         updateOrganize((o) => moveKeys(o, keys, to, cur.scope));
       } else if (commit && cur.hoverCollectionId) {
@@ -549,10 +574,11 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const shown = matching.filter((e) => !hidden.isHidden(e.path));
   const hiddenShown = matching.filter((e) => hidden.isHidden(e.path));
 
-  // Folders show on All, the kind tabs (the library's own folders) and a collection (its own); Saved and a search are
-  // flat lists of every match.
-  const foldersOn = !words && currentTab !== "saved";
-  const scope = activeCollection?.id ?? null;
+  // Folders show on every tab: the library's own on All, Folders and the kind tabs, Saved's and a collection's their
+  // own. A search is a flat list of every match.
+  const foldersOn = !words;
+  const scope = activeCollection?.id ?? (currentTab === "saved" ? SAVED_SCOPE : null);
+  const kindTab = isFolderTab(currentTab) ? currentTab : undefined;
   const placed = placedIn(organize, scope);
   const scopeFolders = organize.folders.filter((f) => (f.collection ?? null) === scope);
   const here = openFolder && scopeFolders.some((f) => f.id === openFolder) ? openFolder : null;
@@ -567,7 +593,25 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   };
   const inside = holding(entries);
   const matchingInside = holding(shown);
-  const levelFolders = foldersOn ? scopeFolders.filter((f) => f.parent === here && (currentTab === "all" || currentTab === "folders" || scope || matchingInside.has(f.id))) : [];
+  // A kind tab shows its own folders, and the others (made on All) when they hold its files.
+  const levelFolders = foldersOn
+    ? scopeFolders.filter((f) => f.parent === here && (currentTab === "all" || currentTab === "folders" || scope || f.tab === kindTab || (!f.tab && matchingInside.has(f.id))))
+    : [];
+  const entryAt = new Map(entries.map((e) => [e.path, e]));
+  /** Why folder `to` won't take `keys`, or null when it will: a kind tab's folder takes only that tab's files and folders. */
+  const refusal = (keys: string[], to: string | null): string | null => {
+    const tab = to ? organize.folders.find((f) => f.id === to)?.tab : undefined;
+    if (!tab) return null;
+    const fits = keys.every((key) => {
+      const folder = folderOf(key);
+      if (folder) return folderFits(organize, folder, to);
+      const entry = entryAt.get(key);
+      return !entry || inTab(entry, tab);
+    });
+    return fits ? null : `${FOLDER_TABS[tab].name} folders only take ${FOLDER_TABS[tab].takes}.`;
+  };
+  const refusalRef = useRef(refusal);
+  refusalRef.current = refusal;
   const levelFoldersRef = useRef(levelFolders);
   levelFoldersRef.current = levelFolders;
   // Folders tab: only folders at the top; inside one, its files as usual.
@@ -633,20 +677,23 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     }
   };
 
-  // Always at the top level, never inside the folder being looked at (drag it onto a folder to put it there).
-  const openNewFolder = () => setNewFolderName(freeName("New folder", scopeFolders.filter((f) => f.parent === null).map((f) => f.name)));
+  // Made where you are: on this tab, inside the open folder if there is one.
+  const openNewFolder = () => setNewFolderName(freeName("New folder", scopeFolders.filter((f) => f.parent === here).map((f) => f.name)));
   const createFolder = (name: string, cover: string | null) => {
     setNewFolderName(null);
     const id = newCollectionId();
     updateOrganize((o) => {
-      const made = addFolder(o, name, null, id, scope);
+      const made = addFolder(o, name, here, id, scope, kindTab);
       return cover ? setFolderCover(made, id, cover) : made;
     });
-    setOpenFolder(null);
     setSearch("");
-    // Shown where it can be seen: a kind tab hides folders without its files, so the library's go to Folders.
-    if (!scope) setActiveTab("folders");
     setSelected(new Set([folderKey(id)]));
+  };
+
+  /** Star or un-star; un-starred, it leaves Saved's folders too (starred again, it's back loose at the top). */
+  const save = (path: string, on: boolean) => {
+    onSave(path, on);
+    if (!on) updateOrganize((o) => moveToFolder(o, path, null, SAVED_SCOPE));
   };
 
   const openMenuAt = (e: ReactMouseEvent, nextMenu: (x: number, y: number) => MenuState) => {
@@ -803,13 +850,13 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
       const files = ticked;
       const moveTo = (to: string | null) => updateOrganize((o) => moveKeys(o, [...selected], to, scope));
       const folderItems: MenuItem[] = scopeFolders
-        .filter((f) => !selected.has(folderKey(f.id)))
+        .filter((f) => !selected.has(folderKey(f.id)) && !refusal([...selected], f.id))
         .map((f) => ({ label: folderPath(organize, f.id).map((x) => x.name).join(" / "), icon: "folder", onClick: () => moveTo(f.id) }));
       const newFolderFor = () => {
         const id = newCollectionId();
         updateOrganize((o) => {
           const top = o.folders.filter((f) => f.parent === null && (f.collection ?? null) === scope).map((f) => f.name);
-          return moveKeys(addFolder(o, freeName("New folder", top), null, id, scope), [...selected], id, scope);
+          return moveKeys(addFolder(o, freeName("New folder", top), null, id, scope, kindTab), [...selected], id, scope);
         });
         setOpenFolder(null);
         setRenamingFolderId(id);
@@ -843,7 +890,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                   ],
                 },
                 "sep" as const,
-                { label: "Save", icon: "star" as const, onClick: () => files.forEach((e) => !e.saved && onSave(e.path, true)) },
+                { label: "Save", icon: "star" as const, onClick: () => files.forEach((e) => !e.saved && save(e.path, true)) },
                 {
                   label: "Hide from list",
                   icon: "eyeOff" as const,
@@ -901,7 +948,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         : []),
       { label: "Rename", icon: "pencil", onClick: () => setRenamingPath(entry.path) },
       "sep",
-      { label: entry.saved ? "Remove from Saved" : "Save it", icon: "star", onClick: () => onSave(entry.path, !entry.saved) },
+      { label: entry.saved ? "Remove from Saved" : "Save it", icon: "star", onClick: () => save(entry.path, !entry.saved) },
       { label: isHidden ? "Unhide" : "Hide from list", icon: isHidden ? "eye" : "eyeOff", onClick: () => hidden.setHidden([entry.path], !isHidden) },
       { label: "Remove from list", icon: "trash", danger: true, onClick: () => void forget(entry) },
     ];
@@ -1078,6 +1125,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
 
         {tabNameClash && <p className="media-library__note" role="alert">There's already a collection called “{tabNameClash}”.</p>}
         {coverError && <p className="media-library__note" role="alert">{coverError}</p>}
+        {dropNote && <p className="media-library__note" role="alert">{dropNote}</p>}
         {sound.error && <p className="media-library__note" role="alert">{sound.error}</p>}
         {coverFor && (
           <CoverPicker
@@ -1148,9 +1196,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           </nav>
         )}
 
-        {currentTab === "gif" && !entries.some((e) => e.animated) ? (
+        {currentTab === "gif" && !entries.some((e) => e.animated) && levelFolders.length === 0 ? (
           <p className="pc-muted">No GIFs yet. Import a GIF and it shows up here and in the editor's GIFs tab.</p>
-        ) : currentTab === "sfx" && !entries.some((e) => e.sfx) ? (
+        ) : currentTab === "sfx" && !entries.some((e) => e.sfx) && levelFolders.length === 0 ? (
           <p className="pc-muted">No sounds yet. Import meme sounds and effects, paste a link to a sound file, or drag them in from File Explorer: they show up here and in the editor's Sound FX tab.</p>
         ) : currentTab === "folders" && !here && !words && levelFolders.length === 0 ? (
           <p className="pc-muted">No folders yet. Make one with New folder, then drag files onto it.</p>
@@ -1223,7 +1271,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                 <PictureCard
                   key={`folder:${folder.id}`}
                   thumb={<FolderThumb cover={folder.cover} target={target} />}
-                  tag="Folder"
+                  tag={folder.tab && folder.tab !== currentTab ? `${FOLDER_TABS[folder.tab].name} folder` : "Folder"}
                   name={folder.name}
                   meta={n === 1 ? "1 file" : `${n} files`}
                   selected={selected.has(folderKey(folder.id))}
@@ -1248,7 +1296,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                     icon="star"
                     label={entry.saved ? "Remove from Saved" : "Save it"}
                     on={Boolean(entry.saved)}
-                    onClick={() => onSave(entry.path, !entry.saved)}
+                    onClick={() => save(entry.path, !entry.saved)}
                   />
                   <PictureAction icon="eyeOff" label={`Hide ${shownName}`} onClick={() => hidden.setHidden([entry.path], true)} />
                   <PictureAction icon="trash" label={`Remove ${shownName} from the library`} onClick={() => void forget(entry)} />

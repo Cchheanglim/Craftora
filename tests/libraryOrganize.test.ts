@@ -2,6 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   EMPTY_ORGANIZE,
+  SAVED_SCOPE,
+  folderFits,
   addCollection,
   addFolder,
   childrenOf,
@@ -244,5 +246,40 @@ describe("collection folders and names", () => {
     assert.equal(renameCollection(o, "c1", "trip").collections[0].name, "trip");
     assert.equal(freeName("New collection", ["New collection", "new collection 2"]), "New collection 3");
     assert.equal(freeName("New folder", []), "New folder");
+  });
+});
+
+describe("folders on every tab", () => {
+  it("a kind tab's folder keeps its tab, and its sub-folders take it", () => {
+    let o = addFolder(EMPTY_ORGANIZE, "Beats", null, "a", null, "audio");
+    o = addFolder(o, "Drums", "a", "b", null, "video");
+    assert.equal(o.folders[0].tab, "audio");
+    assert.equal(o.folders[1].tab, "audio");
+    assert.equal(addFolder(EMPTY_ORGANIZE, "Mixed", null, "m").folders[0].tab, undefined);
+  });
+
+  it("a kind tab's folder takes only that tab's folders", () => {
+    let o = addFolder(EMPTY_ORGANIZE, "Beats", null, "a", null, "audio");
+    o = addFolder(o, "Clips", null, "v", null, "video");
+    o = addFolder(o, "Loops", null, "l", null, "audio");
+    o = addFolder(o, "Mixed", null, "m");
+    assert.equal(folderFits(o, "v", "a"), false);
+    assert.equal(folderFits(o, "m", "a"), false);
+    assert.equal(folderFits(o, "l", "a"), true);
+    assert.equal(folderFits(o, "a", "m"), true);
+    assert.equal(moveFolder(o, "v", "a"), o);
+    assert.equal(moveFolder(o, "l", "a").folders.find((f) => f.id === "l")?.parent, "a");
+  });
+
+  it("Saved's folders keep their own places", () => {
+    let o = addFolder(EMPTY_ORGANIZE, "Faves", null, "s", SAVED_SCOPE);
+    o = addFolder(o, "Lib", null, "f");
+    o = moveToFolder(o, "x.mp3", "s");
+    o = moveToFolder(o, "x.mp3", "f");
+    assert.deepEqual(placedIn(o, SAVED_SCOPE), { "x.mp3": "s" });
+    assert.deepEqual(placedIn(o, null), { "x.mp3": "f" });
+    assert.deepEqual(placedIn(moveToFolder(o, "x.mp3", null, SAVED_SCOPE), SAVED_SCOPE), {});
+    assert.deepEqual(placedIn(forgetPath(o, "x.mp3"), SAVED_SCOPE), {});
+    assert.deepEqual(placedIn(deleteFolder(o, "s"), SAVED_SCOPE), {});
   });
 });

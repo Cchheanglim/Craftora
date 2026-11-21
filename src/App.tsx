@@ -2795,7 +2795,7 @@ export default function App() {
       }
       soundFx={
         <SoundFxPanel
-          entries={library.filter((e) => e.sfx)}
+          entries={library.filter((e) => e.sfx || (e.kind === "audio" && preference("fxFromAnywhere")))}
           onAdd={(path) => void addGif(path)}
           onDrag={(path, e) => void dragGif(path, e)}
           onImport={() => void importSoundFx()}

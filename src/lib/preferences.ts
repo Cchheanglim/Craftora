@@ -1,5 +1,5 @@
 /** Settings → Preferences: small on/off choices, remembered on this PC. */
-export type Preference = "finishSound" | "importToTimeline" | "captionsOnGpu" | "showCat" | "imageEnhance" | "imageAi";
+export type Preference = "finishSound" | "importToTimeline" | "captionsOnGpu" | "showCat" | "imageEnhance" | "imageAi" | "fxFromAnywhere";
 
 const DEFAULTS: Record<Preference, boolean> = {
   // Craftora's sound when a download or export finishes.
@@ -13,6 +13,8 @@ const DEFAULTS: Record<Preference, boolean> = {
   // Export picture: Enhance colours and AI sharpen, the last choice kept.
   imageEnhance: false,
   imageAi: false,
+  // The editor's GIFs and Sound FX tabs: off, only the Media library's GIFs and Sound FX tabs; on, any GIF or sound.
+  fxFromAnywhere: false,
 };
 
 export function preference(name: Preference): boolean {

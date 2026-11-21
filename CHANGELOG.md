@@ -4,6 +4,14 @@
 
 **New**
 
+- **Folders on every Media library tab**: New folder opens a pop-up for the name and a cover (from the Media library
+  or this PC) with a preview of the card, and the folder is made on the tab you're on (inside the open folder, if
+  there is one). A folder made on Videos, Pictures, Audio, GIFs or Sound FX shows there even when empty, takes only that
+  kind of file, and shows on All and Folders as "Audio folder" and so on; drop something else on it and a note says
+  why. Saved has folders of its own (un-starring a file takes it out). A collection with only folders shows them.
+- **Settings → Preferences → The editor's GIFs and Sound FX tabs**: From anywhere also lists every other sound in your
+  Media library in the editor's Sound FX tab (the Audio tab and any folder), not just Sound FX ones.
+- **Media library tick boxes** show only after you press Select.
 - **Enhance colours and AI sharpen when you export a picture**: Enhance colours gives the whole picture the same lift
   as a clip's Enhance tab. AI sharpen redraws fine detail with a model that runs on this PC (graphics card when it can,
   no internet), sharper at every size, and adds a 4× size. A before/after piece of the picture shows the difference; drag
