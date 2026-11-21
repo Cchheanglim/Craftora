@@ -80,6 +80,7 @@ pub fn run() {
             std::thread::spawn(move || {
                 jobs::clean_work_dirs(&handle);
                 jobs::clean_sources(&handle);
+                local::clean_voice_tracks(&handle);
             });
             // Find the fastest encoder now, so the first export doesn't wait for it.
             let handle = app.handle().clone();
@@ -140,6 +141,7 @@ pub fn run() {
             local::make_preview,
             local::local_thumbnail,
             local::audio_peaks,
+            local::voice_track,
             local::link_peaks,
             local::detect_silences,
             jobs::start_job,

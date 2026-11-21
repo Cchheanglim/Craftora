@@ -1,9 +1,14 @@
 /**
- * Voice changer (the clip's Voice tab): the voices, and the preview playing a clip's sound through one. The export makes
- * the same voices with FFmpeg (project.rs `voice_filter`): the same filters and amounts, except the pitch, which the
- * export shifts with Rubber Band (cleaner) and the preview with a small grain shifter (`PITCH_WORKLET`).
+ * Voice changer (the clip's Voice tab): the voices, and how the preview plays them. A file on this PC: FFmpeg makes its
+ * whole sound through the voice once (local.rs `voice_track`, the export's own filters, project.rs `voice_filter`) and
+ * the preview plays that in place of the clip's sound (`useVoiceTracks`), so it's in step and sounds like the export.
+ * A link that's only streamed: the sound goes through the same filters live in the page (`setVoice`), with a simpler
+ * pitch shift (`PITCH_WORKLET`).
  */
+import { useEffect, useReducer } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { IconName } from "../components/Icon";
+import { errorText, playableFile } from "./engine";
 
 export type VoiceId = "chipmunk" | "deep" | "monster" | "robot" | "alien" | "echo" | "radio" | "megaphone";
 
@@ -62,7 +67,8 @@ let context: AudioContext | undefined;
 let worklet: Promise<void> | undefined;
 
 function audio(): AudioContext {
-  context ??= new AudioContext({ latencyHint: "playback" });
+  // "interactive": the smallest delay, so the live voice stays close to the picture.
+  context ??= new AudioContext({ latencyHint: "interactive" });
   return context;
 }
 
@@ -174,6 +180,9 @@ export async function setVoice(el: HTMLMediaElement, voice: VoiceId | undefined,
   let route = routes.get(el);
   if (!route && !voice && !pitch) return;
   if (route?.key === key) return;
+  // Another site's sound without CORS would come out silent through Web Audio: it plays without the voice instead.
+  const src = el.currentSrc || el.src;
+  if (!route && src && !el.crossOrigin && !src.startsWith("blob:") && new URL(src, location.href).origin !== location.origin) return;
   const ctx = audio();
   await pitchReady(ctx);
   route = routes.get(el);
@@ -198,4 +207,59 @@ export async function setVoice(el: HTMLMediaElement, voice: VoiceId | undefined,
 /** Web Audio starts suspended until the page has been used; playing resumes it. */
 export function wakeVoices() {
   if (context?.state === "suspended") void context.resume();
+}
+
+/** A voice made for the preview: its address, or why it couldn't be made; absent while it's being made. */
+export interface VoiceTrack {
+  url?: string;
+  error?: string;
+}
+const tracks = new Map<string, VoiceTrack>();
+const asked = new Set<string>();
+const listeners = new Set<() => void>();
+const trackKey = (path: string, voice: VoiceId | undefined, pitch: number) => `${path}
+${voice ?? ""}
+${pitch}`;
+
+function ask(path: string, voice: VoiceId | undefined, pitch: number) {
+  const key = trackKey(path, voice, pitch);
+  if (asked.has(key)) return;
+  asked.add(key);
+  const done = (track: VoiceTrack) => {
+    tracks.set(key, track);
+    listeners.forEach((l) => l());
+  };
+  invoke<string>("voice_track", { path, voice: voice ?? "", pitch })
+    .then(playableFile)
+    .then(
+      (url) => done({ url }),
+      (err) => {
+        // Asked again next time (the file may be back, or the problem gone).
+        asked.delete(key);
+        done({ error: errorText(err) });
+      },
+    );
+}
+
+/**
+ * Each clip's voice, made on this PC (`items`: clips with a voice on a file from this PC). A new voice or pitch is asked
+ * for once the choice has rested a moment, so dragging the Pitch slider doesn't make one for every step.
+ */
+export function useVoiceTracks(items: { id: string; path: string; voice?: VoiceId; pitch?: number }[]): Map<string, VoiceTrack | undefined> {
+  const [, changed] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    listeners.add(changed);
+    return () => {
+      listeners.delete(changed);
+    };
+  }, []);
+  const wanted = items.map((i) => trackKey(i.path, i.voice, i.pitch ?? 0));
+  const signature = wanted.join("	");
+  useEffect(() => {
+    if (!items.length) return;
+    const timer = window.setTimeout(() => items.forEach((i) => ask(i.path, i.voice, i.pitch ?? 0)), 300);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature]);
+  return new Map(items.map((i, n) => [i.id, tracks.get(wanted[n])]));
 }

@@ -19,6 +19,7 @@ import { gifFrameAt, loadGif, type DecodedGif } from "../lib/gif";
 import { Icon } from "./Icon";
 import { Select } from "./Select";
 import { SyncedMedia } from "./SyncedMedia";
+import { useVoiceTracks } from "../lib/voiceFx";
 import { LiveCanvas, PaintSurface, type LivePaint, type Painting } from "./PaintSurface";
 import { SelectSurface, SelectionOutline, type Selecting } from "./SelectSurface";
 import type { Selection } from "../lib/selection";
@@ -311,6 +312,18 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
   const trackMuted = (c: Clip) => trackSilent(project.tracks.find((t) => t.id === c.trackId));
   const trackHidden = (c: Clip) => Boolean(project.tracks.find((t) => t.id === c.trackId)?.hidden);
   const mediaOf = (c: Clip) => project.media.find((m) => m.id === c.mediaId);
+  // Voice changer: a file on this PC plays its voice made by FFmpeg in place of its own sound (lib/voiceFx.ts).
+  const voiceTracks = useVoiceTracks(
+    project.clips.flatMap((c) => {
+      const source = mediaOf(c)?.source;
+      return (c.voice || c.pitch) && source?.local ? [{ id: c.id, path: source.url, voice: c.voice, pitch: c.pitch }] : [];
+    }),
+  );
+  /** Its voice made into a file, or nothing (no voice, still being made, or a link: those play it live). */
+  const voicedUrl = (c: Clip) => voiceTracks.get(c.id)?.url;
+  /** The voice the page itself plays (links only: a file from this PC plays its made voice, or its own sound until then). */
+  const liveVoice = (c: Clip) => (mediaOf(c)?.source.local ? undefined : c.voice);
+  const livePitch = (c: Clip) => (mediaOf(c)?.source.local ? undefined : c.pitch);
   const active = (c: Clip) => time >= c.start && time < clipEnd(c);
   const mediaTime = (c: Clip) => (active(c) ? mediaTimeAt(c, time) : null);
   /** A clip whose turn comes within a few seconds waits on its first frame (no black flash at a cut). */
@@ -682,7 +695,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
             const poster = media?.source.thumbnail && !media.source.thumbnail.includes("#t=") ? media.source.thumbnail : undefined;
             if (!media || (!canPlay && !poster)) return null;
             const t = mediaTime(clip);
-            const separateSound = Boolean(media.source.previewAudioUrl);
+            const voiced = voicedUrl(clip);
+            const separateSound = Boolean(media.source.previewAudioUrl || voiced);
             const isSelected = clip.id === selectedId && t !== null;
             const rate = playback.speed * clip.speed;
             return (
@@ -762,8 +776,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         muted={muted || trackMuted(clip) || separateSound}
                         rate={rate}
                         reverse={clip.reverse}
-                        voice={clip.voice}
-                        pitch={clip.pitch}
+                        voice={liveVoice(clip)}
+                        pitch={livePitch(clip)}
                         onLoading={onMediaLoading(`${clip.id}:video`)}
                         onFailed={onMediaFailed(media.source.previewUrl)}
                         className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
@@ -775,7 +789,7 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                     {separateSound && (
                       <SyncedMedia
                         kind="audio"
-                        src={media.source.previewAudioUrl!}
+                        src={voiced ?? media.source.previewAudioUrl!}
                         time={t}
                         cue={cueOf(clip)}
                         playing={running}
@@ -783,8 +797,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         muted={muted || trackMuted(clip)}
                         rate={rate}
                         reverse={clip.reverse}
-                        voice={clip.voice}
-                        pitch={clip.pitch}
+                        voice={voiced ? undefined : liveVoice(clip)}
+                        pitch={voiced ? undefined : livePitch(clip)}
                         onLoading={onMediaLoading(`${clip.id}:audio`)}
                       />
                     )}
@@ -806,7 +820,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
           )}
           {sounds.map((clip) => {
             const media = mediaOf(clip);
-            const src = media?.source.previewAudioUrl || media?.source.previewUrl;
+            const voiced = voicedUrl(clip);
+            const src = voiced || media?.source.previewAudioUrl || media?.source.previewUrl;
             if (!src || failed.has(src)) return null;
             return (
               <SyncedMedia
@@ -820,8 +835,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 muted={muted || trackMuted(clip)}
                 rate={playback.speed * clip.speed}
                 reverse={clip.reverse}
-                voice={clip.voice}
-                pitch={clip.pitch}
+                voice={voiced ? undefined : liveVoice(clip)}
+                pitch={voiced ? undefined : livePitch(clip)}
                 onLoading={onMediaLoading(`${clip.id}:audio`)}
                 onFailed={onMediaFailed(src)}
               />

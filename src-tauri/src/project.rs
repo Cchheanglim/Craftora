@@ -696,7 +696,7 @@ impl ClipSpec {
 
 /// A voice changer's filters, each starting with a comma (empty for none). lib/voiceFx.ts plays the same voices in the
 /// preview: keep the two alike.
-fn voice_filter(voice: &str, pitch: f64) -> String {
+pub(crate) fn voice_filter(voice: &str, pitch: f64) -> String {
     let (shift, rest) = match voice {
         "chipmunk" => (7.0, ""),
         "deep" => (-5.0, ""),
