@@ -604,6 +604,59 @@ pub async fn audio_peaks(app: AppHandle, opened: State<'_, OpenedFiles>, path: S
     peaks_of(&app, &path.to_string_lossy(), None).await
 }
 
+/// The Voice tab's preview: a file's whole sound through a voice, made by FFmpeg exactly as the export makes it
+/// (project.rs `voice_filter`), once, into Craftora's cache. The preview plays it in place of the clip's own sound,
+/// which keeps it in step and sounding like the export (a live pitch shift in the page lagged and warbled).
+#[tauri::command]
+pub async fn voice_track(app: AppHandle, opened: State<'_, OpenedFiles>, path: String, voice: String, pitch: f64) -> Result<String, String> {
+    let path = normalize(Path::new(&path))?;
+    if !opened.contains(&path) {
+        return Err("Open the file first.".into());
+    }
+    let filter = crate::project::voice_filter(&voice, pitch);
+    let filter = filter.trim_start_matches(',');
+    if filter.is_empty() {
+        return Err("No voice to make.".into());
+    }
+    let modified = std::fs::metadata(&path).and_then(|m| m.modified()).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
+    let mut hasher = DefaultHasher::new();
+    (&path, modified, filter).hash(&mut hasher);
+    let name = format!("{:016x}", hasher.finish());
+    let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join(VOICE_TRACKS);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't make the voice: {e}"))?;
+    let out = dir.join(format!("{name}.m4a"));
+    if !out.is_file() {
+        let part = dir.join(format!("{name}.part.m4a"));
+        let (input, part_text) = (path.to_string_lossy().into_owned(), part.to_string_lossy().into_owned());
+        let args = ["-hide_banner", "-loglevel", "error", "-y", "-i", &input, "-vn", "-af", filter, "-c:a", "aac", "-b:a", "160k", &part_text];
+        let output = run_to_end(&app, FFMPEG, &args).await?;
+        if !output.status.success() {
+            let _ = std::fs::remove_file(&part);
+            return Err(format!("Couldn't make the voice: {}", String::from_utf8_lossy(&output.stderr).lines().last().unwrap_or("FFmpeg failed")));
+        }
+        std::fs::rename(&part, &out).map_err(|e| format!("Couldn't make the voice: {e}"))?;
+    }
+    let out = normalize(&out)?;
+    allow_preview(&app, &out)?;
+    opened.allow(out.clone());
+    Ok(out.to_string_lossy().into_owned())
+}
+
+const VOICE_TRACKS: &str = "voices";
+
+/// Voice previews not used for a week (each is made again when needed). Called at start-up.
+pub(crate) fn clean_voice_tracks(app: &AppHandle) {
+    let Ok(dir) = app.path().app_cache_dir().map(|d| d.join(VOICE_TRACKS)) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let week = std::time::Duration::from_secs(7 * 24 * 3600);
+    for entry in entries.flatten() {
+        let old = entry.metadata().and_then(|m| m.accessed().or_else(|_| m.modified())).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > week);
+        if old {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 /// The sound wave of a fetched link, from the light stream `MediaSource.peaks_url` names.
 #[tauri::command]
 pub async fn link_peaks(app: AppHandle, url: String) -> Result<Vec<u8>, String> {

@@ -233,6 +233,11 @@ struct ClipSpec {
     sound_fade_in: f64,
     #[serde(default)]
     sound_fade_out: f64,
+    /// Voice changer: lib/voiceFx.ts `VoiceId` ("" keeps the clip's own voice) and extra semitones (−12…12).
+    #[serde(default)]
+    voice: String,
+    #[serde(default)]
+    pitch: f64,
     /// Fractions of the picture cut off: left, top, right, bottom.
     #[serde(default)]
     crop: [f64; 4],
@@ -658,6 +663,7 @@ impl ClipSpec {
         if self.speed != 1.0 {
             chain.push_str(&atempo(self.speed));
         }
+        chain.push_str(&voice_filter(&self.voice, self.pitch));
         chain.push_str(&format!(",volume={:.2}", self.volume));
         for r in self.ramps(true) {
             chain.push_str(&format!(",afade=t={}:st={}:d={}", if r.fade_in { "in" } else { "out" }, secs(r.start.max(0.0)), secs(r.length)));
@@ -686,6 +692,29 @@ impl ClipSpec {
             .collect();
         Some(terms.iter().skip(1).fold(terms[0].clone(), |acc, t| format!("min({acc},{t})")))
     }
+}
+
+/// A voice changer's filters, each starting with a comma (empty for none). lib/voiceFx.ts plays the same voices in the
+/// preview: keep the two alike.
+pub(crate) fn voice_filter(voice: &str, pitch: f64) -> String {
+    let (shift, rest) = match voice {
+        "chipmunk" => (7.0, ""),
+        "deep" => (-5.0, ""),
+        "monster" => (-9.0, ",lowpass=f=2200,volume=2,asoftclip=type=tanh"),
+        // A ring modulator: the sound times a 50 Hz wave.
+        "robot" => (0.0, ",aeval=val(ch)*sin(2*PI*50*t):c=same"),
+        "alien" => (4.0, ",vibrato=f=6:d=0.5"),
+        "echo" => (0.0, ",aecho=0.8:0.8:250|500:0.45|0.3"),
+        "radio" => (0.0, ",highpass=f=400,lowpass=f=3200,volume=2,asoftclip=type=tanh,volume=0.7"),
+        "megaphone" => (0.0, ",highpass=f=700,lowpass=f=3500,volume=8,asoftclip=type=tanh,volume=0.5"),
+        _ => (0.0, ""),
+    };
+    let semitones = shift + if pitch.is_finite() { pitch.clamp(-12.0, 12.0) } else { 0.0 };
+    let mut chain = String::new();
+    if semitones.abs() > 0.01 {
+        chain.push_str(&format!(",rubberband=pitch={:.5}", 2f64.powf(semitones / 12.0)));
+    }
+    chain + rest
 }
 
 /// FFmpeg's atempo takes 0.5–2 per step; chain steps for 0.25 or 4.
@@ -2046,6 +2075,12 @@ mod tests {
         assert_eq!(quiet.picture_fades(), "");
         let sound = quiet.sound_edits();
         assert!(sound.contains(",afade=t=in:st=0.000:d=0.500") && sound.contains(",afade=t=out:st=1.000:d=2.000"), "{sound}");
+        // A voice goes after the speed and before the volume; the Pitch slider adds to the voice's own shift.
+        let chipmunk = clip(r#""voice":"chipmunk","pitch":5,"speed":2"#).sound_edits();
+        assert!(chipmunk.starts_with(",atempo=2.0000,rubberband=pitch=2.00000,volume="), "{chipmunk}");
+        assert_eq!(clip(r#""voice":"robot""#).sound_edits().matches("aeval").count(), 1);
+        assert!(!clip(r#""voice":"nonsense","pitch":0"#).sound_edits().contains("rubberband"));
+        assert!(clip(r#""pitch":99"#).sound_edits().contains("rubberband=pitch=2.00000"));
         // A crossfade moves, zooms and wipes nothing.
         let fade = clip(r#""transitionIn":1,"transitionOut":1"#);
         assert_eq!(fade.slide('W') + &fade.slide('H') + &fade.transition_moves(30) + &fade.reveal_in(4, 30), "");

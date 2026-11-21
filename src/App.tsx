@@ -205,7 +205,7 @@ const DEMO = DEMO_SOURCES[0];
 const FX_TABS = ["filters", "effects", "transitions", "shapes"] as const;
 /** The right panel's tabs, in the owner's order (2026-11-12); those that don't fit go under More. */
 /** A selected clip's own tabs beside Edit (Inspector `section`). */
-const CLIP_TABS = ["text", "adjust", "enhance", "background", "speed"] as const;
+const CLIP_TABS = ["text", "adjust", "enhance", "background", "speed", "voicefx"] as const;
 /** The right panel's row: the selected clip's settings (Filters, Effects, Transitions and Shapes are in the left panel, MediaPanel). */
 const PANEL_TABS: { id: "edit" | "transcript" | "assistant" | (typeof CLIP_TABS)[number]; label: string; icon: IconName }[] = [
   { id: "edit", label: "Edit", icon: "pencil" },
@@ -214,6 +214,7 @@ const PANEL_TABS: { id: "edit" | "transcript" | "assistant" | (typeof CLIP_TABS)
   { id: "enhance", label: "Enhance", icon: "wand" },
   { id: "background", label: "Background", icon: "image" },
   { id: "speed", label: "Speed", icon: "clock" },
+  { id: "voicefx", label: "Voice", icon: "mic" },
   { id: "transcript", label: "Transcript", icon: "captions" },
   { id: "assistant", label: "Assistant", icon: "sparkle" },
 ];

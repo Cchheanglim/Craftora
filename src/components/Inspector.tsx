@@ -33,6 +33,7 @@ import { ADJUSTMENTS, LOOKS, PICTURE_EFFECTS, adjustMin, blockLabel, keyLine } f
 import { SHAPES, shapeLabel } from "../project/shapes";
 import { TEXT_IN, TEXT_OUT, TEXT_LOOP } from "../project/textMotion";
 import { LayerPlace } from "./LayerPlace";
+import { VOICES, useVoiceTracks } from "../lib/voiceFx";
 import "./Inspector.css";
 
 export const TEXT_COLORS = [
@@ -53,7 +54,7 @@ const CROP_SIDES: { side: keyof Crop; label: string }[] = [
 const MAX_FADE = 5;
 
 /** The right panel's tab this is: Edit, or one of the clip's own tabs. */
-export type ClipSection = "edit" | "text" | "adjust" | "enhance" | "background" | "speed";
+export type ClipSection = "edit" | "text" | "adjust" | "enhance" | "background" | "speed" | "voicefx";
 
 interface InspectorProps {
   /** Which settings to show (Edit when absent). */
@@ -145,6 +146,10 @@ export function Inspector({
   const isImage = Boolean(media?.source.image);
   const isPicture = Boolean(media?.hasVideo);
   const hasSound = Boolean(media?.hasAudio);
+  // The Voice tab says while a voice is being made for the preview, or why it couldn't be (lib/voiceFx.ts).
+  const voiceTrack = useVoiceTracks(
+    hasSound && media?.source.local && (clip.voice || clip.pitch) ? [{ id: clip.id, path: media.source.url, voice: clip.voice, pitch: clip.pitch }] : [],
+  ).get(clip.id);
   const streams = media && !media.source.local ? media.source.streams.filter((s) => s.kind === (isPicture ? "video" : "audio")) : [];
   const length = clipLength(clip);
   const maxSoundFade = Math.floor(length * 10) / 10;
@@ -262,6 +267,45 @@ export function Inspector({
         </label>
       </>
     ),
+    voicefx: moving && hasSound && (
+      <>
+        <div className="insp__voices" role="group" aria-label="Voice">
+          {[{ id: undefined, label: "None", icon: "x" as const }, ...VOICES].map((v) => (
+            <button
+              key={v.label}
+              type="button"
+              className="insp__voice"
+              aria-pressed={clip.voice === v.id}
+              onClick={() => onChange({ voice: v.id })}
+            >
+              <Icon name={v.icon} size={16} />
+              {v.label}
+            </button>
+          ))}
+        </div>
+        <Slider
+          id="insp-pitch"
+          label="Pitch"
+          min={-12}
+          max={12}
+          step={1}
+          value={clip.pitch ?? 0}
+          format={(v) => (v > 0 ? `+${v}` : String(v))}
+          onCheckpoint={onCheckpoint}
+          onChange={(v) => onChange({ pitch: v || undefined }, true)}
+        />
+        {media?.source.local && (clip.voice || clip.pitch) ? (
+          voiceTrack?.error ? (
+            <p className="insp__warn">
+              <Icon name="alert" size={13} />
+              Couldn't make this voice: {voiceTrack.error}
+            </p>
+          ) : (
+            !voiceTrack && <p className="insp__hint">Getting the voice ready…</p>
+          )
+        ) : null}
+      </>
+    ),
   }[section as Exclude<ClipSection, "edit">];
 
   return (
@@ -297,6 +341,8 @@ export function Inspector({
             <p className="insp__hint">
               {section === "speed"
                 ? "Select a video or sound clip on the timeline to change its speed."
+                : section === "voicefx"
+                  ? "Select a video or sound clip with sound on the timeline to change its voice."
                 : section === "text"
                   ? "Select a text on the timeline to change its font and style, or add one."
                   : "Select a video or picture on the timeline."}

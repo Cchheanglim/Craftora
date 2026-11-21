@@ -1,6 +1,7 @@
 import { useEffect, useRef, type CSSProperties, type SyntheticEvent } from "react";
 import type Hls from "hls.js";
 import { CRAFTORA_MEDIA, HLS_RELAY, RECORDINGS, noteDiagnostic } from "../lib/engine";
+import { setVoice, wakeVoices, type VoiceId } from "../lib/voiceFx";
 
 interface SyncedMediaProps {
   kind: "video" | "audio";
@@ -20,6 +21,9 @@ interface SyncedMediaProps {
    * picture steps back by seeking (choppier than the export) and the sound is silent.
    */
   reverse?: boolean;
+  /** Voice changer: the sound plays through this voice (lib/voiceFx.ts), with `pitch` extra semitones. */
+  voice?: VoiceId;
+  pitch?: number;
   className?: string;
   style?: CSSProperties;
   onLoadedMetadata?: (e: SyntheticEvent<HTMLVideoElement>) => void;
@@ -41,7 +45,7 @@ const MAX_RATE = 16;
  * A video or audio element that follows the editor's playhead: a layer, or the separate
  * sound stream of a video-only preview.
  */
-export function SyncedMedia({ kind, src, time, cue, playing, volume, muted, rate, reverse, className, style, onLoadedMetadata, onReady, onLoading, onFailed }: SyncedMediaProps) {
+export function SyncedMedia({ kind, src, time, cue, playing, volume, muted, rate, reverse, voice, pitch, className, style, onLoadedMetadata, onReady, onLoading, onFailed }: SyncedMediaProps) {
   const ref = useRef<HTMLVideoElement & HTMLAudioElement>(null);
   /**
    * Where the element should be. Seeks aren't stacked: while one is running, newer times
@@ -63,6 +67,11 @@ export function SyncedMedia({ kind, src, time, cue, playing, volume, muted, rate
 
   useEffect(() => {
     const el = ref.current;
+    if (el) void setVoice(el, voice, pitch).catch((err) => noteDiagnostic(`voice changer: ${err}`));
+  }, [voice, pitch]);
+
+  useEffect(() => {
+    const el = ref.current;
     if (!el) return;
     if (time === null || (el.duration && time >= el.duration)) {
       if (!el.paused) el.pause();
@@ -78,7 +87,10 @@ export function SyncedMedia({ kind, src, time, cue, playing, volume, muted, rate
     }
     if (playing) {
       if (!el.seeking && drift > PLAYING_TOLERANCE * Math.max(1, rate)) el.currentTime = time;
-      if (el.paused) void el.play().catch(() => {});
+      if (el.paused) {
+        wakeVoices();
+        void el.play().catch(() => {});
+      }
     } else {
       if (!el.paused) el.pause();
       if (!el.seeking && drift > 0.04) el.currentTime = time;
@@ -180,6 +192,8 @@ export function SyncedMedia({ kind, src, time, cue, playing, volume, muted, rate
   ) : (
     <audio
       ref={ref}
+      // Craftora's own addresses allow it (they answer with CORS), so a voice changer can hear the sound.
+      crossOrigin={src.startsWith(CRAFTORA_MEDIA) ? "anonymous" : undefined}
       src={viaHls ? undefined : src}
       preload="auto"
       aria-hidden="true"
