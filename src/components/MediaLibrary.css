@@ -14,22 +14,26 @@
   flex-wrap: wrap;
 }
 
-.media-library__tabs .pc-tab.is-dragging {
-  opacity: 0.45;
+/* A tab picked up to move: lifted under the pointer while the others slide aside. */
+.media-library__tabs .pc-tab {
+  position: relative;
+}
+
+.media-library__tabs .pc-tab.is-lifted {
+  z-index: 3;
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    0 6px 18px rgb(0 0 0 / 0.35);
+  color: var(--text);
+  cursor: grabbing;
 }
 
 .media-library__tabs .pc-tab.is-drop-target {
   background: var(--accent-wash);
   border-bottom-color: var(--accent);
   color: var(--text);
-}
-
-.media-library__tab-insert {
-  position: absolute;
-  width: 2px;
-  background: var(--accent);
-  pointer-events: none;
-  z-index: 2;
 }
 
 .media-library__tab-rename {

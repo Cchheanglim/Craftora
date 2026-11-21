@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   addCollection,
   addFolder,
@@ -154,8 +154,9 @@ type TabDragState = {
   startX: number;
   startY: number;
   active: boolean;
-  insertIndex: number;
-  line: { left: number; top: number; height: number } | null;
+  /** Where in the tab it was picked up, so it stays under the pointer at that spot. */
+  grabX: number;
+  grabY: number;
 };
 
 type CardDragState = {
@@ -179,51 +180,19 @@ type CardDragState = {
   refused?: string | null;
 };
 
-function computeTabInsert(
-  clientX: number,
-  clientY: number,
-  tabs: string[],
-  tabId: string,
-  tabBarEl: HTMLElement | null,
-  tabEls: Map<string, HTMLElement>,
-) {
-  if (!tabBarEl) return { insertIndex: -1, line: null };
-  const barRect = tabBarEl.getBoundingClientRect();
-  const items = tabs
-    .map((id, index) => {
-      const el = tabEls.get(id);
-      return el ? { id, index, rect: el.getBoundingClientRect() } : null;
-    })
-    .filter((x): x is { id: string; index: number; rect: DOMRect } => x !== null);
-  if (items.length === 0) return { insertIndex: -1, line: null };
-
-  const distY = (r: DOMRect) => (clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0);
-  let minDy = Infinity;
-  for (const item of items) minDy = Math.min(minDy, distY(item.rect));
-  const rowItems = items.filter((item) => distY(item.rect) <= minDy + 2);
-
-  let insertIndex = rowItems[rowItems.length - 1].index + 1;
-  let lineX = rowItems[rowItems.length - 1].rect.right - barRect.left - 1;
-  let lineTop = rowItems[0].rect.top - barRect.top;
-  let lineHeight = rowItems[0].rect.height;
-
-  for (let i = 0; i < rowItems.length; i++) {
-    const item = rowItems[i];
-    if (clientX < item.rect.left + item.rect.width / 2) {
-      insertIndex = item.index;
-      lineTop = item.rect.top - barRect.top;
-      lineHeight = item.rect.height;
-      lineX = i > 0 ? (rowItems[i - 1].rect.right + item.rect.left) / 2 - barRect.left - 1 : item.rect.left - barRect.left - 1;
-      break;
-    }
-  }
-
-  const fromIndex = tabs.indexOf(tabId);
-  const isNoop = insertIndex === fromIndex || insertIndex === fromIndex + 1;
-  return {
-    insertIndex,
-    line: isNoop ? null : { left: Math.round(lineX), top: Math.round(lineTop), height: Math.round(lineHeight) },
-  };
+/** Where a dragged tab goes among `others` (in order) for its centre (`cx`, `cy`, in the tab bar): the nearest row,
+ * before the first tab whose centre is to the right. Uses the tabs' laid-out places, not where they're animating. */
+function dropIndex(others: string[], els: Map<string, HTMLElement>, cx: number, cy: number): number {
+  const placed = others.flatMap((id, i) => {
+    const el = els.get(id);
+    return el ? [{ i, x: el.offsetLeft + el.offsetWidth / 2, top: el.offsetTop, bottom: el.offsetTop + el.offsetHeight }] : [];
+  });
+  if (placed.length === 0) return 0;
+  const away = (t: (typeof placed)[number]) => (cy < t.top ? t.top - cy : cy > t.bottom ? cy - t.bottom : 0);
+  const nearest = Math.min(...placed.map(away));
+  const row = placed.filter((t) => away(t) <= nearest + 2);
+  const before = row.find((t) => cx < t.x);
+  return before ? before.i : row[row.length - 1].i + 1;
 }
 
 export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, onImportGifs, onDownloadGif, onImportSounds, onDownloadSound }: MediaLibraryProps) {
@@ -295,36 +264,94 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   collectionsRef.current = organize.collections;
 
   const isTabDragging = Boolean(tabDrag);
+  /** The tabs' order while one is dragged: they make room as it moves; saved on drop. */
+  const [tabPreview, setTabPreview] = useState<string[] | null>(null);
+  const shownTabs = tabPreview ?? tabs;
+  const shownTabsRef = useRef(shownTabs);
+  shownTabsRef.current = shownTabs;
+  const tabPointRef = useRef({ x: 0, y: 0 });
+  /** Every tab's place on screen just before the order changes, so each one slides from there (FLIP). */
+  const tabsFromRef = useRef<Map<string, DOMRect> | null>(null);
+  const rememberTabPlaces = () => {
+    const from = new Map<string, DOMRect>();
+    tabElsRef.current.forEach((el, id) => from.set(id, el.getBoundingClientRect()));
+    tabsFromRef.current = from;
+  };
+  /** The lifted tab under the pointer, kept inside the tab bar. */
+  const placeLiftedTab = () => {
+    const cur = tabDragRef.current;
+    const el = cur?.active ? tabElsRef.current.get(cur.tabId) : undefined;
+    const bar = tabBarRef.current;
+    if (!cur || !el || !bar) return null;
+    const b = bar.getBoundingClientRect();
+    const left = Math.max(0, Math.min(b.width - el.offsetWidth, tabPointRef.current.x - cur.grabX - b.left));
+    const top = Math.max(0, Math.min(b.height - el.offsetHeight, tabPointRef.current.y - cur.grabY - b.top));
+    el.style.transform = `translate(${left - el.offsetLeft}px, ${top - el.offsetTop}px)`;
+    return { left, top, el };
+  };
+  useLayoutEffect(() => {
+    const from = tabsFromRef.current;
+    if (!from) return;
+    tabsFromRef.current = null;
+    const lifted = tabDragRef.current?.active ? tabDragRef.current.tabId : null;
+    tabElsRef.current.forEach((el, id) => {
+      const was = from.get(id);
+      if (id === lifted || !was) return;
+      el.style.transition = "none";
+      el.style.transform = "";
+      const now = el.getBoundingClientRect();
+      if (Math.abs(was.left - now.left) < 0.5 && Math.abs(was.top - now.top) < 0.5) return;
+      el.style.transform = `translate(${was.left - now.left}px, ${was.top - now.top}px)`;
+      void el.offsetWidth;
+      el.style.transition = "transform var(--dur) var(--ease-out)";
+      el.style.transform = "";
+    });
+    placeLiftedTab();
+  });
   useEffect(() => {
     if (!isTabDragging) return;
     const onMove = (e: PointerEvent) => {
       const cur = tabDragRef.current;
       if (!cur) return;
+      tabPointRef.current = { x: e.clientX, y: e.clientY };
       if (!cur.active) {
         if (Math.hypot(e.clientX - cur.startX, e.clientY - cur.startY) < DRAG_THRESHOLD) return;
         window.getSelection()?.removeAllRanges();
+        const lifting: TabDragState = { ...cur, active: true };
+        tabDragRef.current = lifting;
+        setTabDrag(lifting);
+        const el = tabElsRef.current.get(cur.tabId);
+        if (el) el.style.transition = "none";
       }
-      const { insertIndex, line } = computeTabInsert(e.clientX, e.clientY, tabsRef.current, cur.tabId, tabBarRef.current, tabElsRef.current);
-      const next: TabDragState = { ...cur, active: true, insertIndex, line };
-      tabDragRef.current = next;
-      setTabDrag(next);
+      const placed = placeLiftedTab();
+      if (!placed) return;
+      const order = shownTabsRef.current;
+      const others = order.filter((id) => id !== cur.tabId);
+      const at = dropIndex(others, tabElsRef.current, placed.left + placed.el.offsetWidth / 2, placed.top + placed.el.offsetHeight / 2);
+      const next = [...others.slice(0, at), cur.tabId, ...others.slice(at)];
+      if (next.some((id, i) => id !== order[i])) {
+        rememberTabPlaces();
+        setTabPreview(next);
+      }
     };
     const finish = (commit: boolean) => {
       const cur = tabDragRef.current;
       tabDragRef.current = null;
-      setTabDrag(null);
-      if (!cur?.active) return;
+      if (!cur?.active) {
+        setTabDrag(null);
+        return;
+      }
       suppressTabClickRef.current = true;
       window.setTimeout(() => {
         suppressTabClickRef.current = false;
       }, 0);
-      if (!commit) return;
-      const curTabs = tabsRef.current;
-      const fromIndex = curTabs.indexOf(cur.tabId);
-      if (fromIndex !== -1 && cur.insertIndex >= 0 && cur.insertIndex !== fromIndex && cur.insertIndex !== fromIndex + 1) {
-        const toIndex = cur.insertIndex > fromIndex ? cur.insertIndex - 1 : cur.insertIndex;
-        updateOrganize((o) => moveTab(o, cur.tabId, toIndex, BUILTIN_TABS));
-      }
+      // It glides from under the pointer into its place (or back to where it was, on Esc).
+      rememberTabPlaces();
+      const order = shownTabsRef.current;
+      setTabDrag(null);
+      setTabPreview(null);
+      const toIndex = order.indexOf(cur.tabId);
+      if (commit && toIndex !== tabsRef.current.indexOf(cur.tabId)) updateOrganize((o) => moveTab(o, cur.tabId, toIndex, BUILTIN_TABS));
     };
     const onUp = () => finish(true);
     const onCancel = () => finish(false);
@@ -1001,7 +1028,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
         <div className="pc-bar">
           <div className="pc-bar__start">
             <div className="pc-tabs media-library__tabs" role="tablist" aria-label="Show" ref={tabBarRef}>
-              {tabs.map((tabId) => {
+              {shownTabs.map((tabId) => {
                 const isCollection = tabId.startsWith(COLLECTION_PREFIX);
                 const col = isCollection ? collectionsById.get(tabId.slice(COLLECTION_PREFIX.length)) : undefined;
                 if (isCollection && !col) return null;
@@ -1051,7 +1078,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                     ref={setTabRef}
                     type="button"
                     role="tab"
-                    className={`pc-tab${isDraggingThis ? " is-dragging" : ""}${isDropTarget ? " is-drop-target" : ""}`}
+                    className={`pc-tab${isDraggingThis ? " is-lifted" : ""}${isDropTarget ? " is-drop-target" : ""}`}
                     aria-selected={currentTab === tabId}
                     onClick={() => {
                       if (suppressTabClickRef.current) return;
@@ -1059,7 +1086,9 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                     }}
                     onPointerDown={(e) => {
                       if (e.button !== 0 || renamingTabId) return;
-                      const initial: TabDragState = { tabId, startX: e.clientX, startY: e.clientY, active: false, insertIndex: -1, line: null };
+                      const r = e.currentTarget.getBoundingClientRect();
+                      const initial: TabDragState = { tabId, startX: e.clientX, startY: e.clientY, active: false, grabX: e.clientX - r.left, grabY: e.clientY - r.top };
+                      tabPointRef.current = { x: e.clientX, y: e.clientY };
                       tabDragRef.current = initial;
                       setTabDrag(initial);
                     }}
@@ -1074,13 +1103,6 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                   </button>
                 );
               })}
-              {tabDrag?.active && tabDrag.line && (
-                <span
-                  className="media-library__tab-insert"
-                  style={{ left: tabDrag.line.left, top: tabDrag.line.top, height: tabDrag.line.height }}
-                  aria-hidden="true"
-                />
-              )}
             </div>
           </div>
           <div className="pc-bar__end">
