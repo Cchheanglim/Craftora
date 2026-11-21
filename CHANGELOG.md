@@ -4,6 +4,10 @@
 
 **New**
 
+- **Voice changer**: a Voice tab for any clip with sound (videos, music, voice-overs) turns the voice into Chipmunk,
+  Deep, Monster, Robot, Alien, Cave, Radio or Megaphone, and a Pitch slider moves it up or down by up to 12 steps (on
+  its own or on top of a voice). For a file from this PC, Craftora makes the voice once in a moment (the tab says so)
+  and the preview plays exactly what the export will have, in step with the picture.
 - **Folders on every Media library tab**: New folder opens a pop-up for the name and a cover (from the Media library
   or this PC) with a preview of the card, and the folder is made on the tab you're on (inside the open folder, if
   there is one). A folder made on Videos, Pictures, Audio, GIFs or Sound FX shows there even when empty, takes only that
@@ -268,6 +272,8 @@
 
 **Fixed**
 
+- **Light + Glass looked flat**: the panels were solid white instead of see-through glass (the Light colour's settings
+  won over the glass ones). They're frosted glass again, with the soft colours showing through.
 - **Saving a voice-over could be blocked by Windows' Controlled folder access** (ransomware protection), because
   FFmpeg made the .m4a right in your Videos folder. It's made in Craftora's own folder now and Craftora moves it in,
   like exports, so only Craftora needs to be allowed.
