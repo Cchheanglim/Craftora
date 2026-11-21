@@ -229,6 +229,8 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const [tabNameClash, setTabNameClash] = useState<string | null>(null);
   /** The folder whose cover is being picked from the Media library's pictures. */
   const [coverFor, setCoverFor] = useState<Folder | null>(null);
+  /** New folder's pop-up is open, with this name to start from. */
+  const [newFolderName, setNewFolderName] = useState<string | null>(null);
   const [coverError, setCoverError] = useState<string | null>(null);
   const sound = useSoundPreview();
   /** Selected cards, like File Explorer: file paths, and folders as `folder:<id>` (`folderKey`). */
@@ -618,9 +620,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   /** A picture file as a folder's cover: its small thumbnail is kept, so the cover stays if the file moves. */
   const setCoverFrom = async (folder: Folder, path: string, thumbnail?: string) => {
     setCoverError(null);
-    // A GIF stays a GIF (it moves on the card), so the cover is its file.
-    if (/\.gif$/i.test(path)) return updateOrganize((o) => setFolderCover(o, folder.id, path));
-    const cover = thumbnail ?? (await fileThumbnail(path, true));
+    const cover = await coverOf(path, thumbnail);
     if (!cover) return setCoverError("Couldn't read that picture.");
     updateOrganize((o) => setFolderCover(o, folder.id, cover));
   };
@@ -633,21 +633,20 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     }
   };
 
-  const createFolder = () => {
+  // Always at the top level, never inside the folder being looked at (drag it onto a folder to put it there).
+  const openNewFolder = () => setNewFolderName(freeName("New folder", scopeFolders.filter((f) => f.parent === null).map((f) => f.name)));
+  const createFolder = (name: string, cover: string | null) => {
+    setNewFolderName(null);
     const id = newCollectionId();
-    // Always at the top level, never inside the folder being looked at (drag it onto a folder to put it there).
-    const parent = null;
-    setOpenFolder(null);
-    if (!foldersOn) {
-      if (currentTab === "saved") setActiveTab("all");
-      setSearch("");
-    }
-    const where = currentTab === "saved" ? null : scope;
     updateOrganize((o) => {
-      const siblings = o.folders.filter((f) => f.parent === parent && (f.collection ?? null) === where).map((f) => f.name);
-      return addFolder(o, freeName("New folder", siblings), parent, id, where);
+      const made = addFolder(o, name, null, id, scope);
+      return cover ? setFolderCover(made, id, cover) : made;
     });
-    setRenamingFolderId(id);
+    setOpenFolder(null);
+    setSearch("");
+    // Shown where it can be seen: a kind tab hides folders without its files, so the library's go to Folders.
+    if (!scope) setActiveTab("folders");
+    setSelected(new Set([folderKey(id)]));
   };
 
   const openMenuAt = (e: ReactMouseEvent, nextMenu: (x: number, y: number) => MenuState) => {
@@ -724,7 +723,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
       <PictureCard
         key={entry.path}
         selected={!isHidden && selected.has(entry.path)}
-        onTick={isHidden ? undefined : () => tickCard(entry.path)}
+        onTick={selectMode && !isHidden ? () => tickCard(entry.path) : undefined}
         thumb={
           entry.kind === "audio" ? (
             <SoundWave path={entry.path} />
@@ -1070,7 +1069,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               <Icon name="plus" size={14} />
               New Collection
             </button>
-            <button type="button" className="btn btn--secondary" onClick={createFolder}>
+            <button type="button" className="btn btn--secondary" onClick={openNewFolder}>
               <Icon name="folder" size={14} />
               New folder
             </button>
@@ -1090,6 +1089,15 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               void setCoverFrom(folder, e.path, e.thumbnail);
             }}
             onClose={() => setCoverFor(null)}
+          />
+        )}
+        {newFolderName !== null && (
+          <NewFolderDialog
+            name={newFolderName}
+            pictures={entries.filter((e) => e.kind === "image")}
+            nameOf={(e) => titleOf(organize, e.path, e.name)}
+            onCreate={createFolder}
+            onClose={() => setNewFolderName(null)}
           />
         )}
 
@@ -1148,7 +1156,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
           <p className="pc-muted">No folders yet. Make one with New folder, then drag files onto it.</p>
         ) : entries.length === 0 && levelFolders.length === 0 ? (
           <p className="pc-muted">Files you import into a project show up here, so you can find them again.</p>
-        ) : activeCollection && !words && matching.length === 0 ? (
+        ) : activeCollection && !here && !words && matching.length === 0 && levelFolders.length === 0 ? (
           <p className="pc-muted">This collection is empty. Drag files onto its tab or right-click a file to add it.</p>
         ) : levelFiles.length + levelFolders.length === 0 ? (
           <p className="pc-muted">
@@ -1214,27 +1222,12 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               return (
                 <PictureCard
                   key={`folder:${folder.id}`}
-                  thumb={
-                    <span className={target ? "media-library__folder is-drop-target" : "media-library__folder"}>
-                      {folder.cover?.startsWith("data:") ? (
-                        <img className="media-library__folder-cover" src={folder.cover} alt="" draggable={false} />
-                      ) : folder.cover ? (
-                        <GifImage className="media-library__folder-cover" path={folder.cover} />
-                      ) : (
-                        <Icon name="folder" size={36} />
-                      )}
-                      {folder.cover && (
-                        <span className="media-library__folder-badge" aria-hidden="true">
-                          <Icon name="folder" size={14} />
-                        </span>
-                      )}
-                    </span>
-                  }
+                  thumb={<FolderThumb cover={folder.cover} target={target} />}
                   tag="Folder"
                   name={folder.name}
                   meta={n === 1 ? "1 file" : `${n} files`}
                   selected={selected.has(folderKey(folder.id))}
-                  onTick={() => tickCard(folderKey(folder.id))}
+                  onTick={selectMode ? () => tickCard(folderKey(folder.id)) : undefined}
                   onOpen={(e) => pickCard(folderKey(folder.id), e)}
                   onDoubleOpen={() => setOpenFolder(folder.id)}
                   onMenu={(e) => cardMenu(folderKey(folder.id), e, (x, y) => ({ kind: "folder", x, y, folder }))}
@@ -1325,5 +1318,156 @@ function CoverPicker({ pictures, name, onPick, onClose }: { pictures: LibraryEnt
         </div>
       </div>
     </dialog>
+  );
+}
+
+/** A picture file as a folder's cover: a GIF stays its file (it moves on the card); others keep a small thumbnail, so
+ * the cover stays if the file moves. `null` when it can't be read. */
+async function coverOf(path: string, thumbnail?: string): Promise<string | null> {
+  if (/\.gif$/i.test(path)) return path;
+  return thumbnail ?? (await fileThumbnail(path, true)) ?? null;
+}
+
+/** A folder card's picture: its cover with a small folder badge, else the folder icon. */
+function FolderThumb({ cover, target }: { cover?: string; target?: boolean }) {
+  return (
+    <span className={target ? "media-library__folder is-drop-target" : "media-library__folder"}>
+      {cover?.startsWith("data:") ? (
+        <img className="media-library__folder-cover" src={cover} alt="" draggable={false} />
+      ) : cover ? (
+        <GifImage className="media-library__folder-cover" path={cover} />
+      ) : (
+        <Icon name="folder" size={36} />
+      )}
+      {cover && (
+        <span className="media-library__folder-badge" aria-hidden="true">
+          <Icon name="folder" size={14} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** New folder: a pop-up for its name and cover, with the card as it will look; the folder is made on Create. */
+function NewFolderDialog({
+  name: startName,
+  pictures,
+  nameOf,
+  onCreate,
+  onClose,
+}: {
+  name: string;
+  pictures: LibraryEntry[];
+  nameOf: (e: LibraryEntry) => string;
+  onCreate: (name: string, cover: string | null) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [name, setName] = useState(startName);
+  const [cover, setCover] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+  const take = async (path: string, thumbnail?: string) => {
+    setError(null);
+    try {
+      const picked = await coverOf(path, thumbnail);
+      if (picked) setCover(picked);
+      else setError("Couldn't read that picture.");
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  const fromPc = async () => {
+    try {
+      const path = await pickPicture();
+      if (path) await take(path);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  const trimmed = name.trim();
+  return (
+    <>
+      <dialog
+        ref={ref}
+        className="confirm media-library__new-folder"
+        aria-labelledby="new-folder-title"
+        onCancel={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+      >
+        <form
+          className="confirm__box"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (trimmed) onCreate(trimmed, cover);
+          }}
+        >
+          <h2 id="new-folder-title">New folder</h2>
+          <div className="media-library__new-folder-body">
+            <div className="media-library__new-folder-card">
+              <FolderThumb cover={cover ?? undefined} />
+            </div>
+            <div className="media-library__new-folder-fields">
+              <label className="section-label" htmlFor="new-folder-name">
+                Name
+              </label>
+              <input id="new-folder-name" className="field" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} onFocus={(e) => e.currentTarget.select()} />
+              <span className="section-label">Cover</span>
+              <div className="media-library__new-folder-cover">
+                <button type="button" className="btn btn--secondary" onClick={() => setPicking(true)}>
+                  <Icon name="image" size={14} />
+                  Media library
+                </button>
+                {inDesktopApp && (
+                  <button type="button" className="btn btn--secondary" onClick={() => void fromPc()}>
+                    <Icon name="upload" size={14} />
+                    This PC
+                  </button>
+                )}
+                {cover && (
+                  <button type="button" className="btn btn--ghost" onClick={() => setCover(null)}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          {error && (
+            <p className="confirm__note" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="confirm__actions">
+            <button type="button" className="btn btn--ghost" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn--primary" disabled={!trimmed}>
+              Create folder
+            </button>
+          </div>
+        </form>
+      </dialog>
+      {/* Beside the pop-up, not in it: its Esc and outside clicks close only the picker. */}
+      {picking && (
+        <CoverPicker
+          pictures={pictures}
+          name={nameOf}
+          onPick={(e) => {
+            setPicking(false);
+            void take(e.path, e.thumbnail);
+          }}
+          onClose={() => setPicking(false)}
+        />
+      )}
+    </>
   );
 }

@@ -185,6 +185,39 @@
   max-width: none;
 }
 
+/* New folder's pop-up: the card as it will look beside its name and cover. */
+.media-library__new-folder {
+  width: min(480px, calc(100vw - 32px));
+  max-width: none;
+}
+
+.media-library__new-folder-body {
+  display: grid;
+  grid-template-columns: 168px 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.media-library__new-folder-card {
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.media-library__new-folder-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.media-library__new-folder-cover {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .media-library__cover-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
