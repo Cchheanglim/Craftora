@@ -231,6 +231,20 @@ const paths = {
     </>
   ),
   waveform: <path d="M2 12h2M6 8v8M10 4v16M14 9v6M18 6v12M22 12h-2" />,
+  robot: (
+    <>
+      <rect x="4" y="8" width="16" height="12" rx="2" />
+      <path d="M12 8V4M9 13h.01M15 13h.01M9 17h6M2 13v3M22 13v3" />
+    </>
+  ),
+  radio: (
+    <>
+      <rect x="2" y="8" width="20" height="13" rx="2" />
+      <path d="m6 8 12-5M16 14.5h.01" />
+      <circle cx="8" cy="14.5" r="2.5" />
+    </>
+  ),
+  megaphone: <path d="M3 10v4a1 1 0 0 0 1 1h3l9 5V4L7 9H4a1 1 0 0 0-1 1ZM7 15l1.5 5M19 9a3 3 0 0 1 0 6" />,
   pencil: <path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />,
   clock: (
     <>

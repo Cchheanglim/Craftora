@@ -72,6 +72,8 @@ function singleUntouched(project: Project): { clip: Clip; media: MediaItem } | n
     !clip.fadeOut &&
     !clip.soundFadeIn &&
     !clip.soundFadeOut &&
+    !clip.voice &&
+    !clip.pitch &&
     !isCropped(clip.crop) &&
     // A filter, effect, Adjust (Enhance too) or removed colour inside it has to be drawn.
     !clip.look &&
@@ -201,6 +203,8 @@ export function planExport(project: Project, settings: ExportSettings): ExportPl
       fadeOut: c.fadeOut,
       soundFadeIn: c.soundFadeIn ?? 0,
       soundFadeOut: c.soundFadeOut ?? 0,
+      voice: c.voice ?? "",
+      pitch: c.pitch ?? 0,
       crop: [c.crop.left, c.crop.top, c.crop.right, c.crop.bottom],
       transitionIn: i > 0 && meets(order[i - 1], c) ? transitionLength(order[i - 1], c) : 0,
       transitionInKind: c.transition?.kind ?? "crossfade",

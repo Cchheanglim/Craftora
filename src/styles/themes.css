@@ -374,7 +374,7 @@
 /* Inside the glass panels: cards, tiles and buttons are frosted panes, not solid boxes (owner: "a lot of things don't
    have our glass"). Things drawn on black (tile previews, text style samples) sit in a darker well. The Image editor
    stays dark. */
-:root[data-theme] :is(.pcard__pic, .media-library__folder, .home__start-btn, .home__export-card .thumb, .home__verdict, .media-panel__import, .media-panel__row, .insp__font):not(:is(.app--image, .layer-style-dialog) *) {
+:root[data-theme] :is(.pcard__pic, .media-library__folder, .home__start-btn, .home__export-card .thumb, .home__verdict, .media-panel__import, .media-panel__row, .insp__font, .insp__voice:not([aria-pressed="true"])):not(:is(.app--image, .layer-style-dialog) *) {
   background: var(--glass-pane);
   box-shadow: inset 0 1px 0 var(--glass-hi);
 }

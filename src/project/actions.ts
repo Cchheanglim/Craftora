@@ -34,6 +34,8 @@ export type ClipPatch = Partial<
   Pick<
     Clip,
     | "volume"
+    | "voice"
+    | "pitch"
     | "mirror"
     | "reverse"
     | "rotate"

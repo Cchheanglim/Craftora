@@ -762,6 +762,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         muted={muted || trackMuted(clip) || separateSound}
                         rate={rate}
                         reverse={clip.reverse}
+                        voice={clip.voice}
+                        pitch={clip.pitch}
                         onLoading={onMediaLoading(`${clip.id}:video`)}
                         onFailed={onMediaFailed(media.source.previewUrl)}
                         className={clip.mirror ? "preview__video is-mirrored" : "preview__video"}
@@ -781,6 +783,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                         muted={muted || trackMuted(clip)}
                         rate={rate}
                         reverse={clip.reverse}
+                        voice={clip.voice}
+                        pitch={clip.pitch}
                         onLoading={onMediaLoading(`${clip.id}:audio`)}
                       />
                     )}
@@ -816,6 +820,8 @@ export function Preview({ project, api, playback, frame, duration, selectedId, o
                 muted={muted || trackMuted(clip)}
                 rate={playback.speed * clip.speed}
                 reverse={clip.reverse}
+                voice={clip.voice}
+                pitch={clip.pitch}
                 onLoading={onMediaLoading(`${clip.id}:audio`)}
                 onFailed={onMediaFailed(src)}
               />

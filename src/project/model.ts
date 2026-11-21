@@ -3,6 +3,7 @@
  * Plain data, so it can be undone, saved, and edited by an AI agent through the
  * same actions the UI uses (see `actions.ts`).
  */
+import type { VoiceId } from "../lib/voiceFx";
 import type { Caption, MediaSource } from "../types";
 import type { LibraryEntry } from "../lib/storage";
 import type { Adjust, LookId, PictureEffectId } from "./effects";
@@ -254,6 +255,10 @@ export interface Clip {
   /** Seconds of sound-only fade in and out (picture stays; 0 when absent). */
   soundFadeIn?: number;
   soundFadeOut?: number;
+  /** Voice changer (lib/voiceFx.ts); the clip's own voice when absent. */
+  voice?: VoiceId;
+  /** Extra semitones up or down (−12…12) on top of the voice; 0 when absent. */
+  pitch?: number;
   crop: Crop;
   /** Magnetic tracks only: the transition from the previous clip into this one. */
   transition?: Transition;

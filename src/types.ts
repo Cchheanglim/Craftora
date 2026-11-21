@@ -210,6 +210,9 @@ export interface RenderClip {
   fadeOut: number;
   soundFadeIn: number;
   soundFadeOut: number;
+  /** Voice changer: lib/voiceFx.ts `VoiceId` ("" for the clip's own voice) and extra semitones. */
+  voice: string;
+  pitch: number;
   /** Fractions cut off each side: left, top, right, bottom. */
   crop: [number, number, number, number];
   /** Seconds this clip overlaps the clip before it on its track (0 = straight cut), and how. */
