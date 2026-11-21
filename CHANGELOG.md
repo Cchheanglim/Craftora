@@ -9,6 +9,7 @@
   there is one). A folder made on Videos, Pictures, Audio, GIFs or Sound FX shows there even when empty, takes only that
   kind of file, and shows on All and Folders as "Audio folder" and so on; drop something else on it and a note says
   why. Saved has folders of its own (un-starring a file takes it out). A collection with only folders shows them.
+- **New Collection opens a pop-up** to name it (it says so if that name is taken), then opens the new collection.
 - **Settings → Preferences → The editor's GIFs and Sound FX tabs**: From anywhere also lists every other sound in your
   Media library in the editor's Sound FX tab (the Audio tab and any folder), not just Sound FX ones.
 - **Media library tick boxes** show only after you press Select.

@@ -191,6 +191,11 @@
   max-width: none;
 }
 
+.media-library__new-collection {
+  width: min(400px, calc(100vw - 32px));
+  max-width: none;
+}
+
 .media-library__new-folder-body {
   display: grid;
   grid-template-columns: 168px 1fr;

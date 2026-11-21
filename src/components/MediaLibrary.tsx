@@ -246,6 +246,8 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
   const [coverFor, setCoverFor] = useState<Folder | null>(null);
   /** New folder's pop-up is open, with this name to start from. */
   const [newFolderName, setNewFolderName] = useState<string | null>(null);
+  /** New Collection's pop-up is open, with this name to start from. */
+  const [newCollectionName, setNewCollectionName] = useState<string | null>(null);
   const [coverError, setCoverError] = useState<string | null>(null);
   const [dropNote, setDropNote] = useState<string | null>(null);
   useEffect(() => {
@@ -535,10 +537,14 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
     if (openFolder && folderPath(organize, openFolder).some((f) => f.id === folder.id)) setOpenFolder(folder.parent);
   };
 
-  const createCollection = () => {
+  /** From New Collection's pop-up: made, then opened. */
+  const createCollection = (name: string) => {
+    setNewCollectionName(null);
     const id = newCollectionId();
-    updateOrganize((o) => addCollection(o, freeName("New collection", o.collections.map((c) => c.name)), id));
-    setRenamingTabId(id);
+    updateOrganize((o) => addCollection(o, name, id));
+    setOpenFolder(null);
+    setSearch("");
+    setActiveTab(COLLECTION_PREFIX + id);
   };
 
   const words = search.trim().toLowerCase();
@@ -1112,7 +1118,7 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
                 )}
               </button>
             )}
-            <button type="button" className="btn btn--secondary" onClick={createCollection}>
+            <button type="button" className="btn btn--secondary" onClick={() => setNewCollectionName(freeName("New collection", organize.collections.map((c) => c.name)))}>
               <Icon name="plus" size={14} />
               New Collection
             </button>
@@ -1137,6 +1143,14 @@ export function MediaLibrary({ entries, onAdd, onSave, onThumbnail, onForget, on
               void setCoverFrom(folder, e.path, e.thumbnail);
             }}
             onClose={() => setCoverFor(null)}
+          />
+        )}
+        {newCollectionName !== null && (
+          <NewCollectionDialog
+            name={newCollectionName}
+            taken={(name) => collectionNameTaken(organize, name)}
+            onCreate={createCollection}
+            onClose={() => setNewCollectionName(null)}
           />
         )}
         {newFolderName !== null && (
@@ -1517,5 +1531,69 @@ function NewFolderDialog({
         />
       )}
     </>
+  );
+}
+
+/** New Collection: a pop-up for its name (no two collections share one); the collection is made on Create. */
+function NewCollectionDialog({ name: startName, taken, onCreate, onClose }: { name: string; taken: (name: string) => boolean; onCreate: (name: string) => void; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [name, setName] = useState(startName);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, []);
+  const trimmed = name.trim();
+  const clash = Boolean(trimmed) && taken(trimmed);
+  return (
+    <dialog
+      ref={ref}
+      className="confirm media-library__new-collection"
+      aria-labelledby="new-collection-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <form
+        className="confirm__box"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (trimmed && !clash) onCreate(trimmed);
+        }}
+      >
+        <h2 id="new-collection-title">New collection</h2>
+        <p className="confirm__message">A tab of its own for files you pick. Drag files onto its tab, or right-click a file to add it.</p>
+        <div className="media-library__new-folder-fields">
+          <label className="section-label" htmlFor="new-collection-name">
+            Name
+          </label>
+          <input
+            id="new-collection-name"
+            className="field"
+            value={name}
+            maxLength={60}
+            aria-invalid={clash}
+            onChange={(e) => setName(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+          />
+          {clash && (
+            <p className="media-library__note" role="alert">
+              There's already a collection called “{trimmed}”.
+            </p>
+          )}
+        </div>
+        <div className="confirm__actions">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn--primary" disabled={!trimmed || clash}>
+            Create collection
+          </button>
+        </div>
+      </form>
+    </dialog>
   );
 }
