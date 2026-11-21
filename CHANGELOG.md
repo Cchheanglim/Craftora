@@ -1,6 +1,6 @@
 # What's new in Craftora
 
-## Next version
+## 0.7.0 (November 2026)
 
 **New**
 
@@ -258,13 +258,19 @@
 - **Right-click menus can have sub-menus** (▸), opening beside them.
 - **Glass**: tile previews, the Media library's and Home's cards and buttons, the Text tab's buttons, the hover preview
   and a few small pop-ups are see-through glass now instead of solid boxes.
-- **New folder** always makes the folder at the top level, even from inside a folder (drag it onto another folder to
-  put it there).
 - **Friendlier empty tabs** in the Media library: each tab says what goes there ("Nothing saved yet. Click the star on a
   file…") instead of "Nothing matches.", and a search that finds nothing says so by name.
 
+**Better**
+
+- **The first fetch after installing or updating Craftora is about 1.5 seconds quicker**: Craftora runs its link
+  reader once in the background a few seconds after it opens, so Windows' virus check of the new files happens then.
+
 **Fixed**
 
+- **Saving a voice-over could be blocked by Windows' Controlled folder access** (ransomware protection), because
+  FFmpeg made the .m4a right in your Videos folder. It's made in Craftora's own folder now and Craftora moves it in,
+  like exports, so only Craftora needs to be allowed.
 - Media library: a folder made inside a collection showed up in All instead of the collection. Folders now belong to
   the collection they're made in, and files dropped into them keep their place everywhere else.
 - Media library: the file name you drag now stays next to the pointer.
