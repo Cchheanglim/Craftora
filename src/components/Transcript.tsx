@@ -27,6 +27,8 @@ interface TranscriptProps {
   siteCaptions?: SiteCaption[];
   /** Loads one of `siteCaptions` as the video's captions. */
   onSiteCaptions?: (track: SiteCaption) => Promise<void>;
+  /** The one of `siteCaptions` the video's captions came from (its address), marked in the picker. */
+  siteCaption?: string;
 }
 
 /** Captions are made only when asked: whisper keeps the processor busy for minutes. */
@@ -61,12 +63,14 @@ function OpenCaptions({ onOpen }: { onOpen: () => void }) {
  * The website's own caption tracks, in a panel under the button: a tab per language, one line per track (a
  * site can list dozens), scrolling past a few. One click loads it.
  */
-function SiteCaptions({ tracks, onPick }: { tracks: SiteCaption[]; onPick: (track: SiteCaption) => Promise<void> }) {
+function SiteCaptions({ tracks, current, onPick }: { tracks: SiteCaption[]; current?: string; onPick: (track: SiteCaption) => Promise<void> }) {
   const [at, setAt] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const languageOf = (t: SiteCaption) => t.language || "Other";
   const languages = [...new Set(tracks.map(languageOf))];
-  const [picked, setPicked] = useState(languages[0]);
+  const inUse = tracks.find((t) => t.url === current);
+  // Opens on the language of the track in use.
+  const [picked, setPicked] = useState(inUse ? languageOf(inUse) : languages[0]);
   const language = languages.includes(picked) ? picked : languages[0];
   const pick = (track: SiteCaption) => {
     setAt(null);
@@ -87,6 +91,7 @@ function SiteCaptions({ tracks, onPick }: { tracks: SiteCaption[]; onPick: (trac
           // As wide as the button (long track names end in "…" instead of stretching it), kept inside the window.
           const width = Math.min(Math.max(r.width, 280), window.innerWidth - 16);
           setAt({ left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)), top, width, maxHeight: Math.max(200, window.innerHeight - top - 12) });
+          if (inUse) setPicked(languageOf(inUse));
         }}
       >
         <Icon name="link" size={14} />
@@ -113,11 +118,13 @@ function SiteCaptions({ tracks, onPick }: { tracks: SiteCaption[]; onPick: (trac
                   ))}
                 </div>
               )}
-              <ul className="site-captions__list" ref={(el) => el?.querySelector("button")?.focus()}>
+              {/* The track in use, else the first: in view and focused, so arrows and Enter start there. */}
+              <ul className="site-captions__list" ref={(el) => (el?.querySelector<HTMLButtonElement>("[aria-current] button") ?? el?.querySelector("button"))?.focus()}>
                 {tracks.filter((t) => languageOf(t) === language).map((track) => (
-                  <li key={track.url}>
-                    <button type="button" onClick={() => pick(track)} title={track.label.length > 38 ? track.label : undefined}>
-                      {track.label}
+                  <li key={track.url} aria-current={track.url === current || undefined}>
+                    <button type="button" onClick={() => pick(track)} title={track.label.length > 34 ? track.label : undefined}>
+                      <span>{track.label}</span>
+                      {track.url === current && <Icon name="check" size={14} />}
                     </button>
                   </li>
                 ))}
@@ -137,7 +144,7 @@ const keyOf = (line: number, word: number) => `${line}:${word}`;
  * What's said on the timeline, to edit by text: click a sentence or word to jump there, select words
  * and press Delete (or the button) to cut them out of the video.
  */
-export function Transcript({ project, api, time, seek, captionStatus, onMakeCaptions, onCancelCaptions, onSaveSrt, onOpenCaptions, siteCaptions, onSiteCaptions }: TranscriptProps) {
+export function Transcript({ project, api, time, seek, captionStatus, onMakeCaptions, onCancelCaptions, onSaveSrt, onOpenCaptions, siteCaptions, onSiteCaptions, siteCaption }: TranscriptProps) {
   const lines = useMemo(() => transcript(project), [project]);
   const words = useMemo(() => lines.map(wordsOf), [lines]);
   const [query, setQuery] = useState("");
@@ -255,7 +262,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
         <p className="transcript__muted">Videos that come with captions show what's said here, to edit by text.</p>
         {(onMakeCaptions || onCancelCaptions || onOpenCaptions || siteCaptions) && (
           <div className="transcript__actions">
-            {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} onPick={onSiteCaptions} />}
+            {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} current={siteCaption} onPick={onSiteCaptions} />}
             {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
             {onCancelCaptions && <CancelCaptions onCancel={onCancelCaptions} />}
             {onOpenCaptions && <OpenCaptions onOpen={onOpenCaptions} />}
@@ -310,7 +317,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
         )}
         {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
         {onCancelCaptions && <CancelCaptions onCancel={onCancelCaptions} />}
-        {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} onPick={onSiteCaptions} />}
+        {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} current={siteCaption} onPick={onSiteCaptions} />}
         {(onSaveSrt || onOpenCaptions) && (
           <div className="transcript__actions transcript__actions--pair">
             {onSaveSrt && (

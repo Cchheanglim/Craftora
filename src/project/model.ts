@@ -87,6 +87,8 @@ export interface MediaItem {
   captions?: {
     label: string;
     lines: Caption[];
+    /** The website's caption track they came from ("Captions from the website"), marked in its picker. */
+    url?: string;
     /** Still being made from the sound (redone if Craftora closed meanwhile). */
     partial?: boolean;
     /** Made from the sound with each line fitted to the sound around it (older; can be made again). */
