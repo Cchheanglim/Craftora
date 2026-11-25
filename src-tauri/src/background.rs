@@ -10,7 +10,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Listener, Manager, Wry};
 
@@ -57,7 +57,16 @@ struct Downloading {
     percent: Option<u32>,
     /// Paused (Pause all, or its own pause): still listed, saying so, until it goes on or is removed.
     paused: bool,
-    item: Option<MenuItem<Wry>>,
+    /// Its line in the menu, opening Pause / Resume / Cancel download / Show in Downloads.
+    item: Option<Line>,
+}
+
+/// A download's sub-menu, and the two items that turn on and off as it pauses and goes on.
+#[derive(Clone)]
+struct Line {
+    menu: Submenu<Wry>,
+    pause: MenuItem<Wry>,
+    resume: MenuItem<Wry>,
 }
 
 static DOWNLOADING: Mutex<Vec<Downloading>> = Mutex::new(Vec::new());
@@ -97,7 +106,12 @@ fn change(app: &AppHandle, id: &str, f: impl FnOnce(&mut Downloading)) -> bool {
     };
     let Some((changed, pause_changed, item, text)) = changed else { return false };
     if let Some(item) = item.filter(|_| changed) {
-        let _ = item.set_text(text);
+        let _ = item.menu.set_text(text);
+        if pause_changed {
+            let paused = DOWNLOADING.lock().unwrap().iter().any(|d| d.id == id && d.paused);
+            let _ = item.pause.set_enabled(!paused);
+            let _ = item.resume.set_enabled(paused);
+        }
     }
     if pause_changed {
         update_tray(app);
@@ -288,6 +302,41 @@ fn saved_ended(app: &AppHandle) -> BTreeMap<String, Value> {
     ended_file(app).and_then(|f| std::fs::read_to_string(f).ok()).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
 }
 
+/// One download's Pause, Resume or Cancel download (its sub-menu in the tray). With the window open, its queue does
+/// it (App.tsx `tray-job`), as the Downloads page's buttons do.
+fn one(app: &AppHandle, action: &str, id: &str) {
+    if !active() {
+        let _ = app.emit("tray-job", serde_json::json!({ "action": action, "id": id }));
+        return;
+    }
+    let status = with(|b| b.downloads.iter().find(|d| d.id == id).map(|d| d.status.clone())).unwrap_or_default();
+    match (action, status.as_str()) {
+        // It says `paused` or `cancelled` when it has stopped (`on_job_event`).
+        ("pause", "running") => {
+            crate::jobs::pause_job(app.state(), id.to_string());
+        }
+        ("resume", "paused") => {
+            with(|b| {
+                if let Some(d) = b.downloads.iter_mut().find(|d| d.id == id) {
+                    d.status = "waiting".into();
+                }
+                b.ended.remove(id);
+            });
+            save_ended(app);
+            fill(app);
+        }
+        ("cancel", "running") => {
+            crate::jobs::cancel_job(app.state(), id.to_string());
+        }
+        // Paused: what it saved goes, and the window learns it's gone.
+        ("cancel", _) => {
+            let _ = crate::jobs::discard_download(app.clone(), id.to_string());
+            ended(app, id, serde_json::json!({ "kind": "cancelled", "id": id }));
+        }
+        _ => {}
+    }
+}
+
 /// The tray's Pause all / Resume all. With the window open, its queue does it (App.tsx `tray-queue`).
 fn pause_all(app: &AppHandle) {
     let running: Vec<String> = with(|b| {
@@ -333,17 +382,22 @@ pub fn open_main(app: &AppHandle, page: Option<&str>) {
     }
 }
 
-/// The tray's menu: a line per running download (clicking one opens Downloads), then Craftora's own items.
+/// The tray's menu: a line per download (pointing at it offers Pause, Resume, Cancel download, Show in Downloads),
+/// then Craftora's own items.
 fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let item = |id: &str, text: &str| MenuItem::with_id(app, id, text, true, None::<&str>);
     let menu = Menu::new(app)?;
-    // Made outside the lock (see `follow`), then kept with their downloads.
-    let lines: Vec<(String, String)> = DOWNLOADING.lock().unwrap().iter().map(|d| (d.id.clone(), line(d))).collect();
-    for (id, text) in &lines {
-        let entry = MenuItem::with_id(app, format!("download:{id}"), text, true, None::<&str>)?;
-        menu.append(&entry)?;
+    // Made outside the lock (see `change`), then kept with their downloads.
+    let lines: Vec<(String, String, bool)> = DOWNLOADING.lock().unwrap().iter().map(|d| (d.id.clone(), line(d), d.paused)).collect();
+    for (id, text, paused) in &lines {
+        let pause = MenuItem::with_id(app, format!("pause:{id}"), "Pause", !paused, None::<&str>)?;
+        let resume = MenuItem::with_id(app, format!("resume:{id}"), "Resume", *paused, None::<&str>)?;
+        let cancel = MenuItem::with_id(app, format!("cancel:{id}"), "Cancel download", true, None::<&str>)?;
+        let show = MenuItem::with_id(app, format!("download:{id}"), "Show in Downloads", true, None::<&str>)?;
+        let sub = Submenu::with_items(app, text, true, &[&pause, &resume, &cancel, &PredefinedMenuItem::separator(app)?, &show])?;
+        menu.append(&sub)?;
         if let Some(d) = DOWNLOADING.lock().unwrap().iter_mut().find(|d| &d.id == id) {
-            d.item = Some(entry);
+            d.item = Some(Line { menu: sub, pause, resume });
         }
     }
     if !lines.is_empty() {
@@ -390,7 +444,12 @@ pub fn tray(app: &AppHandle) -> tauri::Result<()> {
         }
         "quit" => quit(app),
         id if id.starts_with("download:") => open_main(app, Some("downloads")),
-        _ => {}
+        // A download's own Pause, Resume or Cancel download ("pause:<id>"…).
+        id => {
+            if let Some((action, download)) = id.split_once(':').filter(|(a, _)| ["pause", "resume", "cancel"].contains(a)) {
+                one(app, action, download);
+            }
+        }
     })
     .on_tray_icon_event(|tray, event| {
         if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {

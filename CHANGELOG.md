@@ -6,7 +6,9 @@
 
 - **Downloads go on after you close Craftora**: closing the window while downloads run (or wait their turn) closes
   it for real, giving back its memory (about 400 MB), and Craftora finishes them from its icon by the clock, two at
-  a time. The icon's menu shows each download with how far it is ("… · 45%"), and has Open Craftora, Downloads,
+  a time. The icon's menu shows each download with how far it is ("… · 45%", or "… · paused at 45%" after
+  Pause all); pointing at one offers Pause, Resume, Cancel download and Show in Downloads for just that one. The menu
+  also has Open Craftora, Downloads,
   Pause all, Resume all and Quit Craftora. Windows says when one finishes or fails, and when all are done. Opening
   Craftora again (the icon, a notification, the Start menu) carries on with them: nothing downloads twice. Quit
   Craftora stops them where they are; they go on next time.
