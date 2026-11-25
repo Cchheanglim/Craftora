@@ -70,10 +70,7 @@ pub async fn load_captions(url: String, link: String) -> Result<Vec<Caption>, St
         return Err("Not a web address.".into());
     }
     let (page, found_on) = crate::signin::split_referer(&link);
-    let response = crate::media_cache::client()
-        .get(&url)
-        .header(reqwest::header::REFERER, found_on.unwrap_or(page))
-        .send()
+    let response = crate::media_cache::get(&url, |r| r.header(reqwest::header::REFERER, found_on.unwrap_or(page)))
         .await
         .map_err(|e| format!("Couldn't load the captions: {e}"))?;
     if !response.status().is_success() {

@@ -80,12 +80,59 @@ pub(crate) fn client() -> reqwest::Client {
     }
     let client = crate::privacy::client_builder()
         .user_agent(USER_AGENT)
+        // "User-Agent", not "user-agent", like browsers: see `get`.
+        .http1_title_case_headers()
+        // `get` follows them, so each server gets its own `Host`.
+        .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(120))
         .build()
         .unwrap_or_default();
     *kept = Some((proxy, client.clone()));
     client
+}
+
+/// The page the video was found on as Referer, with its Origin where the site wants it (`signin::origin_for`).
+pub(crate) fn from_page(request: reqwest::RequestBuilder, page: Option<&str>) -> reqwest::RequestBuilder {
+    let Some(page) = page else { return request };
+    let request = request.header(header::REFERER, page);
+    match crate::signin::origin_for(page) {
+        Some(origin) => request.header(header::ORIGIN, origin),
+        None => request,
+    }
+}
+
+/// A GET sent as a browser sends it: `Host` first, then what `request` adds (Range, Referer…), names in
+/// Title-Case. Some Cloudflare rules block anything else (media.settlar.io for anipm.pk, 2026-11-25: 403
+/// "you have been blocked" with `Host` last, where reqwest puts it, or with lowercase names).
+/// Redirects are followed here: reqwest would keep the first server's `Host` for the next one.
+pub(crate) async fn get(url: &str, request: impl Fn(reqwest::RequestBuilder) -> reqwest::RequestBuilder) -> reqwest::Result<reqwest::Response> {
+    let client = client();
+    let Ok(mut url) = Url::parse(url) else {
+        // reqwest's own error for an address it can't use.
+        return request(client.get(url)).send().await;
+    };
+    let mut hops = 0;
+    loop {
+        let mut builder = client.get(url.clone());
+        if let Some(host) = url.host_str() {
+            builder = builder.header(header::HOST, url.port().map_or_else(|| host.to_string(), |port| format!("{host}:{port}")));
+        }
+        let response = request(builder).send().await?;
+        let next = response
+            .status()
+            .is_redirection()
+            .then(|| response.headers().get(header::LOCATION)?.to_str().ok().and_then(|to| url.join(to).ok()))
+            .flatten()
+            .filter(|next| hops < 10 && matches!(next.scheme(), "http" | "https"));
+        match next {
+            Some(next) => {
+                url = next;
+                hops += 1;
+            }
+            None => return Ok(response),
+        }
+    }
 }
 
 /// Positioned file I/O, so playing and filling never move each other's file cursor.
@@ -171,19 +218,19 @@ async fn fetch(entry: &Entry, start: u64, len: u64) -> Result<Vec<u8>, String> {
             (fetched.range.as_deref().and_then(total_of), Some(fetched.kind), fetched.body)
         }
         _ => {
-            let mut request = client().get(url).header(header::RANGE, format!("bytes={start}-{end}"));
-            if let Some(page) = page {
-                request = request.header(header::REFERER, page);
-                if let Some(origin) = crate::signin::origin_of(page) {
-                    request = request.header(header::ORIGIN, origin);
-                }
-            }
-            let response = request
-                .send()
+            let response = get(url, |request| from_page(request.header(header::RANGE, format!("bytes={start}-{end}")), page))
                 .await
                 .map_err(|e| format!("Couldn't reach the video: {e}"))?;
             if turned_away(&response) && crate::signin::note_bot_check(url) {
                 return Box::pin(fetch(entry, start, len)).await;
+            }
+            // Refused with the page alone: once per site, with the page's Origin too.
+            if let Some(page) = page.filter(|page| crate::signin::is_refusal(response.status().as_u16()) && crate::signin::note_needs_origin(page)) {
+                let again = Box::pin(fetch(entry, start, len)).await;
+                if again.is_err() {
+                    crate::signin::forget_needs_origin(page);
+                }
+                return again;
             }
             if response.status() != StatusCode::PARTIAL_CONTENT {
                 return Err(format!("The video's server answered {} instead of part of the file.", response.status()));
@@ -454,23 +501,30 @@ async fn relay_hls(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<
         }
         return answer.header(header::CONTENT_TYPE, fetched.kind).body(fetched.body).unwrap_or_default();
     }
-    let mut outgoing = client().get(url);
-    if let Some(page) = page {
-        outgoing = outgoing.header(header::REFERER, page);
-        if let Some(origin) = crate::signin::origin_of(page) {
-            outgoing = outgoing.header(header::ORIGIN, origin);
+    let range = request.headers().get(header::RANGE);
+    let outgoing = get(url, |outgoing| {
+        let outgoing = from_page(outgoing, page);
+        match range {
+            Some(range) => outgoing.header(header::RANGE, range.clone()),
+            None => outgoing,
         }
-    }
-    if let Some(range) = request.headers().get(header::RANGE) {
-        outgoing = outgoing.header(header::RANGE, range.clone());
-    }
-    let Ok(response) = outgoing.send().await else {
+    });
+    let Ok(response) = outgoing.await else {
         return reply(StatusCode::BAD_GATEWAY, b"Couldn't reach the stream".to_vec());
     };
     // Its own bot check (the video may live on another address than its page): through the page.
     if turned_away(&response) && crate::signin::note_bot_check(url) {
         crate::diag::note(format!("preview relay {url}: bot check, switching to the page window"));
         return Box::pin(relay_hls(app, request)).await;
+    }
+    // Refused with the page alone: once per site, with the page's Origin too.
+    if let Some(page) = page.filter(|page| crate::signin::is_refusal(response.status().as_u16()) && crate::signin::note_needs_origin(page)) {
+        crate::diag::note(format!("preview relay {url}: refused ({}), trying with the page's Origin", response.status()));
+        let again = Box::pin(relay_hls(app, request)).await;
+        if crate::signin::is_refusal(again.status().as_u16()) {
+            crate::signin::forget_needs_origin(page);
+        }
+        return again;
     }
     if response.status().as_u16() >= 400 {
         crate::diag::note(format!("preview relay {url}: answered {}", response.status()));
@@ -628,6 +682,36 @@ mod tests {
         assert_eq!(lines[1], format!("#EXT-X-KEY:METHOD=AES-128,URI=\"{}\",IV=0x1", relayed("https://cdn.example/v/key.bin")));
         assert_eq!(lines[2], relayed("https://cdn.example/v/low/index.m3u8"));
         assert_eq!(lines[3], relayed("https://other.example/seg1.ts"));
+    }
+
+    /// One answer from a server on this PC, handing back the request it got.
+    fn serve_once(answer: String) -> (u16, std::sync::mpsc::Receiver<String>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (sent, got) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            let n = stream.read(&mut request).unwrap();
+            sent.send(String::from_utf8_lossy(&request[..n]).into_owned()).unwrap();
+            stream.write_all(answer.as_bytes()).unwrap();
+        });
+        (port, got)
+    }
+
+    #[tokio::test]
+    async fn host_goes_first_and_follows_each_redirect() {
+        let (second, second_got) = serve_once("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok".into());
+        let (first, first_got) = serve_once(format!("HTTP/1.1 302 Found\r\nLocation: http://localhost:{second}/v\r\nContent-Length: 0\r\n\r\n"));
+        let response = super::get(&format!("http://127.0.0.1:{first}/start"), |r| r.header(header::REFERER, "https://site.example/watch")).await.unwrap();
+        assert_eq!((response.status().as_u16(), response.url().as_str()), (200, format!("http://localhost:{second}/v").as_str()));
+        let first_got = first_got.recv().unwrap();
+        assert!(first_got.starts_with(&format!("GET /start HTTP/1.1\r\nHost: 127.0.0.1:{first}\r\nReferer: https://site.example/watch\r\n")), "{first_got}");
+        // The second server gets its own Host, not the first one's.
+        let second_got = second_got.recv().unwrap();
+        assert!(second_got.starts_with(&format!("GET /v HTTP/1.1\r\nHost: localhost:{second}\r\n")), "{second_got}");
+        assert!(second_got.contains("\r\nUser-Agent: ") && !second_got.contains(&format!("127.0.0.1:{first}")), "{second_got}");
     }
 
     /// Against a real server: `cargo test --lib -- --ignored live_cache`.

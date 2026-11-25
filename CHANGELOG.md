@@ -1,5 +1,15 @@
 # What's new in Craftora
 
+## Next version
+
+**Fixed**
+
+- **Links that 0.7.0 couldn't fetch fetch again**: 0.7.0 told every video server which website was asking, and some
+  servers refuse that. Craftora now asks the way 0.6.0 did, and only for a site that refuses that way does it ask
+  again the 0.7.0 way (and remembers the site until Craftora closes).
+- **Previews of videos on sites behind strict bot checks play** (anipm.pk, for one): only the cover picture showed,
+  though the downloaded video played. Craftora's preview now asks the video's server exactly as a browser does.
+
 ## 0.7.0 (November 2026)
 
 **New**

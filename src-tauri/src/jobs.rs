@@ -706,6 +706,23 @@ pub(crate) struct Download<'a> {
 
 /// yt-dlp downloads (only the requested section of) a link into `dir/stem.<ext>`.
 pub(crate) async fn download(app: &AppHandle, job_id: &str, request: &Download<'_>, dir: &Path, stem: &str) -> Result<PathBuf, String> {
+    let downloaded = download_once(app, job_id, request, dir, stem).await;
+    // Refused with the page alone (and not learned by the fetch or preview): once, with the page's Origin too.
+    if let Err(e) = &downloaded
+        && crate::media::is_refused(e)
+        && let Some(page) = crate::signin::split_referer(request.url).1
+        && crate::signin::note_needs_origin(page)
+    {
+        let again = download_once(app, job_id, request, dir, stem).await;
+        if again.is_err() {
+            crate::signin::forget_needs_origin(page);
+        }
+        return again;
+    }
+    downloaded
+}
+
+async fn download_once(app: &AppHandle, job_id: &str, request: &Download<'_>, dir: &Path, stem: &str) -> Result<PathBuf, String> {
     let engines = ffmpeg_dir(app)?;
     let template = dir.join(format!("{stem}.%(ext)s"));
 
