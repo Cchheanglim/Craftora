@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Listener, Manager};
+use tauri::{AppHandle, Emitter, Listener, Manager, Wry};
 
 /// Downloads running at once, as the queue's `MAX_RUNNING`.
 const MAX_RUNNING: usize = 2;
@@ -48,6 +48,71 @@ struct Background {
 }
 
 static STATE: Mutex<Option<Background>> = Mutex::new(None);
+
+/// Downloads running now, window open or not, each with its line in the tray's menu ("Title · 45%").
+struct Downloading {
+    id: String,
+    title: String,
+    /// Whole percent shown, so the line changes only when the number does.
+    percent: Option<u32>,
+    item: Option<MenuItem<Wry>>,
+}
+
+static DOWNLOADING: Mutex<Vec<Downloading>> = Mutex::new(Vec::new());
+
+/// A download starting (jobs.rs): it gets a line in the tray's menu until it ends.
+pub fn track(app: &AppHandle, id: &str, title: &str) {
+    {
+        let mut list = DOWNLOADING.lock().unwrap();
+        if list.iter().any(|d| d.id == id) {
+            return;
+        }
+        list.push(Downloading { id: id.to_string(), title: title.to_string(), percent: None, item: None });
+    }
+    rebuild_menu(app);
+}
+
+/// "VisionQuest (2026) Episode 8 · 45%", short enough for a menu.
+fn line(d: &Downloading) -> String {
+    let title: String = if d.title.chars().count() > 42 { d.title.chars().take(40).collect::<String>() + "…" } else { d.title.clone() };
+    match d.percent {
+        Some(p) => format!("{title} · {p}%"),
+        None => format!("{title} · starting"),
+    }
+}
+
+/// Progress and ends of downloads, for their lines in the tray's menu.
+fn follow(app: &AppHandle, event: &Value) {
+    let Some(id) = event["id"].as_str() else { return };
+    match event["kind"].as_str() {
+        Some("progress") => {
+            let Some(percent) = event["percent"].as_f64().map(|p| p.clamp(0.0, 100.0) as u32) else { return };
+            // Changed outside the lock: menu changes run on the window's thread, which may be waiting for it.
+            let changed = {
+                let mut list = DOWNLOADING.lock().unwrap();
+                list.iter_mut().find(|d| d.id == id && d.percent != Some(percent)).and_then(|d| {
+                    d.percent = Some(percent);
+                    Some((d.item.clone()?, line(d)))
+                })
+            };
+            if let Some((item, text)) = changed {
+                let _ = item.set_text(text);
+            }
+        }
+        Some("done" | "failed" | "paused" | "cancelled") => {
+            let removed = {
+                let mut list = DOWNLOADING.lock().unwrap();
+                let before = list.len();
+                list.retain(|d| d.id != id);
+                list.len() != before
+            };
+            if removed {
+                rebuild_menu(app);
+            }
+        }
+        _ => {}
+    }
+}
 
 fn with<T>(f: impl FnOnce(&mut Background) -> T) -> T {
     f(STATE.lock().unwrap().get_or_insert_with(Background::default))
@@ -237,22 +302,46 @@ pub fn open_main(app: &AppHandle, page: Option<&str>) {
     }
 }
 
+/// The tray's menu: a line per running download (clicking one opens Downloads), then Craftora's own items.
+fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
+    let item = |id: &str, text: &str| MenuItem::with_id(app, id, text, true, None::<&str>);
+    let menu = Menu::new(app)?;
+    // Made outside the lock (see `follow`), then kept with their downloads.
+    let lines: Vec<(String, String)> = DOWNLOADING.lock().unwrap().iter().map(|d| (d.id.clone(), line(d))).collect();
+    for (id, text) in &lines {
+        let entry = MenuItem::with_id(app, format!("download:{id}"), text, true, None::<&str>)?;
+        menu.append(&entry)?;
+        if let Some(d) = DOWNLOADING.lock().unwrap().iter_mut().find(|d| &d.id == id) {
+            d.item = Some(entry);
+        }
+    }
+    if !lines.is_empty() {
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+    }
+    menu.append_items(&[
+        &item("open", "Open Craftora")?,
+        &item("downloads", "Downloads")?,
+        &PredefinedMenuItem::separator(app)?,
+        &item("pause", "Pause all")?,
+        &item("resume", "Resume all")?,
+        &PredefinedMenuItem::separator(app)?,
+        &item("quit", "Quit Craftora")?,
+    ])?;
+    Ok(menu)
+}
+
+/// Downloads started or ended: the tray's menu lists the ones running now.
+fn rebuild_menu(app: &AppHandle) {
+    let Some(tray) = app.tray_by_id("craftora") else { return };
+    if let Ok(menu) = menu(app) {
+        let _ = tray.set_menu(Some(menu));
+    }
+    update_tray(app);
+}
+
 /// The tray icon, there from the start: click it to bring Craftora forward, right-click for its menu.
 pub fn tray(app: &AppHandle) -> tauri::Result<()> {
-    let item = |id: &str, text: &str| MenuItem::with_id(app, id, text, true, None::<&str>);
-    let menu = Menu::with_items(
-        app,
-        &[
-            &item("open", "Open Craftora")?,
-            &item("downloads", "Downloads")?,
-            &PredefinedMenuItem::separator(app)?,
-            &item("pause", "Pause all")?,
-            &item("resume", "Resume all")?,
-            &PredefinedMenuItem::separator(app)?,
-            &item("quit", "Quit Craftora")?,
-        ],
-    )?;
-    let mut tray = TrayIconBuilder::with_id("craftora").tooltip("Craftora").menu(&menu).show_menu_on_left_click(false);
+    let mut tray = TrayIconBuilder::with_id("craftora").tooltip("Craftora").menu(&menu(app)?).show_menu_on_left_click(false);
     if let Some(icon) = app.default_window_icon() {
         tray = tray.icon(icon.clone());
     }
@@ -269,6 +358,7 @@ pub fn tray(app: &AppHandle) -> tauri::Result<()> {
             let _ = app.emit("tray-queue", "resumeAll");
         }
         "quit" => quit(app),
+        id if id.starts_with("download:") => open_main(app, Some("downloads")),
         _ => {}
     })
     .on_tray_icon_event(|tray, event| {
@@ -280,6 +370,7 @@ pub fn tray(app: &AppHandle) -> tauri::Result<()> {
     let handle = app.clone();
     app.listen_any("job-event", move |event| {
         if let Ok(value) = serde_json::from_str::<Value>(event.payload()) {
+            follow(&handle, &value);
             on_job_event(&handle, value);
         }
     });
@@ -302,10 +393,10 @@ pub fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
-/// The tray's tooltip says what runs while the window is closed.
+/// The tray's tooltip says how many downloads run.
 fn update_tray(app: &AppHandle) {
     let Some(tray) = app.tray_by_id("craftora") else { return };
-    let running = with(|b| if b.on { b.downloads.iter().filter(|d| d.status == "running").count() } else { 0 });
+    let running = DOWNLOADING.lock().unwrap().len();
     let tip = match running {
         0 => "Craftora".to_string(),
         1 => "Craftora · 1 download running".to_string(),
