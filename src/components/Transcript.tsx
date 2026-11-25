@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { cutRanges, isFiller, transcript, wordsOf, type Project } from "../project/model";
+import { cutRanges, findSaid, transcript, wordsOf, type Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
 import type { SiteCaption } from "../types";
 import { formatClock } from "../lib/timecode";
@@ -166,9 +166,14 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
     return !clip || (middle >= clip.in && middle < clip.out);
   };
   const current = lines.findIndex((l) => time >= l.start && time < l.end);
-  /** Picked to cut wins; on the current line, marks the word at `time` and words still ahead. */
+  const needle = query.trim().toLowerCase();
+  /** Each place the searched word (or words) is said: cut them all at once, or one line's. */
+  const matches = findSaid(words, needle, kept);
+  const matched = new Set(matches.flat().map(([l, w]) => keyOf(l, w)));
+  /** Picked to cut wins, then the search's matches; on the current line, marks the word at `time` and words still ahead. */
   const wordClass = (line: number, word: number) => {
     if (picked.has(keyOf(line, word))) return "is-picked";
+    if (matched.has(keyOf(line, word))) return "is-match";
     if (line !== current) return undefined;
     const w = words[line][word];
     const start = timelineAt(line, w.start);
@@ -181,14 +186,11 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
     currentRef.current?.scrollIntoView({ block: "nearest" });
   }, [current]);
 
-  const needle = query.trim().toLowerCase();
   const shown = lines
     .map((_, i) => i)
     .filter((i) => words[i].some((w, j) => w.word && kept(i, j)) && (!needle || lines[i].text.toLowerCase().includes(needle)));
 
   const pickedWords = [...picked].map((k) => k.split(":").map(Number) as [number, number]).filter(([l, w]) => words[l]?.[w]);
-  const cutLength = pickedWords.reduce((sum, [l, w]) => sum + (words[l][w].end - words[l][w].start) / (clipOf(l)?.speed ?? 1), 0);
-  const fillers = words.flatMap((ws, l) => ws.flatMap((w, i): [number, number][] => (isFiller(w.text) ? [[l, i]] : [])));
 
   const cut = (which: [number, number][]) => {
     const ranges = cutRanges(
@@ -280,7 +282,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
         <p className="transcript__muted">
           {needle
             ? `${shown.length} line${shown.length === 1 ? "" : "s"} with “${query.trim()}”.`
-            : "Click a sentence or word to jump there. Select words and press Delete to cut them out of the video."}
+            : "Click a word to jump there. Select words and press Delete to cut them, or search a word to cut it everywhere."}
         </p>
         {needle && shown.length > 0 && (
           <form className="transcript__replace" onSubmit={replaceAll}>
@@ -299,6 +301,12 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
               Replace all
             </button>
           </form>
+        )}
+        {matches.length > 0 && (
+          <button type="button" className="btn btn--secondary" onClick={() => cut(matches.flat())}>
+            <Icon name="scissors" size={14} />
+            Cut every “{query.trim()}” ({matches.length})
+          </button>
         )}
         {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
         {onCancelCaptions && <CancelCaptions onCancel={onCancelCaptions} />}
@@ -357,6 +365,17 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
                       </span>
                     ))}
                   </span>
+                  {needle && matches.some((m) => m[0][0] === i) && (
+                    <button
+                      type="button"
+                      className="btn btn--icon transcript__cut"
+                      aria-label={`Cut “${query.trim()}” at ${formatClock(line.start)}`}
+                      title={`Cut “${query.trim()}” here`}
+                      onClick={() => cut(matches.filter((m) => m[0][0] === i).flat())}
+                    >
+                      <Icon name="scissors" size={13} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn--icon transcript__edit"
@@ -376,29 +395,6 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
         })}
         {captionStatus && <li className="transcript__line transcript__pending">{`${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. The rest fills in as it's made.`}</li>}
       </ol>
-
-      <div className="transcript__foot">
-        <p>
-          {pickedWords.length ? (
-            <>
-              <span className="transcript__count">
-                {pickedWords.length} word{pickedWords.length === 1 ? "" : "s"} selected
-              </span>{" "}
-              · cuts <span className="mono">{cutLength.toFixed(1)} s</span> from the video
-            </>
-          ) : (
-            "Select words to cut them."
-          )}
-        </p>
-        <div className="transcript__actions">
-          <button type="button" className="btn btn--primary" disabled={!pickedWords.length} onClick={() => cut(pickedWords)}>
-            Cut these words <kbd>Delete</kbd>
-          </button>
-          <button type="button" className="btn btn--secondary" disabled={!fillers.length} onClick={() => cut(fillers)} title="Cut every um, uh, erm and hmm">
-            {fillers.length ? `Cut every “um” (${fillers.length})` : "No “um” found"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

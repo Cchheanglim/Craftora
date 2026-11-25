@@ -893,8 +893,27 @@ export function cutRanges(picked: { clipId: string; start: number; end: number }
   return byClip;
 }
 
-/** "um", "uh", "erm", "hmm", "ah" and their stretched forms. */
-export const isFiller = (word: string) => /^(u+m+|u+h+m*|e+r+m+|h+m+|a+h+)$/i.test(word);
+/** A word as the transcript's search compares it: "Um," and "um" are the same. */
+const plainWord = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}']+/gu, "");
+
+/**
+ * Every place `query` (a word or a few) is said, as the [line, word] indices to cut there: whole words only, so
+ * "um" finds "Um," but not "umbrella". `kept` leaves out words already cut from the timeline.
+ */
+export function findSaid(lines: TranscriptWord[][], query: string, kept: (line: number, word: number) => boolean = () => true): [number, number][][] {
+  const wanted = query.split(/\s+/).map(plainWord).filter(Boolean);
+  const found: [number, number][][] = [];
+  if (!wanted.length) return found;
+  lines.forEach((words, l) => {
+    const said = words.flatMap((w, i) => (w.word && kept(l, i) ? [i] : []));
+    for (let k = 0; k + wanted.length <= said.length; k++) {
+      if (!wanted.every((want, m) => plainWord(words[said[k + m]].text) === want)) continue;
+      found.push(wanted.map((_, m): [number, number] => [l, said[k + m]]));
+      k += wanted.length - 1;
+    }
+  });
+  return found;
+}
 
 /**
  * Loudness bars (0–100) across a media item: real FFmpeg peaks, measured once it's a file on this
