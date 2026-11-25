@@ -62,6 +62,8 @@ export interface MediaSource {
   chapters?: { title: string; start: number; end: number }[];
   /** Links: the captions that come with the video, read with `loadCaptions`. */
   captions?: { url: string; label: string };
+  /** Links: every caption track the website has in English or Khmer, for "Captions from the website". */
+  captionTracks?: { url: string; label: string }[];
   streams: StreamOption[];
   /** Live now: no length yet. Recorded while it plays (src-tauri/src/live.rs); `duration` grows. */
   live?: boolean;

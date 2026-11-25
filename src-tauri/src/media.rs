@@ -167,6 +167,9 @@ pub struct MediaSource {
     /// Links: the captions that come with the video (`load_captions` reads them).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) captions: Option<crate::captions::Track>,
+    /// Links: every caption track the website has in English or Khmer, for "Captions from the website".
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) caption_tracks: Vec<crate::captions::Track>,
     pub(crate) streams: Vec<Stream>,
     /// A stream that is live now: no length yet; the editor records it (live.rs).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -649,6 +652,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>, engin
             peaks_url: String::new(),
             hover_url: String::new(),
             captions: None,
+            caption_tracks: Vec::new(),
             streams: vec![Stream { id: "live".into(), kind: "video", label: "Live".into(), detail: "Recording".into(), size_mb: 0.0 }],
             live: true,
             download_first: false,
@@ -745,6 +749,14 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>, engin
     // A dubbed video's `language` is its first sound track's (a dub): the original track says what was said.
     let original = info.formats.iter().find(|f| f.language_preference.is_some_and(|p| p >= 10)).and_then(|f| f.language.as_deref());
     let captions = crate::captions::pick(&info.subtitles, &info.automatic_captions, original.or(info.language.as_deref()));
+    // A stream's caption tracks have their names only in its master list (yt-dlp leaves them out).
+    let manifest = info.formats.iter().find_map(|f| f.manifest_url.as_deref().filter(|_| f.protocol.as_deref() == Some("m3u8_native")));
+    let nameless = info.subtitles.values().flatten().any(|s| s.nameless_stream_track());
+    let names = match manifest {
+        Some(manifest) if nameless => crate::captions::stream_names(manifest, page.as_deref()).await,
+        _ => BTreeMap::new(),
+    };
+    let caption_tracks = crate::captions::site_tracks(&info.subtitles, &info.automatic_captions, &names);
     let thumbnails = other_pictures(&info);
     if preview_url.is_empty() && !bot_checked {
         let mut formats = info.formats;
@@ -782,6 +794,7 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>, engin
         peaks_url,
         hover_url,
         captions,
+        caption_tracks,
         streams,
         live: false,
         download_first: bot_checked,
