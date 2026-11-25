@@ -4,6 +4,14 @@
 
 **New**
 
+- **Downloads go on after you close Craftora**: closing the window while downloads run (or wait their turn) closes
+  it for real, giving back its memory (about 400 MB), and Craftora finishes them from its icon by the clock, two at
+  a time. The icon's menu shows each download with how far it is ("… · 45%"), and has Open Craftora, Downloads,
+  Pause all, Resume all and Quit Craftora. Windows says when one finishes or fails, and when all are done. Opening
+  Craftora again (the icon, a notification, the Start menu) carries on with them: nothing downloads twice. Quit
+  Craftora stops them where they are; they go on next time.
+- **Craftora runs once**: opening it again brings back the Craftora already running (from the tray too).
+
 - **Search a word to cut it** (Transcript tab): type a word or a few in the search and every place it's said is
   marked; "Cut every “um” (6)" cuts them all from the video, the scissors on a line cuts just that one. Whole words
   only ("um" doesn't touch "umbrella"). It replaces the bar at the bottom ("Cut these words" and "Cut every um"):
@@ -17,6 +25,9 @@
 
 **Fixed**
 
+- **Craftora no longer keeps running after it's closed**: the sign-in window (also the one loading a page in the
+  background) kept Craftora and its browser running with no window to close. And the AI assistant's helper programs
+  now end with Craftora.
 - **Links that 0.7.0 couldn't fetch fetch again**: 0.7.0 told every video server which website was asking, and some
   servers refuse that. Craftora now asks the way 0.6.0 did, and only for a site that refuses that way does it ask
   again the 0.7.0 way (and remembers the site until Craftora closes).
