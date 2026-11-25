@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { Job } from "../types";
-import { cancelJob, discardDownload, downloadMedia, onJobEvent, pauseJob, saveImage, startJob, startRender, type JobEvent } from "../lib/engine";
+import { cancelJob, discardDownload, downloadMedia, onJobEvent, pauseJob, saveImage, startJob, startRender, takeBackground, type JobEvent } from "../lib/engine";
 import { loadPausedDownloads, savePausedDownloads } from "../lib/storage";
 
 /** How many jobs may download or encode at the same time, unless Settings says otherwise. */
@@ -22,7 +22,7 @@ type Action =
   | { type: "clearFinished" }
   | { type: "tick"; now: number };
 
-const isRunning = (j: Job) => j.status === "downloading" || j.status === "encoding";
+export const isRunning = (j: Job) => j.status === "downloading" || j.status === "encoding";
 /** Downloads of a whole link go on where they stopped (jobs.rs and live.rs keep their parts); exports and cuts start again. */
 export const resumable = (j: Job) =>
   Boolean(j.prefetch || (j.record && !j.record.live) || (j.spec && !j.spec.local && j.spec.start <= 0.05 && j.spec.end >= j.spec.duration - 0.05));
@@ -178,16 +178,33 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
     if (real) savePausedDownloads(JSON.parse(kept));
   }, [real, kept]);
 
-  // Real mode: follow the engine's progress events.
+  // Real mode: follow the engine's progress events. Then, before anything starts, take back how downloads handed to
+  // the tray ended while the window was closed (background.rs): finished ones don't download again, ones still
+  // running are joined when started (jobs.rs `spawn_job`).
+  const [ready, setReady] = useState(!real);
+  const [openOn, setOpenOn] = useState<string | null>(null);
   useEffect(() => {
     if (!real) return;
+    let live = true;
     const unlisten = onJobEvent((event) => dispatch({ type: "engine", event }));
-    return () => void unlisten.then((stop) => stop());
+    void unlisten
+      .then(() => takeBackground())
+      .then(({ events, openOn }) => {
+        if (!live) return;
+        for (const event of events) dispatch({ type: "engine", event });
+        if (openOn) setOpenOn(openOn);
+      })
+      .catch(() => {})
+      .finally(() => live && setReady(true));
+    return () => {
+      live = false;
+      void unlisten.then((stop) => stop());
+    };
   }, [real]);
 
   // Real mode: start waiting jobs, oldest first, while a slot is free.
   useEffect(() => {
-    if (!real) return;
+    if (!real || !ready) return;
     // A live recording runs for hours: it doesn't take a download slot.
     let free = maxRunning - jobs.filter((j) => isRunning(j) && !j.record).length;
     for (const job of [...jobs].reverse()) {
@@ -215,7 +232,7 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
             : startJob(job.spec!);
       run.catch((err: Error) => dispatch({ type: "failed", id: job.id, message: err.message }));
     }
-  }, [jobs, real, maxRunning]);
+  }, [jobs, real, ready, maxRunning]);
 
   // Demo mode: simulated progress.
   const simulating = !real && jobs.some((j) => isRunning(j) || j.status === "waiting");
@@ -256,6 +273,8 @@ export function useQueue(initial: Job[], real: boolean, maxRunning = MAX_RUNNING
 
   return {
     jobs,
+    /** The page a notification clicked while the window was closed asks for (background.rs `open_main`). */
+    openOn,
     /** Everything but live recordings. Downloads go on from where they were (`resumable`); exports start again. */
     canPauseJob: useCallback((job: Job) => !job.record?.live, []),
     add: useCallback((job: Job) => dispatch({ type: "add", job }), []),

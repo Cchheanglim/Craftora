@@ -250,8 +250,10 @@ pub(crate) fn spawn_job(
     id: String,
     work: impl Future<Output = Result<PathBuf, String>> + Send + 'static,
 ) -> Result<(), String> {
+    // Already running: a download the window handed over before it closed (background.rs) and asks for again now
+    // it's open. Its progress and end arrive as usual; a second copy would download the same file twice.
     if !app.state::<Jobs>().register(&id) {
-        return Err("This export is already running.".into());
+        return Ok(());
     }
     tauri::async_runtime::spawn(async move {
         let result = work.await;
@@ -289,6 +291,9 @@ pub async fn start_job(app: AppHandle, spec: JobSpec) -> Result<(), String> {
         }
     } else if !is_web_link(&spec.url) {
         return Err("Only web links can be downloaded.".into());
+    }
+    if !spec.local {
+        crate::background::track(&app, &spec.id, &spec.file_name);
     }
     let task_app = app.clone();
     spawn_job(app, spec.id.clone(), async move { run_simple(&task_app, &spec).await })
@@ -578,6 +583,7 @@ pub async fn download_media(app: AppHandle, spec: MediaDownload) -> Result<(), S
     if !is_web_link(&spec.url) || spec.format.is_empty() {
         return Err("Only web links can be downloaded.".into());
     }
+    crate::background::track(&app, &spec.id, &spec.title);
     let task_app = app.clone();
     spawn_job(app, spec.id.clone(), async move {
         let dir = if spec.for_export { sources_dir(&task_app)? } else { downloads_dir(&task_app)? };

@@ -1,5 +1,6 @@
 mod agents;
 mod assistant;
+mod background;
 mod captions;
 mod diag;
 mod drop;
@@ -37,11 +38,53 @@ fn memory_target(window: &tauri::WebviewWindow, low: bool) {
     });
 }
 
+/// The main window's setup, at start and when it's made again after closing to the tray (background.rs).
+pub(crate) fn prepare_main(app: &tauri::AppHandle, main: &tauri::WebviewWindow) {
+    // Everything a little larger than 100%: text, pictures and controls alike.
+    let _ = main.set_zoom(1.1);
+    // No "Saved info" list under the link box and other fields (the sign-in window keeps it). A touchpad
+    // pinch reaches the page (as Ctrl + wheel) only with pinch zoom on: the page keeps the window from
+    // zooming (main.tsx) and zooms the timeline with it instead.
+    #[cfg(windows)]
+    drop::register(main);
+    #[cfg(windows)]
+    let _ = main.with_webview(|webview| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Settings4, ICoreWebView2Settings5};
+        use windows_core::Interface;
+        // SAFETY: `with_webview` runs on the window's own thread.
+        let _ = unsafe {
+            webview.controller().CoreWebView2().and_then(|core| core.Settings()).and_then(|s| {
+                let fields = s.cast::<ICoreWebView2Settings4>()?;
+                fields.SetIsGeneralAutofillEnabled(false)?;
+                fields.SetIsPasswordAutosaveEnabled(false)?;
+                s.cast::<ICoreWebView2Settings5>()?.SetIsPinchZoomEnabled(true)
+            })
+        };
+    });
+    // Before any website is opened, so the sign-in window has it from its first page.
+    privacy::block_ads(app, store::get_ad_block(app.clone()));
+    // Minimized, WebView2 lets go of what it can (about 40 MB of picture memory); shown again, back to normal.
+    #[cfg(windows)]
+    {
+        let window = main.clone();
+        main.on_window_event(move |event| {
+            if let tauri::WindowEvent::Resized(_) = event {
+                memory_target(&window, window.is_minimized().unwrap_or(false));
+            }
+        });
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Before any window: WebView2 only takes a proxy when it starts.
     privacy::prepare();
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Release builds run once: opening Craftora again brings back the one running (maybe only in the tray), so no
+    // second copy resumes the same downloads. Not dev builds, so `tauri dev` runs beside an installed Craftora.
+    #[cfg(not(debug_assertions))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| background::open_main(app, None)));
+    builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
@@ -91,41 +134,10 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 engine::warm_up(&handle).await;
             });
-            // Everything a little larger than 100%: text, pictures and controls alike.
             if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
-                let _ = main.set_zoom(1.1);
-                // No "Saved info" list under the link box and other fields (the sign-in window keeps it). A touchpad
-                // pinch reaches the page (as Ctrl + wheel) only with pinch zoom on: the page keeps the window from
-                // zooming (main.tsx) and zooms the timeline with it instead.
-                #[cfg(windows)]
-                drop::register(&main);
-                #[cfg(windows)]
-                let _ = main.with_webview(|webview| {
-                    use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Settings4, ICoreWebView2Settings5};
-                    use windows_core::Interface;
-                    // SAFETY: `with_webview` runs on the window's own thread.
-                    let _ = unsafe {
-                        webview.controller().CoreWebView2().and_then(|core| core.Settings()).and_then(|s| {
-                            let fields = s.cast::<ICoreWebView2Settings4>()?;
-                            fields.SetIsGeneralAutofillEnabled(false)?;
-                            fields.SetIsPasswordAutosaveEnabled(false)?;
-                            s.cast::<ICoreWebView2Settings5>()?.SetIsPinchZoomEnabled(true)
-                        })
-                    };
-                });
-                // Before any website is opened, so the sign-in window has it from its first page.
-                privacy::block_ads(app.handle(), store::get_ad_block(app.handle().clone()));
-                // Minimized, WebView2 lets go of what it can (about 40 MB of picture memory); shown again, back to normal.
-                #[cfg(windows)]
-                {
-                    let window = main.clone();
-                    main.on_window_event(move |event| {
-                        if let tauri::WindowEvent::Resized(_) = event {
-                            memory_target(&window, window.is_minimized().unwrap_or(false));
-                        }
-                    });
-                }
+                prepare_main(app.handle(), &main);
             }
+            background::tray(app.handle())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -208,7 +220,25 @@ pub fn run() {
             agents::local_generate,
             drop::save_gif_from,
             drop::save_sound_from,
+            background::hand_over,
+            background::take_background,
+            background::quit_app,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| match event {
+            // The window closed. With downloads handed over (background.rs) Craftora stays in the tray, and the
+            // sign-in window goes too (its pages hold memory); otherwise Craftora quits. Before, a sign-in window
+            // (even the hidden one loading a page) kept Craftora running with no window to close.
+            tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::Destroyed, .. } if label == "main" => {
+                if !background::active() {
+                    app.exit(0);
+                } else if let Some(signin) = tauri::Manager::get_webview_window(app, signin::WINDOW) {
+                    let _ = signin.destroy();
+                }
+            }
+            // The last window closing doesn't end Craftora while downloads run from the tray.
+            tauri::RunEvent::ExitRequested { code: None, api, .. } if background::active() => api.prevent_exit(),
+            _ => {}
+        });
 }
