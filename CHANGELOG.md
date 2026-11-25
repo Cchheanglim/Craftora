@@ -2,6 +2,14 @@
 
 ## Next version
 
+**New**
+
+- **Captions from the website** (Transcript tab): a fetched video's own captions in English and Khmer, listed by the
+  names the site gives them ("English", "English [CR]", "Signs/Songs"…). Pick one and it becomes the video's captions,
+  in place of any it had. Works for captions that come as one file, for a stream's captions (anipm.pk, for one), and
+  for captions a site's player lists apart from the video (kisskh.do): Fetch this video in the sign-in window brings
+  them along.
+
 **Fixed**
 
 - **Links that 0.7.0 couldn't fetch fetch again**: 0.7.0 told every video server which website was asking, and some
