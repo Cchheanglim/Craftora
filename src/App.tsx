@@ -1009,12 +1009,19 @@ export default function App() {
     });
     return () => void stop.then((unlisten) => unlisten());
   }, [closeWindow]);
-  // The tray's menu (background.rs): Pause all and Resume all work on this queue while the window is open; Quit
+  // The tray's menu (background.rs): Pause all, Resume all and each download's own items work on this queue while the
+  // window is open; Quit
   // Craftora asks first, like closing, when an export or captions would stop, then quits (downloads go on next time).
   useEffect(() => {
     if (!inDesktopApp) return;
     const stops = [
       listen<"pauseAll" | "resumeAll">("tray-queue", (e) => (e.payload === "pauseAll" ? queue.pauseAll() : queue.resumeAll())),
+      // One download's Pause, Resume or Cancel download, from its line in the tray's menu.
+      listen<{ action: "pause" | "resume" | "cancel"; id: string }>("tray-job", ({ payload: { action, id } }) => {
+        if (action === "pause") queue.pause(id);
+        else if (action === "resume") queue.resume(id);
+        else queue.cancel(id);
+      }),
       listen("tray-quit", async () => {
         const count = runningRef.current;
         if (count > 0) {
@@ -1035,7 +1042,7 @@ export default function App() {
       }),
     ];
     return () => stops.forEach((stop) => void stop.then((unlisten) => unlisten()));
-  }, [askClose, queue.pauseAll, queue.resumeAll]);
+  }, [askClose, queue.pauseAll, queue.resumeAll, queue.pause, queue.resume, queue.cancel]);
   // A notification clicked while the window was closed opened it again on its page.
   useEffect(() => {
     if (queue.openOn) setView(queue.openOn as View);
