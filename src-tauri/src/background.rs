@@ -55,29 +55,64 @@ struct Downloading {
     title: String,
     /// Whole percent shown, so the line changes only when the number does.
     percent: Option<u32>,
+    /// Paused (Pause all, or its own pause): still listed, saying so, until it goes on or is removed.
+    paused: bool,
     item: Option<MenuItem<Wry>>,
 }
 
 static DOWNLOADING: Mutex<Vec<Downloading>> = Mutex::new(Vec::new());
 
-/// A download starting (jobs.rs): it gets a line in the tray's menu until it ends.
+/// A download starting or going on after a pause (jobs.rs): it has a line in the tray's menu until it ends.
 pub fn track(app: &AppHandle, id: &str, title: &str) {
-    {
-        let mut list = DOWNLOADING.lock().unwrap();
-        if list.iter().any(|d| d.id == id) {
-            return;
-        }
-        list.push(Downloading { id: id.to_string(), title: title.to_string(), percent: None, item: None });
+    if change(app, id, |d| d.paused = false) {
+        return;
     }
+    DOWNLOADING.lock().unwrap().push(Downloading { id: id.to_string(), title: title.to_string(), percent: None, paused: false, item: None });
     rebuild_menu(app);
+}
+
+/// A paused download removed from the queue (jobs.rs `discard_download`): its line goes.
+pub fn untrack(app: &AppHandle, id: &str) {
+    let removed = {
+        let mut list = DOWNLOADING.lock().unwrap();
+        let before = list.len();
+        list.retain(|d| d.id != id);
+        list.len() != before
+    };
+    if removed {
+        rebuild_menu(app);
+    }
+}
+
+/// Changes a download's line; false when it has none. The menu is changed outside the lock: menu changes run on
+/// the window's thread, which may be waiting for it.
+fn change(app: &AppHandle, id: &str, f: impl FnOnce(&mut Downloading)) -> bool {
+    let changed = {
+        let mut list = DOWNLOADING.lock().unwrap();
+        list.iter_mut().find(|d| d.id == id).map(|d| {
+            let before = (d.percent, d.paused);
+            f(d);
+            ((d.percent, d.paused) != before, d.paused != before.1, d.item.clone(), line(d))
+        })
+    };
+    let Some((changed, pause_changed, item, text)) = changed else { return false };
+    if let Some(item) = item.filter(|_| changed) {
+        let _ = item.set_text(text);
+    }
+    if pause_changed {
+        update_tray(app);
+    }
+    true
 }
 
 /// "VisionQuest (2026) Episode 8 · 45%", short enough for a menu.
 fn line(d: &Downloading) -> String {
     let title: String = if d.title.chars().count() > 42 { d.title.chars().take(40).collect::<String>() + "…" } else { d.title.clone() };
-    match d.percent {
-        Some(p) => format!("{title} · {p}%"),
-        None => format!("{title} · starting"),
+    match (d.paused, d.percent) {
+        (true, Some(p)) => format!("{title} · paused at {p}%"),
+        (true, None) => format!("{title} · paused"),
+        (false, Some(p)) => format!("{title} · {p}%"),
+        (false, None) => format!("{title} · starting"),
     }
 }
 
@@ -87,19 +122,15 @@ fn follow(app: &AppHandle, event: &Value) {
     match event["kind"].as_str() {
         Some("progress") => {
             let Some(percent) = event["percent"].as_f64().map(|p| p.clamp(0.0, 100.0) as u32) else { return };
-            // Changed outside the lock: menu changes run on the window's thread, which may be waiting for it.
-            let changed = {
-                let mut list = DOWNLOADING.lock().unwrap();
-                list.iter_mut().find(|d| d.id == id && d.percent != Some(percent)).and_then(|d| {
-                    d.percent = Some(percent);
-                    Some((d.item.clone()?, line(d)))
-                })
-            };
-            if let Some((item, text)) = changed {
-                let _ = item.set_text(text);
-            }
+            change(app, id, |d| {
+                d.percent = Some(percent);
+                d.paused = false;
+            });
         }
-        Some("done" | "failed" | "paused" | "cancelled") => {
+        Some("paused") => {
+            change(app, id, |d| d.paused = true);
+        }
+        Some("done" | "failed" | "cancelled") => {
             let removed = {
                 let mut list = DOWNLOADING.lock().unwrap();
                 let before = list.len();
@@ -396,11 +427,17 @@ pub fn quit_app(app: AppHandle) {
 /// The tray's tooltip says how many downloads run.
 fn update_tray(app: &AppHandle) {
     let Some(tray) = app.tray_by_id("craftora") else { return };
-    let running = DOWNLOADING.lock().unwrap().len();
-    let tip = match running {
-        0 => "Craftora".to_string(),
-        1 => "Craftora · 1 download running".to_string(),
-        n => format!("Craftora · {n} downloads running"),
+    let (paused, running) = {
+        let list = DOWNLOADING.lock().unwrap();
+        let paused = list.iter().filter(|d| d.paused).count();
+        (paused, list.len() - paused)
+    };
+    let count = |n: usize, what: &str| if n == 1 { format!("1 download {what}") } else { format!("{n} downloads {what}") };
+    let tip = match (running, paused) {
+        (0, 0) => "Craftora".to_string(),
+        (r, 0) => format!("Craftora · {}", count(r, "running")),
+        (0, p) => format!("Craftora · {}", count(p, "paused")),
+        (r, p) => format!("Craftora · {}, {p} paused", count(r, "running")),
     };
     let _ = tray.set_tooltip(Some(tip));
 }
