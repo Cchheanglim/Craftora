@@ -302,19 +302,28 @@ fn preview_choices(formats: &[Format], max_height: Option<u32>) -> Vec<&Format> 
 async fn first_served<'a>(choices: &[&'a Format], page: Option<&str>) -> Option<&'a Format> {
     for f in choices.iter().take(5) {
         let Some(url) = f.url.as_deref() else { continue };
-        let mut request = crate::media_cache::client().get(url).header("Range", "bytes=0-0").timeout(std::time::Duration::from_secs(5));
-        if let Some(page) = page {
-            request = request.header("Referer", page);
-            if let Some(origin) = crate::signin::origin_of(page) {
-                request = request.header("Origin", origin);
+        match served(url, page).await {
+            Some(code) if crate::signin::is_refusal(code) => {
+                // Refused with the page alone: once per site, with the page's Origin too.
+                if let Some(page) = page.filter(|page| crate::signin::note_needs_origin(page)) {
+                    if !served(url, Some(page)).await.is_some_and(crate::signin::is_refusal) {
+                        crate::diag::note(format!("preview file {url} refused ({code}), served with the page's Origin"));
+                        return Some(f);
+                    }
+                    crate::signin::forget_needs_origin(page);
+                }
+                crate::diag::note(format!("preview file {url} refused ({code}), trying the next"));
             }
-        }
-        match request.send().await.map(|r| r.status().as_u16()) {
-            Ok(code @ (401 | 403 | 404 | 410)) => crate::diag::note(format!("preview file {url} refused ({code}), trying the next")),
             _ => return Some(f),
         }
     }
     None
+}
+
+/// The server's answer to a request for the first byte of `url`; None when it didn't answer.
+async fn served(url: &str, page: Option<&str>) -> Option<u16> {
+    let request = |r: reqwest::RequestBuilder| crate::media_cache::from_page(r.header("Range", "bytes=0-0").timeout(std::time::Duration::from_secs(5)), page);
+    crate::media_cache::get(url, request).await.ok().map(|r| r.status().as_u16())
 }
 
 /// Reads `mediaPresentationDuration="PT1H2M3.5S"` from a DASH (.mpd) manifest.
@@ -342,16 +351,22 @@ pub(crate) fn parse_mpd_duration(xml: &str) -> Option<f64> {
 
 /// A file's length in seconds, read by FFprobe from its header (or from a DASH manifest).
 async fn probe_length(app: &AppHandle, file: &str, page: Option<&str>) -> Option<f64> {
+    if let Some(length) = probe_length_once(app, file, page).await {
+        return Some(length);
+    }
+    // Unread with the page alone: once per site, with the page's Origin too.
+    let page = page.filter(|page| crate::signin::note_needs_origin(page))?;
+    let length = probe_length_once(app, file, Some(page)).await;
+    if length.is_none() {
+        crate::signin::forget_needs_origin(page);
+    }
+    length
+}
+
+async fn probe_length_once(app: &AppHandle, file: &str, page: Option<&str>) -> Option<f64> {
     // A DASH manifest says its length: one small request, where FFprobe opening the stream took 9 s.
     if file.to_ascii_lowercase().contains(".mpd") {
-        let mut req = crate::media_cache::client().get(file);
-        if let Some(page) = page {
-            req = req.header(reqwest::header::REFERER, page);
-            if let Some(origin) = crate::signin::origin_of(page) {
-                req = req.header(reqwest::header::ORIGIN, origin);
-            }
-        }
-        let read = async { parse_mpd_duration(&req.send().await.ok()?.text().await.ok()?) };
+        let read = async { parse_mpd_duration(&crate::media_cache::get(file, |r| crate::media_cache::from_page(r, page)).await.ok()?.text().await.ok()?) };
         if let Some(d) = read.await {
             return Some(d);
         }
@@ -460,7 +475,7 @@ pub async fn fetch_thumbnail(urls: Vec<String>, link: String) -> Result<tauri::i
 }
 
 async fn fetch_picture(url: &str, referer: &str) -> Result<Vec<u8>, String> {
-    let send = || crate::media_cache::client().get(url).header(reqwest::header::REFERER, referer).send();
+    let send = || crate::media_cache::get(url, |r| r.header(reqwest::header::REFERER, referer));
     // A moment's network trouble (a dropped connection) gets one more try; an answer like 404 doesn't.
     let response = match send().await {
         Ok(response) => response,
@@ -522,6 +537,7 @@ async fn read_link_engine(app: &AppHandle, url: &str) -> Option<Info> {
 async fn read_link_yt_dlp(app: &AppHandle, url: &str) -> Result<Info, String> {
     let mut retried = false;
     let mut hiccup = false;
+    let mut with_origin = false;
     loop {
         let mut args: Vec<String> = ["--dump-single-json", "--no-playlist", "--no-warnings", "--encoding", "utf-8"].map(String::from).to_vec();
         let (link, _cookie_file) = crate::signin::link_args(app, url).await;
@@ -543,6 +559,18 @@ async fn read_link_yt_dlp(app: &AppHandle, url: &str) -> Result<Info, String> {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             continue;
         }
+        // Refused with the page alone: once per site, with the page's Origin too (a page's player sends both).
+        let page = crate::signin::split_referer(url).1;
+        if let Some(page) = page.filter(|_| is_refused(&error)) {
+            if !with_origin && crate::signin::note_needs_origin(page) {
+                crate::diag::note("refused: trying again with the page's Origin");
+                with_origin = true;
+                continue;
+            }
+            if with_origin {
+                crate::signin::forget_needs_origin(page);
+            }
+        }
         if retried || !is_bot_check(&error) || !crate::signin::note_bot_check(url) {
             return Err(error);
         }
@@ -559,6 +587,12 @@ fn is_network_hiccup(error: &str) -> bool {
     ["timed out", "connection reset", "connection aborted", "remote end closed", "temporary failure in name resolution", "getaddrinfo failed", "incompleteread", "unexpected_eof", "http error 500", "http error 502", "http error 503", "http error 504"]
         .iter()
         .any(|words| error.contains(words))
+}
+
+/// yt-dlp's words for a server that won't hand the video over (`signin::is_refusal`).
+pub(crate) fn is_refused(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    ["http error 401", "http error 403", "http error 404", "http error 410"].iter().any(|words| error.contains(words))
 }
 
 /// yt-dlp's words for "a bot check turned me away", such as "Got HTTP Error 403 caused by

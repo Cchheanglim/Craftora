@@ -161,7 +161,7 @@ pub(crate) async fn link_args(app: &AppHandle, link: &str) -> (Vec<String>, Opti
     let (url, referer) = split_referer(link);
     if let Some(page) = referer {
         args.extend(["--referer".into(), page.into()]);
-        if let Some(origin) = origin_of(page) {
+        if let Some(origin) = origin_for(page) {
             args.extend(["--add-header".into(), format!("Origin:{origin}")]);
         }
     }
@@ -232,11 +232,38 @@ pub(crate) fn origin_of(page: &str) -> Option<String> {
     origin.is_tuple().then(|| origin.ascii_serialization())
 }
 
+/// Sites whose video servers refused the page as Referer alone and took it with the page's Origin too.
+static NEEDS_ORIGIN: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// The page's Origin, only for a site that asked for it (`note_needs_origin`). Others get the Referer
+/// alone, as up to 0.6.0: some servers refuse an Origin they don't expect.
+pub(crate) fn origin_for(page: &str) -> Option<String> {
+    host_of(page).filter(|host| NEEDS_ORIGIN.lock().unwrap().contains(host)).and_then(|_| origin_of(page))
+}
+
+/// Remembers that `page`'s site refused a request without its Origin. True the first time, so the
+/// caller tries again with it.
+pub(crate) fn note_needs_origin(page: &str) -> bool {
+    host_of(page).is_some_and(|host| NEEDS_ORIGIN.lock().unwrap().insert(host))
+}
+
+/// The try with the Origin was refused too: the Origin wasn't the trouble, so the site goes back to the Referer alone.
+pub(crate) fn forget_needs_origin(page: &str) {
+    if let Some(host) = host_of(page) {
+        NEEDS_ORIGIN.lock().unwrap().remove(&host);
+    }
+}
+
+/// The answers of a server that won't hand a file over (worth a try with the Origin).
+pub(crate) fn is_refusal(status: u16) -> bool {
+    matches!(status, 401 | 403 | 404 | 410)
+}
+
 /// The page's headers for FFmpeg and FFprobe (`-headers`), without line breaks from the address:
 /// they would let it add headers of its own.
 pub(crate) fn page_headers(page: &str) -> String {
     let page = page.replace(['\r', '\n'], "");
-    match origin_of(&page) {
+    match origin_for(&page) {
         Some(origin) => format!("Referer: {page}\r\nOrigin: {origin}\r\n"),
         None => format!("Referer: {page}\r\n"),
     }
@@ -696,6 +723,18 @@ mod tests {
         assert_eq!(split_referer("https://youtu.be/x"), ("https://youtu.be/x", None));
         assert_eq!(origin_of("https://cinejoy.pk/watch/tv/62560/2/5").as_deref(), Some("https://cinejoy.pk"));
         assert_eq!(origin_of("not a page"), None);
-        assert_eq!(page_headers("https://site.example/p\r\nX: y"), "Referer: https://site.example/pX: y\r\nOrigin: https://site.example\r\n");
+        assert_eq!(page_headers("https://site.example/p\r\nX: y"), "Referer: https://site.example/pX: y\r\n");
+    }
+
+    #[test]
+    fn origin_only_after_a_refusal() {
+        let page = "https://needs-origin.example/watch/1";
+        assert_eq!(origin_for(page), None);
+        assert!(note_needs_origin(page) && !note_needs_origin(page));
+        assert_eq!(origin_for(page).as_deref(), Some("https://needs-origin.example"));
+        assert_eq!(page_headers(page), "Referer: https://needs-origin.example/watch/1\r\nOrigin: https://needs-origin.example\r\n");
+        assert_eq!(origin_for("https://other.example/"), None);
+        forget_needs_origin(page);
+        assert_eq!(origin_for(page), None);
     }
 }
