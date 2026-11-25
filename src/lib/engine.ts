@@ -550,6 +550,21 @@ export const noteDiagnostic = (text: string) => void invoke("note_diagnostic", {
 export const onJobEvent = (handler: (event: JobEvent) => void): Promise<UnlistenFn> =>
   listen<JobEvent>("job-event", (e) => handler(e.payload));
 
+/** A download the window hands to the tray when it closes (background.rs): one of `media` (downloadMedia) or `job` (startJob). */
+export interface HandedDownload {
+  id: string;
+  title: string;
+  status: "running" | "waiting" | "paused";
+  media?: Parameters<typeof downloadMedia>[0];
+  job?: JobSpec;
+}
+/** Before the window closes with downloads going: they carry on from the tray. */
+export const handOver = (downloads: HandedDownload[]) => invoke<void>("hand_over", { downloads });
+/** At start: how downloads handed to the tray ended meanwhile (as job events), and the page a notification asked for. */
+export const takeBackground = () => invoke<{ events: JobEvent[]; openOn?: string | null }>("take_background");
+/** Quits Craftora (the tray's Quit Craftora, after asking). */
+export const quitApp = () => invoke<void>("quit_app");
+
 export const revealFile = (path: string) => revealItemInDir(path);
 export const openFile = (path: string) => invoke<void>("open_file", { path });
 /** Renames a finished download in the Downloads folder; resolves its new path. */

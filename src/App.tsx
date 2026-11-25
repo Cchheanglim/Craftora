@@ -55,6 +55,9 @@ import {
   tellSignIn,
   updateYtDlp,
   type EngineStatus,
+  handOver,
+  quitApp,
+  type HandedDownload,
 } from "./lib/engine";
 import {
   DEFAULT_OUTPUT_DIR,
@@ -78,7 +81,7 @@ import {
   type LibraryEntry,
 } from "./lib/storage";
 import { captureFrame, captureThumbnail, coverFrame } from "./lib/thumbnail";
-import { MAX_RUNNING, folded, resumable, useQueue } from "./state/useQueue";
+import { MAX_RUNNING, folded, isRunning, resumable, useQueue } from "./state/useQueue";
 import { storeEdition, useUpdates } from "./lib/updates";
 import { formatClock } from "./lib/timecode";
 import { applyTheme, saveTheme, savedTheme, type Theme } from "./lib/theme";
@@ -963,31 +966,80 @@ export default function App() {
   /** Media id → how making its captions is going, for the Media list. */
   const [captioning, setCaptioning] = useState<Record<string, string>>({});
 
-  // Closing stops everything still running (engine.rs `tie`), so ask first. Downloads are kept and go on next time.
+  // Closing stops exports and captions (engine.rs `tie`), so ask first. Downloads go on from the tray (background.rs).
   const running =
     queue.jobs.filter((j) => !resumable(j) && (j.status === "waiting" || j.status === "downloading" || j.status === "encoding" || j.status === "paused")).length +
     Object.values(captioning).filter((text) => text !== "couldn't make captions").length;
   const runningRef = useRef(running);
   runningRef.current = running;
+  // Downloads downloading or waiting their turn: closing the window hands them to the tray, which goes on with them.
+  const handed = queue.jobs.flatMap((j): HandedDownload[] => {
+    if (!resumable(j) || j.record || !(isRunning(j) || j.status === "waiting")) return [];
+    const status = isRunning(j) ? "running" : "waiting";
+    if (j.prefetch) return [{ id: j.id, title: j.rename ?? j.title, status, media: { id: j.id, ...j.prefetch } }];
+    return j.spec ? [{ id: j.id, title: j.rename ?? j.title, status, job: j.spec }] : [];
+  });
+  const handedRef = useRef(handed);
+  handedRef.current = handed;
   const { ask: askClose, dialog: closeDialog } = useConfirm();
-  useEffect(() => {
-    if (!inDesktopApp) return;
-    const win = getCurrentWindow();
-    const stop = win.onCloseRequested(async (event) => {
-      const count = runningRef.current;
-      if (count === 0) return;
-      event.preventDefault();
+  /** Closes the window: downloads going on carry on from the tray, else Craftora quits (lib.rs). False when the user stayed. */
+  const closeWindow = useCallback(async () => {
+    const count = runningRef.current;
+    const downloads = handedRef.current;
+    if (count > 0) {
       const ok = await askClose({
         title: "Close Craftora?",
         message: `${count === 1 ? "1 export or caption is" : `${count} exports or captions are`} not finished. Closing stops ${count === 1 ? "it" : "them"} and what ${count === 1 ? "it has" : "they have"} done so far is lost.`,
-        note: "Downloads are kept and go on where they stopped next time.",
+        note: downloads.length ? "Downloads go on in the background: Craftora's icon by the clock shows them." : "Downloads are kept and go on where they stopped next time.",
         confirmLabel: "Stop and close",
         danger: true,
       });
-      if (ok) void win.destroy();
+      if (!ok) return false;
+    }
+    if (downloads.length) await handOver(downloads).catch(() => {});
+    await getCurrentWindow().destroy();
+    return true;
+  }, [askClose]);
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const stop = getCurrentWindow().onCloseRequested(async (event) => {
+      if (runningRef.current === 0 && handedRef.current.length === 0) return;
+      event.preventDefault();
+      await closeWindow();
     });
     return () => void stop.then((unlisten) => unlisten());
-  }, [askClose]);
+  }, [closeWindow]);
+  // The tray's menu (background.rs): Pause all and Resume all work on this queue while the window is open; Quit
+  // Craftora asks first, like closing, when an export or captions would stop, then quits (downloads go on next time).
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const stops = [
+      listen<"pauseAll" | "resumeAll">("tray-queue", (e) => (e.payload === "pauseAll" ? queue.pauseAll() : queue.resumeAll())),
+      listen("tray-quit", async () => {
+        const count = runningRef.current;
+        if (count > 0) {
+          const win = getCurrentWindow();
+          await win.unminimize();
+          await win.show();
+          await win.setFocus();
+          const ok = await askClose({
+            title: "Quit Craftora?",
+            message: `${count === 1 ? "1 export or caption is" : `${count} exports or captions are`} not finished. Quitting stops ${count === 1 ? "it" : "them"} and what ${count === 1 ? "it has" : "they have"} done so far is lost.`,
+            note: "Downloads stop where they are and go on next time Craftora opens.",
+            confirmLabel: "Stop and quit",
+            danger: true,
+          });
+          if (!ok) return;
+        }
+        await quitApp();
+      }),
+    ];
+    return () => stops.forEach((stop) => void stop.then((unlisten) => unlisten()));
+  }, [askClose, queue.pauseAll, queue.resumeAll]);
+  // A notification clicked while the window was closed opened it again on its page.
+  useEffect(() => {
+    if (queue.openOn) setView(queue.openOn as View);
+  }, [queue.openOn]);
 
   // The taskbar button fills with what's running (recordings have no end, so they don't count).
   const filling = queue.jobs.filter((j) => (j.status === "downloading" || j.status === "encoding") && !j.record);

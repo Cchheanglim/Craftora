@@ -1,10 +1,10 @@
 //! Windows notifications when a download, export or recording ends while Craftora is in the
 //! background. A click brings Craftora forward on the page the notification is about.
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::AppHandle;
 
-/// Shows a notification: `title`, then two lines. Clicking it brings the main window forward and
-/// sends `notification-clicked` with `page` (the sidebar page to open).
+/// Shows a notification: `title`, then two lines. Clicking it brings the main window forward (or opens it again)
+/// on `page`, the sidebar page to open (`notification-clicked`).
 #[tauri::command]
 pub fn notify(app: AppHandle, title: String, line: String, detail: String, page: String) -> Result<(), String> {
     #[cfg(windows)]
@@ -16,13 +16,9 @@ pub fn notify(app: AppHandle, title: String, line: String, detail: String, page:
             .text2(&detail)
             // Silent: Craftora plays its own sound when something finishes (App.tsx).
             .sound(None)
+            // The window may be closed, with downloads going on from the tray: then it's made again (background.rs).
             .on_activated(move |_| {
-                if let Some(main) = handle.get_webview_window("main") {
-                    let _ = main.unminimize();
-                    let _ = main.show();
-                    let _ = main.set_focus();
-                }
-                let _ = handle.emit("notification-clicked", &page);
+                crate::background::open_main(&handle, Some(&page));
                 Ok(())
             })
             .show()
