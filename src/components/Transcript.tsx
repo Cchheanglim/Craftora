@@ -302,9 +302,9 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
         )}
         {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
         {onCancelCaptions && <CancelCaptions onCancel={onCancelCaptions} />}
-        {(onSaveSrt || onOpenCaptions || siteCaptions) && (
-          <div className="transcript__actions">
-            {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} onPick={onSiteCaptions} />}
+        {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} onPick={onSiteCaptions} />}
+        {(onSaveSrt || onOpenCaptions) && (
+          <div className="transcript__actions transcript__actions--pair">
             {onSaveSrt && (
               <button type="button" className="btn btn--secondary" onClick={onSaveSrt} title="For YouTube and video players: the captions as a file next to the video">
                 <Icon name="download" size={14} />
