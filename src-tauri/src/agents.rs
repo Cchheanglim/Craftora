@@ -208,6 +208,8 @@ fn run(program: Program, prompt: &str) -> Result<String, String> {
         command.creation_flags(CREATE_NO_WINDOW);
     }
     let mut child = command.spawn().map_err(|e| format!("Couldn't start {name}: {e}"))?;
+    // Ends with Craftora, and whatever it started (npm's launchers start Node), even if Craftora quits meanwhile.
+    let _tied = crate::engine::tie(child.id());
     let input = program.input(prompt);
     let mut stdin = child.stdin.take().expect("piped");
     // Written on its own thread so a full output pipe can't stall it; dropping it closes stdin.

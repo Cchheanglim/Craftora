@@ -250,8 +250,10 @@ pub(crate) fn spawn_job(
     id: String,
     work: impl Future<Output = Result<PathBuf, String>> + Send + 'static,
 ) -> Result<(), String> {
+    // Already running: a download the window handed over before it closed (background.rs) and asks for again now
+    // it's open. Its progress and end arrive as usual; a second copy would download the same file twice.
     if !app.state::<Jobs>().register(&id) {
-        return Err("This export is already running.".into());
+        return Ok(());
     }
     tauri::async_runtime::spawn(async move {
         let result = work.await;
