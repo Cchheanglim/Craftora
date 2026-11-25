@@ -1828,11 +1828,32 @@ export default function App() {
     }
   };
   /** Brings in an .srt, .vtt or .lrc file (timed in the media's own seconds) for the selected clip, or the only video/sound on the timeline. */
-  const openCaptions = async () => {
+  /** The video captions go to: the selected clip's, else the only one on the timeline. */
+  const captionTarget = () => {
     const canCaption = (m?: MediaItem) => Boolean(m && (m.hasAudio || m.hasVideo) && !m.source.image);
     const selectedMedia = selected?.mediaId ? project.media.find((m) => m.id === selected.mediaId) : undefined;
     const onTimeline = project.media.filter((m) => canCaption(m) && project.clips.some((c) => c.mediaId === m.id));
-    const target = canCaption(selectedMedia) ? selectedMedia : onTimeline.length === 1 ? onTimeline[0] : undefined;
+    return canCaption(selectedMedia) ? selectedMedia : onTimeline.length === 1 ? onTimeline[0] : undefined;
+  };
+  const siteCaptions = inDesktopApp ? captionTarget()?.source.captionTracks : undefined;
+  /** Loads one of the website's caption tracks as the target video's captions (in place of any it had). */
+  const loadSiteCaptions = async (track: { url: string; label: string }) => {
+    const target = captionTarget();
+    if (!target) return;
+    setError(null);
+    try {
+      const lines = await loadCaptions(track.url, target.source.url);
+      if (!lines.length) {
+        setError(`“${track.label}” has no lines in it. Try another track.`);
+        return;
+      }
+      api.refreshMedia(target.id, { captions: { label: track.label, lines } });
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  const openCaptions = async () => {
+    const target = captionTarget();
     if (!target) {
       setError("Select the clip these captions belong to.");
       return;
@@ -3268,6 +3289,8 @@ export default function App() {
           onCancelCaptions={makingCaptions.length ? () => stopCaptions() : undefined}
           onSaveSrt={inDesktopApp ? () => void saveCaptionsFile() : undefined}
           onOpenCaptions={inDesktopApp ? () => void openCaptions() : undefined}
+          siteCaptions={siteCaptions?.length ? siteCaptions : undefined}
+          onSiteCaptions={loadSiteCaptions}
         />
       ) : rightTab === "assistant" ? (
         <AssistantPanel api={api} current={currentProject} playhead={currentTime} seek={playback.seek} request={aiAsk} onRequested={() => setAiAsk(null)} />

@@ -13,6 +13,13 @@ pub(crate) struct SubFormat {
     name: Option<String>,
 }
 
+impl SubFormat {
+    /// A stream's caption track as yt-dlp lists it: an address without a name or a caption file type.
+    pub(crate) fn nameless_stream_track(&self) -> bool {
+        self.name.is_none() && !is_caption_format(self.ext.as_deref())
+    }
+}
+
 /// The caption track chosen for a video.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,8 +67,83 @@ pub(crate) fn pick(
     mine.and_then(|m| vtt(m, false)).or_else(|| auto.and_then(|a| vtt(a, true)))
 }
 
+/// The languages "Captions from the website" offers: code, the three-letter code some sites use, name.
+const SITE_LANGUAGES: [(&str, &str, &str); 2] = [("en", "eng", "English"), ("km", "khm", "Khmer")];
+
+/// The website's caption tracks in `SITE_LANGUAGES`, for the Transcript's "Captions from the website": the
+/// uploader's own first, then the site's automatic ones. `names`: a track's name by its address, read from the
+/// stream's list (`stream_track_names`: yt-dlp leaves them out there).
+pub(crate) fn site_tracks(
+    manual: &BTreeMap<String, Vec<SubFormat>>,
+    automatic: &BTreeMap<String, Vec<SubFormat>>,
+    names: &BTreeMap<String, String>,
+) -> Vec<Track> {
+    let language = |key: &str| {
+        let code = key.split('-').next().unwrap_or(key).to_ascii_lowercase();
+        SITE_LANGUAGES.iter().find(|(two, three, _)| code == *two || code == *three).map(|(_, _, name)| *name)
+    };
+    let mut tracks: Vec<Track> = Vec::new();
+    for (is_automatic, list) in [(false, manual), (true, automatic)] {
+        for (key, formats) in list {
+            let Some(language) = language(key) else { continue };
+            // Automatic ones: "en-orig" is what was said, "en" the same machine-made; the original wins.
+            if is_automatic && !key.ends_with("-orig") && list.contains_key(&format!("{key}-orig")) {
+                continue;
+            }
+            // One track in several formats (vtt, srv3, json3…): its WebVTT one. A stream's list gives no such
+            // formats, only addresses: each is a track of its own (a list of WebVTT pieces).
+            let entries: Vec<&SubFormat> = match formats.iter().find(|f| f.ext.as_deref() == Some("vtt")) {
+                Some(vtt) => vec![vtt],
+                None if formats.iter().all(|f| !is_caption_format(f.ext.as_deref())) => formats.iter().collect(),
+                None => continue,
+            };
+            for entry in entries {
+                let Some(url) = entry.url.clone() else { continue };
+                let name = names.get(&url).cloned().or_else(|| entry.name.clone()).unwrap_or_else(|| language.to_string());
+                let name = name.trim_end_matches(" - Original").trim_end_matches(" (Original)").to_string();
+                let label = if is_automatic { format!("{name} (automatic)") } else { name };
+                // Tracks without names of their own: "English", "English 2"…
+                let numbered = |t: &Track| t.label.strip_prefix(&format!("{label} ")).is_some_and(|n| n.parse::<u32>().is_ok());
+                let same = tracks.iter().filter(|t| t.label == label || numbered(t)).count();
+                let label = if same == 0 { label } else { format!("{label} {}", same + 1) };
+                tracks.push(Track { url, label });
+            }
+        }
+    }
+    tracks
+}
+
+/// yt-dlp's names for caption formats it knows (anything else is a stream's caption track).
+fn is_caption_format(ext: Option<&str>) -> bool {
+    ext.is_some_and(|ext| ["vtt", "srt", "ttml", "srv1", "srv2", "srv3", "json3", "dfxp", "ass", "ssa"].contains(&ext))
+}
+
+/// Each caption track's name by its address, from a stream's master list (`#EXT-X-MEDIA:TYPE=SUBTITLES,NAME="English [CR]",…,URI="…"`).
+pub(crate) fn stream_track_names(playlist: &str, base: &reqwest::Url) -> BTreeMap<String, String> {
+    let attribute = |line: &str, key: &str| line.split(&format!("{key}=\"")).nth(1).and_then(|rest| rest.split('"').next()).map(str::to_string);
+    playlist
+        .lines()
+        .filter(|line| line.starts_with("#EXT-X-MEDIA:") && line.contains("TYPE=SUBTITLES"))
+        .filter_map(|line| Some((base.join(&attribute(line, "URI")?).ok()?.to_string(), attribute(line, "NAME")?)))
+        .collect()
+}
+
+/// Reads the names of a stream's caption tracks (`stream_track_names`) from its master list; empty when it can't.
+pub(crate) async fn stream_names(manifest: &str, page: Option<&str>) -> BTreeMap<String, String> {
+    let Ok(response) = crate::media_cache::get(manifest, |r| crate::media_cache::from_page(r, page)).await else {
+        return BTreeMap::new();
+    };
+    let base = response.url().clone();
+    match response.text().await {
+        Ok(text) if text.len() < MAX_BYTES => stream_track_names(&text, &base),
+        _ => BTreeMap::new(),
+    }
+}
+
 /// Larger than any real caption file.
 const MAX_BYTES: usize = 5_000_000;
+/// More pieces than a caption track of a stream has (they're usually one, or one per few seconds).
+const MAX_PIECES: usize = 2_000;
 
 /// Downloads a caption track (WebVTT), with the video's page as Referer, as timed lines.
 #[tauri::command]
@@ -70,17 +152,41 @@ pub async fn load_captions(url: String, link: String) -> Result<Vec<Caption>, St
         return Err("Not a web address.".into());
     }
     let (page, found_on) = crate::signin::split_referer(&link);
-    let response = crate::media_cache::get(&url, |r| r.header(reqwest::header::REFERER, found_on.unwrap_or(page)))
+    let referer = found_on.unwrap_or(page);
+    let (text, base) = caption_file(&url, referer).await?;
+    if !text.starts_with("#EXTM3U") {
+        return Ok(parse_vtt(&text));
+    }
+    // A stream's caption track: a list of WebVTT pieces, read one after the other.
+    // shortcut: ignores X-TIMESTAMP-MAP (pieces whose times count from the stream's own clock); read it if a site's lines come out shifted.
+    let mut lines = Vec::new();
+    let mut total = 0;
+    for piece in text.lines().filter(|l| !l.trim().is_empty() && !l.starts_with('#')).take(MAX_PIECES) {
+        let piece = base.join(piece.trim()).map_err(|_| "The captions' list has a bad address.".to_string())?;
+        let (vtt, _) = caption_file(piece.as_str(), referer).await?;
+        total += vtt.len();
+        if total > MAX_BYTES {
+            return Err("The caption file is too big.".into());
+        }
+        lines.extend(parse_vtt(&vtt));
+    }
+    Ok(lines)
+}
+
+/// One caption file (or a stream's list of them) as text, and the address it came from.
+async fn caption_file(url: &str, referer: &str) -> Result<(String, reqwest::Url), String> {
+    let response = crate::media_cache::get(url, |r| r.header(reqwest::header::REFERER, referer))
         .await
         .map_err(|e| format!("Couldn't load the captions: {e}"))?;
     if !response.status().is_success() {
         return Err(format!("The captions' server answered {}.", response.status()));
     }
+    let base = response.url().clone();
     let bytes = response.bytes().await.map_err(|e| format!("The captions stopped loading: {e}"))?;
     if bytes.len() > MAX_BYTES {
         return Err("The caption file is too big.".into());
     }
-    Ok(parse_vtt(&String::from_utf8_lossy(&bytes)))
+    Ok((String::from_utf8_lossy(&bytes).into_owned(), base))
 }
 
 /// "01:02.5", "00:01:02.500" (or with a comma) in seconds.
@@ -207,6 +313,42 @@ fn srt(lines: &[Caption]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn site_tracks_in_english_and_khmer() {
+        let entry = |ext: &str, url: &str, name: Option<&str>| SubFormat { ext: Some(ext.into()), url: Some(url.into()), name: name.map(str::to_string) };
+        // A stream's tracks (anipm): three-letter codes, no file type, several to a language, names from its list.
+        let manual = BTreeMap::from([
+            ("eng".to_string(), vec![entry("unknown_video", "https://s.example/a", None), entry("x1", "https://s.example/b", None), entry("x2", "https://s.example/c", None)]),
+            ("khm".to_string(), vec![entry("vtt", "https://s.example/km.vtt", None)]),
+            ("spa".to_string(), vec![entry("unknown_video", "https://s.example/es", None)]),
+        ]);
+        // YouTube's automatic ones: the original wins over the same language machine-made; one format per track.
+        let automatic = BTreeMap::from([
+            ("en".to_string(), vec![entry("vtt", "https://y.example/en", Some("English"))]),
+            ("en-orig".to_string(), vec![entry("srv3", "https://y.example/o.srv3", None), entry("vtt", "https://y.example/o", Some("English (Original)"))]),
+            ("km".to_string(), vec![entry("json3", "https://y.example/km.json", None)]),
+        ]);
+        let names = BTreeMap::from([("https://s.example/b".to_string(), "English [CR]".to_string())]);
+        let labels: Vec<(String, String)> = site_tracks(&manual, &automatic, &names).into_iter().map(|t| (t.label, t.url)).collect();
+        let expected = [
+            ("English", "https://s.example/a"),
+            ("English [CR]", "https://s.example/b"),
+            ("English 2", "https://s.example/c"),
+            ("Khmer", "https://s.example/km.vtt"),
+            ("English (automatic)", "https://y.example/o"),
+        ];
+        assert_eq!(labels, expected.map(|(l, u)| (l.to_string(), u.to_string())));
+    }
+
+    #[test]
+    fn reads_stream_track_names() {
+        let list = "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"Japanese\",URI=\"audio.m3u8\"\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"s1\",NAME=\"English [CR]\",LANGUAGE=\"eng\",URI=\"subs/en.m3u8\"\n#EXT-X-MEDIA:TYPE=SUBTITLES,NAME=\"Khmer\",LANGUAGE=\"khm\",URI=\"https://other.example/km\"\n";
+        let names = stream_track_names(list, &reqwest::Url::parse("https://cdn.example/v/master.m3u8").unwrap());
+        assert_eq!(names.len(), 2);
+        assert_eq!(names["https://cdn.example/v/subs/en.m3u8"], "English [CR]");
+        assert_eq!(names["https://other.example/km"], "Khmer");
+    }
 
     #[test]
     fn writes_srt() {

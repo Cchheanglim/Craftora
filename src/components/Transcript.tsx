@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import { cutRanges, isFiller, transcript, wordsOf, type Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
 import { formatClock } from "../lib/timecode";
+import { ContextMenu } from "./ContextMenu";
 import { Icon } from "./Icon";
 import "./Transcript.css";
 
@@ -21,6 +22,10 @@ interface TranscriptProps {
   onSaveSrt?: () => void;
   /** Opens an .srt, .vtt or .lrc caption file from this PC; absent in the browser preview. */
   onOpenCaptions?: () => void;
+  /** The caption tracks the website has for the video captions go to; absent when it has none. */
+  siteCaptions?: { url: string; label: string }[];
+  /** Loads one of `siteCaptions` as the video's captions. */
+  onSiteCaptions?: (track: { url: string; label: string }) => Promise<void>;
 }
 
 /** Captions are made only when asked: whisper keeps the processor busy for minutes. */
@@ -51,6 +56,44 @@ function OpenCaptions({ onOpen }: { onOpen: () => void }) {
   );
 }
 
+/** The website's own caption tracks, listed by name under the button; one click loads it. */
+function SiteCaptions({ tracks, onPick }: { tracks: { url: string; label: string }[]; onPick: (track: { url: string; label: string }) => Promise<void> }) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const pick = (track: { url: string; label: string }) => {
+    setLoading(true);
+    void onPick(track).finally(() => setLoading(false));
+  };
+  return (
+    <>
+      <button
+        type="button"
+        className="btn btn--secondary"
+        disabled={loading}
+        aria-haspopup="menu"
+        aria-expanded={Boolean(menu)}
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setMenu({ x: r.left, y: r.bottom + 4 });
+        }}
+      >
+        <Icon name="link" size={14} />
+        {loading ? "Loading captions…" : "Captions from the website"}
+        <Icon name="chevronDown" size={12} />
+      </button>
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          label="Captions from the website"
+          items={tracks.map((track) => ({ label: track.label, onClick: () => pick(track) }))}
+          onClose={() => setMenu(null)}
+        />
+      )}
+    </>
+  );
+}
+
 /** A word's key: line index and word index. */
 const keyOf = (line: number, word: number) => `${line}:${word}`;
 
@@ -58,7 +101,7 @@ const keyOf = (line: number, word: number) => `${line}:${word}`;
  * What's said on the timeline, to edit by text: click a sentence or word to jump there, select words
  * and press Delete (or the button) to cut them out of the video.
  */
-export function Transcript({ project, api, time, seek, captionStatus, onMakeCaptions, onCancelCaptions, onSaveSrt, onOpenCaptions }: TranscriptProps) {
+export function Transcript({ project, api, time, seek, captionStatus, onMakeCaptions, onCancelCaptions, onSaveSrt, onOpenCaptions, siteCaptions, onSiteCaptions }: TranscriptProps) {
   const lines = useMemo(() => transcript(project), [project]);
   const words = useMemo(() => lines.map(wordsOf), [lines]);
   const [query, setQuery] = useState("");
@@ -172,8 +215,9 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
         <Icon name="captions" size={18} />
         <p>{captionStatus ? `${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. It fills in every few minutes of the video.` : "Nothing said on the timeline yet."}</p>
         <p className="transcript__muted">Videos that come with captions show what's said here, to edit by text.</p>
-        {(onMakeCaptions || onCancelCaptions || onOpenCaptions) && (
+        {(onMakeCaptions || onCancelCaptions || onOpenCaptions || siteCaptions) && (
           <div className="transcript__actions">
+            {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} onPick={onSiteCaptions} />}
             {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
             {onCancelCaptions && <CancelCaptions onCancel={onCancelCaptions} />}
             {onOpenCaptions && <OpenCaptions onOpen={onOpenCaptions} />}
@@ -222,8 +266,9 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
         )}
         {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
         {onCancelCaptions && <CancelCaptions onCancel={onCancelCaptions} />}
-        {(onSaveSrt || onOpenCaptions) && (
+        {(onSaveSrt || onOpenCaptions || siteCaptions) && (
           <div className="transcript__actions">
+            {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} onPick={onSiteCaptions} />}
             {onSaveSrt && (
               <button type="button" className="btn btn--secondary" onClick={onSaveSrt} title="For YouTube and video players: the captions as a file next to the video">
                 <Icon name="download" size={14} />
