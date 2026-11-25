@@ -1,40 +1,40 @@
 # What's new in Craftora
 
-## Next version
+## 0.7.1 (November 2026)
 
 **New**
 
 - **Downloads go on after you close Craftora**: closing the window while downloads run (or wait their turn) closes
   it for real, giving back its memory (about 400 MB), and Craftora finishes them from its icon by the clock, two at
-  a time. The icon's menu shows each download with how far it is ("… · 45%", or "… · paused at 45%" after
-  Pause all); pointing at one offers Pause, Resume, Cancel download and Show in Downloads for just that one. The menu
-  also has Open Craftora, Downloads,
-  Pause all, Resume all and Quit Craftora. Windows says when one finishes or fails, and when all are done. Opening
-  Craftora again (the icon, a notification, the Start menu) carries on with them: nothing downloads twice. Quit
-  Craftora stops them where they are; they go on next time.
-- **Craftora runs once**: opening it again brings back the Craftora already running (from the tray too).
-
+  a time. The icon's menu shows each download with how far it is ("… · 45%", or "… · paused at 45%"); point at one
+  to Pause, Resume or Cancel just that one, or open it in Downloads. The menu also has Open Craftora, Downloads,
+  Pause all, Resume all and Quit Craftora. Windows says when a download finishes or fails, and when all are done.
+  Opening Craftora again (the icon, a notification, the Start menu) carries on with them: nothing downloads twice.
+  Quit Craftora stops them where they are, and they go on next time.
+- **Craftora runs once**: opening it again brings back the Craftora already running, also from the tray.
+- **Captions from the website** (Transcript tab): a fetched video's own captions in English and Khmer, in a list
+  with a tab for each language and the names the site gives them ("English", "English [CR]", "Signs/Songs"…). Pick
+  one and it becomes the video's captions; the one in use is marked. Works for captions that come as one file, for
+  a stream's captions (anipm.pk, for one), and for captions a site's player lists apart from the video (kisskh.do):
+  Fetch this video in the sign-in window brings them along.
 - **Search a word to cut it** (Transcript tab): type a word or a few in the search and every place it's said is
-  marked; "Cut every “um” (6)" cuts them all from the video, the scissors on a line cuts just that one. Whole words
-  only ("um" doesn't touch "umbrella"). It replaces the bar at the bottom ("Cut these words" and "Cut every um"):
-  selecting words and pressing Delete still cuts them.
-
-- **Captions from the website** (Transcript tab): a fetched video's own captions in English and Khmer, listed by the
-  names the site gives them ("English", "English [CR]", "Signs/Songs"…). Pick one and it becomes the video's captions,
-  in place of any it had. Works for captions that come as one file, for a stream's captions (anipm.pk, for one), and
-  for captions a site's player lists apart from the video (kisskh.do): Fetch this video in the sign-in window brings
-  them along.
+  marked. "Cut every “um” (6)" cuts them all from the video, the scissors on a line cuts just that one. Whole words
+  only ("um" doesn't touch "umbrella"). It replaces the bar at the bottom of the tab; selecting words and pressing
+  Delete still cuts them.
 
 **Fixed**
 
-- **Craftora no longer keeps running after it's closed**: the sign-in window (also the one loading a page in the
-  background) kept Craftora and its browser running with no window to close. And the AI assistant's helper programs
-  now end with Craftora.
 - **Links that 0.7.0 couldn't fetch fetch again**: 0.7.0 told every video server which website was asking, and some
-  servers refuse that. Craftora now asks the way 0.6.0 did, and only for a site that refuses that way does it ask
-  again the 0.7.0 way (and remembers the site until Craftora closes).
+  servers refuse that. Craftora asks the way 0.6.0 did, and only when a site refuses does it ask again the 0.7.0 way
+  (remembering that site until Craftora closes).
 - **Previews of videos on sites behind strict bot checks play** (anipm.pk, for one): only the cover picture showed,
-  though the downloaded video played. Craftora's preview now asks the video's server exactly as a browser does.
+  though the downloaded video played. The preview now asks the video's server exactly as a browser does.
+- **Craftora no longer keeps running after it's closed**: the sign-in window (also the one loading a page in the
+  background) kept Craftora and its browser running with no window to close. The AI assistant's helper programs
+  now end with Craftora too.
+- **The player's controls stay inside the preview** when the right panel is dragged wide: they move to a second row
+  instead of running past the edge.
+- **The Transcript tab's buttons line up** at any panel width.
 
 ## 0.7.0 (November 2026)
 
