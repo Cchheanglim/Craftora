@@ -142,6 +142,25 @@
   text-decoration: line-through;
 }
 
+/* The search's matches, to cut (all, or one line's with its scissors). */
+.transcript__text .is-match {
+  border-radius: 3px;
+  background: rgb(250 45 72 / 0.12);
+  box-shadow: inset 0 -1px 0 #fc7385;
+}
+
+/* Cut the search's match on this line: shown while searching, beside the edit button. */
+.transcript__cut {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-left: auto;
+  color: #fc7385;
+}
+
+.transcript__cut + .transcript__edit {
+  margin-left: 0;
+}
+
 /* Fixing a name: the search's matches retyped in one go. */
 .transcript__replace {
   display: flex;
@@ -177,34 +196,6 @@
   font-size: var(--text-sm);
 }
 
-.transcript__foot {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: var(--space-2) var(--space-5);
-  border-top: 1px solid var(--line);
-}
-
-.transcript__foot p {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--text-3);
-}
-
-/* Smaller than the tools' buttons: they wait at the bottom until words are picked. */
-.transcript__foot .btn {
-  height: 28px;
-  font-size: var(--text-xs);
-}
-
-.transcript__foot kbd {
-  font-size: 10px;
-}
-
-.transcript__count {
-  color: var(--text);
-}
-
 /* A narrow panel puts the second button on its own row instead of past the edge. */
 .transcript__actions {
   display: flex;
@@ -220,12 +211,6 @@
 .transcript__actions--pair {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-}
-
-.transcript__actions .btn--primary kbd {
-  background: rgb(0 0 0 / 0.2);
-  border-color: rgb(255 255 255 / 0.3);
-  color: var(--text-on-accent);
 }
 
 .transcript--empty {
@@ -283,7 +268,9 @@
 }
 
 .site-captions__list button {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   width: 100%;
   height: 30px;
   padding: 0 var(--space-2);
@@ -300,8 +287,28 @@
   cursor: pointer;
 }
 
+.site-captions__list button > span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .site-captions__list button:hover,
 .site-captions__list button:focus-visible {
   background: var(--bg-hover);
   outline: none;
+}
+
+/* The track the video's captions came from. */
+.site-captions__list [aria-current] button {
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.site-captions__list [aria-current] button:hover,
+.site-captions__list [aria-current] button:focus-visible {
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }

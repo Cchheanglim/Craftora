@@ -1847,7 +1847,7 @@ export default function App() {
         setError(`“${track.label}” has no lines in it. Try another track.`);
         return;
       }
-      api.refreshMedia(target.id, { captions: { label: track.label, lines } });
+      api.refreshMedia(target.id, { captions: { label: track.label, lines, url: track.url } });
     } catch (err) {
       setError(errorText(err));
     }
@@ -3290,6 +3290,7 @@ export default function App() {
           onSaveSrt={inDesktopApp ? () => void saveCaptionsFile() : undefined}
           onOpenCaptions={inDesktopApp ? () => void openCaptions() : undefined}
           siteCaptions={siteCaptions?.length ? siteCaptions : undefined}
+          siteCaption={captionTarget()?.captions?.url}
           onSiteCaptions={loadSiteCaptions}
         />
       ) : rightTab === "assistant" ? (

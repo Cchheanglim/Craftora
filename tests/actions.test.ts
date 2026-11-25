@@ -340,7 +340,7 @@ test("each wave bar shows the loudest moment in the stretch it stands for", asyn
 });
 
 test("the transcript follows the timeline, words are timed in their line, and picked words cut exactly", async () => {
-  const { transcript, wordsOf, cutRanges, isFiller } = await import("../src/project/model");
+  const { transcript, wordsOf, cutRanges, findSaid } = await import("../src/project/model");
   const lines = [
     { start: 0, end: 2, text: "Hello there" },
     { start: 4, end: 6, text: "Um the battery lasts" },
@@ -360,7 +360,12 @@ test("the transcript follows the timeline, words are timed in their line, and pi
   expect(words.filter((w) => w.word).map((w) => w.text)).toEqual(["Um", "the", "battery", "lasts"]);
   const um = words[0];
   expect([um.start, um.end]).toEqual([4, 4.2]);
-  expect(isFiller(um.text) && isFiller("uhh") && !isFiller("umbrella")).toBe(true);
+  // Search: whole words, any case and punctuation, phrases too; words cut from the timeline are left out.
+  const both = [wordsOf({ ...said[0], text: "Um, the umbrella. UM" }), words];
+  expect(findSaid(both, "um")).toEqual([[[0, 0]], [[0, 8]], [[1, 0]]]);
+  expect(findSaid(both, "the battery")).toEqual([[[1, 2], [1, 4]]]);
+  expect(findSaid(both, "um", (l, w) => !(l === 0 && w === 0))).toEqual([[[0, 8]], [[1, 0]]]);
+  expect(findSaid(both, "  ")).toEqual([]);
   // "Um" and the space after it join into one cut, which removes exactly that stretch.
   const ranges = cutRanges([
     { clipId: p.clips[0].id, start: um.start, end: um.end },

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { cutRanges, isFiller, transcript, wordsOf, type Project } from "../project/model";
+import { cutRanges, findSaid, transcript, wordsOf, type Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
 import type { SiteCaption } from "../types";
 import { formatClock } from "../lib/timecode";
@@ -27,6 +27,8 @@ interface TranscriptProps {
   siteCaptions?: SiteCaption[];
   /** Loads one of `siteCaptions` as the video's captions. */
   onSiteCaptions?: (track: SiteCaption) => Promise<void>;
+  /** The one of `siteCaptions` the video's captions came from (its address), marked in the picker. */
+  siteCaption?: string;
 }
 
 /** Captions are made only when asked: whisper keeps the processor busy for minutes. */
@@ -61,12 +63,14 @@ function OpenCaptions({ onOpen }: { onOpen: () => void }) {
  * The website's own caption tracks, in a panel under the button: a tab per language, one line per track (a
  * site can list dozens), scrolling past a few. One click loads it.
  */
-function SiteCaptions({ tracks, onPick }: { tracks: SiteCaption[]; onPick: (track: SiteCaption) => Promise<void> }) {
+function SiteCaptions({ tracks, current, onPick }: { tracks: SiteCaption[]; current?: string; onPick: (track: SiteCaption) => Promise<void> }) {
   const [at, setAt] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const languageOf = (t: SiteCaption) => t.language || "Other";
   const languages = [...new Set(tracks.map(languageOf))];
-  const [picked, setPicked] = useState(languages[0]);
+  const inUse = tracks.find((t) => t.url === current);
+  // Opens on the language of the track in use.
+  const [picked, setPicked] = useState(inUse ? languageOf(inUse) : languages[0]);
   const language = languages.includes(picked) ? picked : languages[0];
   const pick = (track: SiteCaption) => {
     setAt(null);
@@ -87,6 +91,7 @@ function SiteCaptions({ tracks, onPick }: { tracks: SiteCaption[]; onPick: (trac
           // As wide as the button (long track names end in "…" instead of stretching it), kept inside the window.
           const width = Math.min(Math.max(r.width, 280), window.innerWidth - 16);
           setAt({ left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)), top, width, maxHeight: Math.max(200, window.innerHeight - top - 12) });
+          if (inUse) setPicked(languageOf(inUse));
         }}
       >
         <Icon name="link" size={14} />
@@ -113,11 +118,13 @@ function SiteCaptions({ tracks, onPick }: { tracks: SiteCaption[]; onPick: (trac
                   ))}
                 </div>
               )}
-              <ul className="site-captions__list" ref={(el) => el?.querySelector("button")?.focus()}>
+              {/* The track in use, else the first: in view and focused, so arrows and Enter start there. */}
+              <ul className="site-captions__list" ref={(el) => (el?.querySelector<HTMLButtonElement>("[aria-current] button") ?? el?.querySelector("button"))?.focus()}>
                 {tracks.filter((t) => languageOf(t) === language).map((track) => (
-                  <li key={track.url}>
-                    <button type="button" onClick={() => pick(track)} title={track.label.length > 38 ? track.label : undefined}>
-                      {track.label}
+                  <li key={track.url} aria-current={track.url === current || undefined}>
+                    <button type="button" onClick={() => pick(track)} title={track.label.length > 34 ? track.label : undefined}>
+                      <span>{track.label}</span>
+                      {track.url === current && <Icon name="check" size={14} />}
                     </button>
                   </li>
                 ))}
@@ -137,7 +144,7 @@ const keyOf = (line: number, word: number) => `${line}:${word}`;
  * What's said on the timeline, to edit by text: click a sentence or word to jump there, select words
  * and press Delete (or the button) to cut them out of the video.
  */
-export function Transcript({ project, api, time, seek, captionStatus, onMakeCaptions, onCancelCaptions, onSaveSrt, onOpenCaptions, siteCaptions, onSiteCaptions }: TranscriptProps) {
+export function Transcript({ project, api, time, seek, captionStatus, onMakeCaptions, onCancelCaptions, onSaveSrt, onOpenCaptions, siteCaptions, onSiteCaptions, siteCaption }: TranscriptProps) {
   const lines = useMemo(() => transcript(project), [project]);
   const words = useMemo(() => lines.map(wordsOf), [lines]);
   const [query, setQuery] = useState("");
@@ -166,9 +173,14 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
     return !clip || (middle >= clip.in && middle < clip.out);
   };
   const current = lines.findIndex((l) => time >= l.start && time < l.end);
-  /** Picked to cut wins; on the current line, marks the word at `time` and words still ahead. */
+  const needle = query.trim().toLowerCase();
+  /** Each place the searched word (or words) is said: cut them all at once, or one line's. */
+  const matches = findSaid(words, needle, kept);
+  const matched = new Set(matches.flat().map(([l, w]) => keyOf(l, w)));
+  /** Picked to cut wins, then the search's matches; on the current line, marks the word at `time` and words still ahead. */
   const wordClass = (line: number, word: number) => {
     if (picked.has(keyOf(line, word))) return "is-picked";
+    if (matched.has(keyOf(line, word))) return "is-match";
     if (line !== current) return undefined;
     const w = words[line][word];
     const start = timelineAt(line, w.start);
@@ -181,14 +193,11 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
     currentRef.current?.scrollIntoView({ block: "nearest" });
   }, [current]);
 
-  const needle = query.trim().toLowerCase();
   const shown = lines
     .map((_, i) => i)
     .filter((i) => words[i].some((w, j) => w.word && kept(i, j)) && (!needle || lines[i].text.toLowerCase().includes(needle)));
 
   const pickedWords = [...picked].map((k) => k.split(":").map(Number) as [number, number]).filter(([l, w]) => words[l]?.[w]);
-  const cutLength = pickedWords.reduce((sum, [l, w]) => sum + (words[l][w].end - words[l][w].start) / (clipOf(l)?.speed ?? 1), 0);
-  const fillers = words.flatMap((ws, l) => ws.flatMap((w, i): [number, number][] => (isFiller(w.text) ? [[l, i]] : [])));
 
   const cut = (which: [number, number][]) => {
     const ranges = cutRanges(
@@ -253,7 +262,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
         <p className="transcript__muted">Videos that come with captions show what's said here, to edit by text.</p>
         {(onMakeCaptions || onCancelCaptions || onOpenCaptions || siteCaptions) && (
           <div className="transcript__actions">
-            {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} onPick={onSiteCaptions} />}
+            {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} current={siteCaption} onPick={onSiteCaptions} />}
             {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
             {onCancelCaptions && <CancelCaptions onCancel={onCancelCaptions} />}
             {onOpenCaptions && <OpenCaptions onOpen={onOpenCaptions} />}
@@ -280,7 +289,7 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
         <p className="transcript__muted">
           {needle
             ? `${shown.length} line${shown.length === 1 ? "" : "s"} with “${query.trim()}”.`
-            : "Click a sentence or word to jump there. Select words and press Delete to cut them out of the video."}
+            : "Click a word to jump there. Select words and press Delete to cut them, or search a word to cut it everywhere."}
         </p>
         {needle && shown.length > 0 && (
           <form className="transcript__replace" onSubmit={replaceAll}>
@@ -300,9 +309,15 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
             </button>
           </form>
         )}
+        {matches.length > 0 && (
+          <button type="button" className="btn btn--secondary" onClick={() => cut(matches.flat())}>
+            <Icon name="scissors" size={14} />
+            Cut every “{query.trim()}” ({matches.length})
+          </button>
+        )}
         {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
         {onCancelCaptions && <CancelCaptions onCancel={onCancelCaptions} />}
-        {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} onPick={onSiteCaptions} />}
+        {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} current={siteCaption} onPick={onSiteCaptions} />}
         {(onSaveSrt || onOpenCaptions) && (
           <div className="transcript__actions transcript__actions--pair">
             {onSaveSrt && (
@@ -357,6 +372,17 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
                       </span>
                     ))}
                   </span>
+                  {needle && matches.some((m) => m[0][0] === i) && (
+                    <button
+                      type="button"
+                      className="btn btn--icon transcript__cut"
+                      aria-label={`Cut “${query.trim()}” at ${formatClock(line.start)}`}
+                      title={`Cut “${query.trim()}” here`}
+                      onClick={() => cut(matches.filter((m) => m[0][0] === i).flat())}
+                    >
+                      <Icon name="scissors" size={13} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn--icon transcript__edit"
@@ -376,29 +402,6 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
         })}
         {captionStatus && <li className="transcript__line transcript__pending">{`${captionStatus[0].toUpperCase()}${captionStatus.slice(1)}. The rest fills in as it's made.`}</li>}
       </ol>
-
-      <div className="transcript__foot">
-        <p>
-          {pickedWords.length ? (
-            <>
-              <span className="transcript__count">
-                {pickedWords.length} word{pickedWords.length === 1 ? "" : "s"} selected
-              </span>{" "}
-              · cuts <span className="mono">{cutLength.toFixed(1)} s</span> from the video
-            </>
-          ) : (
-            "Select words to cut them."
-          )}
-        </p>
-        <div className="transcript__actions">
-          <button type="button" className="btn btn--primary" disabled={!pickedWords.length} onClick={() => cut(pickedWords)}>
-            Cut these words <kbd>Delete</kbd>
-          </button>
-          <button type="button" className="btn btn--secondary" disabled={!fillers.length} onClick={() => cut(fillers)} title="Cut every um, uh, erm and hmm">
-            {fillers.length ? `Cut every “um” (${fillers.length})` : "No “um” found"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

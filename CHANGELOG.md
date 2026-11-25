@@ -4,6 +4,11 @@
 
 **New**
 
+- **Search a word to cut it** (Transcript tab): type a word or a few in the search and every place it's said is
+  marked; "Cut every “um” (6)" cuts them all from the video, the scissors on a line cuts just that one. Whole words
+  only ("um" doesn't touch "umbrella"). It replaces the bar at the bottom ("Cut these words" and "Cut every um"):
+  selecting words and pressing Delete still cuts them.
+
 - **Captions from the website** (Transcript tab): a fetched video's own captions in English and Khmer, listed by the
   names the site gives them ("English", "English [CR]", "Signs/Songs"…). Pick one and it becomes the video's captions,
   in place of any it had. Works for captions that come as one file, for a stream's captions (anipm.pk, for one), and
