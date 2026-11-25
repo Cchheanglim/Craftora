@@ -35,6 +35,9 @@ pub struct Track {
     pub(crate) url: String,
     /// Such as "English" or "English (automatic)".
     pub(crate) label: String,
+    /// "Captions from the website" tracks: its `SITE_LANGUAGES` name ("Khmer"), for the picker's tabs.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    pub(crate) language: &'static str,
 }
 
 /// A line of captions, in media seconds (timeline seconds when saved as .srt).
@@ -60,7 +63,7 @@ pub(crate) fn pick(
         let file = list.iter().find(|f| f.ext.as_deref() == Some("vtt") && !f.stream_track())?;
         let name = file.name.clone().unwrap_or_else(|| key.clone());
         let name = name.trim_end_matches(" - Original").trim_end_matches(" (Original)").to_string();
-        Some(Track { url: file.url.clone()?, label: if automatic { format!("{name} (automatic)") } else { name } })
+        Some(Track { url: file.url.clone()?, label: if automatic { format!("{name} (automatic)") } else { name }, language: "" })
     };
     // Live replays list their chat as a "subtitle".
     let own = || manual.iter().filter(|(k, _)| k.as_str() != "live_chat");
@@ -106,7 +109,7 @@ pub(crate) fn site_tracks(
                 let Some(url) = entry.url.clone() else { continue };
                 let name = names.get(&url).cloned().or_else(|| entry.name.clone()).unwrap_or_else(|| language.to_string());
                 let name = name.trim_end_matches(" - Original").trim_end_matches(" (Original)").to_string();
-                add_track(&mut tracks, url, if is_automatic { format!("{name} (automatic)") } else { name });
+                add_track(&mut tracks, url, if is_automatic { format!("{name} (automatic)") } else { name }, language);
             }
         }
     }
@@ -132,8 +135,7 @@ pub(crate) fn add_page_tracks(tracks: &mut Vec<Track>, found: &[FoundCaption]) {
             continue;
         }
         let Some(language) = site_language(&caption.lang).or_else(|| site_language(&caption.label)) else { continue };
-        let label = if caption.label.trim().is_empty() { language.to_string() } else { caption.label.trim().to_string() };
-        add_track(tracks, caption.url.clone(), label);
+        add_track(tracks, caption.url.clone(), caption.label.clone(), language);
     }
 }
 
@@ -143,12 +145,24 @@ fn site_language(code: &str) -> Option<&'static str> {
     SITE_LANGUAGES.iter().find(|(two, three, name)| code == *two || code == *three || code == name.to_ascii_lowercase()).map(|(_, _, name)| *name)
 }
 
-/// Adds a track, numbering labels that repeat: tracks without names of their own are "English", "English 2"…
-fn add_track(tracks: &mut Vec<Track>, url: String, label: String) {
+/// Adds a track with a readable label (`readable`; its language when it has none), numbering labels that repeat:
+/// tracks without names of their own are "English", "English 2"…
+fn add_track(tracks: &mut Vec<Track>, url: String, label: String, language: &'static str) {
+    let label = Some(readable(&label)).filter(|l| !l.is_empty()).unwrap_or_else(|| language.to_string());
     let numbered = |t: &Track| t.label.strip_prefix(&format!("{label} ")).is_some_and(|n| n.parse::<u32>().is_ok());
     let same = tracks.iter().filter(|t| t.label == label || numbered(t)).count();
     let label = if same == 0 { label } else { format!("{label} {}", same + 1) };
-    tracks.push(Track { url, label });
+    tracks.push(Track { url, label, language });
+}
+
+/// A file name as a name: "Mr.Robot.S02E05.720p_English.srt" → "Mr Robot S02E05 720p English". Names are kept.
+fn readable(label: &str) -> String {
+    let label = label.trim();
+    let lower = label.to_ascii_lowercase();
+    let stem = [".srt", ".vtt"].iter().find(|ext| lower.ends_with(*ext)).map_or(label, |ext| &label[..label.len() - ext.len()]);
+    let file_name = stem.len() != label.len() || (stem.contains(['.', '_']) && !stem.contains(' '));
+    let stem = if file_name { stem.replace(['.', '_'], " ") } else { stem.to_string() };
+    stem.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// yt-dlp's names for caption formats it knows (anything else is a stream's caption track).
@@ -390,7 +404,7 @@ mod tests {
     #[test]
     fn page_tracks_from_a_players_list() {
         let found = |url: &str, label: &str, lang: &str| FoundCaption { url: url.into(), label: label.into(), lang: lang.into() };
-        let mut tracks = vec![Track { url: "https://s.example/en.vtt".into(), label: "English".into() }];
+        let mut tracks = vec![Track { url: "https://s.example/en.vtt".into(), label: "English".into(), language: "English" }];
         add_page_tracks(
             &mut tracks,
             &[
@@ -403,9 +417,18 @@ mod tests {
                 found("blob:https://sub.example/z", "English", "en"),
             ],
         );
-        let labels: Vec<&str> = tracks.iter().map(|t| t.label.as_str()).collect();
-        assert_eq!(labels, ["English", "English 2", "Khmer", "ខ្មែរ", "Khmer 2"]);
+        let labels: Vec<(&str, &str)> = tracks.iter().map(|t| (t.label.as_str(), t.language)).collect();
+        assert_eq!(labels, [("English", "English"), ("English 2", "English"), ("Khmer", "Khmer"), ("ខ្មែរ", "Khmer"), ("Khmer 2", "Khmer")]);
         assert_eq!(tracks[2].url, "https://sub.example/x.km.srt");
+    }
+
+    #[test]
+    fn file_names_read_as_names() {
+        assert_eq!(readable("Mr.Robot.S02E05.1080p.BluRay.x264-SHORTBREHD_English_2523003.srt"), "Mr Robot S02E05 1080p BluRay x264-SHORTBREHD English 2523003");
+        assert_eq!(readable("Mr Robot S02E05.srt"), "Mr Robot S02E05");
+        assert_eq!(readable(" English [CR] "), "English [CR]");
+        assert_eq!(readable("English (United States)"), "English (United States)");
+        assert_eq!(readable(".srt"), "");
     }
 
     #[test]

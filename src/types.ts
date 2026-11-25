@@ -63,12 +63,19 @@ export interface MediaSource {
   /** Links: the captions that come with the video, read with `loadCaptions`. */
   captions?: { url: string; label: string };
   /** Links: every caption track the website has in English or Khmer, for "Captions from the website". */
-  captionTracks?: { url: string; label: string }[];
+  captionTracks?: SiteCaption[];
   streams: StreamOption[];
   /** Live now: no length yet. Recorded while it plays (src-tauri/src/live.rs); `duration` grows. */
   live?: boolean;
   /** Download the whole video before exporting (its site's bot check blocks FFmpeg); it still previews. */
   downloadFirst?: boolean;
+}
+
+/** One of the website's caption tracks ("Captions from the website"); `language` names its tab ("Khmer"). */
+export interface SiteCaption {
+  url: string;
+  label: string;
+  language?: string;
 }
 
 /** The output frame for timeline renders. */

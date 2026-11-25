@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { cutRanges, isFiller, transcript, wordsOf, type Project } from "../project/model";
 import type { ProjectApi } from "../project/useProject";
+import type { SiteCaption } from "../types";
 import { formatClock } from "../lib/timecode";
-import { ContextMenu } from "./ContextMenu";
 import { Icon } from "./Icon";
 import "./Transcript.css";
 
@@ -23,9 +24,9 @@ interface TranscriptProps {
   /** Opens an .srt, .vtt or .lrc caption file from this PC; absent in the browser preview. */
   onOpenCaptions?: () => void;
   /** The caption tracks the website has for the video captions go to; absent when it has none. */
-  siteCaptions?: { url: string; label: string }[];
+  siteCaptions?: SiteCaption[];
   /** Loads one of `siteCaptions` as the video's captions. */
-  onSiteCaptions?: (track: { url: string; label: string }) => Promise<void>;
+  onSiteCaptions?: (track: SiteCaption) => Promise<void>;
 }
 
 /** Captions are made only when asked: whisper keeps the processor busy for minutes. */
@@ -56,11 +57,19 @@ function OpenCaptions({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-/** The website's own caption tracks, listed by name under the button; one click loads it. */
-function SiteCaptions({ tracks, onPick }: { tracks: { url: string; label: string }[]; onPick: (track: { url: string; label: string }) => Promise<void> }) {
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+/**
+ * The website's own caption tracks, in a panel under the button: a tab per language, one line per track (a
+ * site can list dozens), scrolling past a few. One click loads it.
+ */
+function SiteCaptions({ tracks, onPick }: { tracks: SiteCaption[]; onPick: (track: SiteCaption) => Promise<void> }) {
+  const [at, setAt] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
   const [loading, setLoading] = useState(false);
-  const pick = (track: { url: string; label: string }) => {
+  const languageOf = (t: SiteCaption) => t.language || "Other";
+  const languages = [...new Set(tracks.map(languageOf))];
+  const [picked, setPicked] = useState(languages[0]);
+  const language = languages.includes(picked) ? picked : languages[0];
+  const pick = (track: SiteCaption) => {
+    setAt(null);
     setLoading(true);
     void onPick(track).finally(() => setLoading(false));
   };
@@ -70,26 +79,53 @@ function SiteCaptions({ tracks, onPick }: { tracks: { url: string; label: string
         type="button"
         className="btn btn--secondary"
         disabled={loading}
-        aria-haspopup="menu"
-        aria-expanded={Boolean(menu)}
+        aria-haspopup="dialog"
+        aria-expanded={Boolean(at)}
         onClick={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
-          setMenu({ x: r.left, y: r.bottom + 4 });
+          const top = r.bottom + 4;
+          // As wide as the button (long track names end in "…" instead of stretching it), kept inside the window.
+          const width = Math.min(Math.max(r.width, 280), window.innerWidth - 16);
+          setAt({ left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)), top, width, maxHeight: Math.max(200, window.innerHeight - top - 12) });
         }}
       >
         <Icon name="link" size={14} />
         {loading ? "Loading captions…" : "Captions from the website"}
         <Icon name="chevronDown" size={12} />
       </button>
-      {menu && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          label="Captions from the website"
-          items={tracks.map((track) => ({ label: track.label, onClick: () => pick(track) }))}
-          onClose={() => setMenu(null)}
-        />
-      )}
+      {at &&
+        createPortal(
+          <>
+            <div className="site-captions__catcher" onPointerDown={() => setAt(null)} />
+            <div
+              className="site-captions"
+              role="dialog"
+              aria-label="Captions from the website"
+              style={{ left: at.left, top: at.top, width: at.width, maxHeight: Math.min(420, at.maxHeight) }}
+              onKeyDown={(e) => e.key === "Escape" && setAt(null)}
+            >
+              {languages.length > 1 && (
+                <div className="segmented" role="group" aria-label="Language">
+                  {languages.map((l) => (
+                    <button key={l} type="button" aria-pressed={l === language} onClick={() => setPicked(l)}>
+                      {l} <span className="site-captions__count">{tracks.filter((t) => languageOf(t) === l).length}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <ul className="site-captions__list" ref={(el) => el?.querySelector("button")?.focus()}>
+                {tracks.filter((t) => languageOf(t) === language).map((track) => (
+                  <li key={track.url}>
+                    <button type="button" onClick={() => pick(track)} title={track.label.length > 38 ? track.label : undefined}>
+                      {track.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>,
+          document.body,
+        )}
     </>
   );
 }
@@ -266,9 +302,9 @@ export function Transcript({ project, api, time, seek, captionStatus, onMakeCapt
         )}
         {onMakeCaptions && <MakeCaptions onMake={onMakeCaptions} />}
         {onCancelCaptions && <CancelCaptions onCancel={onCancelCaptions} />}
-        {(onSaveSrt || onOpenCaptions || siteCaptions) && (
-          <div className="transcript__actions">
-            {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} onPick={onSiteCaptions} />}
+        {siteCaptions && onSiteCaptions && <SiteCaptions tracks={siteCaptions} onPick={onSiteCaptions} />}
+        {(onSaveSrt || onOpenCaptions) && (
+          <div className="transcript__actions transcript__actions--pair">
             {onSaveSrt && (
               <button type="button" className="btn btn--secondary" onClick={onSaveSrt} title="For YouTube and video players: the captions as a file next to the video">
                 <Icon name="download" size={14} />
