@@ -61,8 +61,38 @@ const WATCH_MEDIA: &str = r#"(() => {
     window.__craftoraStarted = at;
     tell({ craftoraStarted: at });
   };
+  // Caption files the page's player lists or loads (.vtt, .srt), for "Captions from the website".
+  const captions = (window.__craftoraCaptions = []);
+  const CAPTION_FILE = /\.(vtt|srt)(\?|$)/i;
+  const caption = (c) => {
+    if (!c || typeof c.url !== "string" || !/^https?:/.test(c.url) || captions.length >= 50) return;
+    const same = captions.find((x) => x.url === c.url);
+    if (same) { if (!same.label && c.label) Object.assign(same, c); return; }
+    captions.push(c);
+    tell({ craftoraCaption: c });
+  };
+  // "….km.srt", "…/en.vtt": the language from the file's name.
+  const langOf = (u) => (/[./_-]([a-z]{2,3})(-[a-z]+)?\.(vtt|srt)(\?|$)/i.exec(u) || [])[1] || "";
+  // A player's list of caption files (kisskh: [{ src, label, land }]): each entry naming a .vtt or .srt.
+  const captionList = (data, depth) => {
+    if (depth > 3 || !data || typeof data !== "object") return;
+    for (const item of Array.isArray(data) ? data.slice(0, 100) : Object.values(data).slice(0, 100)) {
+      if (!item || typeof item !== "object") continue;
+      const file = Object.values(item).find((v) => typeof v === "string" && CAPTION_FILE.test(v));
+      if (!file) { captionList(item, depth + 1); continue; }
+      try {
+        const url = new URL(file, location.href).href;
+        caption({ url, label: String(item.label || item.name || item.title || ""), lang: String(item.land || item.lang || item.language || item.srclang || item.code || langOf(url)) });
+      } catch {}
+    }
+  };
+  const jsonList = (type, text) => {
+    if (/json/i.test(type) && text.length < 1000000) try { captionList(JSON.parse(text), 0); } catch {}
+  };
+  const loadedCaption = (u) => CAPTION_FILE.test(u) && caption({ url: u, label: "", lang: langOf(u) });
   window.addEventListener("message", (e) => {
     keep(e.data?.craftoraMedia, true);
+    caption(e.data?.craftoraCaption);
     if (typeof e.data?.craftoraPlaying === "string") note(e.data.craftoraPlaying);
     if (typeof e.data?.craftoraStarted === "number") started(e.data.craftoraStarted);
   });
@@ -81,6 +111,7 @@ const WATCH_MEDIA: &str = r#"(() => {
     answer.then((r) => {
       const type = r.headers.get("content-type") || "";
       if (PLAYLIST_TYPE.test(type)) keep(r.url, true);
+      else if (/json/i.test(type)) r.clone().text().then((t) => jsonList(type, t), () => {});
       else if (!MEDIA_URL.test(r.url) && /^(text\/plain|application\/octet-stream|)(;|$)/i.test(type))
         r.clone().text().then((t) => isPlaylist(type, t.slice(0, 80)) && keep(r.url, true), () => {});
     }, () => {});
@@ -91,13 +122,16 @@ const WATCH_MEDIA: &str = r#"(() => {
     this.addEventListener("load", () => {
       try {
         const start = this.responseType === "" || this.responseType === "text" ? this.responseText.slice(0, 80) : "";
-        if (isPlaylist(this.getResponseHeader("content-type") || "", start)) keep(this.responseURL, true);
+        const type = this.getResponseHeader("content-type") || "";
+        if (isPlaylist(type, start)) keep(this.responseURL, true);
+        if (this.responseType === "json") captionList(this.response, 0);
+        else if (start) jsonList(type, this.responseText);
       } catch {}
     });
     return send0.apply(this, args);
   };
   try { performance.setResourceTimingBufferSize(100000); } catch {}
-  try { new PerformanceObserver((list) => list.getEntries().forEach((e) => keep(e.name))).observe({ type: "resource", buffered: true }); } catch {}
+  try { new PerformanceObserver((list) => list.getEntries().forEach((e) => { keep(e.name); loadedCaption(e.name); })).observe({ type: "resource", buffered: true }); } catch {}
 })()"#;
 
 /// Run in the sign-in window by "Fetch this video": what the page plays, best guesses first.
@@ -128,7 +162,9 @@ const FIND_MEDIA: &str = r#"(() => {
   const image = full(meta("og:image") || meta("twitter:image") || document.querySelector("video[poster]")?.poster || "");
   const playing = [...(window.__craftoraPlaying || [])];
   if ([...document.querySelectorAll("video")].some((v) => v.srcObject)) playing.push("webrtc");
-  return { title: document.title, image: /^https?:/.test(image) ? image : "", media: media.slice(0, 5), playing, agent: navigator.userAgent };
+  const captions = [...(window.__craftoraCaptions || [])];
+  document.querySelectorAll("track[src]").forEach((t) => /^https?:/.test(t.src) && !captions.some((c) => c.url === t.src) && captions.push({ url: t.src, label: t.label, lang: t.srclang }));
+  return { title: document.title, image: /^https?:/.test(image) ? image : "", media: media.slice(0, 5), playing, captions, agent: navigator.userAgent };
 })()"#;
 
 /// What "Fetch this video" sends to the main window.
@@ -151,6 +187,9 @@ struct FoundPage {
     /// The window's browser name, kept for posing as it (`BROWSER_AGENT`); not sent on.
     #[serde(default, skip_serializing)]
     agent: String,
+    /// Caption files the page's player listed or loaded (`page_captions`); not sent on.
+    #[serde(default, skip_serializing)]
+    captions: Vec<crate::captions::FoundCaption>,
 }
 
 /// yt-dlp arguments that reach a link: the user's logins, the page it was found on (when it was
@@ -189,6 +228,26 @@ static PRELOADED: Mutex<String> = Mutex::new(String::new());
 
 pub(crate) fn remember_page(page: &str) {
     *LAST_PAGE.lock().unwrap() = page.to_string();
+}
+
+/// Caption files found on the pages "Fetch this video" sent, newest last: `fetch_media` offers them with the video.
+static PAGE_CAPTIONS: Mutex<Vec<(String, Vec<crate::captions::FoundCaption>)>> = Mutex::new(Vec::new());
+
+fn remember_captions(page: &str, captions: Vec<crate::captions::FoundCaption>) {
+    let mut pages = PAGE_CAPTIONS.lock().unwrap();
+    pages.retain(|(p, _)| p != page);
+    if !captions.is_empty() {
+        pages.push((page.to_string(), captions));
+    }
+    // A few pages are plenty: the fetch follows the click right away.
+    if pages.len() > 10 {
+        pages.remove(0);
+    }
+}
+
+/// The caption files found on `page` by "Fetch this video" (`remember_captions`).
+pub(crate) fn page_captions(page: &str) -> Vec<crate::captions::FoundCaption> {
+    PAGE_CAPTIONS.lock().unwrap().iter().find(|(p, _)| p == page).map(|(_, c)| c.clone()).unwrap_or_default()
 }
 
 pub(crate) fn last_page() -> Option<String> {
@@ -398,6 +457,7 @@ pub async fn open_sign_in(app: AppHandle, site: String, hidden: Option<bool>) ->
                     *BROWSER_AGENT.lock().unwrap() = std::mem::take(&mut found.agent);
                 }
                 found.media = found.media.iter().map(|m| format!("{m}{REFERER_MARK}{page}")).collect();
+                remember_captions(&page, std::mem::take(&mut found.captions));
                 found.page = page.clone();
                 let _ = app.emit("fetch-page", found);
                 if let Some(main) = app.get_webview_window("main") {

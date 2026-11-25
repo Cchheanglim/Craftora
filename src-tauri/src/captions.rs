@@ -11,12 +11,19 @@ pub(crate) struct SubFormat {
     ext: Option<String>,
     url: Option<String>,
     name: Option<String>,
+    /// "m3u8_native" for a stream's caption track (a list of WebVTT pieces).
+    protocol: Option<String>,
 }
 
 impl SubFormat {
-    /// A stream's caption track as yt-dlp lists it: an address without a name or a caption file type.
+    /// A stream's caption track: yt-dlp marks it as one, or (when it couldn't read it) gives no caption file type.
+    fn stream_track(&self) -> bool {
+        self.protocol.as_deref() == Some("m3u8_native") || !is_caption_format(self.ext.as_deref())
+    }
+
+    /// A stream's caption track without a name (yt-dlp leaves them out): `stream_names` reads them.
     pub(crate) fn nameless_stream_track(&self) -> bool {
-        self.name.is_none() && !is_caption_format(self.ext.as_deref())
+        self.name.is_none() && self.stream_track()
     }
 }
 
@@ -49,7 +56,8 @@ pub(crate) fn pick(
     let lang = language.unwrap_or("en").split('-').next().unwrap_or("en");
     let is = |key: &str, l: &str| key == l || key.starts_with(&format!("{l}-"));
     let vtt = |(key, list): (&String, &Vec<SubFormat>), automatic: bool| {
-        let file = list.iter().find(|f| f.ext.as_deref() == Some("vtt"))?;
+        // Not a stream's tracks: those load only when asked ("Captions from the website").
+        let file = list.iter().find(|f| f.ext.as_deref() == Some("vtt") && !f.stream_track())?;
         let name = file.name.clone().unwrap_or_else(|| key.clone());
         let name = name.trim_end_matches(" - Original").trim_end_matches(" (Original)").to_string();
         Some(Track { url: file.url.clone()?, label: if automatic { format!("{name} (automatic)") } else { name } })
@@ -78,39 +86,69 @@ pub(crate) fn site_tracks(
     automatic: &BTreeMap<String, Vec<SubFormat>>,
     names: &BTreeMap<String, String>,
 ) -> Vec<Track> {
-    let language = |key: &str| {
-        let code = key.split('-').next().unwrap_or(key).to_ascii_lowercase();
-        SITE_LANGUAGES.iter().find(|(two, three, _)| code == *two || code == *three).map(|(_, _, name)| *name)
-    };
     let mut tracks: Vec<Track> = Vec::new();
     for (is_automatic, list) in [(false, manual), (true, automatic)] {
         for (key, formats) in list {
-            let Some(language) = language(key) else { continue };
+            let Some(language) = site_language(key) else { continue };
             // Automatic ones: "en-orig" is what was said, "en" the same machine-made; the original wins.
             if is_automatic && !key.ends_with("-orig") && list.contains_key(&format!("{key}-orig")) {
                 continue;
             }
-            // One track in several formats (vtt, srv3, json3…): its WebVTT one. A stream's list gives no such
-            // formats, only addresses: each is a track of its own (a list of WebVTT pieces).
-            let entries: Vec<&SubFormat> = match formats.iter().find(|f| f.ext.as_deref() == Some("vtt")) {
+            // A stream's tracks are each a track of their own (a list of WebVTT pieces). Otherwise it's one
+            // track in several formats (vtt, srv3, json3…): its WebVTT one.
+            let streamed: Vec<&SubFormat> = formats.iter().filter(|f| f.stream_track()).collect();
+            let entries = match formats.iter().find(|f| f.ext.as_deref() == Some("vtt")) {
+                _ if !streamed.is_empty() => streamed,
                 Some(vtt) => vec![vtt],
-                None if formats.iter().all(|f| !is_caption_format(f.ext.as_deref())) => formats.iter().collect(),
                 None => continue,
             };
             for entry in entries {
                 let Some(url) = entry.url.clone() else { continue };
                 let name = names.get(&url).cloned().or_else(|| entry.name.clone()).unwrap_or_else(|| language.to_string());
                 let name = name.trim_end_matches(" - Original").trim_end_matches(" (Original)").to_string();
-                let label = if is_automatic { format!("{name} (automatic)") } else { name };
-                // Tracks without names of their own: "English", "English 2"…
-                let numbered = |t: &Track| t.label.strip_prefix(&format!("{label} ")).is_some_and(|n| n.parse::<u32>().is_ok());
-                let same = tracks.iter().filter(|t| t.label == label || numbered(t)).count();
-                let label = if same == 0 { label } else { format!("{label} {}", same + 1) };
-                tracks.push(Track { url, label });
+                add_track(&mut tracks, url, if is_automatic { format!("{name} (automatic)") } else { name });
             }
         }
     }
     tracks
+}
+
+/// A caption file the page's player listed or loaded, seen by the sign-in window (signin.rs `WATCH_MEDIA`).
+#[derive(Deserialize, Clone, Default)]
+#[serde(default)]
+pub(crate) struct FoundCaption {
+    url: String,
+    /// The player's name for it ("Khmer"); may be empty.
+    label: String,
+    /// Its language code ("km", "en-US"); may be empty.
+    lang: String,
+}
+
+/// The tracks in `SITE_LANGUAGES` among caption files found on the video's page (kisskh lists its .srt files
+/// in a list of its own, so yt-dlp never sees them), after `tracks` and not repeating them.
+pub(crate) fn add_page_tracks(tracks: &mut Vec<Track>, found: &[FoundCaption]) {
+    for caption in found {
+        if !(caption.url.starts_with("https://") || caption.url.starts_with("http://")) || tracks.iter().any(|t| t.url == caption.url) {
+            continue;
+        }
+        let Some(language) = site_language(&caption.lang).or_else(|| site_language(&caption.label)) else { continue };
+        let label = if caption.label.trim().is_empty() { language.to_string() } else { caption.label.trim().to_string() };
+        add_track(tracks, caption.url.clone(), label);
+    }
+}
+
+/// "English", "eng", "en-US" → "English"; None for a language not in `SITE_LANGUAGES`.
+fn site_language(code: &str) -> Option<&'static str> {
+    let code = code.trim().split(['-', '_']).next().unwrap_or_default().to_ascii_lowercase();
+    SITE_LANGUAGES.iter().find(|(two, three, name)| code == *two || code == *three || code == name.to_ascii_lowercase()).map(|(_, _, name)| *name)
+}
+
+/// Adds a track, numbering labels that repeat: tracks without names of their own are "English", "English 2"…
+fn add_track(tracks: &mut Vec<Track>, url: String, label: String) {
+    let numbered = |t: &Track| t.label.strip_prefix(&format!("{label} ")).is_some_and(|n| n.parse::<u32>().is_ok());
+    let same = tracks.iter().filter(|t| t.label == label || numbered(t)).count();
+    let label = if same == 0 { label } else { format!("{label} {}", same + 1) };
+    tracks.push(Track { url, label });
 }
 
 /// yt-dlp's names for caption formats it knows (anything else is a stream's caption track).
@@ -316,11 +354,14 @@ mod tests {
 
     #[test]
     fn site_tracks_in_english_and_khmer() {
-        let entry = |ext: &str, url: &str, name: Option<&str>| SubFormat { ext: Some(ext.into()), url: Some(url.into()), name: name.map(str::to_string) };
+        let entry = |ext: &str, url: &str, name: Option<&str>| SubFormat { ext: Some(ext.into()), url: Some(url.into()), name: name.map(str::to_string), protocol: None };
+        let streamed = |url: &str| SubFormat { ext: Some("vtt".into()), url: Some(url.into()), name: None, protocol: Some("m3u8_native".into()) };
         // A stream's tracks (anipm): three-letter codes, no file type, several to a language, names from its list.
         let manual = BTreeMap::from([
             ("eng".to_string(), vec![entry("unknown_video", "https://s.example/a", None), entry("x1", "https://s.example/b", None), entry("x2", "https://s.example/c", None)]),
             ("khm".to_string(), vec![entry("vtt", "https://s.example/km.vtt", None)]),
+            // yt-dlp read these: WebVTT pieces, one entry per track.
+            ("km".to_string(), vec![streamed("https://s.example/km1.m3u8"), streamed("https://s.example/km2.m3u8")]),
             ("spa".to_string(), vec![entry("unknown_video", "https://s.example/es", None)]),
         ]);
         // YouTube's automatic ones: the original wins over the same language machine-made; one format per track.
@@ -329,16 +370,42 @@ mod tests {
             ("en-orig".to_string(), vec![entry("srv3", "https://y.example/o.srv3", None), entry("vtt", "https://y.example/o", Some("English (Original)"))]),
             ("km".to_string(), vec![entry("json3", "https://y.example/km.json", None)]),
         ]);
-        let names = BTreeMap::from([("https://s.example/b".to_string(), "English [CR]".to_string())]);
+        let names = BTreeMap::from([
+            ("https://s.example/b".to_string(), "English [CR]".to_string()),
+            ("https://s.example/km2.m3u8".to_string(), "ភាសាខ្មែរ".to_string()),
+        ]);
         let labels: Vec<(String, String)> = site_tracks(&manual, &automatic, &names).into_iter().map(|t| (t.label, t.url)).collect();
         let expected = [
             ("English", "https://s.example/a"),
             ("English [CR]", "https://s.example/b"),
             ("English 2", "https://s.example/c"),
             ("Khmer", "https://s.example/km.vtt"),
+            ("Khmer 2", "https://s.example/km1.m3u8"),
+            ("ភាសាខ្មែរ", "https://s.example/km2.m3u8"),
             ("English (automatic)", "https://y.example/o"),
         ];
         assert_eq!(labels, expected.map(|(l, u)| (l.to_string(), u.to_string())));
+    }
+
+    #[test]
+    fn page_tracks_from_a_players_list() {
+        let found = |url: &str, label: &str, lang: &str| FoundCaption { url: url.into(), label: label.into(), lang: lang.into() };
+        let mut tracks = vec![Track { url: "https://s.example/en.vtt".into(), label: "English".into() }];
+        add_page_tracks(
+            &mut tracks,
+            &[
+                found("https://sub.example/x.ar.srt", "Arabic", "ar"),
+                found("https://sub.example/x.en.srt", "English", "en"),
+                found("https://sub.example/x.km.srt", "Khmer", "km"),
+                found("https://s.example/en.vtt", "English", "en"),
+                found("https://sub.example/other.srt", "ខ្មែរ", "khm"),
+                found("https://sub.example/y.srt", "Khmer", ""),
+                found("blob:https://sub.example/z", "English", "en"),
+            ],
+        );
+        let labels: Vec<&str> = tracks.iter().map(|t| t.label.as_str()).collect();
+        assert_eq!(labels, ["English", "English 2", "Khmer", "ខ្មែរ", "Khmer 2"]);
+        assert_eq!(tracks[2].url, "https://sub.example/x.km.srt");
     }
 
     #[test]
@@ -386,7 +453,7 @@ mod tests {
 
     #[test]
     fn picks_own_captions_then_original_automatic() {
-        let vtt = |url: &str| vec![SubFormat { ext: Some("vtt".into()), url: Some(url.into()), name: Some("English".into()) }];
+        let vtt = |url: &str| vec![SubFormat { ext: Some("vtt".into()), url: Some(url.into()), name: Some("English".into()), protocol: None }];
         let mut manual = BTreeMap::new();
         let mut automatic = BTreeMap::new();
         automatic.insert("fr".to_string(), vtt("auto-fr"));

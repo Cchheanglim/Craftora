@@ -756,7 +756,11 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>, engin
         Some(manifest) if nameless => crate::captions::stream_names(manifest, page.as_deref()).await,
         _ => BTreeMap::new(),
     };
-    let caption_tracks = crate::captions::site_tracks(&info.subtitles, &info.automatic_captions, &names);
+    let mut caption_tracks = crate::captions::site_tracks(&info.subtitles, &info.automatic_captions, &names);
+    // Found in the sign-in window: caption files the page's player lists apart from the video (kisskh).
+    if let Some(found_on) = crate::signin::split_referer(&url).1 {
+        crate::captions::add_page_tracks(&mut caption_tracks, &crate::signin::page_captions(found_on));
+    }
     let thumbnails = other_pictures(&info);
     if preview_url.is_empty() && !bot_checked {
         let mut formats = info.formats;
