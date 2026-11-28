@@ -477,6 +477,8 @@ export default function App() {
   const [rightOpen, setRightOpen] = useState(true);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [fetchStep, setFetchStep] = useState<string | null>(null);
+  const fetchLinks = useRef<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   // A message belongs to the page it came from: leaving the page clears it (an editor error stayed on Home forever).
   useEffect(() => setError(null), [view]);
@@ -1089,6 +1091,14 @@ export default function App() {
     const stop = listen<View>("notification-clicked", (e) => setView(e.payload));
     return () => void stop.then((unlisten) => unlisten());
   }, []);
+  // Progress steps emitted while the active fetch runs (ignoring background hover-preview fetches).
+  useEffect(() => {
+    if (!inDesktopApp) return;
+    const stop = listen<{ url: string; step: string }>("fetch-step", (e) => {
+      if (fetchLinks.current.includes(e.payload.url)) setFetchStep(e.payload.step);
+    });
+    return () => void stop.then((unlisten) => unlisten());
+  }, []);
   const speechTurn = useRef<Promise<unknown>>(Promise.resolve());
   // Captions wait their turn: on a slow connection, getting the model or a link's sound would slow
   // the fetch, preview, downloads and exports going on (and whisper would slow exports).
@@ -1352,6 +1362,8 @@ export default function App() {
   const fetchSource = async (link: string, found?: FoundPage) => {
     setUrl(link);
     setBusy(true);
+    fetchLinks.current = [link.trim(), ...(found?.media ?? []).map((m) => m.trim())];
+    setFetchStep(null);
     setError(null);
     setPageAction(null);
     try {
@@ -1404,6 +1416,8 @@ export default function App() {
       }
     } finally {
       setBusy(false);
+      fetchLinks.current = [];
+      setFetchStep(null);
     }
   };
 
@@ -3594,6 +3608,7 @@ export default function App() {
         }}
         onFetch={(link) => void fetchSource(link)}
         fetching={busy}
+        fetchStep={busy ? fetchStep : null}
         error={error}
         errorAction={fetchErrorAction}
         onDismissError={() => setError(null)}
@@ -3643,6 +3658,7 @@ export default function App() {
             }}
             onFetch={(link) => void fetchSource(link)}
             fetching={busy}
+            fetchStep={busy ? fetchStep : null}
             error={error}
             errorAction={fetchErrorAction}
             onDismissError={() => setError(null)}

@@ -16,6 +16,8 @@ interface ToolbarProps {
   /** Home has its own big link box: the top bar leaves its own out there. */
   hideLink?: boolean;
   fetching: boolean;
+  /** What the running fetch is doing, shown under the link box. */
+  fetchStep?: string | null;
   error: string | null;
   /** A button next to the error, such as "Sign in to youtube.com". */
   errorAction?: { label: string; onClick: () => void };
@@ -45,6 +47,7 @@ export function Toolbar({
   onFetch,
   hideLink,
   fetching,
+  fetchStep,
   error,
   errorAction,
   onDismissError,
@@ -279,19 +282,24 @@ export function Toolbar({
               <Icon name="x" size={12} />
             </button>
           </p>
-        ) : (
-          verdict && (
-            <p className={`toolbar__error is-${verdict.tone}`} role={verdict.tone === "warn" ? "alert" : "status"}>
-              <Icon name={verdict.tone === "ok" ? "check" : "alert"} size={13} />
-              {verdict.text}
-              {verdict.report && (
-                <button type="button" className="btn btn--ghost" onClick={() => void openUrl(verdict.report!.reportUrl)}>
-                  Full report
-                </button>
-              )}
-              <button type="button" className="btn btn--icon" aria-label="Close" onClick={() => setVerdict(null)}>
-                <Icon name="x" size={12} />
+        ) : verdict ? (
+          <p className={`toolbar__error is-${verdict.tone}`} role={verdict.tone === "warn" ? "alert" : "status"}>
+            <Icon name={verdict.tone === "ok" ? "check" : "alert"} size={13} />
+            {verdict.text}
+            {verdict.report && (
+              <button type="button" className="btn btn--ghost" onClick={() => void openUrl(verdict.report!.reportUrl)}>
+                Full report
               </button>
+            )}
+            <button type="button" className="btn btn--icon" aria-label="Close" onClick={() => setVerdict(null)}>
+              <Icon name="x" size={12} />
+            </button>
+          </p>
+        ) : (
+          fetching &&
+          fetchStep && (
+            <p className="toolbar__error is-info" role="status">
+              {fetchStep}…
             </p>
           )
         )}
