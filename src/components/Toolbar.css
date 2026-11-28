@@ -120,6 +120,10 @@
   color: var(--ok);
 }
 
+.toolbar__error.is-info {
+  color: var(--text-2);
+}
+
 .toolbar__error.is-info > svg {
   color: var(--text-3);
 }

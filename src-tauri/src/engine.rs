@@ -173,7 +173,7 @@ pub async fn warm_up(app: &AppHandle) {
         .and_then(|m| m.modified())
         .ok()
         .and_then(|mtime| mtime.elapsed().ok())
-        .map_or(true, |age| age > CHECK_INTERVAL);
+        .is_none_or(|age| age > CHECK_INTERVAL);
     if due && install_latest(app).await.is_ok() {
         let _ = std::fs::create_dir_all(&home);
         if let Err(e) = std::fs::write(&checked, b"") {
@@ -303,6 +303,12 @@ async fn bundled_yt_dlp_version(app: &AppHandle) -> Result<(Vec<u32>, String), S
     Ok((parts, text))
 }
 
+/// shortcut: told apart by size (unpacked exe 10.6 MB, one-file 23.6 MB in 2026.11), both say "win_exe"; recheck if yt-dlp's sizes change a lot.
+fn bundled_is_one_file(app: &AppHandle) -> bool {
+    let exe = app.path().resource_dir().map(|dir| dir.join("yt-dlp").join("yt-dlp.exe"));
+    exe.ok().and_then(|exe| std::fs::metadata(exe).ok()).is_some_and(|m| m.len() > 18 * 1024 * 1024)
+}
+
 struct UpdatingGuard;
 
 impl Drop for UpdatingGuard {
@@ -373,6 +379,8 @@ async fn install_latest_inner(app: &AppHandle) -> Result<String, String> {
             let name = exe.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()).unwrap_or("").to_string();
             (parts, name)
         }
+        // The old Update (`yt-dlp -U`) left the self-unpacking build in the bundled folder: replaced even when current.
+        None if bundled_is_one_file(app) => (Vec::new(), "the slow-starting build".into()),
         None => bundled_yt_dlp_version(app).await?,
     };
     if latest_parts <= current_parts {

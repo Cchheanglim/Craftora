@@ -25,6 +25,8 @@ interface HomeProps {
   onUrlChange: (url: string) => void;
   onFetch: (url: string) => void;
   fetching: boolean;
+  /** What the running fetch is doing, shown under the link box. */
+  fetchStep?: string | null;
   /** Why the last fetch failed, and the button that helps (open the video's page). */
   error: string | null;
   errorAction?: { label: string; onClick: () => void };
@@ -230,6 +232,7 @@ export function Home({
   onUrlChange,
   onFetch,
   fetching,
+  fetchStep,
   error,
   errorAction,
   onDismissError,
@@ -365,6 +368,11 @@ export function Home({
               {fetching ? "Fetching…" : "Fetch"}
             </button>
           </form>
+          {fetching && fetchStep && !error && (
+            <div className="home__error is-info" role="status">
+              <p>{fetchStep}…</p>
+            </div>
+          )}
           {!error && verdict && (
             <div className={`home__error is-${verdict.tone}`} role={verdict.tone === "warn" ? "alert" : "status"}>
               <p>{verdict.text}</p>
