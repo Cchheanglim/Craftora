@@ -30,7 +30,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 sha2 = "0.10"
 # Already in the build (through reqwest and others): reads the cover picture the editor sends (project.rs).
 base64 = "0.22"
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "macros"] }
 tauri-plugin-process = "2"
 tauri-plugin-clipboard-manager = "2"
 # Remove background runs its AI model here (cutout.rs): ONNX Runtime 1.24 with DirectML, its DLLs shipped in bin/onnxruntime
