@@ -246,10 +246,56 @@ and **Glass** on or off (the Image editor stays dark).
 - **Anything more** (several clips, tracks, text, crop, speed, fades or transitions):
   Craftora renders the whole timeline in one FFmpeg pass, each clip reading only its own part
   of its file. For links, yt-dlp first downloads just the parts the timeline uses.
-### Limitation
 
-- **Thought Craftora can fetch almost every video from any website** Some website will require you for login (often works without login)
-- **Some website will not work on preview** , so you need to download it fist
+### Limitations
+
+- **Craftora can fetch videos from almost any website**, but some websites need you to sign in first
+  (many work without it).
+- **Some websites won't play in the preview**, so download the video first.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/editor.png" width="100%" alt="Craftora video editor with Sintel in the preview, clips on the timeline, and Edit settings on the right"><br>
+      Edit on a timeline: trim, split and stack clips, add titles, and export for YouTube, TikTok or Instagram.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/filters.png" width="100%" alt="Craftora Filters tab showing searchable colour look tiles and Adjust layer"><br>
+      Filters, effects and transitions as tiles: drag one onto a clip, or search for the one you want.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/voice-changer.png" width="100%" alt="Craftora Voice tab showing voice changer presets and the Pitch slider"><br>
+      Voice changer: Chipmunk, Deep, Monster, Robot, Alien, Cave, Radio or Megaphone, plus a Pitch slider.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/export.png" width="100%" alt="Craftora Export pop-up showing Video and Audio only outputs, Made for presets, and Add to queue"><br>
+      Export for YouTube, TikTok, Reels, Shorts or Instagram in one click, as MP4, MKV, GIF or sound only.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/dark-glass.png" width="100%" alt="Craftora in Dark glass look with translucent panels glowing with the video's colours"><br>
+      Glass panels that glow with the colours of your video.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/light-glass.png" width="100%" alt="Craftora in Light glass look with frosted light panels"><br>
+      Light with glass, for bright rooms. Pick Craftora red, Lively or Light, with or without glass.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/media-library.png" width="100%" alt="Craftora Media library with folders, tabs for every media type, and custom collections"><br>
+      Everything you've used in one Media library, with folders on every tab and your own collections.
+    </td>
+    <td width="50%"></td>
+  </tr>
+</table>
+
+<sub>Shown: <em>Sintel</em> © Blender Foundation, <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.</sub>
 
 ## The AI assistant
 
