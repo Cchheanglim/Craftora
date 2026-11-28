@@ -923,25 +923,38 @@ export default function App() {
   useEffect(() => {
     for (const m of project.media) {
       const s = m.source;
-      if (s.thumbnail?.startsWith("data:") || thumbTried.current.has(m.id)) continue;
+      // A streamed link shows a frame of its video: its site's picture can be the site's logo, the same for every video
+      // (ani.pm's). Its kept site picture (made before this) gives way to a frame once.
+      const frameFirst = Boolean(s.previewHls) && !s.local && !s.live && inDesktopApp;
+      if ((s.thumbnail?.startsWith("data:") && !(frameFirst && !s.thumbnailFrame)) || thumbTried.current.has(m.id)) continue;
       // A link with the site's picture: a small copy of it is kept (fetched once, with the page as Referer).
       const sitePicture = inDesktopApp && !s.local && s.thumbnail?.startsWith("http") ? s.thumbnail : undefined;
       // Otherwise (or if that fails) a frame of the video.
       const canDraw = (m.hasVideo || s.image) && (s.local || !(s.live || !s.previewUrl)) && (inDesktopApp || !(s.previewProxy || !s.previewUrl));
       if (!sitePicture && !canDraw) continue;
       thumbTried.current.add(m.id);
-      const kept = sitePicture ? keptThumbnail([sitePicture, ...(s.thumbnails ?? [])], s.url).then((t) => (t.startsWith("data:") ? t : undefined)) : Promise.resolve(undefined);
-      const task = kept
-        .then((thumb) => thumb ?? (canDraw && s.previewUrl ? captureThumbnail(s.previewUrl, s.image, s.previewHls) : undefined))
-        .then((thumb) => thumb ?? (inDesktopApp && s.local ? localThumbnail(s.url, Boolean(s.image)).catch(() => undefined) : undefined));
-      void task.then((thumbnail) => {
+      const frame = () => (canDraw && s.previewUrl ? captureThumbnail(s.previewUrl, s.image, s.previewHls) : Promise.resolve(undefined));
+      const kept = () =>
+        sitePicture ? keptThumbnail([sitePicture, ...(s.thumbnails ?? [])], s.url).then((t) => (t.startsWith("data:") ? t : undefined)) : Promise.resolve(undefined);
+      const task = (async () => {
+        const framed = frameFirst && canDraw ? await frame() : undefined;
+        if (framed) return { thumbnail: framed, framed: true };
+        const thumb =
+          (await kept()) ??
+          (frameFirst ? undefined : await frame()) ??
+          (inDesktopApp && s.local ? await localThumbnail(s.url, Boolean(s.image)).catch(() => undefined) : undefined);
+        return thumb ? { thumbnail: thumb, framed: false } : undefined;
+      })();
+      void task.then((got) => {
+        if (!got) return;
+        const { thumbnail, framed } = got;
         const current = projectRef.current.media.find((x) => x.id === m.id);
         // Only the list picture: an image keeps its full-size previewUrl (Preview falls back to this if it can't load).
-        if (thumbnail && current) api.refreshMedia(m.id, { source: { ...current.source, thumbnail, thumbnails: undefined } });
-        // History saved the link before this picture existed.
-        if (thumbnail && !s.local)
+        if (current) api.refreshMedia(m.id, { source: { ...current.source, thumbnail, thumbnails: undefined, ...(framed && { thumbnailFrame: true }) } });
+        // History saved the link before this picture existed (or with the site's logo).
+        if (!s.local)
           setFetchHistory((list) => {
-            const next = list.map((e) => (e.url === s.url && !e.thumbnail?.startsWith("data:") ? { ...e, thumbnail } : e));
+            const next = list.map((e) => (e.url === s.url && (framed || !e.thumbnail?.startsWith("data:")) ? { ...e, thumbnail } : e));
             saveFetchHistory(next);
             return next;
           });

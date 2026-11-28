@@ -48,6 +48,8 @@ export interface MediaSource {
   thumbnail?: string;
   /** Links: the site's other pictures for the video, best first, tried when `thumbnail` won't load. */
   thumbnails?: string[];
+  /** A streamed link's `thumbnail` is a frame of the video (its site's picture can be the site's logo). */
+  thumbnailFrame?: boolean;
   /** Links: the preview streams' ids in the disk cache (src-tauri/src/media_cache.rs). */
   previewCacheIds?: string[];
   /** ~240 loudness bars (0–100) across the audio, for the radio wave under the video and on clips. */
