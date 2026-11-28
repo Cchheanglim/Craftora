@@ -61,7 +61,7 @@ function OpenCaptions({ onOpen }: { onOpen: () => void }) {
 
 /**
  * The website's own caption tracks, in a panel under the button: a tab per language, one line per track (a
- * site can list dozens), scrolling past a few. One click loads it.
+ * site can list dozens), scrolling past a few. One click loads it; clicking the ticked one takes it off.
  */
 function SiteCaptions({ tracks, current, onPick }: { tracks: SiteCaption[]; current?: string; onPick: (track: SiteCaption) => Promise<void> }) {
   const [at, setAt] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);

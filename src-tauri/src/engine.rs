@@ -477,6 +477,8 @@ async fn install_latest_inner(app: &AppHandle) -> Result<String, String> {
     drop(cleanup);
 
     drop_old_versions(&home, &latest_parts, false);
+    // The virus scanner checks fresh files on their first run (7.9 s, then 0.6 s): now, not on the next fetch.
+    let _ = run_to_end(app, YT_DLP, &["--version"]).await;
     Ok(format!("Updated yt-dlp to {latest_str}."))
 }
 

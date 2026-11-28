@@ -1377,6 +1377,9 @@ export default function App() {
         if (!found) throw new Error("Real links need the desktop app.");
         source = found;
       }
+      // Read: no step left showing under the box while the details wait for a click.
+      fetchLinks.current = [];
+      setFetchStep(null);
       // The user sees what the link holds before anything from it is added or downloaded.
       if (!(await fetchReview.review(source, link))) {
         if (found) void tellSignIn("Not added to Craftora.").catch(() => {});
@@ -1909,11 +1912,15 @@ export default function App() {
     return canCaption(selectedMedia) ? selectedMedia : onTimeline.length === 1 ? onTimeline[0] : undefined;
   };
   const siteCaptions = inDesktopApp ? captionTarget()?.source.captionTracks : undefined;
-  /** Loads one of the website's caption tracks as the target video's captions (in place of any it had). */
+  /** Loads one of the website's caption tracks as the target video's captions (in place of any it had); the track in use again takes them off. */
   const loadSiteCaptions = async (track: { url: string; label: string }) => {
     const target = captionTarget();
     if (!target) return;
     setError(null);
+    if (target.captions?.url === track.url) {
+      api.refreshMedia(target.id, { captions: undefined });
+      return;
+    }
     try {
       const lines = await loadCaptions(track.url, target.source.url);
       if (!lines.length) {

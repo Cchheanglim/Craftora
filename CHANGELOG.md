@@ -12,6 +12,11 @@
   keeps it in its own folder, so updating works in the Microsoft Store copy too. It also looks for a newer yt-dlp once
   a week, so YouTube keeps working without pressing Update.
 
+**Fixed**
+
+- **Captions from the website can be taken off again**: clicking the ticked track in the list removes those
+  captions from the video (it used to load the same track again).
+
 ## 0.7.1 (November 2026)
 
 **New**
