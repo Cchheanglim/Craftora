@@ -164,7 +164,20 @@ const FIND_MEDIA: &str = r#"(() => {
   if ([...document.querySelectorAll("video")].some((v) => v.srcObject)) playing.push("webrtc");
   const captions = [...(window.__craftoraCaptions || [])];
   document.querySelectorAll("track[src]").forEach((t) => /^https?:/.test(t.src) && !captions.some((c) => c.url === t.src) && captions.push({ url: t.src, label: t.label, lang: t.srclang }));
-  return { title: document.title, image: /^https?:/.test(image) ? image : "", media: media.slice(0, 5), playing, captions, agent: navigator.userAgent };
+  // A series page's title can be just the show ("Chuhai Lips · ani.pm"): the episode playing, from what the page shows
+  // (the player's media info, a heading, the item marked current), goes in before the site's name.
+  const EPISODE = /\b(ep(isode)?\.?\s*\d+|s\d+\s*:?\s*e\d+)\b/i;
+  const clean = (t) => (t || "").replace(/\s+/g, " ").trim();
+  let title = clean(document.title);
+  if (!EPISODE.test(title)) {
+    const shown = [navigator.mediaSession?.metadata?.title, ...[...document.querySelectorAll("h1, h2, h3, [aria-current]:not([aria-current=false])")].map((e) => e.textContent)];
+    const episode = shown.map(clean).find((t) => t.length <= 60 && EPISODE.test(t));
+    const parts = title.split(/ ([·|–—-]) (?!.* [·|–—-] )/);
+    const letters = (t) => t.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const site = parts.length === 3 && letters(parts[2]) && letters(location.hostname).includes(letters(parts[2]));
+    if (episode) title = site ? `${parts[0]} · ${episode} ${parts[1]} ${parts[2]}` : title ? `${title} · ${episode}` : episode;
+  }
+  return { title, image: /^https?:/.test(image) ? image : "", media: media.slice(0, 5), playing, captions, agent: navigator.userAgent };
 })()"#;
 
 /// What "Fetch this video" sends to the main window.
