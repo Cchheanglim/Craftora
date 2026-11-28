@@ -1,5 +1,17 @@
 # What's new in Craftora
 
+## Next version
+
+**Faster**
+
+- **Fetching links is quicker**: Craftora checks a video's preview picture and its sound at the same time instead of
+  one after the other (about 1 s less on most YouTube links), and the wait shows what the fetch is doing ("Reading the
+  page", "Getting the site's player", "Checking the preview").
+- **Update yt-dlp no longer slows every fetch**: it used to swap the quick-starting yt-dlp for one that unpacks itself
+  on every run (3.5 s instead of 0.7 s before each fetch). Craftora now downloads the quick one itself, checks it, and
+  keeps it in its own folder, so updating works in the Microsoft Store copy too. It also looks for a newer yt-dlp once
+  a week, so YouTube keeps working without pressing Update.
+
 ## 0.7.1 (November 2026)
 
 **New**
