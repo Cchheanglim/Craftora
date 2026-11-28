@@ -20,11 +20,11 @@ export function draw(source: HTMLVideoElement | HTMLImageElement, width: number,
 }
 
 /**
- * Loads a stream playlist into `video` through hls.js, like the preview (SyncedMedia), for pictures: from `start`
- * seconds, at the smallest quality still `width` wide (a 1080p part could take longer than allowed, as a found stream
- * through the relay did), and only the part each seek needs. Returns what stops it.
+ * Loads a stream playlist into `video` through hls.js, like the preview (SyncedMedia), for pictures and hover plays:
+ * from `start` seconds, at the smallest quality still `width` wide (a 1080p part could take longer than allowed, as a
+ * found stream through the relay did), loading only `ahead` seconds past where it is. Returns what stops it.
  */
-function playStream(video: HTMLVideoElement, url: string, width: number, start: number, failed: () => void): () => void {
+export function playStream(video: HTMLVideoElement, url: string, width: number, start: number, failed: () => void, ahead = 1): () => void {
   let player: Hls | undefined;
   let stopped = false;
   void import("hls.js").then(
@@ -32,7 +32,7 @@ function playStream(video: HTMLVideoElement, url: string, width: number, start: 
       if (stopped) return;
       // Not started until the quality is picked (it began on the best one, then switched), and no buffering ahead
       // (30 s after every seek): measured 22.9 s for a 5-minute stream's filmstrip at 20 Mbit/s.
-      player = new Hls({ abrEwmaDefaultEstimate: 50_000_000, autoStartLoad: false, maxBufferLength: 1, maxMaxBufferLength: 2, backBufferLength: 0 });
+      player = new Hls({ abrEwmaDefaultEstimate: 50_000_000, autoStartLoad: false, maxBufferLength: ahead, maxMaxBufferLength: ahead * 2, backBufferLength: 0 });
       player.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) failed();
       });

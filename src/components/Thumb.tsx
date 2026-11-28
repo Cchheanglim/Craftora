@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "./Icon";
 import { fileThumbnail, inDesktopApp, playableFile } from "../lib/engine";
+import { playStream } from "../lib/thumbnail";
 import "./Thumb.css";
 
 /** Hovering a row this long starts its video, so passing over a list doesn't. */
@@ -43,12 +44,21 @@ export function Thumb({ src, icon, play }: { src?: string; icon: IconName; play?
       row.removeEventListener("pointerleave", leave);
     };
   }, [canPlay]);
+  // A stream playlist (a link's .m3u8, or the relay's): the WebView can't play it itself, hls.js does.
+  const player = useRef<HTMLVideoElement>(null);
+  const stream = playing && /\.m3u8(\?|#|$)|\/hls\?u=/i.test(playing) ? playing : undefined;
+  useEffect(() => {
+    if (!stream || !player.current) return;
+    const [address, from] = stream.split("#t=");
+    return playStream(player.current, address, 320, Number(from) || 0, () => setPlaying(undefined), 8);
+  }, [stream]);
   return (
     <span className="thumb" aria-hidden="true" ref={ref}>
       {playing && (
         <video
+          ref={player}
           className="thumb__play"
-          src={playing}
+          src={stream ? undefined : playing}
           muted
           loop
           playsInline
