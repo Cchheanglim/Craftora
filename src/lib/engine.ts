@@ -191,14 +191,14 @@ const hovers = new Map<string, Promise<string | undefined>>();
 
 /**
  * A light stream of a link's video for its list picture to play while hovered (as the editor's
- * media list does), read once per link: yt-dlp takes a few seconds. Undefined for sound, pictures,
- * live videos and streams only hls.js plays.
+ * media list does), read once per link: yt-dlp takes a few seconds (a stream plays through hls.js, `Thumb`).
+ * Undefined for sound, pictures and live videos.
  */
 export function hoverVideo(link: string): Promise<string | undefined> {
   let found = hovers.get(link);
   if (!found) {
     found = fetchMedia(link).then(
-      (s) => (s.live || s.image || s.previewHls || !s.streams.some((x) => x.kind === "video") ? undefined : s.hoverUrl || s.previewUrl || undefined),
+      (s) => (s.live || s.image || !s.streams.some((x) => x.kind === "video") ? undefined : s.hoverUrl || s.previewUrl || undefined),
       () => {
         hovers.delete(link); // tried again on the next hover
         return undefined;
