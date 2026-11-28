@@ -93,6 +93,8 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
   play the best quality the video has; the picker next to the speed (**Best**, 1080p, 720p…) lowers it
   for slow Wi-Fi.
 
+  
+
 **Captions and edit by text**
 - **Captions from the website:** when a fetched video has its own captions (in English or Khmer,
   including stream captions and captions listed separately by a site's player via **Fetch this
@@ -241,53 +243,13 @@ and **Glass** on or off (the Image editor stays dark).
   a file on your PC, FFmpeg copies the section without re-encoding. **Fast** keeps the
   original quality but starts on the nearest keyframe; **Precise** is frame-accurate and
   re-encodes.
-- **Anything more** (several clips, tracks, text, shapes, crop, speed, filters, effects or
-  transitions): Craftora renders the whole timeline in one FFmpeg pass, each clip reading only its own
-  part of its file (links are first downloaded whole for editing if not already on your PC).
+- **Anything more** (several clips, tracks, text, crop, speed, fades or transitions):
+  Craftora renders the whole timeline in one FFmpeg pass, each clip reading only its own part
+  of its file. For links, yt-dlp first downloads just the parts the timeline uses.
+### Limitation
 
-## Screenshots
-
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/editor.png" width="100%" alt="Craftora video editor with Sintel in the preview, clips on the timeline, and Edit settings on the right"><br>
-      Edit on a timeline: trim, split and stack clips, add titles, and export for YouTube, TikTok or Instagram.
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/filters.png" width="100%" alt="Craftora Filters tab showing searchable colour look tiles and Adjust layer"><br>
-      Filters, effects and transitions as tiles: drag one onto a clip, or search for the one you want.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/voice-changer.png" width="100%" alt="Craftora Voice tab showing voice changer presets and the Pitch slider"><br>
-      Voice changer: Chipmunk, Deep, Monster, Robot, Alien, Cave, Radio or Megaphone, plus a Pitch slider.
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/export.png" width="100%" alt="Craftora Export pop-up showing Video and Audio only outputs, Made for presets, and Add to queue"><br>
-      Export for YouTube, TikTok, Reels, Shorts or Instagram in one click, as MP4, MKV, GIF or sound only.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/dark-glass.png" width="100%" alt="Craftora in Dark glass look with translucent panels glowing with the video's colours"><br>
-      Glass panels that glow with the colours of your video.
-    </td>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/light-glass.png" width="100%" alt="Craftora in Light glass look with frosted light panels"><br>
-      Light with glass, for bright rooms. Pick Craftora red, Lively or Light, with or without glass.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="docs/screenshots/media-library.png" width="100%" alt="Craftora Media library with folders, tabs for every media type, and custom collections"><br>
-      Everything you've used in one Media library, with folders on every tab and your own collections.
-    </td>
-    <td width="50%"></td>
-  </tr>
-</table>
-
-<sub>Shown: <em>Sintel</em> © Blender Foundation, <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.</sub>
+- **Thought Craftora can fetch almost every video from any website** Some website will require you for login (often works without login)
+- **Some website will not work on preview** , so you need to download it fist
 
 ## The AI assistant
 
@@ -438,19 +400,6 @@ you have opened in Craftora. See [SECURITY.md](SECURITY.md) to report a problem.
 - Faster previews of large files from this PC.
 - Code-signed installers on GitHub.
 
-## Licences
-
-Craftora is [MIT-licensed](LICENSE). The bundled engines have their own licences:
-
-- **yt-dlp:** [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE) (public domain).
-- **FFmpeg:** a **GPL** build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds),
-  which includes libx264. The installer ships its licence, and every release attaches the
-  exact FFmpeg source and build scripts.
-- **Deno** (runs YouTube's player code for yt-dlp): MIT.
-- **whisper.cpp** and the Whisper "base" speech model: MIT.
-
-Full details: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
 ## Responsible use
 
 Please read this before you use Craftora to fetch, download or record anything.
@@ -468,7 +417,7 @@ it doesn't include, suggest or link to any place to find movies, shows or other 
   content that is free to use (public domain, or a licence such as Creative Commons that allows it).
 - Downloading or sharing movies, TV shows, music, sports broadcasts, games, courses or other
   copyrighted work without permission may be illegal where you live, even if the website lets
-  you watch it for free. **Don't use Craftora for that.**
+  you watch it for free.
 - Follow each website's terms of service. Some sites don't allow downloads at all, even of
   videos you can watch there.
 - Follow the laws of your country. You alone decide what you fetch, so you alone are
@@ -479,29 +428,6 @@ it doesn't include, suggest or link to any place to find movies, shows or other 
 Craftora doesn't break or get around copy protection (DRM), paywalls or other technical
 protections, and isn't meant to be used that way. Don't use it to copy paid, rented or
 subscription content that you aren't allowed to keep.
-
-### Signing in to websites
-
-When you **Sign in to …** a website, you are using your own account under that website's rules.
-Only fetch what your account allows you to, and don't share the downloads if the site forbids
-it. Your sign-in stays on your PC (see [PRIVACY.md](PRIVACY.md)).
-
-### Live recordings
-
-Only record streams you're allowed to record. Recording other people can also be against
-privacy or recording laws where you or they live, so ask first when it matters.
-
-### What you make and share
-
-Editing a video doesn't make it yours. If you publish or share something you made with Craftora,
-make sure you have the rights to every clip, song, image and caption in it. Ideas like "fair use"
-are different in each country and don't automatically cover you.
-
-### Other services
-
-Optional features such as the AI assistant, the VirusTotal link check and a proxy connect to
-services that you choose and set up with your own keys or addresses. Their own terms apply, and
-Craftora isn't responsible for them. A link check that says a site looks safe isn't a guarantee.
 
 ### No warranty
 
@@ -517,3 +443,18 @@ rights in a way we can help with, [open an issue](https://github.com/Cchheanglim
 
 By using Craftora you agree to use it only in ways that are legal and that respect the rights of
 others.
+
+## Licences
+
+Craftora is [MIT-licensed](LICENSE). The bundled engines have their own licences:
+
+- **yt-dlp:** [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE) (public domain).
+- **FFmpeg:** a **GPL** build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds),
+  which includes libx264. The installer ships its licence, and every release attaches the
+  exact FFmpeg source and build scripts.
+- **Deno** (runs YouTube's player code for yt-dlp): MIT.
+- **whisper.cpp** and the Whisper "base" speech model: MIT.
+
+Full details: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Only download content you have the right to. Respect each site's terms of service.
