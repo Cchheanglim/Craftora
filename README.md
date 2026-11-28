@@ -35,7 +35,7 @@ Craftora is a [Tauri 2](https://tauri.app) app with a React and TypeScript inter
 [FFmpeg](https://ffmpeg.org) and [yt-dlp](https://github.com/yt-dlp/yt-dlp) ship inside it
 and do the cutting, rendering and downloading.
 
-> **Status:** young (v0.5) and changing quickly. Please
+> **Status:** young (v0.7) and changing quickly. Please
 > [report problems](https://github.com/Cchheanglim/Craftora/issues).
 
 ## Download
@@ -55,13 +55,21 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
 ## What you can do
 
 **Bring things in**
-- Import video, audio and images (PNG, JPEG, WebP, BMP) from your PC: the **Import** button,
+- Import video, audio, GIFs and images (PNG, JPEG, WebP, BMP) from your PC: the **Import** button,
   `Ctrl+O`, or drag files onto the window. Imported files work offline, even files of several GB.
-  An image starts at 5 seconds on the timeline; drag its edge to show it for longer.
-- Paste a link from YouTube or any of the [many sites yt-dlp supports](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
-  and click **Fetch**: the video goes straight onto the timeline, ready to edit (only the parts
-  you use are downloaded when you export). The ⬇ button downloads the whole video for smoother,
-  offline editing; downloads can be **paused**, resumed later and **renamed** while they run.
+  A still image starts at 5 seconds on the timeline; drag its edge to show it for longer.
+- Paste a link (pasting fetches it right away) from YouTube or any of the
+  [many sites yt-dlp supports](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md).
+  Craftora checks the video's preview picture and sound at the same time and shows each step while it
+  reads the link ("Reading the page", "Getting the site's player", "Checking the preview"), then shows
+  what it found (picture, title, length, qualities, size and captions) before you click **Add to
+  project**. Only the parts you use are downloaded when you export, or click the download button to
+  save the whole video for smoother, offline editing.
+- **Downloads that go on after closing the window:** downloads can be **paused**, resumed later and
+  **renamed** while they run. Closing the window while downloads run closes Craftora for real (giving
+  back its memory) and finishes them from its icon by the clock, two at a time. Point at a download in
+  that menu to **Pause**, **Resume** or **Cancel** it, or open Downloads, and Windows notifies you when
+  downloads finish or fail. Opening Craftora again carries on with them without downloading twice.
 - **Live streams:** paste the link to a stream that's on right now. Craftora records it while you
   edit, and **Stop recording** turns it into a normal video file.
 - **Links that need a login** (private, age-restricted, members-only): click **Sign in to …** on
@@ -72,82 +80,160 @@ Windows 10 (version 1809 or later) or Windows 11, 64-bit. 8 GB of memory is reco
   off in **Settings → Privacy** if a site's login stops working).
 - **Sites that block bots** (such as Cloudflare's check): Craftora tries again as a browser and
   edits the downloaded copy.
-- Downloads go to your **Downloads** folder, or one you choose in **Settings → Saving**.
+- Downloads go to your **Downloads** folder, or one you choose in **Settings → Saving**. Every
+  download is checked to verify it's a real video or sound file and scanned by your PC's antivirus.
+  Craftora also checks once a week for a newer quick-starting yt-dlp and updates it in its own folder
+  (in the Microsoft Store copy too).
 - **Not sure a link is safe?** Click **Check** next to the top link box: Craftora asks
   [VirusTotal](https://www.virustotal.com) whether security vendors flag its website (only the
   website's name is sent, never the full link). It uses your own free VirusTotal key, added once
   in Settings → Links.
-- Link previews are cached on your PC as they play, so jumping back is instant. They play the
-  best quality the video has; the picker next to the speed (**Best**, 1080p, 720p…) lowers it for
-  slow Wi-Fi.
+- Link previews are cached on your PC as they play, so jumping back is instant; stream playlists and
+  formats the player can't open directly copy in as they play within seconds and can be paused. They
+  play the best quality the video has; the picker next to the speed (**Best**, 1080p, 720p…) lowers it
+  for slow Wi-Fi.
 
 **Captions and edit by text**
-- Captions come from the website when it has them; otherwise Craftora **listens to the sound and
-  writes them**, on your PC, without internet (Khmer and Thai too).
+- **Captions from the website:** when a fetched video has its own captions (in English or Khmer,
+  including stream captions and captions listed separately by a site's player via **Fetch this
+  video**), pick any track from the list in the **Transcript** tab, grouped by language.
+- Otherwise Craftora **listens to the sound and writes them**, on your PC, without internet (Khmer
+  and Thai too), using your processor or graphics card (NVIDIA, AMD or Intel Arc, in **Settings →
+  Preferences → Make captions with**). Captions fill in as they are made, timed to when the words are
+  said, and songs can pull timed lyrics from lrclib.net when found there.
 - With **CC** on, captions show on the preview and go into the export. **Drag them anywhere** and
   **resize them from a corner** (all captions together), or pick **Top / Middle / Bottom**. Long
   lines wrap to fit the picture. **Add captions** puts them on a track as text you can edit.
 - **Style captions:** click them on the preview to pick the font, colour, size and a shadow,
-  outline or dark box. **Open captions file** brings in your own .srt, .vtt or .lrc; **Save as .srt**
-  saves them for YouTube or any player.
-- The **Transcript** tab shows what's said: click a word to jump there, select words and press
-  **Delete** to cut them out of the video, or **Cut every "um"** in one click. **Replace all**
-  fixes a wrong word or name in every caption at once.
+  outline or dark box. **Open captions file** brings in your own `.srt`, `.vtt` or `.lrc`; **Save as
+  .srt** saves them for YouTube or any player.
+- The **Transcript** tab shows what's said with the current line and word marked in red. Click a word
+  to jump there, select words and press **Delete** to cut them out of the video, or **search a word or
+  phrase** to mark every place it's said and cut them all in one click (**Cut every "um"**, whole words
+  only) or one line at a time with the scissors button. **Replace all** fixes a wrong word or name in
+  every caption at once.
 
 **Edit on the timeline**
-- Every video track works the same way: higher tracks are drawn over lower ones, and any
-  clip can fill the frame or be a small picture-in-picture. **Audio** tracks hold music and
-  voice-overs, **Text** tracks hold titles. Add as many tracks as you like with **+ Track**.
-- The **magnet** on a track's header keeps its clips back to back (no gaps) and allows
-  transitions; turn it off to place clips anywhere. Video 1 starts with it on.
-- Drag media from the sidebar onto any track. A video on an audio track uses just its sound.
-- Drag clips to move them and their edges to trim. Split at the playhead (`S`), duplicate
-  (`Ctrl+D`), **cut silences** in one click, **split by chapters**, mute any track, delete, and
-  undo or redo anything (`Ctrl+Z` / `Ctrl+Y`). Edges snap to the playhead and to other clips.
-- The sound wave under the preview and on each clip shows how loud every moment is.
-- Drag the red playhead, or anywhere on the ruler, to move through the video.
+- **Every track works the same:** any track can hold videos, pictures, GIFs, sound, text, shapes,
+  filters or effects, and higher tracks draw over lower ones. Drag a clip above the top track or below
+  the bottom one to make a new track, or click **+ Track**. Tracks start with the **magnet** off so
+  clips move freely; turn it on in a track's `⋯` menu to keep clips back to back. Drag the divider
+  beside the track buttons to shrink them to compact mode.
+- **GIFs and Sound FX:** keep your own GIFs and meme sounds in the editor's **GIFs** and **Sound FX**
+  tabs (and in the Media library). Drag GIFs from File Explorer or a browser, paste a GIF link with
+  `Ctrl+V` or in "Paste a GIF link" (Giphy page links too), and they play as moving layers with
+  see-through parts kept. Import or paste links to sound files (MP3, WAV, OGG, M4A, AAC or FLAC, up to
+  50 MB, or a sound's page) into **Sound FX**, preview each card with its sound wave and play button,
+  and click or drag to add it at the playhead. (Settings → Preferences can also show every other sound
+  in your Media library under Sound FX.)
+- **Voice-over:** click the microphone button on the timeline to pick a mic, run **Test your mic**,
+  and record while the video plays muted from the playhead; your voice's wave grows live on its own
+  track and saves as an `.m4a`.
+- Drag media from the sidebar onto any track (a video on an audio track uses just its sound), trim
+  edges, split at the playhead (`S`), duplicate (`Ctrl+D`), **cut silences**, **split by chapters**,
+  **freeze frame**, mute, hide or lock any track, right-click a clip for quick actions (including copy
+  and paste effects, delete and close gap, export one clip, or **Find file** if moved), and undo or
+  redo anything (`Ctrl+Z` / `Ctrl+Y`).
+- Click a clip's sound wave to open the **Sound** panel for volume and sound fades. Drag the red
+  playhead or anywhere on the ruler, and zoom the timeline all the way out (buttons, slider, `Shift+Z`,
+  `Ctrl` + wheel, or touchpad pinch around the playhead). **Cover** on the main track sets the
+  project's picture, built into exported videos.
 
-**Shape each clip** (select it; settings are on the right)
-- Move and resize any video or text **directly on the preview**: drag to move, drag a corner
-  to resize.
-- Crop, mirror, reverse, **fill the frame** (cutting off the edges instead of showing black
-  bars), change speed (0.25× to 4×), fade in and out, and set the volume.
-- **Transitions** between clips on a magnetic track: crossfade or dip to black.
-- Text: words, font, size, colour, edge (shadow, outline or box) and place.
-- A clip whose file moved or was renamed gets **Find file** to point Craftora to it.
+**Shape each clip, filters, effects and transitions** (settings are on the right)
+- Move, resize and **stretch from any side** directly on the preview (corners keep the shape;
+  right-click the picked item for its menu).
+- **Crop** on the picture (Free, Original, 16:9, 9:16, 1:1, 4:3 or 3:4, keeping any part including
+  corners), mirror, rotate a quarter turn, **fill the frame**, change speed (`0.25×` to `4×`), fade in
+  and out, and set the volume.
+- **Adjust & Enhance:** Brightness, Contrast, Saturation, Exposure, Highlights, Shadows, Warmth and
+  Sharpen sliders, one-click **Enhance**, and **Remove a colour** (green or blue screen with a picker,
+  strength and softness).
+- **Voice changer:** on any clip with sound, open the **Voice** tab for **Chipmunk**, **Deep**,
+  **Monster**, **Robot**, **Alien**, **Cave**, **Radio** or **Megaphone**, plus a **Pitch** slider
+  (up or down by 12 steps).
+- **Filters, Effects, Transitions and Shapes** (left panel tabs, each with search and `+` to add at
+  the playhead; drop on a clip to put it inside that clip, or on empty track space as a block to
+  stretch across several clips):
+  - **Filters:** 14 colour looks (tiles show your own frame) with a Strength slider, plus **Adjust
+    layer** to colour every picture under it.
+  - **Effects:** 31 picture effects (camera moves such as zoom in/out, zoom punch and shake, and styles
+    such as cinema bars, vignette, strobe, RGB split, film grain, glitch, VHS, pixelate, kaleidoscope,
+    light leak, neon edges, old film and duotone) with Strength and Speed sliders, plus **Slow motion**,
+    **Smooth slow-mo** (half speed with new in-between frames), **Speed up** and **Reverse**.
+  - **Transitions:** 29 transitions between clips (crossfade, dip to black, flash, fade to white,
+    dissolve, blur, squeeze, slides, covers, reveals, zoom, zoom-in blur, wipes, smooth slides, circle,
+    circle close, radial, wind and spin) plus **Fade in** and **Fade out** on a clip, with a **Volume**
+    slider and **Apply to all cuts**.
+  - **Shapes:** 30 shapes (rectangles, circles, stars, hearts, arrows, speech bubbles, lines and more)
+    with colour, fill or outline, opacity and angle.
+- **Text:** 18 free fonts, 8 style presets, size, colour wheel, edge (shadow, outline or box), place,
+  and **Animations** (In: Fade, Pop, Slide up, Typewriter; Out: Fade, Shrink; Loop: Bounce, Pulse).
 
-**AI assistant** (optional): describe an edit in your own words, such as "add the title My
-Trip for 3 seconds" or "put crossfades between all the clips", and it makes the edit. It
-uses your own API key for Gemini, ChatGPT or Claude, or an AI already on your PC (Claude Code,
-Codex, Gemini CLI, Antigravity, Ollama, LM Studio); see [The AI assistant](#the-ai-assistant).
+### Image editor
+
+Open **Image editor** from the main menu or Home to create pictures instead of videos, starting from
+preset sizes (Square post, Portrait post, Story, Landscape, Video thumbnail, A4 print), a recent
+picture or a photo on your PC.
+- **Layers and layer masks:** drag to reorder layers, show/hide, lock, rename, duplicate, adjust
+  opacity, set exact X, Y, W and H in pixels, turn 90 degrees or mirror. Add **layer masks** to any
+  layer (photos, painting, text or shapes) and paint them with Brush, Eraser, Gradient or Paint bucket
+  (`Alt+click` to view the mask alone, `Shift+click` to switch it off, Apply or Delete mask).
+- **Painting tools** (on this PC): **Brush** (`B`) and **Eraser** (`E`) with size, hardness, opacity
+  and flow (`[` / `]`), **Paint bucket** (`G`, tolerance, contiguous, opacity), **Gradient**
+  (`Shift+G`, linear or radial), and **Eyedropper** (`I`), with foreground and background colours.
+- **Selections:** **Rectangle** and **Ellipse** select (`M`, `Shift+M`), **Lasso** and **Polygon
+  lasso** (`L`, `Shift+L`), **Magic wand** (`W`), and **Select subject** (using Remove background's AI
+  on this PC), with New, Add, Subtract and Intersect modes, Feather, Expand/Contract, Inverse,
+  copy/cut to a new layer, Delete/Fill, or turn into a layer mask.
+- **Adjustments, filters, text and shapes:** **Adjust** with one-click **Enhance**, **Filters**, still
+  **Effects**, **Remove a colour**, crop (`C`), text, shapes, zoom/pan (`Ctrl+0`, `Space+drag`, `Tab`
+  to hide panels) and a **Do-anything box** (`Ctrl+K`) for quick commands.
+- **Remove background:** cuts a person or object out of a photo inside Craftora on your PC (uses your
+  graphics card when it can, otherwise the processor, no internet) and creates a layer mask so you can
+  paint back missed parts; **Restore** removes the mask.
+- **Export picture:** save as **PNG** (with optional see-through background) or **JPG** (quality
+  slider), scale `0.5×` to `2×` (or `4×` with **AI sharpen**), with one-click **Enhance colours** and
+  **AI sharpen** (runs on your PC, graphics card when it can, no internet) and a draggable
+  before/after preview.
+
+**AI assistant** (optional): describe an edit in your own words, or click **AI edit** on the timeline
+toolbar and drag over part of a clip to tell the assistant what to do. It uses your own API key for
+Gemini, ChatGPT or Claude, or an AI already on this PC (Claude Code, Codex, Gemini CLI, Antigravity,
+Ollama, LM Studio), managed in **Settings → Assistant**; see [The AI assistant](#the-ai-assistant).
 
 **Export**
-- MP4 or MKV video, or audio only (MP3, WAV, FLAC), in 16:9, 9:16 (Shorts and Reels), 1:1
-  or 4:3. **Made for** gives one-click presets for YouTube, TikTok · Reels · Shorts and
-  Instagram (upright and square ones make every picture fill the frame).
+- Click **Export** next to Queue to open export settings (or press `Ctrl+Enter` to add straight away).
+- Export **MP4** or **MKV** video, **GIF** (480, 720 or 1080 px wide, 10, 15 or 24 fps, looping forever
+  without sound, with estimated file size), or **audio only** (MP3, WAV, FLAC), in 16:9, 9:16 (Shorts
+  and Reels), 1:1 or 4:3. **Made for** gives one-click presets for YouTube, TikTok · Reels · Shorts
+  and Instagram (upright and square ones make every picture fill the frame).
 - Type the file name yourself under **Add to queue**.
-- **Fast** export uses your graphics card (NVIDIA, Intel or AMD) when the PC has one, which is
-  several times quicker; **Best quality** uses the processor for smaller files.
+- **Fast** export uses your graphics card (NVIDIA, Intel or AMD) when the PC has one (single-video
+  edits on NVIDIA run entirely on the graphics card for around twice the speed); **Best quality** uses
+  the processor for smaller files.
 - **Add to queue** shows a short summary first (quality, length, size, where it's saved).
-- Exports run in a queue at the bottom while you keep editing. **Pause** anything in it
-  (downloads carry on where they stopped), and a notification tells you when it's done while
-  you're in another window. Choose the save folder next to **Save to** in the Export panel or
-  in Settings (default: `Videos\Craftora`).
-- Open **Command that will run** in the Export panel to see the exact FFmpeg and yt-dlp
-  commands.
+- Exports run in a queue at the bottom with **time left** shown while you keep editing. **Pause**
+  anything in it (downloads carry on where they stopped), and a finish sound and notification tell you
+  when a download or export is done (toggle the sound in **Settings → Preferences**). Choose the save
+  folder next to **Save to** or in Settings (default: `Videos\Craftora`).
+- Open **Command that will run** in the Export window to see the exact FFmpeg and yt-dlp commands.
 
-**Make it yours:** **Settings → Theme** has **Classic**, **Dark glass** and **Light glass**.
+**Make it yours:** **Settings → Look** picks the colour (**Craftora red**, **Lively** or **Light**)
+and **Glass** on or off (the Image editor stays dark).
 
 **Your work is kept**
-- Projects save themselves as you edit. The sidebar has a page for each kind of thing:
-  **Projects**, **Media library** (every file you've imported, with search and ★ Saved),
-  **Downloads**, **History** (every link you've fetched) and **Exports**. Rest the mouse on a
-  video's picture to see it play.
+- Projects save themselves as you edit. The main menu has a page for each kind of thing:
+  **Projects**, **Media library** (every file you've imported or fetched, with **All**, **Videos**,
+  **Pictures**, **Audio**, **GIFs**, **Sound FX**, **Saved**, **Folders** and your own
+  **Collections** tabs you can drag to reorder, folders inside folders with custom covers, search, and
+  **Select** mode to tick, move or add several cards at once), **Downloads**, **History** (every link
+  you've fetched) and **Exports**. Rest the mouse on a video's picture to see it play, and right-click
+  any card to open, rename, duplicate, hide or delete it.
 - **Hide** anything on those pages: it moves to a folded **Hidden** list (**Unhide** brings it
   back; nothing is deleted). Settings → Privacy can take the Hidden lists away completely.
 - Before anything that can't be undone (deleting a project or file, signing out of a website,
-  stopping a recording, closing with a download or export unfinished), Craftora asks first. Deleted exports go to the Recycle Bin. Edits on
-  the timeline can always be undone with `Ctrl+Z`.
+  stopping a recording, closing with an export unfinished), Craftora asks first. Deleted exports and
+  downloads go to the Recycle Bin. Edits on the timeline can always be undone with `Ctrl+Z`.
 
 ### How export works
 
@@ -155,13 +241,58 @@ Codex, Gemini CLI, Antigravity, Ollama, LM Studio); see [The AI assistant](#the-
   a file on your PC, FFmpeg copies the section without re-encoding. **Fast** keeps the
   original quality but starts on the nearest keyframe; **Precise** is frame-accurate and
   re-encodes.
-- **Anything more** (several clips, tracks, text, crop, speed, fades or transitions):
-  Craftora renders the whole timeline in one FFmpeg pass, each clip reading only its own part
-  of its file. For links, yt-dlp first downloads just the parts the timeline uses.
+- **Anything more** (several clips, tracks, text, shapes, crop, speed, filters, effects or
+  transitions): Craftora renders the whole timeline in one FFmpeg pass, each clip reading only its own
+  part of its file (links are first downloaded whole for editing if not already on your PC).
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/editor.png" width="100%" alt="Craftora video editor with Sintel in the preview, clips on the timeline, and Edit settings on the right"><br>
+      Edit on a timeline: trim, split and stack clips, add titles, and export for YouTube, TikTok or Instagram.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/filters.png" width="100%" alt="Craftora Filters tab showing searchable colour look tiles and Adjust layer"><br>
+      Filters, effects and transitions as tiles: drag one onto a clip, or search for the one you want.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/voice-changer.png" width="100%" alt="Craftora Voice tab showing voice changer presets and the Pitch slider"><br>
+      Voice changer: Chipmunk, Deep, Monster, Robot, Alien, Cave, Radio or Megaphone, plus a Pitch slider.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/export.png" width="100%" alt="Craftora Export pop-up showing Video and Audio only outputs, Made for presets, and Add to queue"><br>
+      Export for YouTube, TikTok, Reels, Shorts or Instagram in one click, as MP4, MKV, GIF or sound only.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/dark-glass.png" width="100%" alt="Craftora in Dark glass look with translucent panels glowing with the video's colours"><br>
+      Glass panels that glow with the colours of your video.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/light-glass.png" width="100%" alt="Craftora in Light glass look with frosted light panels"><br>
+      Light with glass, for bright rooms. Pick Craftora red, Lively or Light, with or without glass.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/media-library.png" width="100%" alt="Craftora Media library with folders, tabs for every media type, and custom collections"><br>
+      Everything you've used in one Media library, with folders on every tab and your own collections.
+    </td>
+    <td width="50%"></td>
+  </tr>
+</table>
+
+<sub>Shown: <em>Sintel</em> © Blender Foundation, <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>.</sub>
 
 ## The AI assistant
 
-1. Open the **Assistant** tab at the top of the right panel.
+1. Open the **Assistant** tab at the top of the right panel (or click **AI edit** on the timeline
+   toolbar to drag over part of a clip and ask for an edit there).
 2. **AI on this PC:** Craftora lists the AI programs it finds (Claude Code, Codex, Gemini CLI,
    Antigravity) and local AI servers that are running (Ollama, LM Studio). Click **Use**; no key
    is needed, because each one uses its own sign-in. Another local server works too: type its
@@ -171,7 +302,8 @@ Codex, Gemini CLI, Antigravity, Ollama, LM Studio); see [The AI assistant](#the-
    [ChatGPT](https://platform.openai.com/api-keys) or [Claude](https://console.anthropic.com/settings/keys)
    (both need API credit). App subscriptions (Google AI Pro, ChatGPT Plus, Claude Pro) don't
    cover the API, so the key is separate. Craftora tries the key first and only keeps it if it
-   works.
+   works. Manage every connected AI, switch any of them on or off, or scan again for newly installed
+   programs in **Settings → Assistant**.
 3. Pick a model: Craftora suggests two or three good ones for your key, and **Search all
    models…** finds any other. On Gemini's free plan, if a model is busy or not in your plan, the
    assistant switches to another one by itself. Switch AI any time from the list at the top.
@@ -198,6 +330,7 @@ times and settings, never the media) to that service. The assistant can't watch 
 | `←` / `→` | Back / forward 5 seconds (`Shift`: one frame) |
 | `↑` / `↓` | Preview volume up / down |
 | `Home` / `End` | Go to the start / end |
+| `Shift+Z` | Zoom timeline to fit |
 | `F` | Full-screen preview (`Esc` to leave) |
 | `Ctrl+O` | Import files |
 | `Ctrl+Enter` | Add to the export queue |
