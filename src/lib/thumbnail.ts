@@ -20,23 +20,30 @@ export function draw(source: HTMLVideoElement | HTMLImageElement, width: number,
 }
 
 /**
- * Plays a stream playlist in `video` through hls.js, like the preview (SyncedMedia), at the smallest quality still
- * `width` wide: a 1080p part could take longer than allowed (a found stream through the relay did), for a small picture.
- * Returns what stops it.
+ * Loads a stream playlist into `video` through hls.js, like the preview (SyncedMedia), for pictures: from `start`
+ * seconds, at the smallest quality still `width` wide (a 1080p part could take longer than allowed, as a found stream
+ * through the relay did), and only the part each seek needs. Returns what stops it.
  */
-function playStream(video: HTMLVideoElement, url: string, width: number, failed: () => void): () => void {
+function playStream(video: HTMLVideoElement, url: string, width: number, start: number, failed: () => void): () => void {
   let player: Hls | undefined;
   let stopped = false;
   void import("hls.js").then(
     ({ default: Hls }) => {
       if (stopped) return;
-      player = new Hls({ abrEwmaDefaultEstimate: 50_000_000 });
+      // Not started until the quality is picked (it began on the best one, then switched), and no buffering ahead
+      // (30 s after every seek): measured 22.9 s for a 5-minute stream's filmstrip at 20 Mbit/s.
+      player = new Hls({ abrEwmaDefaultEstimate: 50_000_000, autoStartLoad: false, maxBufferLength: 1, maxMaxBufferLength: 2, backBufferLength: 0 });
       player.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) failed();
       });
       player.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
+        if (!player) return;
         const fits = data.levels.findIndex((level) => (level.width || 0) >= width);
-        if (fits >= 0 && player) player.currentLevel = fits;
+        if (fits >= 0) {
+          player.startLevel = fits;
+          player.autoLevelCapping = fits;
+        }
+        player.startLoad(start);
       });
       player.loadSource(url);
       player.attachMedia(video);
@@ -85,7 +92,7 @@ export function captureThumbnail(previewUrl: string, image?: boolean, hls?: bool
     };
     video.onerror = () => done();
     if (hls) {
-      stop = playStream(video, previewUrl, width, () => done());
+      stop = playStream(video, previewUrl, width, time ?? 1, () => done());
       return;
     }
     video.src = previewUrl;
@@ -107,39 +114,44 @@ let stripTurn: Promise<unknown> = Promise.resolve();
 
 /**
  * A video's filmstrip, made once per address, one video at a time (a long project doesn't open
- * them all at once). `hls`: a stream playlist (each frame loads one of its parts). Undefined when
- * it can't be read, or a frame takes over 20 seconds.
+ * them all at once). `hls`: a stream playlist (each frame loads one of its parts), shown as it fills
+ * through `partly`. Undefined when it can't be read, or a frame takes over 20 seconds.
  */
-export function filmstrip(previewUrl: string, duration: number, hls?: boolean): Promise<Strip | undefined> {
+export function filmstrip(previewUrl: string, duration: number, hls?: boolean, partly?: (strip: Strip) => void): Promise<Strip | undefined> {
   let made = strips.get(previewUrl);
   if (!made) {
-    made = stripTurn.then(() => drawStrip(previewUrl, duration, hls)).catch(() => undefined);
+    made = stripTurn.then(() => drawStrip(previewUrl, duration, hls, partly)).catch(() => undefined);
     stripTurn = made;
     strips.set(previewUrl, made);
   }
   return made;
 }
 
-function drawStrip(previewUrl: string, duration: number, hls?: boolean): Promise<Strip | undefined> {
+function drawStrip(previewUrl: string, duration: number, hls?: boolean, partly?: (strip: Strip) => void): Promise<Strip | undefined> {
   // About one frame every 6 seconds, at least 6 and at most 40.
   const frames = Math.round(Math.min(40, Math.max(6, duration / 6)));
+  // A stream loads a part over the network for each frame: four players side by side, each a stretch of the video.
+  // A file on this PC seeks fast enough with one.
+  const lanes = hls ? Math.min(4, frames) : 1;
   return new Promise((resolve) => {
     const canvas = document.createElement("canvas");
     canvas.width = frames * FRAME_W;
     canvas.height = FRAME_H;
     const ctx = canvas.getContext("2d")!;
-    const video = document.createElement("video");
+    const videos: HTMLVideoElement[] = [];
+    const stops: (() => void)[] = [];
     let drawn = 0;
-    let stop: (() => void) | undefined;
     let timer = 0;
     let gone = false;
     const finish = (strip?: Strip) => {
       if (gone) return;
       gone = true;
       window.clearTimeout(timer);
-      stop?.();
-      video.removeAttribute("src");
-      video.load();
+      stops.forEach((stop) => stop());
+      for (const video of videos) {
+        video.removeAttribute("src");
+        video.load();
+      }
       resolve(strip);
     };
     // Per frame, not for the whole strip: a stream on slow Wi-Fi loads a part for each frame.
@@ -148,40 +160,68 @@ function drawStrip(previewUrl: string, duration: number, hls?: boolean): Promise
       timer = window.setTimeout(() => finish(), 20_000);
     };
     wait();
-    const seek = () => (video.currentTime = ((drawn + 0.5) / frames) * (video.duration || duration));
-    video.crossOrigin = "anonymous";
-    video.muted = true;
-    video.preload = "auto";
-    video.onloadedmetadata = seek;
-    video.onseeked = () => {
-      // Cover the frame, keeping the picture's shape.
-      const scale = Math.max(FRAME_W / video.videoWidth, FRAME_H / video.videoHeight);
-      const [w, h] = [video.videoWidth * scale, video.videoHeight * scale];
-      try {
-        // Only inside its own cell, so a wide picture doesn't spill onto its neighbours.
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(drawn * FRAME_W, 0, FRAME_W, FRAME_H);
-        ctx.clip();
-        ctx.drawImage(video, drawn * FRAME_W + (FRAME_W - w) / 2, (FRAME_H - h) / 2, w, h);
-        ctx.restore();
-      } catch {
-        return finish();
+    const at = (cell: number, video?: HTMLVideoElement) => ((cell + 0.5) / frames) * (video?.duration || duration);
+    // Shown before it's whole: a cell not drawn yet borrows the nearest drawn one (a 5-minute stream takes ~13 s at 20 Mbit/s).
+    const done: number[] = [];
+    const showSoFar = () => {
+      const copy = document.createElement("canvas");
+      copy.width = canvas.width;
+      copy.height = FRAME_H;
+      const c = copy.getContext("2d")!;
+      for (let cell = 0; cell < frames; cell++) {
+        const near = done.reduce((best, d) => (Math.abs(d - cell) < Math.abs(best - cell) ? d : best));
+        c.drawImage(canvas, near * FRAME_W, 0, FRAME_W, FRAME_H, cell * FRAME_W, 0, FRAME_W, FRAME_H);
       }
-      drawn++;
-      wait();
-      if (drawn < frames) seek();
-      else {
-        try {
-          finish({ url: canvas.toDataURL("image/jpeg", 0.7), frames });
-        } catch {
-          finish();
-        }
+      try {
+        partly?.({ url: copy.toDataURL("image/jpeg", 0.7), frames });
+      } catch {
+        // A picture the page may not read: the whole strip fails the same way below.
       }
     };
-    video.onerror = () => finish();
-    if (hls) stop = playStream(video, previewUrl, FRAME_W, () => finish());
-    else video.src = previewUrl;
+    for (let lane = 0; lane < lanes; lane++) {
+      const end = Math.floor(((lane + 1) * frames) / lanes);
+      let cell = Math.floor((lane * frames) / lanes);
+      const video = document.createElement("video");
+      videos.push(video);
+      video.crossOrigin = "anonymous";
+      video.muted = true;
+      video.preload = "auto";
+      video.onloadedmetadata = () => (video.currentTime = at(cell, video));
+      video.onseeked = () => {
+        // hls.js moves to its start place itself: only the frame asked for is drawn.
+        if (gone || Math.abs(video.currentTime - at(cell, video)) > 0.5) return;
+        // Cover the frame, keeping the picture's shape.
+        const scale = Math.max(FRAME_W / video.videoWidth, FRAME_H / video.videoHeight);
+        const [w, h] = [video.videoWidth * scale, video.videoHeight * scale];
+        try {
+          // Only inside its own cell, so a wide picture doesn't spill onto its neighbours.
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(cell * FRAME_W, 0, FRAME_W, FRAME_H);
+          ctx.clip();
+          ctx.drawImage(video, cell * FRAME_W + (FRAME_W - w) / 2, (FRAME_H - h) / 2, w, h);
+          ctx.restore();
+        } catch {
+          return finish();
+        }
+        drawn++;
+        done.push(cell);
+        wait();
+        // After each round of the players (the first already spans the whole video).
+        if (partly && drawn % lanes === 0 && drawn < frames) showSoFar();
+        if (++cell < end) video.currentTime = at(cell, video);
+        if (drawn === frames) {
+          try {
+            finish({ url: canvas.toDataURL("image/jpeg", 0.7), frames });
+          } catch {
+            finish();
+          }
+        }
+      };
+      video.onerror = () => finish();
+      if (hls) stops.push(playStream(video, previewUrl, FRAME_W, at(cell), () => finish()));
+      else video.src = previewUrl;
+    }
   });
 }
 
