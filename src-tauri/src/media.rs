@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::engine::{last_error, run_to_end, OBSERVER, YT_DLP};
 
@@ -508,6 +508,7 @@ async fn read_link(app: &AppHandle, url: &str, engine: bool) -> Result<Info, Str
     if !engine || gone || yt_dlp.as_ref().is_ok_and(|info| !info.formats.is_empty()) {
         return yt_dlp;
     }
+    note_step(app, url, "Trying Craftora's fetch engine");
     read_link_engine(app, url).await.map_or(yt_dlp, Ok)
 }
 
@@ -542,12 +543,13 @@ async fn read_link_yt_dlp(app: &AppHandle, url: &str) -> Result<Info, String> {
     let mut hiccup = false;
     let mut with_origin = false;
     loop {
-        let mut args: Vec<String> = ["--dump-single-json", "--no-playlist", "--no-warnings", "--encoding", "utf-8"].map(String::from).to_vec();
+        // `--no-quiet`: yt-dlp's step lines ("Downloading webpage") come before the JSON, shown while the fetch runs.
+        let mut args: Vec<String> = ["--dump-single-json", "--no-quiet", "--no-playlist", "--no-warnings", "--encoding", "utf-8"].map(String::from).to_vec();
         let (link, _cookie_file) = crate::signin::link_args(app, url).await;
         args.extend(link);
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         let started = std::time::Instant::now();
-        let output = run_to_end(app, YT_DLP, &args).await?;
+        let output = run_with_steps(app, url, &args).await?;
         // Timed in "Copy report", so a slow fetch shows which step is slow.
         crate::diag::note(format!("yt-dlp read {url} in {:.1}s", started.elapsed().as_secs_f64()));
         if output.status.success() {
@@ -580,6 +582,71 @@ async fn read_link_yt_dlp(app: &AppHandle, url: &str) -> Result<Info, String> {
         crate::diag::note("bot check: trying again as a browser");
         retried = true;
     }
+}
+
+/// What a fetch is doing, for the wait (`fetch-step`, with the link fetched).
+#[derive(Clone, Serialize)]
+struct FetchStep<'a> {
+    url: &'a str,
+    step: &'static str,
+}
+
+pub(crate) fn note_step(app: &AppHandle, url: &str, step: &'static str) {
+    let _ = app.emit("fetch-step", FetchStep { url, step });
+}
+
+/// A yt-dlp step line in words for the wait; None for lines that aren't steps.
+fn step_words(line: &str) -> Option<&'static str> {
+    let line = line.to_ascii_lowercase();
+    if !line.starts_with('[') || line.starts_with("[info]") {
+        return None;
+    }
+    Some(if line.contains("solving js challenges") {
+        "Solving the site's check"
+    } else if line.contains("downloading player ") {
+        "Getting the site's player"
+    } else if line.contains("m3u8") || line.contains("mpd") || line.contains("manifest") {
+        "Reading the video's streams"
+    } else if line.contains("downloading webpage") || line.contains("extracting url") {
+        "Reading the page"
+    } else if line.contains("downloading") {
+        "Asking the site for the video"
+    } else {
+        return None;
+    })
+}
+
+/// `run_to_end` for yt-dlp, telling the wait each step it prints (stdout lines before its JSON line).
+async fn run_with_steps(app: &AppHandle, url: &str, args: &[&str]) -> Result<std::process::Output, String> {
+    use std::io::{BufRead, Read};
+    let mut command: std::process::Command = crate::engine::command(app, YT_DLP)?.args(args).into();
+    command.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    let mut child = command.spawn().map_err(|e| format!("Could not start {YT_DLP}: {e}"))?;
+    // Held here, not in the reading thread: a caller that stops waiting (Cancel) ends yt-dlp too.
+    let _tied = crate::engine::tie(child.id());
+    let (stdout, mut stderr) = (child.stdout.take(), child.stderr.take());
+    let (app, url) = (app.clone(), url.to_string());
+    let read = tauri::async_runtime::spawn_blocking(move || {
+        // Its own thread, so a full error pipe never stalls yt-dlp while the steps are read.
+        let errors = std::thread::spawn(move || {
+            let mut text = Vec::new();
+            stderr.as_mut().map(|e| e.read_to_end(&mut text));
+            text
+        });
+        let mut json = Vec::new();
+        let mut last = "";
+        for line in stdout.map(|s| std::io::BufReader::new(s).split(b'\n')).into_iter().flatten().map_while(Result::ok) {
+            if line.first() == Some(&b'{') {
+                json = line;
+            } else if let Some(step) = step_words(&String::from_utf8_lossy(&line)).filter(|step| *step != last) {
+                last = step;
+                note_step(&app, &url, step);
+            }
+        }
+        let status = child.wait()?;
+        Ok::<_, std::io::Error>(std::process::Output { status, stdout: json, stderr: errors.join().unwrap_or_default() })
+    });
+    read.await.map_err(|e| e.to_string())?.map_err(|e| format!("Could not start {YT_DLP}: {e}"))
 }
 
 /// yt-dlp's words for trouble on the way to the site rather than with the link: a timeout, a
@@ -710,7 +777,19 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>, engin
     // file the site really hands out. Behind a bot check only the page window gets through, so the
     // byte cache and the stream relay fetch through it, untried.
     let choices = if length_known { preview_choices(&info.formats, height) } else { Vec::new() };
-    let chosen = if bot_checked { choices.first().copied() } else { first_served(&choices, page.as_deref()).await };
+    let sounds = preview_audio_choices(&info.formats);
+    if length_known {
+        note_step(&app, &url, "Checking the preview");
+    }
+    // A picture file without sound (YouTube's) needs a sound file too: both checked at once, about 1 s less than in a row.
+    let (chosen, sound_served) = if bot_checked {
+        (choices.first().copied(), None)
+    } else if choices.first().is_some_and(|f| !f.has_audio()) {
+        let (chosen, sound) = tokio::join!(first_served(&choices, page.as_deref()), first_served(&sounds, page.as_deref()));
+        (chosen, Some(sound))
+    } else {
+        (first_served(&choices, page.as_deref()).await, None)
+    };
     let (preview_url, preview_has_audio, preview_hls) = match chosen {
         _ if !length_known => (String::new(), true, false),
         Some(f) => (f.url.clone().unwrap_or_default(), f.has_audio(), false),
@@ -720,8 +799,11 @@ pub async fn fetch_media(app: AppHandle, url: String, height: Option<u32>, engin
     let preview_audio_url = if preview_has_audio || preview_url.is_empty() {
         String::new()
     } else {
-        let sounds = preview_audio_choices(&info.formats);
-        let served = if bot_checked { None } else { first_served(&sounds, page.as_deref()).await };
+        let served = match sound_served {
+            Some(served) => served,
+            None if bot_checked => None,
+            None => first_served(&sounds, page.as_deref()).await,
+        };
         served.or(sounds.first().copied()).and_then(|f| f.url.clone()).unwrap_or_default()
     };
     let kinds: Vec<String> = info
@@ -919,6 +1001,17 @@ mod tests {
     /// The preview file picked first, and whether it has sound.
     fn preview(formats: &[Format], max_height: Option<u32>) -> (String, bool) {
         preview_choices(formats, max_height).first().map(|f| (f.url.clone().unwrap_or_default(), f.has_audio())).unwrap_or_default()
+    }
+
+    #[test]
+    fn names_yt_dlp_steps() {
+        assert_eq!(super::step_words("[youtube] abc: Downloading webpage"), Some("Reading the page"));
+        assert_eq!(super::step_words("[youtube] abc: Downloading tv samsung player API JSON"), Some("Asking the site for the video"));
+        assert_eq!(super::step_words("[youtube] abc: Downloading player b485e332-main"), Some("Getting the site's player"));
+        assert_eq!(super::step_words("[youtube] [jsc:deno] Solving JS challenges using deno"), Some("Solving the site's check"));
+        assert_eq!(super::step_words("[dailymotion] x7: Downloading m3u8 information with randomized headers"), Some("Reading the video's streams"));
+        assert_eq!(super::step_words("[info] abc: Downloading 1 format(s): 400+251"), None);
+        assert_eq!(super::step_words("{\"id\": \"abc\"}"), None);
     }
 
     #[test]
