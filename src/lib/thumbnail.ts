@@ -19,16 +19,46 @@ export function draw(source: HTMLVideoElement | HTMLImageElement, width: number,
   }
 }
 
+/**
+ * Plays a stream playlist in `video` through hls.js, like the preview (SyncedMedia), at the smallest quality still
+ * `width` wide: a 1080p part could take longer than allowed (a found stream through the relay did), for a small picture.
+ * Returns what stops it.
+ */
+function playStream(video: HTMLVideoElement, url: string, width: number, failed: () => void): () => void {
+  let player: Hls | undefined;
+  let stopped = false;
+  void import("hls.js").then(
+    ({ default: Hls }) => {
+      if (stopped) return;
+      player = new Hls({ abrEwmaDefaultEstimate: 50_000_000 });
+      player.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) failed();
+      });
+      player.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
+        const fits = data.levels.findIndex((level) => (level.width || 0) >= width);
+        if (fits >= 0 && player) player.currentLevel = fits;
+      });
+      player.loadSource(url);
+      player.attachMedia(video);
+    },
+    () => failed(),
+  );
+  return () => {
+    stopped = true;
+    player?.destroy();
+  };
+}
+
 /** `previewUrl` must be playable here (a file on this PC, or a cached preview). Resolves undefined when it can't be read. */
 export function captureThumbnail(previewUrl: string, image?: boolean, hls?: boolean, time?: number, width = WIDTH): Promise<string | undefined> {
   return new Promise((resolve) => {
-    let player: Hls | undefined;
+    let stop: (() => void) | undefined;
     let gone = false;
     const done = (value?: string) => {
       if (gone) return;
       gone = true;
       window.clearTimeout(timer);
-      player?.destroy();
+      stop?.();
       resolve(value);
     };
     const timer = window.setTimeout(() => done(), 10_000);
@@ -55,25 +85,7 @@ export function captureThumbnail(previewUrl: string, image?: boolean, hls?: bool
     };
     video.onerror = () => done();
     if (hls) {
-      // Stream playlists play through hls.js, like the preview (SyncedMedia).
-      void import("hls.js").then(
-        ({ default: Hls }) => {
-          if (gone) return;
-          player = new Hls({ abrEwmaDefaultEstimate: 50_000_000 });
-          player.on(Hls.Events.ERROR, (_event, data) => {
-            if (data.fatal) done();
-          });
-          // The smallest quality still as wide as the picture: a 1080p part could take longer than
-          // the 10 s allowed (a found stream through the relay did), for a picture 480 wide.
-          player.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
-            const fits = data.levels.findIndex((level) => (level.width || 0) >= width);
-            if (fits >= 0 && player) player.currentLevel = fits;
-          });
-          player.loadSource(previewUrl);
-          player.attachMedia(video);
-        },
-        () => done(),
-      );
+      stop = playStream(video, previewUrl, width, () => done());
       return;
     }
     video.src = previewUrl;
@@ -95,19 +107,20 @@ let stripTurn: Promise<unknown> = Promise.resolve();
 
 /**
  * A video's filmstrip, made once per address, one video at a time (a long project doesn't open
- * them all at once). Undefined when it can't be read, or takes over a minute.
+ * them all at once). `hls`: a stream playlist (each frame loads one of its parts). Undefined when
+ * it can't be read, or a frame takes over 20 seconds.
  */
-export function filmstrip(previewUrl: string, duration: number): Promise<Strip | undefined> {
+export function filmstrip(previewUrl: string, duration: number, hls?: boolean): Promise<Strip | undefined> {
   let made = strips.get(previewUrl);
   if (!made) {
-    made = stripTurn.then(() => drawStrip(previewUrl, duration)).catch(() => undefined);
+    made = stripTurn.then(() => drawStrip(previewUrl, duration, hls)).catch(() => undefined);
     stripTurn = made;
     strips.set(previewUrl, made);
   }
   return made;
 }
 
-function drawStrip(previewUrl: string, duration: number): Promise<Strip | undefined> {
+function drawStrip(previewUrl: string, duration: number, hls?: boolean): Promise<Strip | undefined> {
   // About one frame every 6 seconds, at least 6 and at most 40.
   const frames = Math.round(Math.min(40, Math.max(6, duration / 6)));
   return new Promise((resolve) => {
@@ -117,13 +130,24 @@ function drawStrip(previewUrl: string, duration: number): Promise<Strip | undefi
     const ctx = canvas.getContext("2d")!;
     const video = document.createElement("video");
     let drawn = 0;
+    let stop: (() => void) | undefined;
+    let timer = 0;
+    let gone = false;
     const finish = (strip?: Strip) => {
+      if (gone) return;
+      gone = true;
       window.clearTimeout(timer);
+      stop?.();
       video.removeAttribute("src");
       video.load();
       resolve(strip);
     };
-    const timer = window.setTimeout(() => finish(), 60_000);
+    // Per frame, not for the whole strip: a stream on slow Wi-Fi loads a part for each frame.
+    const wait = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => finish(), 20_000);
+    };
+    wait();
     const seek = () => (video.currentTime = ((drawn + 0.5) / frames) * (video.duration || duration));
     video.crossOrigin = "anonymous";
     video.muted = true;
@@ -145,6 +169,7 @@ function drawStrip(previewUrl: string, duration: number): Promise<Strip | undefi
         return finish();
       }
       drawn++;
+      wait();
       if (drawn < frames) seek();
       else {
         try {
@@ -155,7 +180,8 @@ function drawStrip(previewUrl: string, duration: number): Promise<Strip | undefi
       }
     };
     video.onerror = () => finish();
-    video.src = previewUrl;
+    if (hls) stop = playStream(video, previewUrl, FRAME_W, () => finish());
+    else video.src = previewUrl;
   });
 }
 
