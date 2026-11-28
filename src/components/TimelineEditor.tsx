@@ -255,7 +255,8 @@ export function TimelineEditor({
     for (const m of project.media) {
       const s = m.source;
       if (!m.hasVideo || s.image || s.live || s.previewProxy || !s.previewUrl || strips[s.previewUrl]) continue;
-      void filmstrip(s.previewUrl, s.duration, s.previewHls).then((strip) => strip && setStrips((all) => ({ ...all, [s.previewUrl]: strip })));
+      const show = (strip: Strip) => setStrips((all) => ({ ...all, [s.previewUrl]: strip }));
+      void filmstrip(s.previewUrl, s.duration, s.previewHls, show).then((strip) => strip && setStrips((all) => ({ ...all, [s.previewUrl]: strip })));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.media]);

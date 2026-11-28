@@ -17,7 +17,10 @@
 - **Captions from the website can be taken off again**: clicking the ticked track in the list removes those
   captions from the video (it used to load the same track again).
 - **Streamed videos show their frames on the timeline**: a fetched video that plays as a stream used to repeat the
-  site's picture along its clip; its clip now shows frames from across the video, like a file from your PC.
+  site's picture along its clip; its clip now shows frames from across the video, like a file from your PC. Its
+  picture in the media list is a frame of the video too, instead of the site's logo.
+- **Episodes keep their episode in the name**: "Fetch this video" on a series page whose title is only the show
+  ("Chuhai Lips · ani.pm") now names it with the episode shown on the page ("Chuhai Lips · Episode 1 · ani.pm").
 
 ## 0.7.1 (November 2026)
 
